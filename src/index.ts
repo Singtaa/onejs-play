@@ -1,0 +1,205 @@
+/**
+ * oj: the container runtime for OneJS Play.
+ *
+ * Published to npm as "onejs-play" and imported as "oj" through an esbuild
+ * alias, the same mechanism OneJS already uses to dedupe React. The alias ships
+ * in the scaffolded esbuild config, so it survives eject.
+ *
+ * THE DESIGN RULE
+ * oj is a strict subset of OneJS, never a variant. Everything here also works
+ * in a normal Unity OneJS project, so ejecting a game is: copy the file into a
+ * scene folder, npm i, build. If a feature cannot work both places it is cut,
+ * or it degrades to a documented no-op after eject.
+ *
+ * WHAT IS DELIBERATELY NOT RE-EXPORTED FROM onejs-react
+ * Container games cannot reach CS.*, so anything whose public API requires
+ * building or receiving a C# object is left out rather than shipped as a
+ * runtime landmine:
+ *
+ *   Vector2, Color                 type aliases to CS types. oj shadows both
+ *                                  with real JS classes (see vec.ts, color.ts).
+ *   Angle, ArcDirection,
+ *   Painter2D,
+ *   MeshGenerationContext          raw painter interop types. Use the batched
+ *                                  Painter, which takes plain numbers.
+ *   useVectorContent               the raw painter path. onejs-react's
+ *                                  Transform2D belongs here too: its point()
+ *                                  returns new CS.UnityEngine.Vector2 and would
+ *                                  throw. oj exports its own JS-only
+ *                                  Transform2D under the same name instead.
+ *   registerElement,
+ *   createComponent                register arbitrary C# types as elements.
+ *   useFrameSync, useEventSync,
+ *   useThrottledSync, toArray      C# interop hooks. There is no C# to sync to.
+ *   toWire, unmountAll,
+ *   getDebugInfo                   internal surfaces, not game API.
+ *
+ * Every exclusion above is a compatibility and ergonomics decision, not a
+ * security one. The iframe sandbox and the CSP on the game origin are what keep
+ * the platform safe; this list is what keeps it changeable.
+ */
+
+// MARK: stage
+
+export {
+    normalizeStage,
+    computeStageLayout,
+    toStage,
+    fromStage,
+    DEFAULT_STAGE_WIDTH,
+    DEFAULT_STAGE_HEIGHT,
+} from "./stage"
+export type { StageFit, StageInput, StageConfig, StageLayout, StageRect } from "./stage"
+
+// MARK: transforms
+
+export { Transform2D, TransformedPath } from "./transform"
+export type { PathSink } from "./transform"
+
+// MARK: input
+
+export { createInput } from "./input"
+export type {
+    Input,
+    InputSink,
+    InputSystem,
+    InputOptions,
+    PointerState,
+    GamepadState,
+    AxisBinding,
+} from "./input"
+
+// MARK: math
+
+export { Mathf } from "./mathf"
+export { Vector2, Vector3 } from "./vec"
+export { Color } from "./color"
+export { random } from "./random"
+export type { Rng } from "./random"
+
+// MARK: components
+
+export {
+    View,
+    Text,
+    Label,
+    Button,
+    TextField,
+    Toggle,
+    Slider,
+    ScrollView,
+    Image,
+    ListView,
+    TreeView,
+    FrostedGlass,
+    clearImageCache,
+} from "onejs-react"
+
+// MARK: rendering
+
+export { render, unmount, createPortal, flushSync, batchedUpdates } from "onejs-react"
+export { Portal } from "onejs-react"
+export type { PortalProps } from "onejs-react"
+export { ErrorBoundary, formatError } from "onejs-react"
+export type { ErrorBoundaryProps } from "onejs-react"
+
+// MARK: responsive
+
+export {
+    ScreenProvider,
+    useBreakpoint,
+    useScreenSize,
+    useResponsive,
+    useMediaQuery,
+    BREAKPOINTS,
+} from "onejs-react"
+export type { ScreenContextValue, ScreenProviderProps, BreakpointName } from "onejs-react"
+
+// MARK: vector drawing (batched only; the raw painter path needs CS.*)
+
+export { Painter, batchedVisualContent, useBatchedVectorContent } from "onejs-react"
+
+// MARK: particles
+
+export { createParticles, useParticles } from "onejs-react"
+export type {
+    ParticlesConfig,
+    EmitterConfig,
+    EmitterShape,
+    ParticlesHandle,
+    EmitterHandle,
+    BurstOptions,
+    ParticleRange,
+    ParticleColor,
+    AttractConfig,
+    AttractEase,
+    EdgeMode,
+    SheetConfig,
+} from "onejs-react"
+
+// MARK: shader effects
+
+export { ShaderEffect, TextureFX, Flame, TextureFXBuilder, buildTextureFX, MAX_TEXTUREFX_LAYERS } from "onejs-react"
+export type {
+    FlameProps,
+    TextureFXProps,
+    ShaderEffectProps,
+    TextureFXBuild,
+    LayerHandle,
+    NoiseOptions,
+    ShapeOptions,
+    BlendMode,
+    ShapeKind,
+} from "onejs-react"
+
+// MARK: types
+
+export type {
+    ViewStyle,
+    PointerEventData,
+    MouseEventData,
+    WheelEventData,
+    KeyEventData,
+    ChangeEventData,
+    FocusEventData,
+    DragEventData,
+    GeometryEventData,
+    NavigationEventData,
+    NavigationDirection,
+    TransitionEventData,
+    PointerEventHandler,
+    MouseEventHandler,
+    WheelEventHandler,
+    KeyEventHandler,
+    ChangeEventHandler,
+    FocusEventHandler,
+    DragEventHandler,
+    GeometryEventHandler,
+    NavigationEventHandler,
+    TransitionEventHandler,
+    BaseProps,
+    ViewProps,
+    TextProps,
+    LabelProps,
+    ButtonProps,
+    TextFieldProps,
+    ToggleProps,
+    SliderProps,
+    ScrollViewProps,
+    ImageProps,
+    ListViewProps,
+    TreeViewProps,
+    TreeViewItem,
+    FrostedGlassProps,
+    RenderContainer,
+    VisualElement,
+    TextElement,
+    LabelElement,
+    ButtonElement,
+    TextFieldElement,
+    ToggleElement,
+    SliderElement,
+    ScrollViewElement,
+    ImageElement,
+    FrostedGlassElement,
+} from "onejs-react"
