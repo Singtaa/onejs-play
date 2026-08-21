@@ -12,9 +12,9 @@
  * or it degrades to a documented no-op after eject.
  *
  * WHAT IS DELIBERATELY NOT RE-EXPORTED FROM onejs-react
- * Container games cannot reach CS.*, so anything whose public API requires
- * building or receiving a C# object is left out rather than shipped as a
- * runtime landmine:
+ * A container game is not meant to reach CS.*, so anything whose public API
+ * requires building or receiving a C# object is left out rather than shipped as
+ * a runtime landmine:
  *
  *   Vector2, Color                 type aliases to CS types. oj shadows both
  *                                  with real JS classes (see vec.ts, color.ts).
@@ -34,9 +34,15 @@
  *   toWire, unmountAll,
  *   getDebugInfo                   internal surfaces, not game API.
  *
- * Every exclusion above is a compatibility and ergonomics decision, not a
- * security one. The iframe sandbox and the CSP on the game origin are what keep
- * the platform safe; this list is what keeps it changeable.
+ * Filtering this list is necessary and nowhere near sufficient. The OneJS
+ * bootstrap puts CS, useExtensions and about 35 other names straight onto the
+ * embedding page's globalThis, so a game reaches them without importing
+ * anything at all. sandbox.ts is the half that deals with those, and the
+ * container has to use it; measured numbers are in Tools/container-spike.
+ *
+ * Both halves are compatibility and ergonomics decisions, not security ones.
+ * The iframe sandbox and the CSP on the game origin are what keep the platform
+ * safe. These keep it changeable.
  */
 
 // MARK: stage
@@ -50,6 +56,11 @@ export {
     DEFAULT_STAGE_HEIGHT,
 } from "./stage"
 export type { StageFit, StageInput, StageConfig, StageLayout, StageRect } from "./stage"
+
+// MARK: sandbox (container-side; keeps a game bundle off the runtime's globals)
+
+export { evaluateBundle, snapshotGlobals, removeAddedGlobals, SHADOWED_GLOBALS, INJECTED_GLOBALS } from "./sandbox"
+export type { EvaluateBundleOptions } from "./sandbox"
 
 // MARK: transforms
 

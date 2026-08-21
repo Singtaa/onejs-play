@@ -24,6 +24,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `color.ts` | `Color`, hex parsing shared in behaviour with the particle wire schema |
 | `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
 | `input.ts` | Polled keyboard and pointer state |
+| `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
 | `index.ts` | The filtered public surface |
 
@@ -105,21 +106,43 @@ because a circle under those is an ellipse that Painter2D's `Arc` cannot
 express. `arcTo` is deliberately absent rather than approximated: calling it is
 a compile error, which beats a runtime surprise.
 
-## What is deliberately not re-exported from onejs-react
+## Keeping games off `CS.*`, which takes two mechanisms
 
-Container games cannot reach `CS.*`, so anything whose public API requires
-building or receiving a C# object is left out rather than shipped as a runtime
-landmine. onejs-react's `Transform2D` is the sharp one: its `point()` returns
+**Filtering the export surface.** Anything whose public API requires building or
+receiving a C# object is left out rather than shipped as a runtime landmine.
+onejs-react's `Transform2D` is the sharp one: its `point()` returns
 `new CS.UnityEngine.Vector2` and would throw here, so oj exports its own JS
-version under the same name.
+version under the same name. The full list with reasons is the header comment in
+`src/index.ts`, and `surface.test.ts` enforces it, so a future
+`export * from "onejs-react"` fails the suite instead of silently reintroducing
+the landmines.
 
-The full list, with reasons, is the header comment in `src/index.ts`.
-`surface.test.ts` enforces it, so a future `export * from "onejs-react"` fails
-the suite instead of silently reintroducing the landmines.
+**Shadowing the globals**, which is the half that is easy to forget and was
+missing from an earlier version of this README. Filtering exports does nothing
+about global scope: after the bootstrap runs, `CS`, `useExtensions`,
+`readTextFile`, `writeTextFile`, `deleteFile` and about 30 more are sitting on
+the embedding page's `globalThis`. A game imports nothing, types
+`CS.UnityEngine.Application`, and it works. So the container evaluates a bundle
+through `evaluateBundle` in `sandbox.ts`, which runs it inside a function whose
+parameters shadow all of them. Verified against a real WebGL build: 55 of the 56
+listed names are actually present on the page, and none leak through.
 
-Every exclusion is a compatibility and ergonomics decision, **not a security
-one**. The iframe sandbox and the CSP on the game origin are what keep the
-platform safe. This list is what keeps it changeable.
+That shadowing only works because **`oj` is an esbuild external the container
+preloads**, not a dependency bundled into each game. The reconciler calls `CS`
+at runtime, so if it shared a bundle with game code, any shadow that hid `CS`
+from the game would break the reconciler too. Externals are a prerequisite, not
+a size optimisation, though they also cut a game bundle from a couple of hundred
+kilobytes to a handful and make the runtime version pin mean something.
+
+`compileStyleSheet` is injected rather than shadowed, and that is not optional:
+onejs-unity's uss-modules and tailwind plugins both emit a bare call to it into
+every bundle that uses CSS Modules or Tailwind.
+
+Both mechanisms are compatibility and ergonomics decisions, **not security
+ones**, and the shadowing is a strong default rather than a jail: `globalThis.CS`
+walks straight past it. The iframe sandbox and the CSP on the game origin are
+what keep the platform safe. These keep it changeable, and a game that
+deliberately tunnels to `globalThis.CS` is out of contract and free to break.
 
 ## Testing
 
@@ -165,6 +188,8 @@ cropped, which would make `visible.x > 0` true for every game. See
 
 ## Follow-ups
 
+- Have onejs-react capture `CS` at module scope, so the container can `delete`
+  the globals outright instead of only shadowing them.
 - Export `parseColor` from onejs-react and have `Color.FromHex` use it, so the
   two parsers become one.
 - Gamepad, via a browser Gamepad API adapter pushing into `InputSink`.
