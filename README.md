@@ -20,7 +20,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 |---|---|
 | `stage.ts` | Logical coordinate space and how it maps to the viewport |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
-| `vec.ts` | `Vector2`, `Vector3` |
+| `vec.ts` | `Vector2`. No `Vector3`: the container is 2D only |
 | `color.ts` | `Color`, hex parsing shared in behaviour with the particle wire schema |
 | `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
 | `input.ts` | Polled keyboard and pointer state |
@@ -77,6 +77,12 @@ adapter fills: UI Toolkit key events in the container, browser events on WebGL,
 a recorded script in a headless agent run. Adding a platform means writing an
 adapter, never editing `input.ts`, which is also why the whole thing tests in
 Node.
+
+`createInput` returns one object viewed three ways: `Input` is what a game
+polls, `InputSink` is what an adapter pushes into, `InputSystem` adds the
+per-frame driving. There is no wrapper and no runtime isolation between the read
+and write halves, because a sandboxed single-player game faking its own input
+is not a threat worth an indirection layer.
 
 Edges are frame numbers rather than booleans cleared each frame. That gets the
 awkward cases right: a key pressed and released inside one frame reports both
@@ -161,8 +167,7 @@ cropped, which would make `visible.x > 0` true for every game. See
 
 - Export `parseColor` from onejs-react and have `Color.FromHex` use it, so the
   two parsers become one.
-- Gamepad: the shape is fixed and `gamepad()` returns null. The browser Gamepad
-  API adapter is the WebGL implementation.
+- Gamepad, via a browser Gamepad API adapter pushing into `InputSink`.
 - Axis smoothing, as an option on the axis binding rather than a second method.
 - `oj.audio`, `oj.storage`, `oj.assets`, `useFrame`, and the `oj` namespace
   object: these need the container runtime, which does not exist yet.

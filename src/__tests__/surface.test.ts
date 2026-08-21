@@ -56,8 +56,8 @@ describe("container surface", () => {
         expect(typeof oj.createInput).toBe("function")
         const sys = oj.createInput()
         sys.beginFrame()
-        sys.sink.keyDown("KeyW")
-        expect(sys.input.pressed("KeyW")).toBe(true)
+        sys.keyDown("KeyW")
+        expect(sys.pressed("KeyW")).toBe(true)
     })
 
     it("exposes the batched painter rather than the raw one", () => {

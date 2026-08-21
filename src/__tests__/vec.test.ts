@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { Vector2, Vector3 } from "../vec"
+import { Vector2 } from "../vec"
 
 describe("Vector2", () => {
     describe("statics are fresh instances, not shared mutable singletons", () => {
@@ -224,26 +224,5 @@ describe("Vector2", () => {
         it("honours the length argument", () => {
             expect(Vector2.FromAngle(1.234, 7).magnitude).toBeCloseTo(7, 12)
         })
-    })
-})
-
-describe("Vector3", () => {
-    it("computes magnitude", () => {
-        expect(new Vector3(1, 2, 2).magnitude).toBe(3)
-    })
-    it("returns zero for a normalized zero vector", () => {
-        expect(Vector3.zero.normalized.equals(Vector3.zero)).toBe(true)
-    })
-    it("computes the cross product with the right-hand rule", () => {
-        const c = Vector3.Cross(Vector3.right, Vector3.up)
-        expect(c.equals(Vector3.forward)).toBe(true)
-    })
-    it("computes the dot product", () => {
-        expect(Vector3.Dot(Vector3.right, Vector3.up)).toBe(0)
-    })
-    it("gives fresh statics", () => {
-        const a = Vector3.one
-        a.x = 5
-        expect(Vector3.one.x).toBe(1)
     })
 })

@@ -59,20 +59,12 @@ export type { PathSink } from "./transform"
 // MARK: input
 
 export { createInput } from "./input"
-export type {
-    Input,
-    InputSink,
-    InputSystem,
-    InputOptions,
-    PointerState,
-    GamepadState,
-    AxisBinding,
-} from "./input"
+export type { Input, InputSink, InputSystem, InputOptions, PointerState, AxisBinding } from "./input"
 
 // MARK: math
 
 export { Mathf } from "./mathf"
-export { Vector2, Vector3 } from "./vec"
+export { Vector2 } from "./vec"
 export { Color } from "./color"
 export { random } from "./random"
 export type { Rng } from "./random"

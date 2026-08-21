@@ -1,5 +1,8 @@
 /**
- * Unity-shaped vector types, implemented in JavaScript.
+ * Unity-shaped Vector2, implemented in JavaScript.
+ *
+ * There is no Vector3. The container is 2D only, so shipping one would be 90
+ * lines of code no game can use.
  *
  * These never cross into C#. A container game's math runs entirely in JS, which
  * is both faster than bridging (no reflection crossing, no handle-table entry)
@@ -199,99 +202,5 @@ export class Vector2 {
     /** Builds a unit vector at the given angle in radians, measured from +x. */
     static FromAngle(radians: number, length = 1): Vector2 {
         return new Vector2(Math.cos(radians) * length, Math.sin(radians) * length)
-    }
-}
-
-export class Vector3 {
-    x: number
-    y: number
-    z: number
-
-    constructor(x = 0, y = 0, z = 0) {
-        this.x = x
-        this.y = y
-        this.z = z
-    }
-
-    static get zero(): Vector3 { return new Vector3(0, 0, 0) }
-    static get one(): Vector3 { return new Vector3(1, 1, 1) }
-    static get up(): Vector3 { return new Vector3(0, 1, 0) }
-    static get down(): Vector3 { return new Vector3(0, -1, 0) }
-    static get left(): Vector3 { return new Vector3(-1, 0, 0) }
-    static get right(): Vector3 { return new Vector3(1, 0, 0) }
-    static get forward(): Vector3 { return new Vector3(0, 0, 1) }
-    static get back(): Vector3 { return new Vector3(0, 0, -1) }
-
-    get magnitude(): number {
-        return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z)
-    }
-
-    get sqrMagnitude(): number {
-        return this.x * this.x + this.y * this.y + this.z * this.z
-    }
-
-    /** See Vector2.normalized for why the test is written this way. */
-    get normalized(): Vector3 {
-        const m = this.magnitude
-        if (!(m > K_EPSILON)) return new Vector3(0, 0, 0)
-        return new Vector3(this.x / m, this.y / m, this.z / m)
-    }
-
-    add(v: Vector3): Vector3 { return new Vector3(this.x + v.x, this.y + v.y, this.z + v.z) }
-    sub(v: Vector3): Vector3 { return new Vector3(this.x - v.x, this.y - v.y, this.z - v.z) }
-    mul(s: number): Vector3 { return new Vector3(this.x * s, this.y * s, this.z * s) }
-    div(s: number): Vector3 { return new Vector3(this.x / s, this.y / s, this.z / s) }
-    negate(): Vector3 { return new Vector3(-this.x, -this.y, -this.z) }
-
-    set(x: number, y: number, z: number): this {
-        this.x = x
-        this.y = y
-        this.z = z
-        return this
-    }
-
-    copyFrom(v: Vector3): this {
-        this.x = v.x
-        this.y = v.y
-        this.z = v.z
-        return this
-    }
-
-    clone(): Vector3 { return new Vector3(this.x, this.y, this.z) }
-
-    equals(v: Vector3): boolean { return this.x === v.x && this.y === v.y && this.z === v.z }
-
-    toString(): string { return `(${this.x}, ${this.y}, ${this.z})` }
-
-    static Dot(a: Vector3, b: Vector3): number {
-        return a.x * b.x + a.y * b.y + a.z * b.z
-    }
-
-    static Cross(a: Vector3, b: Vector3): Vector3 {
-        return new Vector3(
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x,
-        )
-    }
-
-    static Distance(a: Vector3, b: Vector3): number {
-        const dx = a.x - b.x
-        const dy = a.y - b.y
-        const dz = a.z - b.z
-        return Math.sqrt(dx * dx + dy * dy + dz * dz)
-    }
-
-    static Lerp(a: Vector3, b: Vector3, t: number): Vector3 {
-        const c = t < 0 ? 0 : t > 1 ? 1 : t
-        return new Vector3(a.x + (b.x - a.x) * c, a.y + (b.y - a.y) * c, a.z + (b.z - a.z) * c)
-    }
-
-    static LerpUnclamped(a: Vector3, b: Vector3, t: number): Vector3 {
-        return new Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
-    }
-
-    static Scale(a: Vector3, b: Vector3): Vector3 {
-        return new Vector3(a.x * b.x, a.y * b.y, a.z * b.z)
     }
 }

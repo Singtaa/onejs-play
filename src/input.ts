@@ -57,14 +57,6 @@ export interface PointerState {
     over: boolean
 }
 
-/** A gamepad snapshot. Always null in 1.0; the shape is fixed so games can code against it. */
-export interface GamepadState {
-    index: number
-    connected: boolean
-    buttons: readonly boolean[]
-    axes: readonly number[]
-}
-
 /** Keys that drive an axis. Codes are DOM KeyboardEvent.code values. */
 export interface AxisBinding {
     negative: readonly string[]
@@ -74,8 +66,6 @@ export interface AxisBinding {
 export interface InputOptions {
     /** Extra or replacement axes. Merged over the defaults. */
     axes?: Record<string, AxisBinding>
-    /** Warn once per unknown axis name. On by default; turn off for a shipped build. */
-    warnOnUnknownAxis?: boolean
 }
 
 /**
@@ -109,8 +99,6 @@ export interface Input {
     readonly pointer: PointerState
     pointerPressed(button?: number): boolean
     pointerReleased(button?: number): boolean
-    /** Always null in 1.0. */
-    gamepad(index: number): GamepadState | null
     /** Frames elapsed since the system was created. */
     readonly frame: number
 }
@@ -136,7 +124,6 @@ export interface InputSink {
 class InputState implements Input, InputSink {
     private _keys = new Map<string, KeyRecord>()
     private _axes: Record<string, AxisBinding>
-    private _warnUnknownAxis: boolean
     private _warnedAxes = new Set<string>()
 
     private _frame = 0
@@ -154,7 +141,6 @@ class InputState implements Input, InputSink {
 
     constructor(options: InputOptions = {}) {
         this._axes = { ...DEFAULT_AXES, ...(options.axes ?? {}) }
-        this._warnUnknownAxis = options.warnOnUnknownAxis ?? true
     }
 
     // MARK: reading
@@ -190,7 +176,7 @@ class InputState implements Input, InputSink {
     axis(name: string): number {
         const binding = this._axes[name]
         if (binding === undefined) {
-            if (this._warnUnknownAxis && !this._warnedAxes.has(name)) {
+            if (!this._warnedAxes.has(name)) {
                 this._warnedAxes.add(name)
                 console.warn(`[oj] unknown input axis "${name}"`)
             }
@@ -214,10 +200,6 @@ class InputState implements Input, InputSink {
     pointerReleased(button = 0): boolean {
         if (button < 0 || button >= MAX_POINTER_BUTTONS) return false
         return this._buttonUpFrame[button] === this._frame
-    }
-
-    gamepad(_index: number): GamepadState | null {
-        return null
     }
 
     // MARK: ingestion
@@ -349,12 +331,17 @@ class InputState implements Input, InputSink {
     }
 }
 
-/** What the container runtime holds. Games only ever see `input`. */
-export interface InputSystem {
-    /** Handed to games as oj.input. */
-    readonly input: Input
-    /** Where an adapter pushes platform events. */
-    readonly sink: InputSink
+/**
+ * The full input object: everything a game polls, everything an adapter pushes,
+ * and the per-frame driving.
+ *
+ * One object, viewed three ways. There is no wrapper and no runtime isolation
+ * between the read and write halves, and pretending otherwise by returning a
+ * delegating facade would only imply a boundary that is not there. The types
+ * are the documentation: the container holds an InputSystem and hands games the
+ * same object narrowed to Input.
+ */
+export interface InputSystem extends Input, InputSink {
     /** Call once per frame, before game logic. */
     beginFrame(): void
     /** Keeps pointer coordinates in logical units as the viewport changes. */
@@ -364,12 +351,5 @@ export interface InputSystem {
 }
 
 export function createInput(options: InputOptions = {}): InputSystem {
-    const state = new InputState(options)
-    return {
-        input: state,
-        sink: state,
-        beginFrame: () => state.beginFrame(),
-        setStageLayout: (layout) => state.setStageLayout(layout),
-        reset: () => state.reset(),
-    }
+    return new InputState(options)
 }
