@@ -21,7 +21,32 @@ const MUST_NOT_EXPORT = [
     "getDebugInfo",
 ]
 
+/**
+ * Container machinery that must live behind onejs-play/container, not on the
+ * surface a game imports. Same split react and react-dom draw.
+ */
+const CONTAINER_ONLY = [
+    "evaluateBundle",
+    "snapshotGlobals",
+    "removeAddedGlobals",
+    "SHADOWED_GLOBALS",
+    "INJECTED_GLOBALS",
+    "createContainerInput",
+]
+
 describe("container surface", () => {
+    it("keeps host-only machinery off the game surface", () => {
+        const leaked = CONTAINER_ONLY.filter((name) => name in oj)
+        expect(leaked).toEqual([])
+    })
+
+    it("exposes that machinery on the container entry point instead", async () => {
+        const container = await import("../container")
+        for (const name of CONTAINER_ONLY) {
+            expect(container).toHaveProperty(name)
+        }
+    })
+
     it("does not re-export anything that requires CS.*", () => {
         const leaked = MUST_NOT_EXPORT.filter((name) => name in oj)
         expect(leaked).toEqual([])
@@ -52,12 +77,13 @@ describe("container surface", () => {
         expect(p.y).toBe(22)
     })
 
-    it("exposes the input factory", () => {
-        expect(typeof oj.createInput).toBe("function")
-        const sys = oj.createInput()
-        sys.beginFrame()
-        sys.keyDown("KeyW")
-        expect(sys.pressed("KeyW")).toBe(true)
+    // Games call onejs-unity's input, not a second API, so the same code reads
+    // identically here and after eject.
+    it("re-exports onejs-unity's input rather than a parallel API", () => {
+        expect(oj.input).toBeDefined()
+        expect(typeof oj.input.keyboard.isKeyDown).toBe("function")
+        expect(typeof oj.input.mouse).toBe("object")
+        expect("createInput" in oj).toBe(false)
     })
 
     it("exposes the batched painter rather than the raw one", () => {

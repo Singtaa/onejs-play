@@ -1,6 +1,12 @@
 import { defineConfig } from "vitest/config"
+import path from "node:path"
 
 export default defineConfig({
+    // onejs-unity's input module pulls in React hooks, and React is an optional
+    // peer dep there, so it has to resolve to this package's copy.
+    resolve: {
+        alias: { react: path.resolve(import.meta.dirname, "node_modules/react") },
+    },
     test: {
         globals: true,
         environment: "node",

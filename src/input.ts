@@ -1,39 +1,58 @@
 /**
- * Polled input.
+ * The container's input backend.
  *
- * UI Toolkit is event-driven; games are not. A game asks "is W held right now"
- * once per frame, so this module turns a stream of key and pointer events into
- * state that can be polled, with correct one-frame edges.
+ * This is NOT a second input API. Games call onejs-unity's `input`, the same
+ * one a normal OneJS project uses, so game code reads identically here and
+ * after eject. That module normally reads UnityEngine's InputBridge through CS,
+ * which the container shadows, so this supplies the same methods from browser
+ * events instead. See onejs-unity/input/backend.ts for the seam.
+ *
+ *     import { input, setInputBackend } from "onejs-unity/input"
+ *     import { createContainerInput } from "onejs-play/container"
+ *
+ *     const container = createContainerInput()
+ *     setInputBackend(container.backend)
+ *     // adapter pushes browser events into container.sink
+ *     // game calls input.keyboard.wasKeyPressed("Space")
  *
  * THREE THINGS WORTH KNOWING
  *
- * 1. The core has no platform in it.
- *    Events arrive through InputSink, which an adapter fills: UI Toolkit key
- *    events in the container, browser events on WebGL, a recorded script in a
- *    headless agent run. Adding a platform means writing an adapter, never
- *    editing this file. That is also why the whole thing is testable in Node.
+ * 1. Edges are frame numbers, not booleans cleared each frame. A key pressed
+ *    and released inside one frame reports both pressed and released, and OS
+ *    auto-repeat does not re-fire pressed.
  *
- * 2. Edges are frame numbers, not booleans.
- *    pressed() asks whether the key went down on the current frame rather than
- *    reading a flag cleared each frame. That gets the awkward cases right: a
- *    key pressed and released inside one frame reports both pressed and
- *    released, and OS auto-repeat does not re-fire pressed every frame.
+ * 2. The sink speaks DOM, the backend speaks Unity. Events arrive as
+ *    KeyboardEvent.code and MouseEvent.button; queries arrive as Unity key
+ *    names and Unity button bits. Translation happens once, on ingestion.
  *
- * 3. Reading never allocates and never grows the key table.
- *    Only ingestion creates key records, so a game polling computed key names
- *    cannot leak. pointer returns one reused object.
- *
- * Games see the read-only Input. The container runtime holds the InputSystem
- * that wraps it and drives beginFrame.
+ * 3. Mouse position is reported in logical stage units, not viewport pixels,
+ *    so a game laid out in its own coordinate space hits its own hitboxes.
  */
 
+import { keyNameFromDomCode, resolveKeyName, type InputBackend } from "onejs-unity/input"
 import { toStage, type StageLayout } from "./stage"
 
-/** Highest pointer button tracked. Covers left, right, middle, and two extras. */
-const MAX_POINTER_BUTTONS = 5
+/** Modifier bits, matching InputBridge.GetModifiers. */
+const MOD_SHIFT = 1
+const MOD_CTRL = 2
+const MOD_ALT = 4
+const MOD_META = 8
 
-/** A key that has never been touched. Never mutated; shared by every miss. */
-const NEVER: Readonly<KeyRecord> = { down: false, downFrame: -1, upFrame: -1 }
+/**
+ * DOM MouseEvent.button to Unity's button bit.
+ *
+ * These disagree in the middle: DOM calls 1 the auxiliary (middle) button and 2
+ * the secondary (right), while Unity's mask is left, right, middle. Mapping
+ * straight through would silently swap middle and right click.
+ */
+const DOM_BUTTON_TO_BIT: readonly number[] = [0, 2, 1, 3, 4]
+
+const MODIFIER_KEYS: Record<string, number> = {
+    LeftShift: MOD_SHIFT, RightShift: MOD_SHIFT,
+    LeftCtrl: MOD_CTRL, RightCtrl: MOD_CTRL,
+    LeftAlt: MOD_ALT, RightAlt: MOD_ALT,
+    LeftMeta: MOD_META, RightMeta: MOD_META,
+}
 
 interface KeyRecord {
     down: boolean
@@ -41,79 +60,18 @@ interface KeyRecord {
     upFrame: number
 }
 
-/** Pointer position and buttons. Reused across frames: read it, do not retain it. */
-export interface PointerState {
-    /** Logical stage units, the same space a game lays itself out in. */
-    x: number
-    y: number
-    /** Raw viewport pixels, before the stage transform. */
-    viewportX: number
-    viewportY: number
-    /** Whether any button is held. */
-    down: boolean
-    /** Bitmask of held buttons, bit 0 being the primary button. */
-    buttons: number
-    /** Whether the pointer is currently over the game surface. */
-    over: boolean
-}
+const NEVER: Readonly<KeyRecord> = { down: false, downFrame: -1, upFrame: -1 }
 
-/** Keys that drive an axis. Codes are DOM KeyboardEvent.code values. */
-export interface AxisBinding {
-    negative: readonly string[]
-    positive: readonly string[]
-}
-
-export interface InputOptions {
-    /** Extra or replacement axes. Merged over the defaults. */
-    axes?: Record<string, AxisBinding>
-}
-
-/**
- * Default axes, in DOM key codes so they stay on the physical keys regardless
- * of layout: WASD is the same three-key row on AZERTY.
- *
- * Positive vertical is DOWN, unlike UnityEngine.Input, because the stage is a
- * y-down screen space. It means `y += axis("vertical") * speed` moves the way
- * the player pressed, which is what a game actually wants.
- */
-const DEFAULT_AXES: Record<string, AxisBinding> = {
-    horizontal: { negative: ["KeyA", "ArrowLeft"], positive: ["KeyD", "ArrowRight"] },
-    vertical: { negative: ["KeyW", "ArrowUp"], positive: ["KeyS", "ArrowDown"] },
-}
-
-/** What a game polls. Read-only: nothing here changes input state. */
-export interface Input {
-    /** Whether the key is held. */
-    down(code: string): boolean
-    /** Whether the key went down on this frame. */
-    pressed(code: string): boolean
-    /** Whether the key came up on this frame. */
-    released(code: string): boolean
-    /** Whether any key is held. */
-    anyDown(): boolean
-    /** Whether any key went down on this frame. */
-    anyPressed(): boolean
-    /** -1, 0 or 1. Unsmoothed; see axisSmoothing in the follow-ups. */
-    axis(name: string): number
-    /** The reused pointer state. */
-    readonly pointer: PointerState
-    pointerPressed(button?: number): boolean
-    pointerReleased(button?: number): boolean
-    /** Frames elapsed since the system was created. */
-    readonly frame: number
-}
-
-/** What an adapter pushes events into. The whole platform contract. */
+/** Browser events go in here. Codes are DOM codes; buttons are DOM button indices. */
 export interface InputSink {
     keyDown(code: string): void
     keyUp(code: string): void
     pointerMove(viewportX: number, viewportY: number): void
     pointerDown(button: number, viewportX?: number, viewportY?: number): void
     pointerUp(button: number, viewportX?: number, viewportY?: number): void
-    pointerEnter(): void
-    pointerLeave(): void
+    wheel(deltaX: number, deltaY: number): void
     /**
-     * Focus was lost. Releases everything held.
+     * Focus was lost, so release everything held.
      *
      * Without this, alt-tabbing while holding a key leaves it held forever,
      * because the matching keyup goes to whatever took focus.
@@ -121,143 +79,107 @@ export interface InputSink {
     blur(): void
 }
 
-class InputState implements Input, InputSink {
-    private _keys = new Map<string, KeyRecord>()
-    private _axes: Record<string, AxisBinding>
-    private _warnedAxes = new Set<string>()
+export interface ContainerInput {
+    /** Where the adapter pushes browser events. */
+    readonly sink: InputSink
+    /** Hand this to onejs-unity's setInputBackend. */
+    readonly backend: InputBackend
+    /** Call once per frame, before game logic. */
+    beginFrame(): void
+    /** Keeps mouse coordinates in logical units as the viewport changes. */
+    setStageLayout(layout: StageLayout | null): void
+    /** Clears everything. For hot reload and game restart. */
+    reset(): void
+}
 
+class ContainerInputImpl implements ContainerInput, InputSink {
+    private _keys = new Map<string, KeyRecord>()
     private _frame = 0
     private _downCount = 0
     private _lastPressFrame = -1
+    private _modifiers = 0
 
-    private _buttonDownFrame = new Int32Array(MAX_POINTER_BUTTONS).fill(-1)
-    private _buttonUpFrame = new Int32Array(MAX_POINTER_BUTTONS).fill(-1)
+    private _buttons = 0
+    private _buttonDownFrame = new Int32Array(5).fill(-1)
+    private _buttonUpFrame = new Int32Array(5).fill(-1)
 
     private _stage: StageLayout | null = null
+    private _viewportX = 0
+    private _viewportY = 0
+    private _stageX = 0
+    private _stageY = 0
 
-    private _pointer: PointerState = {
-        x: 0, y: 0, viewportX: 0, viewportY: 0, down: false, buttons: 0, over: false,
-    }
+    // Movement and scroll accumulate between frames, then read as one delta.
+    private _accumDeltaX = 0
+    private _accumDeltaY = 0
+    private _deltaX = 0
+    private _deltaY = 0
+    private _accumScrollX = 0
+    private _accumScrollY = 0
+    private _scrollX = 0
+    private _scrollY = 0
 
-    constructor(options: InputOptions = {}) {
-        this._axes = { ...DEFAULT_AXES, ...(options.axes ?? {}) }
-    }
-
-    // MARK: reading
-
-    get frame(): number {
-        return this._frame
-    }
-
-    get pointer(): PointerState {
-        return this._pointer
-    }
-
-    down(code: string): boolean {
-        return (this._keys.get(code) ?? NEVER).down
-    }
-
-    pressed(code: string): boolean {
-        return (this._keys.get(code) ?? NEVER).downFrame === this._frame
-    }
-
-    released(code: string): boolean {
-        return (this._keys.get(code) ?? NEVER).upFrame === this._frame
-    }
-
-    anyDown(): boolean {
-        return this._downCount > 0
-    }
-
-    anyPressed(): boolean {
-        return this._lastPressFrame === this._frame
-    }
-
-    axis(name: string): number {
-        const binding = this._axes[name]
-        if (binding === undefined) {
-            if (!this._warnedAxes.has(name)) {
-                this._warnedAxes.add(name)
-                console.warn(`[oj] unknown input axis "${name}"`)
-            }
-            return 0
-        }
-        let value = 0
-        for (const code of binding.negative) {
-            if (this.down(code)) { value -= 1; break }
-        }
-        for (const code of binding.positive) {
-            if (this.down(code)) { value += 1; break }
-        }
-        return value
-    }
-
-    pointerPressed(button = 0): boolean {
-        if (button < 0 || button >= MAX_POINTER_BUTTONS) return false
-        return this._buttonDownFrame[button] === this._frame
-    }
-
-    pointerReleased(button = 0): boolean {
-        if (button < 0 || button >= MAX_POINTER_BUTTONS) return false
-        return this._buttonUpFrame[button] === this._frame
+    get sink(): InputSink {
+        return this
     }
 
     // MARK: ingestion
 
     keyDown(code: string): void {
-        const key = this._record(code)
-        // Ignore OS auto-repeat, which would otherwise make pressed() true on
-        // every frame the key is held rather than only the first.
+        const name = keyNameFromDomCode(code)
+        if (name === null) return
+        const key = this._record(name)
+        // Ignore OS auto-repeat, which would make pressed() true every frame.
         if (key.down) return
         key.down = true
         key.downFrame = this._frame
         this._downCount++
         this._lastPressFrame = this._frame
+        const bit = MODIFIER_KEYS[name]
+        if (bit !== undefined) this._modifiers |= bit
     }
 
     keyUp(code: string): void {
-        const key = this._keys.get(code)
-        // An up with no matching down means the key went down while something
-        // else had focus. Reporting released() for it would fire a game action
-        // the player never started.
+        const name = keyNameFromDomCode(code)
+        if (name === null) return
+        const key = this._keys.get(name)
+        // An up with no down means the key went down while something else had
+        // focus. Reporting a release would fire an action the player never
+        // started.
         if (key === undefined || !key.down) return
         key.down = false
         key.upFrame = this._frame
         this._downCount--
+        this._recomputeModifiers()
     }
 
     pointerMove(viewportX: number, viewportY: number): void {
-        this._pointer.viewportX = viewportX
-        this._pointer.viewportY = viewportY
+        this._accumDeltaX += viewportX - this._viewportX
+        this._accumDeltaY += viewportY - this._viewportY
+        this._viewportX = viewportX
+        this._viewportY = viewportY
         this._syncPointer()
     }
 
     pointerDown(button: number, viewportX?: number, viewportY?: number): void {
-        if (viewportX !== undefined && viewportY !== undefined) {
-            this.pointerMove(viewportX, viewportY)
-        }
-        if (button < 0 || button >= MAX_POINTER_BUTTONS) return
-        this._pointer.buttons |= 1 << button
-        this._pointer.down = true
-        this._buttonDownFrame[button] = this._frame
+        if (viewportX !== undefined && viewportY !== undefined) this.pointerMove(viewportX, viewportY)
+        const bit = DOM_BUTTON_TO_BIT[button]
+        if (bit === undefined) return
+        this._buttons |= 1 << bit
+        this._buttonDownFrame[bit] = this._frame
     }
 
     pointerUp(button: number, viewportX?: number, viewportY?: number): void {
-        if (viewportX !== undefined && viewportY !== undefined) {
-            this.pointerMove(viewportX, viewportY)
-        }
-        if (button < 0 || button >= MAX_POINTER_BUTTONS) return
-        this._pointer.buttons &= ~(1 << button)
-        this._pointer.down = this._pointer.buttons !== 0
-        this._buttonUpFrame[button] = this._frame
+        if (viewportX !== undefined && viewportY !== undefined) this.pointerMove(viewportX, viewportY)
+        const bit = DOM_BUTTON_TO_BIT[button]
+        if (bit === undefined) return
+        this._buttons &= ~(1 << bit)
+        this._buttonUpFrame[bit] = this._frame
     }
 
-    pointerEnter(): void {
-        this._pointer.over = true
-    }
-
-    pointerLeave(): void {
-        this._pointer.over = false
+    wheel(deltaX: number, deltaY: number): void {
+        this._accumScrollX += deltaX
+        this._accumScrollY += deltaY
     }
 
     blur(): void {
@@ -267,20 +189,26 @@ class InputState implements Input, InputSink {
             key.upFrame = this._frame
         }
         this._downCount = 0
-
-        for (let button = 0; button < MAX_POINTER_BUTTONS; button++) {
-            if ((this._pointer.buttons & (1 << button)) === 0) continue
-            this._buttonUpFrame[button] = this._frame
+        this._modifiers = 0
+        for (let bit = 0; bit < 5; bit++) {
+            if ((this._buttons & (1 << bit)) === 0) continue
+            this._buttonUpFrame[bit] = this._frame
         }
-        this._pointer.buttons = 0
-        this._pointer.down = false
-        this._pointer.over = false
+        this._buttons = 0
     }
 
-    // MARK: runtime
+    // MARK: driving
 
     beginFrame(): void {
         this._frame++
+        this._deltaX = this._accumDeltaX
+        this._deltaY = this._accumDeltaY
+        this._accumDeltaX = 0
+        this._accumDeltaY = 0
+        this._scrollX = this._accumScrollX
+        this._scrollY = this._accumScrollY
+        this._accumScrollX = 0
+        this._accumScrollY = 0
     }
 
     setStageLayout(layout: StageLayout | null): void {
@@ -292,64 +220,103 @@ class InputState implements Input, InputSink {
         this._keys.clear()
         this._downCount = 0
         this._lastPressFrame = -1
+        this._modifiers = 0
+        this._buttons = 0
         this._buttonDownFrame.fill(-1)
         this._buttonUpFrame.fill(-1)
-        this._pointer.x = 0
-        this._pointer.y = 0
-        this._pointer.viewportX = 0
-        this._pointer.viewportY = 0
-        this._pointer.down = false
-        this._pointer.buttons = 0
-        this._pointer.over = false
+        this._viewportX = 0
+        this._viewportY = 0
+        this._stageX = 0
+        this._stageY = 0
+        this._accumDeltaX = 0
+        this._accumDeltaY = 0
+        this._deltaX = 0
+        this._deltaY = 0
+        this._accumScrollX = 0
+        this._accumScrollY = 0
+        this._scrollX = 0
+        this._scrollY = 0
     }
 
-    private _record(code: string): KeyRecord {
-        let key = this._keys.get(code)
+    // MARK: the backend onejs-unity reads
+
+    get backend(): InputBackend {
+        return {
+            GetKeyDown: (key: string) => this._peek(key).down,
+            GetKeyPressed: (key: string) => this._peek(key).downFrame === this._frame,
+            GetKeyReleased: (key: string) => this._peek(key).upFrame === this._frame,
+            GetAnyKeyDown: () => this._downCount > 0,
+            GetAnyKeyPressed: () => this._lastPressFrame === this._frame,
+            GetModifiers: () => this._modifiers,
+
+            GetMousePositionX: () => this._stageX,
+            GetMousePositionY: () => this._stageY,
+            GetMouseDeltaX: () => this._deltaX,
+            GetMouseDeltaY: () => this._deltaY,
+            GetScrollX: () => this._scrollX,
+            GetScrollY: () => this._scrollY,
+            GetMouseButtons: () => this._buttons,
+            GetMouseButtonsPressed: () => this._buttonMask(this._buttonDownFrame),
+            GetMouseButtonsReleased: () => this._buttonMask(this._buttonUpFrame),
+
+            // Not "unsupported": a game asking for gamepads or touches should
+            // hear "none connected", which is what makes input.gamepad null.
+            GetGamepadCount: () => 0,
+            IsGamepadConnected: () => false,
+            GetTouchCount: () => 0,
+        }
+    }
+
+    // MARK: internals
+
+    private _record(name: string): KeyRecord {
+        let key = this._keys.get(name)
         if (key === undefined) {
             key = { down: false, downFrame: -1, upFrame: -1 }
-            this._keys.set(code, key)
+            this._keys.set(name, key)
         }
         return key
     }
 
     /**
-     * Recomputes logical coordinates from the raw viewport position.
-     *
-     * Done on ingestion and on layout change rather than on read, so polling
-     * the pointer in a hot loop costs a field access. Uses the shared toStage
-     * so the conversion cannot drift from the stage module's.
+     * Looks a key up without creating a record, so a game polling computed key
+     * names cannot grow the table. Queries arrive in Unity spelling and may use
+     * any accepted alias, so they resolve through the same table InputBridge uses.
      */
+    private _peek(query: string): Readonly<KeyRecord> {
+        const name = resolveKeyName(query)
+        if (name === null) return NEVER
+        return this._keys.get(name) ?? NEVER
+    }
+
+    private _recomputeModifiers(): void {
+        let mods = 0
+        for (const [name, bit] of Object.entries(MODIFIER_KEYS)) {
+            if (this._keys.get(name)?.down) mods |= bit
+        }
+        this._modifiers = mods
+    }
+
+    private _buttonMask(frames: Int32Array): number {
+        let mask = 0
+        for (let bit = 0; bit < 5; bit++) {
+            if (frames[bit] === this._frame) mask |= 1 << bit
+        }
+        return mask
+    }
+
     private _syncPointer(): void {
         if (this._stage === null) {
-            this._pointer.x = this._pointer.viewportX
-            this._pointer.y = this._pointer.viewportY
+            this._stageX = this._viewportX
+            this._stageY = this._viewportY
             return
         }
-        const p = toStage(this._stage, this._pointer.viewportX, this._pointer.viewportY)
-        this._pointer.x = p.x
-        this._pointer.y = p.y
+        const p = toStage(this._stage, this._viewportX, this._viewportY)
+        this._stageX = p.x
+        this._stageY = p.y
     }
 }
 
-/**
- * The full input object: everything a game polls, everything an adapter pushes,
- * and the per-frame driving.
- *
- * One object, viewed three ways. There is no wrapper and no runtime isolation
- * between the read and write halves, and pretending otherwise by returning a
- * delegating facade would only imply a boundary that is not there. The types
- * are the documentation: the container holds an InputSystem and hands games the
- * same object narrowed to Input.
- */
-export interface InputSystem extends Input, InputSink {
-    /** Call once per frame, before game logic. */
-    beginFrame(): void
-    /** Keeps pointer coordinates in logical units as the viewport changes. */
-    setStageLayout(layout: StageLayout | null): void
-    /** Clears everything. For hot reload and game restart. */
-    reset(): void
-}
-
-export function createInput(options: InputOptions = {}): InputSystem {
-    return new InputState(options)
+export function createContainerInput(): ContainerInput {
+    return new ContainerInputImpl()
 }

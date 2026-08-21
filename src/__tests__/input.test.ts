@@ -1,389 +1,327 @@
-import { describe, it, expect, vi, afterEach } from "vitest"
-import { createInput, type InputSystem } from "../input"
+import { describe, it, expect, afterEach } from "vitest"
+import { setInputBackend, input } from "onejs-unity/input"
+import { createContainerInput, type ContainerInput } from "../input"
 import { computeStageLayout, normalizeStage } from "../stage"
 
-const make = (opts = {}) => createInput(opts)
+const make = () => createContainerInput()
+const tick = (c: ContainerInput) => { c.beginFrame(); return c }
+/** The backend is what onejs-unity calls; tests read through it. */
+const b = (c: ContainerInput) => c.backend as Record<string, (...a: any[]) => any>
 
-/** Advances a frame and returns the system, so tests read like a game loop. */
-const tick = (sys: InputSystem) => { sys.beginFrame(); return sys }
-
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => setInputBackend(null))
 
 describe("key edges", () => {
     it("reports pressed only on the frame the key went down", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        expect(sys.pressed("KeyW")).toBe(true)
-        expect(sys.down("KeyW")).toBe(true)
-
-        tick(sys)
-        expect(sys.pressed("KeyW")).toBe(false)
-        expect(sys.down("KeyW")).toBe(true)
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        expect(b(c).GetKeyPressed("W")).toBe(true)
+        expect(b(c).GetKeyDown("W")).toBe(true)
+        tick(c)
+        expect(b(c).GetKeyPressed("W")).toBe(false)
+        expect(b(c).GetKeyDown("W")).toBe(true)
     })
 
     it("reports released only on the frame the key came up", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        tick(sys)
-        sys.keyUp("KeyW")
-        expect(sys.released("KeyW")).toBe(true)
-        expect(sys.down("KeyW")).toBe(false)
-
-        tick(sys)
-        expect(sys.released("KeyW")).toBe(false)
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        tick(c)
+        c.sink.keyUp("KeyW")
+        expect(b(c).GetKeyReleased("W")).toBe(true)
+        expect(b(c).GetKeyDown("W")).toBe(false)
+        tick(c)
+        expect(b(c).GetKeyReleased("W")).toBe(false)
     })
 
-    it("ignores OS auto-repeat, so pressed does not re-fire while held", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        expect(sys.pressed("KeyW")).toBe(true)
-
-        tick(sys)
-        sys.keyDown("KeyW") // auto-repeat
-        sys.keyDown("KeyW")
-        expect(sys.pressed("KeyW")).toBe(false)
-        expect(sys.down("KeyW")).toBe(true)
+    it("ignores OS auto-repeat", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        tick(c)
+        c.sink.keyDown("KeyW")
+        c.sink.keyDown("KeyW")
+        expect(b(c).GetKeyPressed("W")).toBe(false)
+        expect(b(c).GetKeyDown("W")).toBe(true)
     })
 
-    // A boolean-flag implementation loses one of these two. Frame numbers keep both.
+    // A boolean-flag implementation loses one of these two.
     it("reports both pressed and released for a tap inside one frame", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("Space")
-        sys.keyUp("Space")
-        expect(sys.pressed("Space")).toBe(true)
-        expect(sys.released("Space")).toBe(true)
-        expect(sys.down("Space")).toBe(false)
+        const c = tick(make())
+        c.sink.keyDown("Space")
+        c.sink.keyUp("Space")
+        expect(b(c).GetKeyPressed("Space")).toBe(true)
+        expect(b(c).GetKeyReleased("Space")).toBe(true)
+        expect(b(c).GetKeyDown("Space")).toBe(false)
     })
 
-    it("ignores a key up that had no matching key down", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyUp("KeyQ")
-        expect(sys.released("KeyQ")).toBe(false)
-        expect(sys.down("KeyQ")).toBe(false)
+    it("ignores a key up with no matching key down", () => {
+        const c = tick(make())
+        c.sink.keyUp("KeyQ")
+        expect(b(c).GetKeyReleased("Q")).toBe(false)
     })
 
-    it("reports nothing for a key never touched", () => {
-        const sys = make()
-        tick(sys)
-        expect(sys.down("KeyZ")).toBe(false)
-        expect(sys.pressed("KeyZ")).toBe(false)
-        expect(sys.released("KeyZ")).toBe(false)
-    })
-
-    it("tracks keys independently", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyA")
-        sys.keyDown("KeyB")
-        tick(sys)
-        sys.keyUp("KeyA")
-        expect(sys.down("KeyA")).toBe(false)
-        expect(sys.down("KeyB")).toBe(true)
+    it("tracks any-key state", () => {
+        const c = tick(make())
+        expect(b(c).GetAnyKeyDown()).toBe(false)
+        c.sink.keyDown("KeyA")
+        expect(b(c).GetAnyKeyDown()).toBe(true)
+        expect(b(c).GetAnyKeyPressed()).toBe(true)
+        tick(c)
+        expect(b(c).GetAnyKeyPressed()).toBe(false)
+        c.sink.keyUp("KeyA")
+        expect(b(c).GetAnyKeyDown()).toBe(false)
     })
 })
 
-describe("anyDown and anyPressed", () => {
-    it("tracks whether anything is held", () => {
-        const sys = make()
-        tick(sys)
-        expect(sys.anyDown()).toBe(false)
-        sys.keyDown("KeyA")
-        expect(sys.anyDown()).toBe(true)
-        sys.keyUp("KeyA")
-        expect(sys.anyDown()).toBe(false)
+describe("DOM to Unity translation", () => {
+    it("stores DOM codes under their Unity key name", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        c.sink.keyDown("ArrowLeft")
+        c.sink.keyDown("ShiftLeft")
+        expect(b(c).GetKeyDown("W")).toBe(true)
+        expect(b(c).GetKeyDown("LeftArrow")).toBe(true)
+        expect(b(c).GetKeyDown("LeftShift")).toBe(true)
     })
 
-    it("does not double count auto-repeat", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyA")
-        sys.keyDown("KeyA")
-        sys.keyUp("KeyA")
-        expect(sys.anyDown()).toBe(false)
+    it("accepts any alias InputBridge accepts on the query side", () => {
+        const c = tick(make())
+        c.sink.keyDown("ArrowUp")
+        expect(b(c).GetKeyDown("UpArrow")).toBe(true)
+        expect(b(c).GetKeyDown("Up")).toBe(true)
+        expect(b(c).GetKeyDown("up")).toBe(true)
     })
 
-    it("reports anyPressed for one frame only", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyA")
-        expect(sys.anyPressed()).toBe(true)
-        tick(sys)
-        expect(sys.anyPressed()).toBe(false)
+    it("ignores a DOM code with no Unity equivalent instead of storing junk", () => {
+        const c = tick(make())
+        c.sink.keyDown("Sparkle")
+        expect(b(c).GetAnyKeyDown()).toBe(false)
+    })
+
+    it("returns false for an unrecognised query rather than throwing", () => {
+        expect(b(tick(make())).GetKeyDown("Sparkle")).toBe(false)
+    })
+})
+
+describe("modifiers", () => {
+    it("reports the InputBridge bit layout", () => {
+        const c = tick(make())
+        c.sink.keyDown("ShiftLeft")
+        expect(b(c).GetModifiers()).toBe(1)
+        c.sink.keyDown("ControlLeft")
+        expect(b(c).GetModifiers()).toBe(1 | 2)
+        c.sink.keyDown("AltLeft")
+        c.sink.keyDown("MetaLeft")
+        expect(b(c).GetModifiers()).toBe(1 | 2 | 4 | 8)
+    })
+
+    it("clears a modifier only when both sides are up", () => {
+        const c = tick(make())
+        c.sink.keyDown("ShiftLeft")
+        c.sink.keyDown("ShiftRight")
+        c.sink.keyUp("ShiftLeft")
+        expect(b(c).GetModifiers()).toBe(1)
+        c.sink.keyUp("ShiftRight")
+        expect(b(c).GetModifiers()).toBe(0)
+    })
+
+    it("clears on blur", () => {
+        const c = tick(make())
+        c.sink.keyDown("ShiftLeft")
+        c.sink.blur()
+        expect(b(c).GetModifiers()).toBe(0)
     })
 })
 
 describe("blur", () => {
-    // Without this, alt-tabbing while holding a key leaves it held forever,
-    // because the keyup goes to whatever took focus.
-    it("releases every held key", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        sys.keyDown("KeyD")
-        tick(sys)
-        sys.blur()
-        expect(sys.down("KeyW")).toBe(false)
-        expect(sys.down("KeyD")).toBe(false)
-        expect(sys.anyDown()).toBe(false)
+    it("releases every held key and fires released", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        tick(c)
+        c.sink.blur()
+        expect(b(c).GetKeyDown("W")).toBe(false)
+        expect(b(c).GetKeyReleased("W")).toBe(true)
+        expect(b(c).GetAnyKeyDown()).toBe(false)
     })
 
-    it("fires released on the blur frame so cleanup runs", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        tick(sys)
-        sys.blur()
-        expect(sys.released("KeyW")).toBe(true)
+    it("leaves the held count consistent when the real keyup arrives late", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        c.sink.blur()
+        c.sink.keyUp("KeyW")
+        tick(c)
+        c.sink.keyDown("KeyW")
+        expect(b(c).GetAnyKeyDown()).toBe(true)
     })
 
-    it("leaves the held count consistent, so later presses still register", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        sys.blur()
-        sys.keyUp("KeyW") // the real keyup arrives late; must not corrupt the count
-        tick(sys)
-        sys.keyDown("KeyW")
-        expect(sys.anyDown()).toBe(true)
-        expect(sys.pressed("KeyW")).toBe(true)
-    })
-
-    it("clears pointer buttons and hover", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerEnter()
-        sys.pointerDown(0)
-        tick(sys)
-        sys.blur()
-        expect(sys.pointer.down).toBe(false)
-        expect(sys.pointer.buttons).toBe(0)
-        expect(sys.pointer.over).toBe(false)
-        expect(sys.pointerReleased(0)).toBe(true)
+    it("clears pointer buttons", () => {
+        const c = tick(make())
+        c.sink.pointerDown(0)
+        tick(c)
+        c.sink.blur()
+        expect(b(c).GetMouseButtons()).toBe(0)
+        expect(b(c).GetMouseButtonsReleased()).toBe(1)
     })
 })
 
-describe("axes", () => {
-    it("returns -1, 0 or 1 from the default horizontal axis", () => {
-        const sys = make()
-        tick(sys)
-        expect(sys.axis("horizontal")).toBe(0)
-        sys.keyDown("KeyD")
-        expect(sys.axis("horizontal")).toBe(1)
-        sys.keyUp("KeyD")
-        sys.keyDown("KeyA")
-        expect(sys.axis("horizontal")).toBe(-1)
+describe("mouse buttons", () => {
+    // DOM says 1 is middle and 2 is right; Unity's mask is left, right, middle.
+    // Mapping straight through silently swaps them.
+    it("maps DOM button indices onto Unity's bits without swapping middle and right", () => {
+        const c = tick(make())
+        c.sink.pointerDown(2) // DOM right
+        expect(b(c).GetMouseButtons()).toBe(2) // Unity right bit
+        c.sink.pointerDown(1) // DOM middle
+        expect(b(c).GetMouseButtons()).toBe(2 | 4) // Unity middle bit
     })
 
-    it("cancels to zero when both directions are held", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyA")
-        sys.keyDown("KeyD")
-        expect(sys.axis("horizontal")).toBe(0)
-    })
-
-    it("accepts arrow keys as well as WASD", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("ArrowRight")
-        expect(sys.axis("horizontal")).toBe(1)
-    })
-
-    // Differs from UnityEngine.Input on purpose: the stage is y-down, so
-    // positive vertical has to be down or `y += axis * speed` moves backwards.
-    it("makes positive vertical mean down the screen", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyS")
-        expect(sys.axis("vertical")).toBe(1)
-        sys.keyUp("KeyS")
-        sys.keyDown("KeyW")
-        expect(sys.axis("vertical")).toBe(-1)
-    })
-
-    it("merges custom axes over the defaults", () => {
-        const sys = make({ axes: { fire: { negative: [], positive: ["Space"] } } })
-        tick(sys)
-        sys.keyDown("Space")
-        expect(sys.axis("fire")).toBe(1)
-        expect(sys.axis("horizontal")).toBe(0)
-    })
-
-    it("lets a custom axis replace a default", () => {
-        const sys = make({ axes: { horizontal: { negative: ["KeyJ"], positive: ["KeyL"] } } })
-        tick(sys)
-        sys.keyDown("KeyD")
-        expect(sys.axis("horizontal")).toBe(0)
-        sys.keyDown("KeyL")
-        expect(sys.axis("horizontal")).toBe(1)
-    })
-
-    it("returns 0 for an unknown axis and warns exactly once", () => {
-        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-        const sys = make()
-        tick(sys)
-        expect(sys.axis("verticle")).toBe(0)
-        expect(sys.axis("verticle")).toBe(0)
-        expect(sys.axis("verticle")).toBe(0)
-        expect(warn).toHaveBeenCalledTimes(1)
-        expect(warn.mock.calls[0]![0]).toMatch(/unknown input axis "verticle"/)
-    })
-
-})
-
-describe("pointer", () => {
-    const layout = () => computeStageLayout(normalizeStage({ size: [960, 540] }), 1920, 540)
-
-    it("passes viewport coordinates through when there is no stage", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerMove(100, 50)
-        expect(sys.pointer.x).toBe(100)
-        expect(sys.pointer.y).toBe(50)
-    })
-
-    // The whole reason input holds a stage layout: a game lays itself out in
-    // logical units, so a pointer in device pixels would miss every hitbox.
-    it("reports logical stage units once a layout is set", () => {
-        const sys = make()
-        sys.setStageLayout(layout())
-        tick(sys)
-        sys.pointerMove(1920 / 2, 540 / 2)
-        expect(sys.pointer.x).toBeCloseTo(480, 6)
-        expect(sys.pointer.y).toBeCloseTo(270, 6)
-        expect(sys.pointer.viewportX).toBe(960)
-    })
-
-    it("re-converts the last position when the layout changes", () => {
-        const sys = make()
-        sys.setStageLayout(layout())
-        tick(sys)
-        sys.pointerMove(960, 270)
-        expect(sys.pointer.x).toBeCloseTo(480, 6)
-
-        sys.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540] }), 960, 540))
-        expect(sys.pointer.x).toBeCloseTo(960, 6)
-    })
-
-    it("goes back to passthrough when the layout is cleared", () => {
-        const sys = make()
-        sys.setStageLayout(layout())
-        tick(sys)
-        sys.pointerMove(1000, 100)
-        sys.setStageLayout(null)
-        expect(sys.pointer.x).toBe(1000)
-    })
-
-    it("reuses one object rather than allocating per read", () => {
-        const sys = make()
-        tick(sys)
-        expect(sys.pointer).toBe(sys.pointer)
-    })
-
-    it("tracks buttons as a bitmask", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerDown(0)
-        expect(sys.pointer.buttons).toBe(0b1)
-        expect(sys.pointer.down).toBe(true)
-        sys.pointerDown(2)
-        expect(sys.pointer.buttons).toBe(0b101)
-        sys.pointerUp(0)
-        expect(sys.pointer.buttons).toBe(0b100)
-        expect(sys.pointer.down).toBe(true)
-        sys.pointerUp(2)
-        expect(sys.pointer.down).toBe(false)
+    it("tracks the primary button", () => {
+        const c = tick(make())
+        c.sink.pointerDown(0)
+        expect(b(c).GetMouseButtons()).toBe(1)
+        c.sink.pointerUp(0)
+        expect(b(c).GetMouseButtons()).toBe(0)
     })
 
     it("reports button edges for one frame", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerDown(0)
-        expect(sys.pointerPressed(0)).toBe(true)
-        tick(sys)
-        expect(sys.pointerPressed(0)).toBe(false)
-        sys.pointerUp(0)
-        expect(sys.pointerReleased(0)).toBe(true)
+        const c = tick(make())
+        c.sink.pointerDown(0)
+        expect(b(c).GetMouseButtonsPressed()).toBe(1)
+        tick(c)
+        expect(b(c).GetMouseButtonsPressed()).toBe(0)
+        c.sink.pointerUp(0)
+        expect(b(c).GetMouseButtonsReleased()).toBe(1)
     })
 
-    it("defaults the button argument to the primary button", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerDown(0)
-        expect(sys.pointerPressed()).toBe(true)
+    it("ignores an out-of-range button rather than corrupting the mask", () => {
+        const c = tick(make())
+        c.sink.pointerDown(99)
+        expect(b(c).GetMouseButtons()).toBe(0)
+    })
+})
+
+describe("mouse position, delta and scroll", () => {
+    const layout = () => computeStageLayout(normalizeStage({ size: [960, 540] }), 1920, 540)
+
+    it("passes viewport coordinates through with no stage", () => {
+        const c = tick(make())
+        c.sink.pointerMove(100, 50)
+        expect(b(c).GetMousePositionX()).toBe(100)
+        expect(b(c).GetMousePositionY()).toBe(50)
     })
 
-    it("moves the pointer when a press carries a position", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerDown(0, 42, 24)
-        expect(sys.pointer.viewportX).toBe(42)
-        expect(sys.pointer.viewportY).toBe(24)
+    // A game lays itself out in logical units, so a pointer in device pixels
+    // would miss every hitbox.
+    it("reports logical stage units once a layout is set", () => {
+        const c = make()
+        c.setStageLayout(layout())
+        tick(c)
+        c.sink.pointerMove(960, 270)
+        expect(b(c).GetMousePositionX()).toBeCloseTo(480, 6)
+        expect(b(c).GetMousePositionY()).toBeCloseTo(270, 6)
     })
 
-    it("ignores out-of-range buttons rather than corrupting the mask", () => {
-        const sys = make()
-        tick(sys)
-        sys.pointerDown(99)
-        sys.pointerDown(-1)
-        expect(sys.pointer.buttons).toBe(0)
-        expect(sys.pointerPressed(99)).toBe(false)
+    it("re-converts the last position when the layout changes", () => {
+        const c = make()
+        c.setStageLayout(layout())
+        tick(c)
+        c.sink.pointerMove(960, 270)
+        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540] }), 960, 540))
+        expect(b(c).GetMousePositionX()).toBeCloseTo(960, 6)
     })
 
-    it("tracks hover", () => {
-        const sys = make()
-        tick(sys)
-        expect(sys.pointer.over).toBe(false)
-        sys.pointerEnter()
-        expect(sys.pointer.over).toBe(true)
-        sys.pointerLeave()
-        expect(sys.pointer.over).toBe(false)
+    it("accumulates delta between frames and clears it at the boundary", () => {
+        const c = tick(make())
+        c.sink.pointerMove(10, 10)
+        c.sink.pointerMove(30, 25)
+        tick(c)
+        expect(b(c).GetMouseDeltaX()).toBe(30)
+        expect(b(c).GetMouseDeltaY()).toBe(25)
+        tick(c)
+        expect(b(c).GetMouseDeltaX()).toBe(0)
+    })
+
+    it("accumulates scroll between frames and clears it at the boundary", () => {
+        const c = tick(make())
+        c.sink.wheel(1, -3)
+        c.sink.wheel(0, -2)
+        tick(c)
+        expect(b(c).GetScrollX()).toBe(1)
+        expect(b(c).GetScrollY()).toBe(-5)
+        tick(c)
+        expect(b(c).GetScrollY()).toBe(0)
+    })
+})
+
+describe("devices the container has none of", () => {
+    // Not "unsupported": a game should hear "none connected", which is what
+    // makes input.gamepad read as null.
+    it("reports zero gamepads rather than throwing", () => {
+        const c = tick(make())
+        expect(b(c).GetGamepadCount()).toBe(0)
+        expect(b(c).IsGamepadConnected(0)).toBe(false)
+    })
+
+    it("reports zero touches", () => {
+        expect(b(tick(make())).GetTouchCount()).toBe(0)
     })
 })
 
 describe("bookkeeping", () => {
-    it("advances the frame counter", () => {
-        const sys = make()
-        expect(sys.frame).toBe(0)
-        tick(sys)
-        expect(sys.frame).toBe(1)
-        tick(sys)
-        expect(sys.frame).toBe(2)
-    })
-
     it("clears everything on reset", () => {
-        const sys = make()
-        tick(sys)
-        sys.keyDown("KeyW")
-        sys.pointerDown(0, 10, 10)
-        sys.pointerEnter()
-        sys.reset()
-        expect(sys.down("KeyW")).toBe(false)
-        expect(sys.anyDown()).toBe(false)
-        expect(sys.pointer.buttons).toBe(0)
-        expect(sys.pointer.over).toBe(false)
-        expect(sys.pointer.x).toBe(0)
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        c.sink.pointerDown(0, 10, 10)
+        c.reset()
+        expect(b(c).GetKeyDown("W")).toBe(false)
+        expect(b(c).GetAnyKeyDown()).toBe(false)
+        expect(b(c).GetMouseButtons()).toBe(0)
+        expect(b(c).GetMousePositionX()).toBe(0)
     })
 
-    // White-box on purpose: "reading never grows the table" is the invariant
-    // that stops a game polling computed key names from leaking, and there is
-    // no black-box way to observe it.
+    // Stops a game polling computed key names from growing the table.
     it("does not create key records when polling", () => {
-        const sys = make()
-        tick(sys)
-        for (let i = 0; i < 500; i++) {
-            sys.down(`Key${i}`)
-            sys.pressed(`Key${i}`)
-            sys.released(`Key${i}`)
-        }
-        expect((sys as unknown as { _keys: Map<string, unknown> })._keys.size).toBe(0)
+        const c = tick(make())
+        for (let i = 0; i < 200; i++) b(c).GetKeyDown(`F${(i % 12) + 1}`)
+        expect((c as unknown as { _keys: Map<string, unknown> })._keys.size).toBe(0)
+        c.sink.keyDown("KeyW")
+        expect((c as unknown as { _keys: Map<string, unknown> })._keys.size).toBe(1)
+    })
+})
 
-        sys.keyDown("KeyW")
-        expect((sys as unknown as { _keys: Map<string, unknown> })._keys.size).toBe(1)
+// The whole point of the seam: game code is identical here and after eject.
+describe("through onejs-unity's public input API", () => {
+    it("answers keyboard queries from browser events", () => {
+        const c = make()
+        setInputBackend(c.backend)
+        tick(c)
+        c.sink.keyDown("Space")
+        expect(input.keyboard.isKeyDown("Space")).toBe(true)
+        expect(input.keyboard.wasKeyPressed("Space")).toBe(true)
+        tick(c)
+        expect(input.keyboard.wasKeyPressed("Space")).toBe(false)
+    })
+
+    it("exposes modifiers", () => {
+        const c = make()
+        setInputBackend(c.backend)
+        tick(c)
+        c.sink.keyDown("ShiftLeft")
+        expect(input.keyboard.shift).toBe(true)
+        expect(input.keyboard.ctrl).toBe(false)
+    })
+
+    it("answers mouse queries in stage units", () => {
+        const c = make()
+        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540] }), 1920, 540))
+        setInputBackend(c.backend)
+        tick(c)
+        c.sink.pointerMove(960, 270)
+        expect(input.mouse.position.x).toBeCloseTo(480, 6)
+    })
+
+    it("reads no gamepad as absent rather than as an error", () => {
+        const c = make()
+        setInputBackend(c.backend)
+        tick(c)
+        expect(input.gamepad).toBeNull()
     })
 })

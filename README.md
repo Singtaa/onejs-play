@@ -23,10 +23,11 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `vec.ts` | `Vector2`. No `Vector3`: the container is 2D only |
 | `color.ts` | `Color`, hex parsing shared in behaviour with the particle wire schema |
 | `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
-| `input.ts` | Polled keyboard and pointer state |
+| `input.ts` | Container-side: the input backend onejs-unity reads through |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
-| `index.ts` | The filtered public surface |
+| `index.ts` | The game-facing surface, aliased to `oj` |
+| `container.ts` | The host-facing surface, `onejs-play/container` |
 
 Value types are pure JavaScript, never bridged. That is faster than the real
 thing (no reflection crossing, no handle-table entry) and it keeps the container
@@ -73,24 +74,34 @@ conversion, and `input` applies it.
 
 ## Input
 
-The core has no platform in it. Events arrive through `InputSink`, which an
-adapter fills: UI Toolkit key events in the container, browser events on WebGL,
-a recorded script in a headless agent run. Adding a platform means writing an
-adapter, never editing `input.ts`, which is also why the whole thing tests in
-Node.
+There is no `oj.input`. Games call **onejs-unity's `input`**, the same API a
+normal OneJS project uses, so game code reads identically here and after eject.
 
-`createInput` returns one object viewed three ways: `Input` is what a game
-polls, `InputSink` is what an adapter pushes into, `InputSystem` adds the
-per-frame driving. There is no wrapper and no runtime isolation between the read
-and write halves, because a sandboxed single-player game faking its own input
-is not a threat worth an indirection layer.
+```tsx
+import { input } from "oj"
+
+if (input.keyboard.wasKeyPressed("Space")) jump()
+const p = input.mouse.position     // logical stage units
+```
+
+That module normally reads UnityEngine's InputBridge through `CS`, which the
+container shadows. So `createContainerInput()` in `onejs-play/container`
+supplies the same methods from browser events, and the host installs it with
+onejs-unity's `setInputBackend`. One API, one implementation, a swappable
+source. Writing a second input API here would have been the maintenance
+nightmare in miniature.
 
 Edges are frame numbers rather than booleans cleared each frame. That gets the
 awkward cases right: a key pressed and released inside one frame reports both
-`pressed` and `released`, and OS auto-repeat does not re-fire `pressed`.
+`wasKeyPressed` and `wasKeyReleased`, and OS auto-repeat does not re-fire
+pressed. `blur()` releases everything held, without which alt-tabbing while
+holding a key leaves it held forever.
 
-`blur()` releases everything held. Without it, alt-tabbing while holding a key
-leaves it held forever, because the matching keyup goes to whatever took focus.
+The sink speaks DOM and the backend speaks Unity, translating once on
+ingestion. Two places that bite: DOM `KeyboardEvent.code` maps onto Unity key
+names (`ArrowLeft` to `LeftArrow`), and DOM `MouseEvent.button` disagrees with
+Unity's mask about middle and right, so passing the index straight through would
+silently swap them.
 
 ## Transforms
 

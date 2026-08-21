@@ -34,6 +34,9 @@
  *   toWire, unmountAll,
  *   getDebugInfo                   internal surfaces, not game API.
  *
+ * Container-side machinery (the global shadowing, the input backend) lives in
+ * onejs-play/container, not here. A game never imports it.
+ *
  * Filtering this list is necessary and nowhere near sufficient. The OneJS
  * bootstrap puts CS, useExtensions and about 35 other names straight onto the
  * embedding page's globalThis, so a game reaches them without importing
@@ -57,20 +60,19 @@ export {
 } from "./stage"
 export type { StageFit, StageInput, StageConfig, StageLayout, StageRect } from "./stage"
 
-// MARK: sandbox (container-side; keeps a game bundle off the runtime's globals)
-
-export { evaluateBundle, snapshotGlobals, removeAddedGlobals, SHADOWED_GLOBALS, INJECTED_GLOBALS } from "./sandbox"
-export type { EvaluateBundleOptions } from "./sandbox"
-
 // MARK: transforms
 
 export { Transform2D, TransformedPath } from "./transform"
 export type { PathSink } from "./transform"
 
 // MARK: input
+//
+// onejs-unity's input module, unchanged. A container game and a normal OneJS
+// project call the same API; only the backend behind it differs. See
+// onejs-unity/input/backend.ts and ./input.ts.
 
-export { createInput } from "./input"
-export type { Input, InputSink, InputSystem, InputOptions, PointerState, AxisBinding } from "./input"
+export { input, resolveKeyName, keyNameFromDomCode } from "onejs-unity/input"
+export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // MARK: math
 
