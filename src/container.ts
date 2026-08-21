@@ -13,5 +13,8 @@
 export { evaluateBundle, snapshotGlobals, removeAddedGlobals, SHADOWED_GLOBALS, INJECTED_GLOBALS } from "./sandbox"
 export type { EvaluateBundleOptions } from "./sandbox"
 
+export { createRuntime, getCurrentRuntime } from "./runtime"
+export type { OjRuntime, ContainerRuntime, RuntimeOptions, TimeState } from "./runtime"
+
 export { createContainerInput } from "./input"
 export type { ContainerInput, InputSink } from "./input"

@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Wordle",
+    "author": "singtaa",
+    "entry": "index.tsx",
+    "stage": { "size": [600, 760], "fit": "letterbox" },
+    "controls": ["keyboard", "pointer"]
+}

@@ -158,3 +158,28 @@ describe("global residue", () => {
         expect(scope.stuck).toBe(1)
     })
 })
+
+describe("externals", () => {
+    const ext = (body: string) => `var __exports = (() => { ${body} })()`
+
+    it("hands the bundle the modules the container provides", () => {
+        const react = { useState: () => {} }
+        const out = evaluateBundle(
+            ext('return { r: typeof __ojExternals["react"].useState, o: __ojExternals["oj"].tag }'),
+            { oj: { tag: "the-runtime" }, externals: { react } },
+        ) as { r: string; o: string }
+        expect(out.r).toBe("function")
+        expect(out.o).toBe("the-runtime")
+    })
+
+    it("always provides oj without being asked", () => {
+        const out = evaluateBundle(ext('return { has: "oj" in __ojExternals }'), { oj: {} }) as { has: boolean }
+        expect(out.has).toBe(true)
+    })
+
+    // Injected rather than global, so a game cannot reach past the map.
+    it("does not leak the map onto globalThis", () => {
+        evaluateBundle(ext("return {}"), { oj: {} })
+        expect("__ojExternals" in globalThis).toBe(false)
+    })
+})

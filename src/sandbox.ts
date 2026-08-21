@@ -90,6 +90,19 @@ const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 export interface EvaluateBundleOptions {
     /** The preloaded runtime, bound to the bundle's `oj` external. */
     oj: unknown
+    /**
+     * Modules the container provides, keyed by import specifier.
+     *
+     * A bundle cannot reach these through `require`: esbuild's IIFE output
+     * defines its own `__require` that throws, and it cannot be replaced from
+     * outside. So the build rewrites each external into a tiny module reading
+     * `__ojExternals`, which is injected here rather than left on globalThis
+     * where game code could reach past it.
+     *
+     * `oj` is added automatically. React belongs here too, because it lives in
+     * the runtime rather than in any game bundle.
+     */
+    externals?: Record<string, unknown>
     /** Real values for INJECTED_GLOBALS, looked up on the host scope if omitted. */
     injected?: Record<string, unknown>
     /** Extra names to shadow, for anything a newer bootstrap adds. */
@@ -115,7 +128,7 @@ export function evaluateBundle(code: string, options: EvaluateBundleOptions): un
         options.injected && name in options.injected ? options.injected[name] : scope[name],
     )
 
-    const seen = new Set<string>(["oj", ...injectedNames])
+    const seen = new Set<string>(["oj", "__ojExternals", ...injectedNames])
     const shadowNames: string[] = []
     for (const name of [...SHADOWED_GLOBALS, ...(options.shadow ?? [])]) {
         // A non-identifier cannot be a parameter, and a duplicate parameter is a
@@ -125,11 +138,12 @@ export function evaluateBundle(code: string, options: EvaluateBundleOptions): un
         shadowNames.push(name)
     }
 
-    const params = [...shadowNames, ...injectedNames, "oj"]
+    const externals = { oj: options.oj, ...(options.externals ?? {}) }
+    const params = [...shadowNames, ...injectedNames, "oj", "__ojExternals"]
     const body = `"use strict";\n${code}\n;return typeof __exports !== "undefined" ? __exports : undefined;`
 
     const factory = new Function(...params, body)
-    return factory(...shadowNames.map(() => undefined), ...injectedValues, options.oj)
+    return factory(...shadowNames.map(() => undefined), ...injectedValues, options.oj, externals)
 }
 
 /** The set of global names present right now. */

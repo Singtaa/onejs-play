@@ -5,6 +5,13 @@ import { computeStageLayout, normalizeStage } from "../stage"
 
 const make = () => createContainerInput()
 const tick = (c: ContainerInput) => { c.beginFrame(); return c }
+/**
+ * Crosses the frame boundary, which is when queued events become visible.
+ * Mirrors a real loop: the browser delivers whenever it likes, beginFrame
+ * decides which frame sees it.
+ */
+const deliver = (c: ContainerInput) => { c.beginFrame(); return c }
+
 /** The backend is what onejs-unity calls; tests read through it. */
 const b = (c: ContainerInput) => c.backend as Record<string, (...a: any[]) => any>
 
@@ -14,6 +21,7 @@ describe("key edges", () => {
     it("reports pressed only on the frame the key went down", () => {
         const c = tick(make())
         c.sink.keyDown("KeyW")
+        deliver(c)
         expect(b(c).GetKeyPressed("W")).toBe(true)
         expect(b(c).GetKeyDown("W")).toBe(true)
         tick(c)
@@ -26,6 +34,7 @@ describe("key edges", () => {
         c.sink.keyDown("KeyW")
         tick(c)
         c.sink.keyUp("KeyW")
+        deliver(c)
         expect(b(c).GetKeyReleased("W")).toBe(true)
         expect(b(c).GetKeyDown("W")).toBe(false)
         tick(c)
@@ -38,6 +47,7 @@ describe("key edges", () => {
         tick(c)
         c.sink.keyDown("KeyW")
         c.sink.keyDown("KeyW")
+        deliver(c)
         expect(b(c).GetKeyPressed("W")).toBe(false)
         expect(b(c).GetKeyDown("W")).toBe(true)
     })
@@ -47,6 +57,7 @@ describe("key edges", () => {
         const c = tick(make())
         c.sink.keyDown("Space")
         c.sink.keyUp("Space")
+        deliver(c)
         expect(b(c).GetKeyPressed("Space")).toBe(true)
         expect(b(c).GetKeyReleased("Space")).toBe(true)
         expect(b(c).GetKeyDown("Space")).toBe(false)
@@ -55,6 +66,7 @@ describe("key edges", () => {
     it("ignores a key up with no matching key down", () => {
         const c = tick(make())
         c.sink.keyUp("KeyQ")
+        deliver(c)
         expect(b(c).GetKeyReleased("Q")).toBe(false)
     })
 
@@ -62,11 +74,13 @@ describe("key edges", () => {
         const c = tick(make())
         expect(b(c).GetAnyKeyDown()).toBe(false)
         c.sink.keyDown("KeyA")
+        deliver(c)
         expect(b(c).GetAnyKeyDown()).toBe(true)
         expect(b(c).GetAnyKeyPressed()).toBe(true)
         tick(c)
         expect(b(c).GetAnyKeyPressed()).toBe(false)
         c.sink.keyUp("KeyA")
+        deliver(c)
         expect(b(c).GetAnyKeyDown()).toBe(false)
     })
 })
@@ -77,6 +91,7 @@ describe("DOM to Unity translation", () => {
         c.sink.keyDown("KeyW")
         c.sink.keyDown("ArrowLeft")
         c.sink.keyDown("ShiftLeft")
+        deliver(c)
         expect(b(c).GetKeyDown("W")).toBe(true)
         expect(b(c).GetKeyDown("LeftArrow")).toBe(true)
         expect(b(c).GetKeyDown("LeftShift")).toBe(true)
@@ -85,6 +100,7 @@ describe("DOM to Unity translation", () => {
     it("accepts any alias InputBridge accepts on the query side", () => {
         const c = tick(make())
         c.sink.keyDown("ArrowUp")
+        deliver(c)
         expect(b(c).GetKeyDown("UpArrow")).toBe(true)
         expect(b(c).GetKeyDown("Up")).toBe(true)
         expect(b(c).GetKeyDown("up")).toBe(true)
@@ -93,6 +109,7 @@ describe("DOM to Unity translation", () => {
     it("ignores a DOM code with no Unity equivalent instead of storing junk", () => {
         const c = tick(make())
         c.sink.keyDown("Sparkle")
+        deliver(c)
         expect(b(c).GetAnyKeyDown()).toBe(false)
     })
 
@@ -105,11 +122,14 @@ describe("modifiers", () => {
     it("reports the InputBridge bit layout", () => {
         const c = tick(make())
         c.sink.keyDown("ShiftLeft")
+        deliver(c)
         expect(b(c).GetModifiers()).toBe(1)
         c.sink.keyDown("ControlLeft")
+        deliver(c)
         expect(b(c).GetModifiers()).toBe(1 | 2)
         c.sink.keyDown("AltLeft")
         c.sink.keyDown("MetaLeft")
+        deliver(c)
         expect(b(c).GetModifiers()).toBe(1 | 2 | 4 | 8)
     })
 
@@ -118,8 +138,10 @@ describe("modifiers", () => {
         c.sink.keyDown("ShiftLeft")
         c.sink.keyDown("ShiftRight")
         c.sink.keyUp("ShiftLeft")
+        deliver(c)
         expect(b(c).GetModifiers()).toBe(1)
         c.sink.keyUp("ShiftRight")
+        deliver(c)
         expect(b(c).GetModifiers()).toBe(0)
     })
 
@@ -127,6 +149,7 @@ describe("modifiers", () => {
         const c = tick(make())
         c.sink.keyDown("ShiftLeft")
         c.sink.blur()
+        deliver(c)
         expect(b(c).GetModifiers()).toBe(0)
     })
 })
@@ -137,6 +160,7 @@ describe("blur", () => {
         c.sink.keyDown("KeyW")
         tick(c)
         c.sink.blur()
+        deliver(c)
         expect(b(c).GetKeyDown("W")).toBe(false)
         expect(b(c).GetKeyReleased("W")).toBe(true)
         expect(b(c).GetAnyKeyDown()).toBe(false)
@@ -149,6 +173,7 @@ describe("blur", () => {
         c.sink.keyUp("KeyW")
         tick(c)
         c.sink.keyDown("KeyW")
+        deliver(c)
         expect(b(c).GetAnyKeyDown()).toBe(true)
     })
 
@@ -157,6 +182,7 @@ describe("blur", () => {
         c.sink.pointerDown(0)
         tick(c)
         c.sink.blur()
+        deliver(c)
         expect(b(c).GetMouseButtons()).toBe(0)
         expect(b(c).GetMouseButtonsReleased()).toBe(1)
     })
@@ -168,32 +194,39 @@ describe("mouse buttons", () => {
     it("maps DOM button indices onto Unity's bits without swapping middle and right", () => {
         const c = tick(make())
         c.sink.pointerDown(2) // DOM right
+        deliver(c)
         expect(b(c).GetMouseButtons()).toBe(2) // Unity right bit
         c.sink.pointerDown(1) // DOM middle
+        deliver(c)
         expect(b(c).GetMouseButtons()).toBe(2 | 4) // Unity middle bit
     })
 
     it("tracks the primary button", () => {
         const c = tick(make())
         c.sink.pointerDown(0)
+        deliver(c)
         expect(b(c).GetMouseButtons()).toBe(1)
         c.sink.pointerUp(0)
+        deliver(c)
         expect(b(c).GetMouseButtons()).toBe(0)
     })
 
     it("reports button edges for one frame", () => {
         const c = tick(make())
         c.sink.pointerDown(0)
+        deliver(c)
         expect(b(c).GetMouseButtonsPressed()).toBe(1)
         tick(c)
         expect(b(c).GetMouseButtonsPressed()).toBe(0)
         c.sink.pointerUp(0)
+        deliver(c)
         expect(b(c).GetMouseButtonsReleased()).toBe(1)
     })
 
     it("ignores an out-of-range button rather than corrupting the mask", () => {
         const c = tick(make())
         c.sink.pointerDown(99)
+        deliver(c)
         expect(b(c).GetMouseButtons()).toBe(0)
     })
 })
@@ -204,6 +237,7 @@ describe("mouse position, delta and scroll", () => {
     it("passes viewport coordinates through with no stage", () => {
         const c = tick(make())
         c.sink.pointerMove(100, 50)
+        deliver(c)
         expect(b(c).GetMousePositionX()).toBe(100)
         expect(b(c).GetMousePositionY()).toBe(50)
     })
@@ -215,6 +249,7 @@ describe("mouse position, delta and scroll", () => {
         c.setStageLayout(layout())
         tick(c)
         c.sink.pointerMove(960, 270)
+        deliver(c)
         expect(b(c).GetMousePositionX()).toBeCloseTo(480, 6)
         expect(b(c).GetMousePositionY()).toBeCloseTo(270, 6)
     })
@@ -225,6 +260,7 @@ describe("mouse position, delta and scroll", () => {
         tick(c)
         c.sink.pointerMove(960, 270)
         c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540] }), 960, 540))
+        deliver(c)
         expect(b(c).GetMousePositionX()).toBeCloseTo(960, 6)
     })
 
@@ -232,7 +268,7 @@ describe("mouse position, delta and scroll", () => {
         const c = tick(make())
         c.sink.pointerMove(10, 10)
         c.sink.pointerMove(30, 25)
-        tick(c)
+        deliver(c)
         expect(b(c).GetMouseDeltaX()).toBe(30)
         expect(b(c).GetMouseDeltaY()).toBe(25)
         tick(c)
@@ -243,7 +279,7 @@ describe("mouse position, delta and scroll", () => {
         const c = tick(make())
         c.sink.wheel(1, -3)
         c.sink.wheel(0, -2)
-        tick(c)
+        deliver(c)
         expect(b(c).GetScrollX()).toBe(1)
         expect(b(c).GetScrollY()).toBe(-5)
         tick(c)
@@ -271,6 +307,7 @@ describe("bookkeeping", () => {
         c.sink.keyDown("KeyW")
         c.sink.pointerDown(0, 10, 10)
         c.reset()
+        deliver(c)
         expect(b(c).GetKeyDown("W")).toBe(false)
         expect(b(c).GetAnyKeyDown()).toBe(false)
         expect(b(c).GetMouseButtons()).toBe(0)
@@ -283,6 +320,7 @@ describe("bookkeeping", () => {
         for (let i = 0; i < 200; i++) b(c).GetKeyDown(`F${(i % 12) + 1}`)
         expect((c as unknown as { _keys: Map<string, unknown> })._keys.size).toBe(0)
         c.sink.keyDown("KeyW")
+        deliver(c)
         expect((c as unknown as { _keys: Map<string, unknown> })._keys.size).toBe(1)
     })
 })
@@ -294,6 +332,7 @@ describe("through onejs-unity's public input API", () => {
         setInputBackend(c.backend)
         tick(c)
         c.sink.keyDown("Space")
+        deliver(c)
         expect(input.keyboard.isKeyDown("Space")).toBe(true)
         expect(input.keyboard.wasKeyPressed("Space")).toBe(true)
         tick(c)
@@ -305,6 +344,7 @@ describe("through onejs-unity's public input API", () => {
         setInputBackend(c.backend)
         tick(c)
         c.sink.keyDown("ShiftLeft")
+        deliver(c)
         expect(input.keyboard.shift).toBe(true)
         expect(input.keyboard.ctrl).toBe(false)
     })
@@ -315,6 +355,7 @@ describe("through onejs-unity's public input API", () => {
         setInputBackend(c.backend)
         tick(c)
         c.sink.pointerMove(960, 270)
+        deliver(c)
         expect(input.mouse.position.x).toBeCloseTo(480, 6)
     })
 

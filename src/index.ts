@@ -60,6 +60,11 @@ export {
 } from "./stage"
 export type { StageFit, StageInput, StageConfig, StageLayout, StageRect } from "./stage"
 
+// MARK: entry point and frame clock
+
+export { mount, useStage } from "./mount"
+export { useFrame } from "./frame"
+
 // MARK: transforms
 
 export { Transform2D, TransformedPath } from "./transform"

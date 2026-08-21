@@ -26,6 +26,8 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `input.ts` | Container-side: the input backend onejs-unity reads through |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
+| `runtime.ts` | Container-side: builds the `oj` object a game receives |
+| `mount.ts` | `mount()` and `useStage()` |
 | `index.ts` | The game-facing surface, aliased to `oj` |
 | `container.ts` | The host-facing surface, `onejs-play/container` |
 
@@ -154,6 +156,30 @@ ones**, and the shadowing is a strong default rather than a jail: `globalThis.CS
 walks straight past it. The iframe sandbox and the CSP on the game origin are
 what keep the platform safe. These keep it changeable, and a game that
 deliberately tunnels to `globalThis.CS` is out of contract and free to break.
+
+## Writing a game
+
+```tsx
+import { View, Text, mount, useFrame, input } from "oj"
+
+function Game() {
+    useFrame(() => { if (input.keyboard.wasKeyPressed("Space")) jump() }, [])
+    return <View><Text>hello</Text></View>
+}
+
+mount(<Game />)
+```
+
+No `CS.*`, no build config, and no root plumbing: `mount()` knows where to
+render because the container told the runtime. `examples/wordle` is a complete
+game written this way, and it typechecks against `oj` exactly as a published
+game does.
+
+**Input events queue to the frame boundary.** A browser delivers a keydown
+whenever it likes, including between frames. Applying it on arrival stamps it
+with the frame that is already ending, so game logic reads it as last frame's
+press and `wasKeyPressed` is false. `beginFrame` drains the queue first, so a
+frame sees exactly the events that arrived since the previous one.
 
 ## Testing
 

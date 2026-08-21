@@ -27,6 +27,13 @@
  *
  * 3. Mouse position is reported in logical stage units, not viewport pixels,
  *    so a game laid out in its own coordinate space hits its own hitboxes.
+ *
+ * 4. Events are queued and applied at the frame boundary, not when they arrive.
+ *    A browser delivers a keydown whenever it likes, including between frames.
+ *    Applying it immediately stamps it with the frame that is already ending,
+ *    so by the time game logic runs it reads as last frame's press and
+ *    wasKeyPressed is false. Queuing makes a frame see exactly the events that
+ *    arrived since the previous one, whenever they happened to land.
  */
 
 import { keyNameFromDomCode, resolveKeyName, type InputBackend } from "onejs-unity/input"
@@ -103,6 +110,9 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _buttonDownFrame = new Int32Array(5).fill(-1)
     private _buttonUpFrame = new Int32Array(5).fill(-1)
 
+    /** Events waiting for the next frame boundary. See note 4 above. */
+    private _queue: Array<() => void> = []
+
     private _stage: StageLayout | null = null
     private _viewportX = 0
     private _viewportY = 0
@@ -126,6 +136,36 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     // MARK: ingestion
 
     keyDown(code: string): void {
+        this._queue.push(() => this._applyKeyDown(code))
+    }
+
+    keyUp(code: string): void {
+        this._queue.push(() => this._applyKeyUp(code))
+    }
+
+    pointerMove(viewportX: number, viewportY: number): void {
+        this._queue.push(() => this._applyPointerMove(viewportX, viewportY))
+    }
+
+    pointerDown(button: number, viewportX?: number, viewportY?: number): void {
+        this._queue.push(() => this._applyPointerButton(button, true, viewportX, viewportY))
+    }
+
+    pointerUp(button: number, viewportX?: number, viewportY?: number): void {
+        this._queue.push(() => this._applyPointerButton(button, false, viewportX, viewportY))
+    }
+
+    wheel(deltaX: number, deltaY: number): void {
+        this._queue.push(() => { this._accumScrollX += deltaX; this._accumScrollY += deltaY })
+    }
+
+    blur(): void {
+        this._queue.push(() => this._applyBlur())
+    }
+
+    // MARK: applied at the frame boundary
+
+    private _applyKeyDown(code: string): void {
         const name = keyNameFromDomCode(code)
         if (name === null) return
         const key = this._record(name)
@@ -139,7 +179,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         if (bit !== undefined) this._modifiers |= bit
     }
 
-    keyUp(code: string): void {
+    private _applyKeyUp(code: string): void {
         const name = keyNameFromDomCode(code)
         if (name === null) return
         const key = this._keys.get(name)
@@ -153,7 +193,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._recomputeModifiers()
     }
 
-    pointerMove(viewportX: number, viewportY: number): void {
+    private _applyPointerMove(viewportX: number, viewportY: number): void {
         this._accumDeltaX += viewportX - this._viewportX
         this._accumDeltaY += viewportY - this._viewportY
         this._viewportX = viewportX
@@ -161,28 +201,20 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._syncPointer()
     }
 
-    pointerDown(button: number, viewportX?: number, viewportY?: number): void {
-        if (viewportX !== undefined && viewportY !== undefined) this.pointerMove(viewportX, viewportY)
+    private _applyPointerButton(button: number, down: boolean, viewportX?: number, viewportY?: number): void {
+        if (viewportX !== undefined && viewportY !== undefined) this._applyPointerMove(viewportX, viewportY)
         const bit = DOM_BUTTON_TO_BIT[button]
         if (bit === undefined) return
-        this._buttons |= 1 << bit
-        this._buttonDownFrame[bit] = this._frame
+        if (down) {
+            this._buttons |= 1 << bit
+            this._buttonDownFrame[bit] = this._frame
+        } else {
+            this._buttons &= ~(1 << bit)
+            this._buttonUpFrame[bit] = this._frame
+        }
     }
 
-    pointerUp(button: number, viewportX?: number, viewportY?: number): void {
-        if (viewportX !== undefined && viewportY !== undefined) this.pointerMove(viewportX, viewportY)
-        const bit = DOM_BUTTON_TO_BIT[button]
-        if (bit === undefined) return
-        this._buttons &= ~(1 << bit)
-        this._buttonUpFrame[bit] = this._frame
-    }
-
-    wheel(deltaX: number, deltaY: number): void {
-        this._accumScrollX += deltaX
-        this._accumScrollY += deltaY
-    }
-
-    blur(): void {
+    private _applyBlur(): void {
         for (const key of this._keys.values()) {
             if (!key.down) continue
             key.down = false
@@ -201,6 +233,13 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     beginFrame(): void {
         this._frame++
+        // Drain first, so everything that arrived since the last boundary is
+        // stamped with the frame about to run rather than the one just ended.
+        if (this._queue.length > 0) {
+            const pending = this._queue
+            this._queue = []
+            for (const apply of pending) apply()
+        }
         this._deltaX = this._accumDeltaX
         this._deltaY = this._accumDeltaY
         this._accumDeltaX = 0
@@ -217,6 +256,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     }
 
     reset(): void {
+        this._queue = []
         this._keys.clear()
         this._downCount = 0
         this._lastPressFrame = -1
