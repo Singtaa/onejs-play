@@ -18,3 +18,6 @@ export type { OjRuntime, ContainerRuntime, RuntimeOptions, TimeState } from "./r
 
 export { createContainerInput } from "./input"
 export type { ContainerInput, InputSink } from "./input"
+
+export { createDomInputAdapter, hasDom } from "./adapter"
+export type { DomInputOptions } from "./adapter"

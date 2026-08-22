@@ -77,9 +77,16 @@ export function statusOf(guesses: string[], answer: string): Status {
     return guesses.length >= MAX_GUESSES ? "lost" : "playing"
 }
 
-/** Why a guess was rejected, or null when it is fine to submit. */
-export function rejectionReason(draft: string, allowed: readonly string[]): string | null {
+/**
+ * Why a guess was rejected, or null when it is fine to submit.
+ *
+ * Takes a predicate rather than an array so the accepted-guess set can be
+ * stored however it likes. It is nearly 15,000 words, and holding that as an
+ * array purely so this function can call includes() would cost both the
+ * allocation and a linear scan per keystroke.
+ */
+export function rejectionReason(draft: string, accepts: (word: string) => boolean): string | null {
     if (draft.length < WORD_LENGTH) return "Not enough letters"
-    if (!allowed.includes(draft.toUpperCase())) return "Not in word list"
+    if (!accepts(draft.toUpperCase())) return "Not in word list"
     return null
 }

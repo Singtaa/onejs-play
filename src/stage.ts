@@ -65,6 +65,14 @@ export interface StageRect {
 
 /** The resolved mapping from logical units to viewport pixels. */
 export interface StageLayout {
+    /**
+     * The fit this layout came from.
+     *
+     * Carried rather than re-derived: a presenter has to treat stretch
+     * differently from letterbox, and inferring it from scaleX !== scaleY is
+     * wrong the moment a stretched stage happens to match the viewport aspect.
+     */
+    fit: StageFit
     /** Logical width the game should draw into. Tracks the viewport when fluid. */
     width: number
     /** Logical height. */
@@ -160,6 +168,7 @@ export function computeStageLayout(
 
     if (config.fit === "fluid") {
         return {
+            fit: config.fit,
             width: vw,
             height: vh,
             scale: 1,
@@ -201,6 +210,7 @@ export function computeStageLayout(
     const visible: StageRect = { x: h.start, y: v.start, width: h.size, height: v.size }
 
     return {
+        fit: config.fit,
         width,
         height,
         scale: Math.min(scaleX, scaleY),

@@ -57,8 +57,20 @@ export interface RuntimeOptions {
     version: string
     /** The game's stage configuration, already normalized. */
     stage: StageConfig
-    /** Initial viewport in pixels. */
+    /** Initial viewport in CSS pixels. */
     viewport?: { width: number; height: number }
+    /**
+     * Applies a freshly computed layout to whatever presents the stage.
+     *
+     * The stage math lives here, but nothing in this package can act on it:
+     * scaling the panel and sizing the host element need CS access, which only
+     * the container has. Without this seam the layout was computed correctly
+     * and then thrown away, so every game rendered unscaled at 1:1 whatever
+     * stage it declared.
+     *
+     * Called once at creation and again on every viewport change.
+     */
+    onLayout?: (layout: StageLayout) => void
 }
 
 /** What the container holds. Games only ever see `oj`. */
@@ -100,6 +112,17 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         options.viewport?.height ?? options.stage.height,
     )
     input.setStageLayout(layout)
+
+    /** Reports a layout without letting a throwing presenter kill the load. */
+    const present = () => {
+        if (options.onLayout === undefined) return
+        try {
+            options.onLayout(layout)
+        } catch (error) {
+            console.error("[oj] stage presenter failed:", error)
+        }
+    }
+    present()
 
     const callbacks = new Set<(dt: number) => void>()
 
@@ -143,6 +166,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         setViewport(width: number, height: number) {
             layout = computeStageLayout(options.stage, width, height)
             input.setStageLayout(layout)
+            present()
         },
 
         dispose() {

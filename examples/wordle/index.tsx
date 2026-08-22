@@ -13,7 +13,7 @@ import { useState, useMemo } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
 import styles from "./wordle.module.uss"
-import { WORDS } from "./words"
+import { ANSWERS, isAcceptedGuess } from "./words"
 import {
     scoreGuess, keyboardStates, statusOf, rejectionReason,
     WORD_LENGTH, MAX_GUESSES, type LetterState,
@@ -25,7 +25,7 @@ const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 /** One word a day, the same for everyone, without a server telling us which. */
 function wordOfTheDay(): string {
     const today = new Date().toISOString().slice(0, 10)
-    return random(`wordle-${today}`).pick(WORDS)
+    return random(`wordle-${today}`).pick(ANSWERS)
 }
 
 function Tile({ letter, state, filled }: { letter: string; state?: LetterState; filled: boolean }) {
@@ -94,7 +94,7 @@ function Wordle() {
 
     const submit = () => {
         if (status !== "playing") return
-        const reason = rejectionReason(draft, WORDS)
+        const reason = rejectionReason(draft, isAcceptedGuess)
         if (reason !== null) {
             setMessage(reason)
             return

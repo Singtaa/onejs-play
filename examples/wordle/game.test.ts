@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { scoreGuess, keyboardStates, statusOf, rejectionReason } from "./game"
-import { WORDS } from "./words"
+import { ANSWERS, GUESS_COUNT, isAcceptedGuess } from "./words"
 
 describe("scoreGuess", () => {
     it("marks an exact match", () => {
@@ -35,8 +35,8 @@ describe("scoreGuess", () => {
     })
 
     it("never returns more marks than the answer has of that letter", () => {
-        for (const answer of WORDS.slice(0, 60)) {
-            for (const guess of WORDS.slice(0, 60)) {
+        for (const answer of ANSWERS.slice(0, 60)) {
+            for (const guess of ANSWERS.slice(0, 60)) {
                 const states = scoreGuess(guess, answer)
                 for (const letter of new Set(guess)) {
                     const marked = [...guess].filter((c, i) => c === letter && states[i] !== "absent").length
@@ -83,15 +83,45 @@ describe("statusOf", () => {
 
 describe("rejectionReason", () => {
     it("rejects a short guess", () => {
-        expect(rejectionReason("CRA", WORDS)).toMatch(/Not enough/)
+        expect(rejectionReason("CRA", isAcceptedGuess)).toMatch(/Not enough/)
     })
     it("rejects a word not in the list", () => {
-        expect(rejectionReason("ZZZZZ", WORDS)).toMatch(/Not in word list/)
+        expect(rejectionReason("ZZZZZ", isAcceptedGuess)).toMatch(/Not in word list/)
     })
     it("accepts a real word", () => {
-        expect(rejectionReason("CRANE", WORDS)).toBeNull()
+        expect(rejectionReason("CRANE", isAcceptedGuess)).toBeNull()
     })
     it("accepts lowercase", () => {
-        expect(rejectionReason("crane", WORDS)).toBeNull()
+        expect(rejectionReason("crane", isAcceptedGuess)).toBeNull()
+    })
+})
+
+describe("the word lists", () => {
+    it("accepts the openers players actually type", () => {
+        // The bug this guards: one 380-word list served as both the answer pool
+        // and the accepted-guess set, so every one of these bounced.
+        for (const opener of ["SLATE", "AUDIO", "ADIEU", "ARISE", "TEARS", "CRANE", "ROATE", "STARE"]) {
+            expect(isAcceptedGuess(opener)).toBe(true)
+        }
+    })
+
+    it("accepts lowercase, since that is what a player types", () => {
+        expect(isAcceptedGuess("slate")).toBe(true)
+    })
+
+    it("rejects non-words and wrong lengths", () => {
+        for (const bad of ["ZZZZZ", "QQQQQ", "ABCDE"]) expect(isAcceptedGuess(bad)).toBe(false)
+        expect(isAcceptedGuess("CRAN")).toBe(false)
+        expect(isAcceptedGuess("CRANES")).toBe(false)
+        expect(isAcceptedGuess("")).toBe(false)
+    })
+
+    it("can guess every answer, or a puzzle would be unwinnable", () => {
+        for (const answer of ANSWERS) expect(isAcceptedGuess(answer)).toBe(true)
+    })
+
+    it("holds a whole number of words", () => {
+        expect(GUESS_COUNT).toBe(Math.floor(GUESS_COUNT))
+        expect(GUESS_COUNT).toBeGreaterThan(10000)
     })
 })
