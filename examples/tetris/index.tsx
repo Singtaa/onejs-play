@@ -12,7 +12,7 @@ import "onejs:tailwind"
 import styles from "./tetris.module.uss"
 import {
     emptyBoard, spawn, moved, rotated, fits, merge, clearLines, hardDropped,
-    scoreFor, levelFor, dropInterval, cellsOf, KINDS,
+    scoreFor, levelFor, dropInterval, cellsOf, shapeOf, KINDS,
     COLS, ROWS, type Board, type Piece, type PieceKind,
 } from "./game"
 
@@ -59,6 +59,44 @@ function lock(game: Game, pick: () => PieceKind): Game {
 
 function Cell({ tone }: { tone: string }) {
     return <View className={`${styles.cell} ${tone}`} />
+}
+
+/**
+ * The piece that comes next.
+ *
+ * Drawn to its own bounding box rather than a fixed 4x4: only I spans four
+ * columns, so a fixed grid leaves every other piece sitting off-centre with
+ * dead space beside it. Trimming to the occupied cells lets the panel centre
+ * whatever it gets.
+ */
+function Preview({ kind }: { kind: PieceKind }) {
+    const cells = shapeOf(kind)
+    const xs = cells.map(([x]) => x)
+    const ys = cells.map(([, y]) => y)
+    const minX = Math.min(...xs)
+    const minY = Math.min(...ys)
+    const width = Math.max(...xs) - minX + 1
+    const height = Math.max(...ys) - minY + 1
+    const filled = new Set(cells.map(([x, y]) => `${x},${y}`))
+    const tone = COLOURS[KINDS.indexOf(kind) + 1] ?? ""
+
+    return (
+        // Fixed height so the panel does not jump between an I piece, which is
+        // one row, and everything else, which is two. Left-aligned to match the
+        // labels above it rather than floating in the middle of the column.
+        <View className="items-start justify-center h-20">
+            {Array.from({ length: height }, (_, row) => (
+                <View key={row} className="flex-row">
+                    {Array.from({ length: width }, (_, col) => (
+                        <View
+                            key={col}
+                            className={`${styles.previewCell} ${filled.has(`${minX + col},${minY + row}`) ? tone : ""}`}
+                        />
+                    ))}
+                </View>
+            ))}
+        </View>
+    )
 }
 
 function Tetris() {
@@ -124,7 +162,7 @@ function Tetris() {
     }
 
     return (
-        <View className="flex-1 flex-row items-center justify-center bg-neutral-900 gap-6">
+        <View className="flex-1 flex-row items-center justify-center bg-neutral-900">
             <View className={styles.well}>
                 {view.map((row, y) => (
                     <View key={y} className="flex-row">
@@ -133,19 +171,26 @@ function Tetris() {
                 ))}
             </View>
 
-            <View className="gap-3 w-32">
-                <Text className="text-2xl font-bold text-white">TETRIS</Text>
-                <View>
+            {/* ml-6 rather than a gap on the row, and mb-* on each block rather
+                than a gap on the column: USS has no gap property, so those
+                classes compiled to nothing and everything sat flush. */}
+            <View className="w-32 ml-6">
+                <Text className="text-2xl font-bold text-white mb-3">TETRIS</Text>
+                <View className="mb-3">
                     <Text className="text-xs text-neutral-500">SCORE</Text>
                     <Text className="text-xl font-bold text-white">{String(game.score)}</Text>
                 </View>
-                <View>
+                <View className="mb-3">
                     <Text className="text-xs text-neutral-500">LINES</Text>
                     <Text className="text-xl font-bold text-white">{String(game.lines)}</Text>
                 </View>
-                <View>
+                <View className="mb-3">
                     <Text className="text-xs text-neutral-500">LEVEL</Text>
                     <Text className="text-xl font-bold text-white">{String(levelFor(game.lines))}</Text>
+                </View>
+                <View className="mb-3">
+                    <Text className="text-xs text-neutral-500 mb-1">NEXT</Text>
+                    <Preview kind={game.next} />
                 </View>
                 <Text className="text-xs text-neutral-600">
                     {game.over ? "GAME OVER\nEnter to restart" : "arrows move\nup rotates\nspace drops"}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
     emptyBoard, spawn, moved, rotated, fits, merge, clearLines, hardDropped,
-    scoreFor, levelFor, dropInterval, cellsOf, KINDS, COLS, ROWS,
+    scoreFor, levelFor, dropInterval, cellsOf, shapeOf, KINDS, COLS, ROWS,
 } from "./game"
 
 const filledRow = () => new Array(COLS).fill(1)
@@ -176,3 +176,51 @@ describe("scoring and pace", () => {
         expect(dropInterval(99)).toBeGreaterThan(0)
     })
 })
+
+describe("shapeOf", () => {
+    it("returns the unpositioned offsets, which is what a preview needs", () => {
+        // O is the one piece with a single rotation, so its shape is fixed.
+        expect(shapeOf("O")).toEqual([[1, 0], [2, 0], [1, 1], [2, 1]])
+    })
+
+    it("gives every kind exactly four cells, in every rotation", () => {
+        for (const kind of KINDS) {
+            for (let rotation = 0; rotation < 4; rotation++) {
+                expect(shapeOf(kind, rotation)).toHaveLength(4)
+            }
+        }
+    })
+
+    it("wraps rotation, so a preview cannot index past the end", () => {
+        for (const kind of KINDS) {
+            expect(shapeOf(kind, 4)).toEqual(shapeOf(kind, 0))
+            expect(shapeOf(kind, 9)).toEqual(shapeOf(kind, 1 % SHAPE_STATES(kind)))
+        }
+    })
+
+    it("fits every piece inside a 4x4 box, which bounds the preview", () => {
+        for (const kind of KINDS) {
+            for (let rotation = 0; rotation < 4; rotation++) {
+                for (const [x, y] of shapeOf(kind, rotation)) {
+                    expect(x).toBeGreaterThanOrEqual(0)
+                    expect(y).toBeGreaterThanOrEqual(0)
+                    expect(x).toBeLessThan(4)
+                    expect(y).toBeLessThan(4)
+                }
+            }
+        }
+    })
+
+    it("agrees with cellsOf once a piece is placed", () => {
+        const piece = { kind: "T" as const, rotation: 0, x: 3, y: 5 }
+        const expected = shapeOf("T", 0).map(([dx, dy]) => [piece.x + dx, piece.y + dy])
+        expect(cellsOf(piece)).toEqual(expected)
+    })
+})
+
+/** How many distinct rotations a kind has, derived rather than hard-coded. */
+function SHAPE_STATES(kind: (typeof KINDS)[number]): number {
+    let n = 1
+    while (n < 4 && JSON.stringify(shapeOf(kind, n)) !== JSON.stringify(shapeOf(kind, 0))) n++
+    return n
+}

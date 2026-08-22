@@ -44,6 +44,18 @@ export function emptyBoard(): Board {
     return Array.from({ length: ROWS }, () => new Array<Cell>(COLS).fill(0))
 }
 
+/**
+ * The offsets a kind occupies, unpositioned.
+ *
+ * cellsOf needs a placed Piece, which a preview does not have: the next piece
+ * has no position yet, and giving it a fake one only to subtract it again is
+ * the long way round.
+ */
+export function shapeOf(kind: PieceKind, rotation = 0): ReadonlyArray<readonly [number, number]> {
+    const states = SHAPES[kind]
+    return states[rotation % states.length]!
+}
+
 export function cellsOf(piece: Piece): Array<readonly [number, number]> {
     const states = SHAPES[piece.kind]
     const shape = states[piece.rotation % states.length]!

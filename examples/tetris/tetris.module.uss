@@ -12,6 +12,17 @@
     background-color: rgba(255, 255, 255, 0.02);
 }
 
+/* The preview sets size and spacing only, never a colour.
+   The tone classes below set background-color and border-color, and at equal
+   specificity whichever is written last would win. Sharing no property with
+   them means the order of this file cannot decide how a piece looks, which is
+   exactly the trap that left Wordle's keyboard untinted. */
+.previewCell {
+    width: 16px;
+    height: 16px;
+    margin: 1px;
+}
+
 .i { background-color: rgb(45, 194, 217); border-color: rgb(70, 214, 236); }
 .o { background-color: rgb(224, 187, 46); border-color: rgb(240, 206, 78); }
 .t { background-color: rgb(160, 82, 196); border-color: rgb(183, 110, 216); }

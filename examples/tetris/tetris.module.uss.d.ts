@@ -3,6 +3,7 @@
 declare const styles: {
     readonly well: string
     readonly cell: string
+    readonly previewCell: string
     readonly i: string
     readonly o: string
     readonly t: string
