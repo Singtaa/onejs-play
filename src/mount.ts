@@ -28,15 +28,8 @@
 import { createElement, useEffect, useState, type ReactNode } from "react"
 import { render, View } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
-import { computeStageLayout, normalizeStage, type StageLayout } from "./stage"
-
-function requireRuntime(what: string) {
-    const runtime = getCurrentRuntime()
-    if (runtime === null) {
-        throw new Error(`[oj] ${what} needs a running container; none is installed`)
-    }
-    return runtime
-}
+import { startStandalone } from "./standalone"
+import { computeStageLayout, normalizeStage, type StageInput, type StageLayout } from "./stage"
 
 /**
  * The host box, in points.
@@ -98,9 +91,17 @@ function StagePresenter({ children }: { children: ReactNode }) {
     )
 }
 
-/** Renders a game into the container's root, fitted to its stage. */
-export function mount(element: ReactNode): void {
-    const runtime = requireRuntime("mount")
+/**
+ * Renders a game, fitted to its stage.
+ *
+ * Inside the container the runtime already exists and the stage came from the
+ * game's manifest. Outside one, in an ejected project, this starts a runtime
+ * itself so the same source runs unchanged, which is the entire promise the
+ * eject download makes. Pass a stage there, since there is no manifest to read
+ * it from; the container ignores the argument because the manifest wins.
+ */
+export function mount(element: ReactNode, options: { stage?: StageInput } = {}): void {
+    const runtime = getCurrentRuntime() ?? startStandalone(options.stage).oj
     render(createElement(StagePresenter, null, element) as never, runtime.root as never)
 }
 
