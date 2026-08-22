@@ -83,6 +83,11 @@ export { input, resolveKeyName, keyNameFromDomCode } from "onejs-unity/input"
 // container shadows it. Same API and same behaviour on every platform.
 export { audio } from "onejs-unity/audio"
 export type { Sound, Voice, PlayOptions } from "onejs-unity/audio"
+
+// 2D physics. The simulation and the writing of positions onto elements both
+// happen in C#, so a hundred bodies cost JavaScript nothing per frame.
+export { usePhysics, createPhysicsWorld } from "./physics"
+export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contact } from "./physics"
 export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // MARK: math
