@@ -39,6 +39,60 @@
  * Tools/container-spike after a OneJS bump: anything new the bootstrap starts
  * exporting has to land here or it is reachable from game code.
  */
+/**
+ * Globals that exist only because the container happens to run in a browser.
+ *
+ * THIS IS THE PORTABILITY CONTRACT, AND IT IS THE POINT OF THE PLATFORM
+ *
+ * A OneJS app runs on the browser's engine under WebGL and on QuickJS
+ * everywhere else. Anything in this list exists in the first case and not the
+ * second, so a game that reaches for one is a game that can never leave the
+ * web. On WebGL the container shares the page's global scope, so without this
+ * they are all simply there, one identifier away, and the failure shows up as
+ * a ReferenceError on a platform the author was not testing.
+ *
+ * Shadowing turns that into something better than an error: the name becomes
+ * undefined, so `typeof window === "undefined"` is true and a bundled library
+ * feature-detecting its environment takes its non-browser path by itself.
+ *
+ * The list is derived, not guessed. QuickJSBootstrap.js.txt installs fetch,
+ * Headers, Response, AbortController, localStorage, sessionStorage,
+ * performance, requestAnimationFrame, the timers, queueMicrotask, URL,
+ * URLSearchParams, btoa, atob and WebSocket on every platform. Those are
+ * portable and deliberately absent below. Everything here is what the
+ * bootstrap does not provide.
+ */
+export const BROWSER_ONLY_GLOBALS: readonly string[] = [
+    // The DOM and the page. None of it exists outside a browser, and a game
+    // rendering through UI Toolkit has no use for it in the first place.
+    "document", "window", "self", "parent", "top", "frames", "location",
+    "history", "screen", "navigator", "devicePixelRatio",
+    "matchMedia", "getComputedStyle", "customElements",
+
+    // Page-level event plumbing. Also how a game would reach the host page:
+    // a top-level addEventListener shadows the page's own EventTarget method.
+    "addEventListener", "removeEventListener", "dispatchEvent", "postMessage",
+
+    // Modal dialogs. Browser-only, and they block every further event the
+    // page would deliver, which wedges the container rather than the game.
+    "alert", "confirm", "prompt", "open", "close", "print",
+
+    // WebAudio. The reason oj.audio exists: sound is a real need with no
+    // portable browser answer, so it gets a seam instead of this.
+    "AudioContext", "webkitAudioContext", "Audio",
+
+    // Networking that is not fetch. fetch and WebSocket are provided
+    // everywhere; these two are not.
+    "XMLHttpRequest", "EventSource",
+
+    // Threads and browser storage with no native counterpart.
+    "Worker", "SharedWorker", "indexedDB", "caches", "crypto",
+
+    // DOM-flavoured constructors. A game needing bytes has fetch and
+    // Uint8Array; these carry browser semantics that do not travel.
+    "Image", "Blob", "File", "FileReader", "FormData", "Notification",
+]
+
 export const SHADOWED_GLOBALS: readonly string[] = [
     // C# access
     "CS", "useExtensions", "__cs", "__cs_invoke", "__csHelpers",
@@ -71,6 +125,8 @@ export const SHADOWED_GLOBALS: readonly string[] = [
     // platform defines
     "UNITY_EDITOR", "UNITY_WEBGL", "UNITY_STANDALONE",
     "UNITY_STANDALONE_OSX", "UNITY_STANDALONE_WIN", "UNITY_STANDALONE_LINUX",
+
+    ...BROWSER_ONLY_GLOBALS,
 ]
 
 /**

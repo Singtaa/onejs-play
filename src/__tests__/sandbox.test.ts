@@ -5,6 +5,7 @@ import {
     removeAddedGlobals,
     SHADOWED_GLOBALS,
     INJECTED_GLOBALS,
+    BROWSER_ONLY_GLOBALS,
 } from "../sandbox"
 
 /** An IIFE bundle in the shape esbuild emits for the container. */
@@ -181,5 +182,90 @@ describe("externals", () => {
     it("does not leak the map onto globalThis", () => {
         evaluateBundle(ext("return {}"), { oj: {} })
         expect("__ojExternals" in globalThis).toBe(false)
+    })
+})
+
+/**
+ * The portability contract.
+ *
+ * These assertions are the contract itself, not a test of an implementation
+ * detail: if one fails, either a game can now reach something that does not
+ * exist outside a browser, or it has lost something OneJS provides everywhere.
+ */
+describe("the portability contract", () => {
+    /** Installed by QuickJSBootstrap on every platform, so a game may rely on them. */
+    const PORTABLE = [
+        "fetch", "Headers", "Response", "AbortController", "AbortSignal",
+        "localStorage", "sessionStorage", "performance",
+        "requestAnimationFrame", "cancelAnimationFrame",
+        "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+        "setImmediate", "clearImmediate", "queueMicrotask",
+        "URL", "URLSearchParams", "btoa", "atob", "WebSocket",
+    ]
+
+    it("never shadows something OneJS provides on every platform", () => {
+        for (const name of PORTABLE) {
+            expect(SHADOWED_GLOBALS).not.toContain(name)
+        }
+    })
+
+    it("shadows the DOM, which no other platform has", () => {
+        for (const name of ["document", "window", "self", "location", "navigator", "history", "screen"]) {
+            expect(BROWSER_ONLY_GLOBALS).toContain(name)
+            expect(SHADOWED_GLOBALS).toContain(name)
+        }
+    })
+
+    it("shadows WebAudio, which is what oj.audio replaces", () => {
+        for (const name of ["AudioContext", "webkitAudioContext", "Audio"]) {
+            expect(SHADOWED_GLOBALS).toContain(name)
+        }
+    })
+
+    it("shadows modal dialogs, which block every later event in the page", () => {
+        for (const name of ["alert", "confirm", "prompt"]) {
+            expect(SHADOWED_GLOBALS).toContain(name)
+        }
+    })
+
+    it("shadows page event plumbing, which is how a game would reach the host", () => {
+        for (const name of ["addEventListener", "removeEventListener", "postMessage"]) {
+            expect(SHADOWED_GLOBALS).toContain(name)
+        }
+    })
+
+    it("leaves console alone, since it is how an author debugs", () => {
+        expect(SHADOWED_GLOBALS).not.toContain("console")
+    })
+
+    it("actually makes the names undefined inside a bundle", () => {
+        const out = evaluateBundle(
+            `var __exports = { window: typeof window, document: typeof document,
+                               AudioContext: typeof AudioContext, alert: typeof alert }`,
+            { oj: {} as never },
+        )
+        expect(out).toEqual({
+            window: "undefined", document: "undefined",
+            AudioContext: "undefined", alert: "undefined",
+        })
+    })
+
+    it("lets a library feature-detect its way to the portable path", () => {
+        // The pattern almost every bundled library uses. Shadowing has to make
+        // this take the non-browser branch, not throw.
+        const out = evaluateBundle(
+            `var isBrowser = typeof window !== "undefined" && typeof document !== "undefined"
+             var __exports = { isBrowser }`,
+            { oj: {} as never },
+        )
+        expect(out).toEqual({ isBrowser: false })
+    })
+
+    it("has no duplicates, which would be a SyntaxError in strict mode", () => {
+        expect(new Set(SHADOWED_GLOBALS).size).toBe(SHADOWED_GLOBALS.length)
+    })
+
+    it("lists only valid identifiers, since each becomes a function parameter", () => {
+        for (const name of SHADOWED_GLOBALS) expect(name).toMatch(/^[A-Za-z_$][A-Za-z0-9_$]*$/)
     })
 })
