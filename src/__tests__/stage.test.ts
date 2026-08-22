@@ -6,6 +6,7 @@ import {
     fromStage,
     DEFAULT_STAGE_WIDTH,
     DEFAULT_STAGE_HEIGHT,
+    DEFAULT_STAGE_MATTE,
     type StageConfig,
 } from "../stage"
 
@@ -14,6 +15,7 @@ const stage = (over: Partial<StageConfig> = {}): StageConfig => ({
     height: 540,
     fit: "letterbox",
     pixelPerfect: false,
+    matte: DEFAULT_STAGE_MATTE,
     ...over,
 })
 
@@ -24,6 +26,7 @@ describe("normalizeStage", () => {
             height: DEFAULT_STAGE_HEIGHT,
             fit: "letterbox",
             pixelPerfect: false,
+            matte: DEFAULT_STAGE_MATTE,
         })
     })
 
@@ -310,5 +313,25 @@ describe("toStage and fromStage", () => {
         const origin = fromStage(l, 0, 0)
         expect(origin.x).toBeCloseTo(l.offsetX, 10)
         expect(origin.y).toBeCloseTo(l.offsetY, 10)
+    })
+})
+
+describe("the stage matte", () => {
+    it("defaults to something dark rather than leaving the letterbox undefined", () => {
+        expect(normalizeStage(undefined).matte).toBe(DEFAULT_STAGE_MATTE)
+    })
+
+    it("takes the game's own colour", () => {
+        expect(normalizeStage({ matte: "#ff0000" }).matte).toBe("#ff0000")
+    })
+
+    it("reaches the layout, which is what the presenter reads", () => {
+        expect(computeStageLayout(normalizeStage({ matte: "#123456" }), 800, 600).matte).toBe("#123456")
+        expect(computeStageLayout(normalizeStage({ matte: "#123456", fit: "fluid" }), 800, 600).matte).toBe("#123456")
+    })
+
+    it("rejects a matte that is not a colour string", () => {
+        expect(() => normalizeStage({ matte: 0 as never })).toThrow(/matte/)
+        expect(() => normalizeStage({ matte: "  " })).toThrow(/matte/)
     })
 })

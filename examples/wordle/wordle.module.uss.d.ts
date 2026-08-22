@@ -10,5 +10,9 @@ declare const styles: {
     readonly key: string
     readonly keyWide: string
     readonly keyNarrow: string
+    readonly keyCorrect: string
+    readonly keyPresent: string
+    readonly keyAbsent: string
+    readonly keyLabelAbsent: string
 }
 export default styles

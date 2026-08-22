@@ -31,6 +31,8 @@ const FITS: readonly StageFit[] = ["letterbox", "cover", "stretch", "fluid"]
 
 export const DEFAULT_STAGE_WIDTH = 960
 export const DEFAULT_STAGE_HEIGHT = 540
+/** Dark enough to sit behind anything without competing with it. */
+export const DEFAULT_STAGE_MATTE = "#14181d"
 
 /** Loose stage input, as it appears in oj.json. */
 export interface StageInput {
@@ -45,6 +47,17 @@ export interface StageInput {
      * Ignored for stretch and fluid, which have no single uniform scale.
      */
     pixelPerfect?: boolean
+    /**
+     * What fills the space around a letterboxed stage.
+     *
+     * Painted by the UI, deliberately. The engine offers two lower-level ways
+     * to clear a background, a camera and PanelSettings.colorClearValue, and
+     * both write the value straight into the framebuffer without the sRGB
+     * conversion the UI colour pipeline applies. In a linear-colour project
+     * that turns #14181d into #4f565f, measured, which is the kind of bug that
+     * looks like a design choice. A colour on an element cannot drift that way.
+     */
+    matte?: string
 }
 
 /** A validated stage configuration. Every field is resolved. */
@@ -53,6 +66,7 @@ export interface StageConfig {
     height: number
     fit: StageFit
     pixelPerfect: boolean
+    matte: string
 }
 
 /** A rectangle in logical stage units. */
@@ -73,6 +87,8 @@ export interface StageLayout {
      * wrong the moment a stretched stage happens to match the viewport aspect.
      */
     fit: StageFit
+    /** What fills the space around the stage. See StageInput.matte. */
+    matte: string
     /** Logical width the game should draw into. Tracks the viewport when fluid. */
     width: number
     /** Logical height. */
@@ -147,7 +163,12 @@ export function normalizeStage(input: StageInput | undefined | null): StageConfi
         throw new Error(`[oj] invalid stage fit "${fit}", expected one of ${FITS.join(", ")}`)
     }
 
-    return { width, height, fit, pixelPerfect: raw.pixelPerfect ?? false }
+    const matte = raw.matte ?? DEFAULT_STAGE_MATTE
+    if (typeof matte !== "string" || matte.trim() === "") {
+        throw new Error(`[oj] stage matte must be a colour string, got ${JSON.stringify(raw.matte)}`)
+    }
+
+    return { width, height, fit, pixelPerfect: raw.pixelPerfect ?? false, matte }
 }
 
 /**
@@ -169,6 +190,7 @@ export function computeStageLayout(
     if (config.fit === "fluid") {
         return {
             fit: config.fit,
+            matte: config.matte,
             width: vw,
             height: vh,
             scale: 1,
@@ -211,6 +233,7 @@ export function computeStageLayout(
 
     return {
         fit: config.fit,
+        matte: config.matte,
         width,
         height,
         scale: Math.min(scaleX, scaleY),

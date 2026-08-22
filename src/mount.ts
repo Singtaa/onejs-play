@@ -82,7 +82,18 @@ function StagePresenter({ children }: { children: ReactNode }) {
     const layout = useStage()
     return createElement(
         View,
-        { style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%", overflow: "hidden" } },
+        {
+            style: {
+                position: "absolute", left: 0, top: 0, width: "100%", height: "100%",
+                overflow: "hidden",
+                // The letterbox matte. Painting it here rather than clearing it
+                // on the camera or the panel is what keeps the colour right:
+                // both of those write the value straight into the framebuffer
+                // with no sRGB conversion, so in a linear project #14181d comes
+                // out as #4f565f. See StageInput.matte.
+                backgroundColor: layout.matte,
+            },
+        },
         createElement(View, { style: stageHostStyle(layout) }, children),
     )
 }

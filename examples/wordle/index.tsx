@@ -46,12 +46,19 @@ function Row({ guess, answer, draft, revealed }: {
     const word = guess ?? draft ?? ""
     const states = revealed && guess ? scoreGuess(guess, answer) : undefined
     return (
-        <View className="flex-row gap-1.5">
+        <View className="flex-row">
             {Array.from({ length: WORD_LENGTH }, (_, i) => (
                 <Tile key={i} letter={word[i] ?? ""} state={states?.[i]} filled={i < word.length} />
             ))}
         </View>
     )
+}
+
+/** Key tints, kept separate from the tile ones. See wordle.module.uss. */
+const KEY_TONE: Record<LetterState, string> = {
+    correct: styles.keyCorrect,
+    present: styles.keyPresent,
+    absent: styles.keyAbsent,
 }
 
 function Key({ label, state, wide, onPress }: {
@@ -60,13 +67,16 @@ function Key({ label, state, wide, onPress }: {
     wide?: boolean
     onPress: () => void
 }) {
-    const tone = state ? styles[state] : ""
+    // A letter already proven absent cannot help, so the key goes dark and
+    // stops responding rather than letting a player spend a guess on it.
+    const dead = state === "absent"
+    const tone = state ? KEY_TONE[state] : ""
     return (
         <View
             className={`${styles.key} ${wide ? styles.keyWide : styles.keyNarrow} ${tone}`}
-            onClick={onPress}
+            onClick={dead ? undefined : onPress}
         >
-            <Text className="text-xs font-bold text-white">{label}</Text>
+            <Text className={`text-xs font-bold ${dead ? styles.keyLabelAbsent : "text-white"}`}>{label}</Text>
         </View>
     )
 }
@@ -127,7 +137,7 @@ function Wordle() {
             <Text className="text-3xl font-bold text-white mb-1">WORDLE</Text>
             <Text className="text-xs text-neutral-500 mb-4">{`built with oj  ${guesses.length}/${MAX_GUESSES}`}</Text>
 
-            <View className="gap-1.5 mb-3">
+            <View className="mb-3">
                 {Array.from({ length: MAX_GUESSES }, (_, row) => (
                     <Row
                         key={row}
@@ -143,9 +153,9 @@ function Wordle() {
                 <Text className="text-sm font-bold text-white">{message}</Text>
             </View>
 
-            <View className="gap-1.5 items-center">
+            <View className="items-center">
                 {KEY_ROWS.map((row, i) => (
-                    <View key={i} className="flex-row gap-1.5">
+                    <View key={i} className="flex-row">
                         {i === 2 && <Key label="ENTER" wide onPress={submit} />}
                         {[...row].map((letter) => (
                             <Key key={letter} label={letter} state={keys[letter]} onPress={() => type(letter)} />
