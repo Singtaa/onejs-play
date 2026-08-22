@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Tetris",
+    "author": "singtaa",
+    "entry": "index.tsx",
+    "stage": { "size": [520, 560], "fit": "letterbox" },
+    "controls": ["keyboard"]
+}
