@@ -58,7 +58,7 @@ import {
     syncClock, Slots,
     ARENA_W, ARENA_H, CENTER_X, CENTER_Y, BLOB_RADIUS,
     THRUST, DRAG, DASH_SPEED, DASH_COOLDOWN, BOUNCE, SYNC_HZ, SNAP_DISTANCE,
-    MAX_BLOBS, REST, type Round, type Track,
+    MAX_BLOBS, REST, SETTLE, type Round, type Track,
 } from "./arena"
 
 /** Blob colours, picked from the peer id so everyone agrees who is who. */
@@ -142,6 +142,8 @@ function Sumo() {
     const elapsed = useRef(0)
     /** The gap between rounds. Only the host acts on it. */
     const rest = useRef(1.2)
+    /** When this round started looking finished, or null. See SETTLE. */
+    const overSince = useRef<number | null>(null)
     const nextRound = useRef(1)
     const winner = useRef<number | null>(null)
     const tally = useRef<Record<number, number>>({})
@@ -272,6 +274,7 @@ function Sumo() {
         if (world === null) return
         round.current = beginRound(n, starters)
         live.current = true
+        overSince.current = null
         nextRound.current = n + 1
         elapsed.current = 0
         winner.current = null
@@ -353,7 +356,21 @@ function Sumo() {
         // was over and report a fall into it.
         if (live.current && round.current !== null) {
             elapsed.current += step
-            if (isOver(round.current, elapsed.current)) finishRound()
+            /**
+             * A round that looks over is given a moment to actually be over.
+             *
+             * This client hears about its own fall instantly and about
+             * everybody else's a round trip later. Resolving the moment one
+             * player is left standing therefore hands the win to whoever this
+             * client has not heard from yet, and two clients in a double fall
+             * each credit the other. Waiting lets the fall that was already in
+             * flight land, so both sides resolve the same round from the same
+             * facts. See SETTLE in arena.ts, which has the numbers it cost.
+             */
+            if (isOver(round.current, elapsed.current)) {
+                if (overSince.current === null) overSince.current = elapsed.current
+                if (elapsed.current - overSince.current >= SETTLE) finishRound()
+            }
         }
 
         /**

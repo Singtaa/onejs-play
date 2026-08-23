@@ -3,7 +3,7 @@ import {
     platformRadius, isOff, spawnAt, steer, advance, leashVelocity, leashDelta,
     beginRound, applyFall, standing, isOver, winnerOf, credit, syncClock, Slots,
     ARENA_W, CENTER_X, CENTER_Y, START_RADIUS, MIN_RADIUS, GRACE, SHRINK_PER_SECOND,
-    ROUND_CAP, SNAP_DISTANCE, MAX_BLOBS, type Track,
+    ROUND_CAP, SNAP_DISTANCE, MAX_BLOBS, SETTLE, REST, type Track,
 } from "./arena"
 
 const track = (x: number, y: number, vx = 0, vy = 0): Track => ({ x, y, vx, vy, quiet: 0 })
@@ -272,6 +272,24 @@ describe("ending a round", () => {
         const fell = play([5], [5])
         expect(isOver(fell, 10)).toBe(true)
         expect(winnerOf(fell)).toBe(null)
+    })
+
+    /**
+     * The round that used to be scored two different ways on two screens. Both
+     * players slide off the closing ring within a moment of each other, and
+     * each client learns of its own fall first. Whatever order the two arrive
+     * in, once both are in there is nobody standing and nobody won.
+     */
+    it("gives a round where both fell to nobody, in either order", () => {
+        expect(winnerOf(play([1, 2], [1, 2]))).toBe(null)
+        expect(winnerOf(play([1, 2], [2, 1]))).toBe(null)
+        expect(standing(play([1, 2], [2, 1]))).toEqual([])
+    })
+
+    /** The window that makes the above reachable rather than theoretical. */
+    it("waits longer than a relay round trip and less than the gap between rounds", () => {
+        expect(SETTLE).toBeGreaterThan(0.2)
+        expect(SETTLE).toBeLessThan(REST)
     })
 
     it("ends at the cap however many claim to be standing", () => {

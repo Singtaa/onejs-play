@@ -72,6 +72,25 @@ export const SHRINK_PER_SECOND = 11
 /** A round cannot outlast this, whatever anybody claims about still being in. */
 export const ROUND_CAP = 45
 
+/**
+ * How long a round that looks finished waits before it is.
+ *
+ * Two players sliding off a closing ring within a moment of each other is the
+ * normal way a round of this ends, not an edge case, and it used to produce two
+ * different answers. Each client learns about its own fall instantly and about
+ * the other one a round trip later, so whoever resolved the moment one player
+ * was left standing credited the win to the other player: A said B won, B said
+ * A won, and the two tallies drifted apart while both screens showed the same
+ * ring. Two browsers playing eight rounds finished 2 to 2 on one screen and 4
+ * to 1 on the other.
+ *
+ * So the round waits after it looks over, long enough for a fall that was
+ * already in flight to land. Both clients then hold both falls, both find
+ * nobody standing, and both call it a draw, which is what it was. Long enough
+ * to cover a relay round trip, short enough not to read as a pause.
+ */
+export const SETTLE = 0.35
+
 /** The pause between rounds, long enough to read who won. */
 export const REST = 3.5
 
