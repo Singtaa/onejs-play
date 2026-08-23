@@ -155,6 +155,17 @@ function Squiggle() {
     const peak = useRef(START_LENGTH)
     const kills = useRef(0)
     const sinceBroadcast = useRef(0)
+    /**
+     * Whether the field delta ever arrived.
+     *
+     * A client that asks the host what has changed and then watches that host
+     * leave before it answers is left holding the seed field alone, which is
+     * every orb present including the ones other players have already eaten. It
+     * heals on its own eventually, through top-ups and other players' mouthfuls,
+     * but there is no reason to wait for that when the room is about to name
+     * somebody else who can simply be asked again.
+     */
+    const gotField = useRef(false)
     /** Orbs swallowed since the last broadcast, waiting to ride along with it. */
     const eaten = useRef<number[]>([]).current
     const sinceTopUp = useRef(0)
@@ -266,6 +277,7 @@ function Squiggle() {
             }
 
             if (data.k === "f" && Array.isArray(data.d)) {
+                gotField.current = true
                 for (let i = 0; i < orbs.length; i++) {
                     const seeded = home[i]!
                     const orb = orbs[i]!
@@ -315,7 +327,12 @@ function Squiggle() {
                 }
             }
         },
-        onHost: (mine, id) => setStatus((s) => ({ ...s, host: id, mine })),
+        onHost: (mine, id) => {
+            setStatus((s) => ({ ...s, host: id, mine }))
+            // A new host, and this client is still holding nothing but the
+            // seed. The previous one left before it answered, so ask again.
+            if (!mine && !gotField.current) room.send({ k: "hi" })
+        },
         /**
          * The relay refused to pass something on.
          *
