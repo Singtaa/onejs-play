@@ -22,7 +22,13 @@ import {
 const KEY_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-/** One word a day, the same for everyone, without a server telling us which. */
+/**
+ * One word a day, the same for everyone, without a server telling us which.
+ *
+ * The date is UTC, so the word turns over at the same instant worldwide rather
+ * than sweeping across timezones, and the seed makes the choice reproducible:
+ * two players on the same day get the same word from the same list.
+ */
 function wordOfTheDay(): string {
     const today = new Date().toISOString().slice(0, 10)
     return random(`wordle-${today}`).pick(ANSWERS)
@@ -90,16 +96,18 @@ function Wordle() {
     const status = statusOf(guesses, answer)
     const keys = useMemo(() => keyboardStates(guesses, answer), [guesses, answer])
 
+    // Both update from the previous draft rather than the one captured when
+    // this render ran, so two keys arriving in the same frame both land.
     const type = (letter: string) => {
-        if (status !== "playing" || draft.length >= WORD_LENGTH) return
+        if (status !== "playing") return
         setMessage("")
-        setDraft(draft + letter)
+        setDraft((d) => (d.length >= WORD_LENGTH ? d : d + letter))
     }
 
     const backspace = () => {
         if (status !== "playing") return
         setMessage("")
-        setDraft(draft.slice(0, -1))
+        setDraft((d) => d.slice(0, -1))
     }
 
     const submit = () => {
@@ -124,10 +132,7 @@ function Wordle() {
         else if (input.keyboard.wasKeyPressed("Backspace")) backspace()
         else {
             for (const letter of LETTERS) {
-                if (input.keyboard.wasKeyPressed(letter)) {
-                    type(letter)
-                    break
-                }
+                if (input.keyboard.wasKeyPressed(letter)) type(letter)
             }
         }
     }, [draft, guesses, status])
@@ -149,6 +154,8 @@ function Wordle() {
                 ))}
             </View>
 
+            {/* Fixed height, so the board does not jump when a message
+                appears and disappears between guesses. */}
             <View className="h-6 mb-3">
                 <Text className="text-sm font-bold text-white">{message}</Text>
             </View>
@@ -169,6 +176,3 @@ function Wordle() {
 }
 
 mount(<Wordle />)
-
-export function onPlay() {}
-export function onStop() {}
