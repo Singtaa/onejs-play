@@ -27,8 +27,16 @@ export const MAX_HOLD = 5
 /** How long after the signal answers are still taken. */
 export const REACTION_WINDOW = 2.6
 
-/** How long the result stays up before the next round is armed. */
-export const REST = 4
+/**
+ * How long the result stays up before the next round is armed.
+ *
+ * Measured rather than guessed: two browsers playing eight rounds each put a
+ * round at about seven and a half seconds end to end, of which the playing is
+ * a quarter of a second. The wait before the signal is the game and has to
+ * stay; this is the part that is only reading. Three seconds is long enough to
+ * read four words and a number, and takes the loop down by about a sixth.
+ */
+export const REST = 3
 
 /** A round with nothing happening in it for this long has lost its host. */
 export const STALE = 15
