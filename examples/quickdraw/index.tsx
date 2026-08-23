@@ -28,10 +28,18 @@
  * THE ROOM AGREES BECAUSE THE ANSWER IS COMPUTED, NOT ANNOUNCED. Every player
  * reports their own time; nobody reports anybody else's. Each client then
  * applies the same rule to the same claims: fastest counted time, ties to the
- * lower peer id. The host says when the round is closed, because somebody has
- * to start and stop the clock, but it has no say in who won it. resolve in
- * duel.ts is that rule, and its two tests are the two things that could go
- * wrong: order dependence, and believing an impossible time.
+ * lower peer id. The room names a host, because somebody has to start and stop
+ * the clock, but the host has no say in who won: resolve in duel.ts is that
+ * rule, and its two tests are the two things that could go wrong, order
+ * dependence and believing an impossible time.
+ *
+ * That split is why this game survived a bug that broke the other one. The
+ * clock used to be owned by whichever client held the lowest peer id, worked
+ * out by each client from the peer list, and the relay kept sockets in that
+ * list long after their tabs had closed: rooms elected a corpse, and the
+ * corpse never fired a signal. Rounds stopped rather than diverged, because
+ * the only thing the host was trusted with was starting them. Anything the
+ * host had been trusted to decide would have gone wrong quietly instead.
  *
  * WHY THE FRAME CLOCK RATHER THAN A WALL CLOCK, EVEN LOCALLY
  *
@@ -85,12 +93,13 @@ interface Snapshot {
     outcome: Outcome | null
     myMs: number | null
     best: number | null
+    dropped: string | null
     tally: Record<number, number>
 }
 
 const EMPTY: Snapshot = {
     phase: "idle", connected: false, myId: 0, inRoom: 1, round: 0,
-    roster: [], claims: [], outcome: null, myMs: null, best: null, tally: {},
+    roster: [], claims: [], outcome: null, myMs: null, best: null, dropped: null, tally: {},
 }
 
 function Quickdraw() {
@@ -124,6 +133,8 @@ function Quickdraw() {
 
     /** The round this client has already posted a score for. */
     const submitted = useRef(0)
+    /** The last thing the relay refused to carry, if it ever has. */
+    const dropped = useRef<string | null>(null)
 
     const [snap, setSnap] = useState<Snapshot>(EMPTY)
     const board = useLeaderboard({ limit: 6 })
@@ -131,6 +142,15 @@ function Quickdraw() {
     submit.current = board.submit
 
     const room = useRoom("saloon", {
+        // Worth seeing rather than guessing at: a dropped claim is a round this
+        // player looks absent for, and this game sends a handful of messages a
+        // round against a limit of sixty a second, so a drop means something is
+        // wrong rather than busy.
+        onDropped: (reason, detail) => {
+            dropped.current = `${reason}: ${detail}`
+            console.warn(`[quickdraw] the relay dropped a message, ${reason}: ${detail}`)
+            beat()
+        },
         onOpen: () => beat(),
         onJoin: () => beat(),
         onLeave: () => beat(),
@@ -158,9 +178,10 @@ function Quickdraw() {
                 return
             }
 
-            // The clock is the host's, and only the host's. Accepted from
-            // whoever this client's own election picked, so a peer cannot fire
-            // the signal unless it genuinely holds the lowest id in the room.
+            // The clock is the host's, and only the host's. Accepted only from
+            // the peer the room named, so nobody else can fire the signal or
+            // close a round. A claim, above, needs no such check: it is about
+            // the sender and the sender is stamped by the relay.
             if (from !== room.hostId) return
 
             if (data.k === "set" && Array.isArray(data.s)) {
@@ -244,7 +265,7 @@ function Quickdraw() {
         beat()
     }
 
-    /** The round clock. Only whoever holds the lowest id in the room runs it. */
+    /** The round clock. Only the client the room named host runs it. */
     const runClock = (dt: number) => {
         hostTimer.current -= dt
         // A round is over when everybody has answered, which is usually about a
@@ -313,10 +334,10 @@ function Quickdraw() {
         const host = room.isHost
         if (host) {
             if (!wasHost.current) {
-                // Just inherited the clock, which happens the moment the peer
-                // list changes and without anybody being told. Any round the
-                // old host left half finished is abandoned rather than
-                // guessed at: the next one starts in a moment.
+                // Just inherited the clock, either because the host left or
+                // because the room reaped a socket nobody was behind. Any
+                // round the old host left half finished is abandoned rather
+                // than guessed at: the next one starts in a moment.
                 hostPhase.current = "rest"
                 hostTimer.current = 1.5
             }
@@ -326,7 +347,8 @@ function Quickdraw() {
             if (quiet.current > STALE && phase.current !== "idle") {
                 // The host went away mid round and the new one has not started
                 // its first yet. Back to waiting rather than stuck on a signal
-                // that is never coming.
+                // that is never coming. The room reaps a dead socket inside
+                // ninety seconds, so this only has to cover the gap.
                 phase.current = "idle"
                 beat()
             }
@@ -346,6 +368,7 @@ function Quickdraw() {
             outcome: outcome.current,
             myMs: myMs.current,
             best: best.current,
+            dropped: dropped.current,
             tally: tally.current,
         })
     }
@@ -376,9 +399,19 @@ function Quickdraw() {
                         Wait for the word. First hand takes the round.
                     </Text>
                 </View>
-                <Text style={{ fontSize: 11, color: "rgba(140, 168, 200, 0.7)" }}>
-                    {snap.connected ? `round ${snap.round}, ${snap.inRoom} in the room` : "drawing alone, looking for the room"}
-                </Text>
+                <View style={{ alignItems: "flex-end" }}>
+                    <Text style={{ fontSize: 11, color: "rgba(140, 168, 200, 0.7)" }}>
+                        {snap.connected ? `round ${snap.round}, ${snap.inRoom} in the room` : "drawing alone, looking for the room"}
+                    </Text>
+                    {/* Its own line rather than in place of the one above: what
+                        the room is doing stays readable while something is
+                        wrong with what this client is sending. */}
+                    {snap.dropped !== null && (
+                        <Text style={{ fontSize: 11, marginTop: 2, color: "rgb(230, 130, 140)" }}>
+                            {`the room refused a message (${snap.dropped})`}
+                        </Text>
+                    )}
+                </View>
             </View>
 
             {/* No transition on this: an animated change would put its own

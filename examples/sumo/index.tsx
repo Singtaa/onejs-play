@@ -19,10 +19,18 @@
  *
  * The ring is the exception, because a ring that each client shrank on its own
  * clock would put two players on two different platforms. That needs one
- * owner, so the lowest peer id present holds the round clock and broadcasts it
- * four times a second. Everybody converges on it. No election, no messages: a
- * rule everybody can evaluate from the peer list alone, and the handover when
- * the host closes their tab happens on the same frame the peer list changes.
+ * owner, and the room names it: `room.isHost` is the earliest joined socket
+ * that is still answering, and it broadcasts the clock four times a second
+ * while everybody else converges on it.
+ *
+ * This game used to work that out for itself, by taking the lowest peer id
+ * present. The rule is sound and the input was not: the relay never reaped a
+ * socket nobody was behind, so a closed tab stayed in the peer list and every
+ * client dutifully elected it. The corpse broadcast nothing, so each client
+ * ran its own clock and two screens showed two different rings. The lesson is
+ * worth keeping even though the code is gone: a rule evaluated from shared
+ * state is only as true as the state, and liveness is not something a peer can
+ * observe about another peer. The room can, so the room decides.
  *
  * THE SHAPE THE PHYSICS ENGINE FORCES
  *
@@ -100,6 +108,7 @@ interface Snapshot {
     dash: number
     winner: number | null
     resting: boolean
+    dropped: string | null
     tally: Record<number, number>
     owners: (number | null)[]
     down: boolean[]
@@ -107,7 +116,7 @@ interface Snapshot {
 
 const EMPTY: Snapshot = {
     connected: false, myId: 0, roundNumber: 0, playing: false, iAmOut: false,
-    left: 0, inRoom: 1, dash: 1, winner: null, resting: true, tally: {},
+    left: 0, inRoom: 1, dash: 1, winner: null, resting: true, dropped: null, tally: {},
     owners: new Array(MAX_BLOBS).fill(null), down: new Array(MAX_BLOBS).fill(false),
 }
 
@@ -139,6 +148,8 @@ function Sumo() {
 
     /** This client's blob, as of the last tick. Stale by design: see below. */
     const mine = useRef({ x: CENTER_X, y: CENTER_Y })
+    /** The last thing the relay refused to carry, if it ever has. */
+    const dropped = useRef<string | null>(null)
     const sinceSync = useRef(0)
     const sinceTick = useRef(0)
     const dashLeft = useRef(0)
@@ -159,6 +170,17 @@ function Sumo() {
     const blobs = useRef<any[]>([]).current
 
     const room = useRoom("ring", {
+        // A message that went nowhere used to be invisible from in here, and a
+        // game quietly missing positions looks like a game with bad physics.
+        // Sumo sends about nineteen messages a second against a limit of
+        // sixty, so seeing this at all means something is wrong rather than
+        // busy, and it says so on screen instead of only in a console nobody
+        // has open.
+        onDropped: (reason, detail) => {
+            dropped.current = `${reason}: ${detail}`
+            console.warn(`[sumo] the relay dropped a message, ${reason}: ${detail}`)
+            beat()
+        },
         onOpen: () => {
             // Nothing to do beyond letting the panel know: the round starts
             // from the rest timer, and whether this client owns that timer is
@@ -205,16 +227,17 @@ function Sumo() {
             }
 
             // The two messages about the round itself are the only ones with a
-            // trusted sender, and the trust is thin: they are accepted from
-            // whoever this client's own election picked, so a peer cannot start
-            // rounds or wind the clock unless it genuinely holds the lowest id.
+            // trusted sender, and the trust is thin: they are accepted only
+            // from the peer the room named host, so nobody else can start a
+            // round or wind the clock. Everything above this line is a claim
+            // about the sender and needs no such check.
             if (from !== room.hostId) return
 
             if (data.k === "go" && Array.isArray(data.s)) {
                 // A round this client has already played, or is playing, is not
-                // started again. Ids are handed out in order, so the lowest one
-                // present is the oldest client in the room and has seen every
-                // round anybody has: a host is never behind the room it hosts.
+                // started again. The room names the earliest joined socket, so
+                // a host has been present for every round the room has had and
+                // cannot rewind it by starting one anybody has already seen.
                 if (data.n < nextRound.current) return
                 startRound(data.n, data.s)
                 return
@@ -467,6 +490,7 @@ function Sumo() {
             dash: 1 - dashLeft.current / DASH_COOLDOWN,
             winner: winner.current,
             resting: !live.current,
+            dropped: dropped.current,
             tally: tally.current,
             owners,
             down,
@@ -598,6 +622,14 @@ function Sumo() {
                     {snap.connected ? `Round ${snap.roundNumber}, ${snap.inRoom} in the room` : "Alone in the ring, looking for the room"}
                 </Text>
                 <Text style={{ fontSize: 11, marginTop: 1, color: "rgba(142, 168, 200, 0.6)" }}>{status()}</Text>
+                {/* Its own line rather than in place of the status, so what the
+                    round is doing stays readable while something is wrong with
+                    what this client is sending. */}
+                {snap.dropped !== null && (
+                    <Text style={{ fontSize: 11, marginTop: 1, color: "rgb(230, 130, 140)" }}>
+                        {`The room refused a message (${snap.dropped}).`}
+                    </Text>
+                )}
             </View>
 
             {/* The dash, which is the whole of the offence in this game. */}
