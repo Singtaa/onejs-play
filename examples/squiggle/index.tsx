@@ -44,10 +44,15 @@
  * It is a seed, written down in this file, so every client lays exactly the same
  * field on startup with nobody sending anything and nobody waiting. What does
  * get sent is only the difference: which orbs have been eaten, and which ones a
- * dead snake dropped somewhere new. One client is the owner of that difference,
- * so a late arrival has somebody to ask, and the owner is the lowest peer id in
- * the room, which everybody can work out from the peer list alone with no
- * election and no message.
+ * dead snake dropped somewhere new.
+ *
+ * One client owns that difference, so that a late arrival has somebody to ask,
+ * and the relay says which one. This game used to work it out for itself as the
+ * lowest peer id present, which was wrong in a way no client could see: a socket
+ * whose player had gone was still in the peer list, so every client agreed on a
+ * host that was never going to answer, and the field quietly stopped being
+ * topped up. Deciding it on the server is the only place the question can be
+ * answered, because only the server knows which sockets are still alive.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -166,6 +171,7 @@ function Squiggle() {
 
     const [status, setStatus] = useState({
         length: START_LENGTH, best: START_LENGTH, kills: 0, players: 1, connected: false,
+        host: null as number | null, mine: false, dropped: null as string | null,
     })
     const board = useLeaderboard({ limit: 5 })
     const submit = useRef(board.submit)
@@ -199,9 +205,10 @@ function Squiggle() {
     const room = useRoom("field", {
         onOpen: (id, list) => {
             setStatus((s) => ({ ...s, connected: true, players: list.length + 1 }))
-            // Nothing to ask for when this client is the owner, and nothing to
-            // wait for either: the field is already laid, from the seed.
-            if (!list.every((peer) => id < peer)) room.send({ k: "hi" })
+            // Nothing to ask for when the relay has named this client the host,
+            // and nothing to wait for either: the field is already laid, from
+            // the seed.
+            if (!room.isHost) room.send({ k: "hi" })
         },
         onJoin: () => setStatus((s) => ({ ...s, players: room.peers.length + 1 })),
         onLeave: (id) => {
@@ -251,8 +258,10 @@ function Squiggle() {
 
             if (data.k === "hi") {
                 // Somebody arrived with a field laid from the seed and no idea
-                // what has happened to it since. Only the owner answers.
-                if (isOwner()) room.send({ k: "f", d: fieldDelta() })
+                // what has happened to it since. Only the host answers, and it
+                // answers them alone: this is the largest message the game has,
+                // and everybody else already knows what is in it.
+                if (room.isHost) room.send({ k: "f", d: fieldDelta() }, from)
                 return
             }
 
@@ -306,15 +315,21 @@ function Squiggle() {
                 }
             }
         },
+        onHost: (mine, id) => setStatus((s) => ({ ...s, host: id, mine })),
+        /**
+         * The relay refused to pass something on.
+         *
+         * It used to drop silently, which meant a game that oversent looked
+         * like a game with a mysterious desync. The runtime already writes it
+         * to the console; putting it on screen as well costs a line that a
+         * working game never shows, and turns the next version of that bug
+         * into something a player can report without opening devtools.
+         */
+        onDropped: (reason, detail) => {
+            setStatus((s) => ({ ...s, dropped: reason }))
+        },
         onClose: () => setStatus((s) => ({ ...s, connected: false })),
     })
-
-    /** True when this client has the lowest id in the room, including itself. */
-    const isOwner = () => {
-        if (room.id === 0) return true
-        for (const peer of room.peers) if (peer < room.id) return false
-        return true
-    }
 
     /** Ends a life: leaves the body behind as food, reports it, and starts again. */
     const die = (toWhom: number) => {
@@ -446,7 +461,7 @@ function Squiggle() {
         // The owner puts eaten orbs back where the seed had them, a few at a
         // time. Back home rather than somewhere new, so that the field drifts
         // toward the layout every client already has rather than away from it.
-        if (isOwner()) {
+        if (room.isHost) {
             sinceTopUp.current -= step
             if (sinceTopUp.current <= 0) {
                 sinceTopUp.current = 0.7
@@ -558,6 +573,22 @@ function Squiggle() {
                 <Text style={{ fontSize: 11, marginTop: 1, color: "rgba(140, 170, 200, 0.6)" }}>
                     {`length ${status.length}, best this life ${status.best}, ${status.kills} run into you`}
                 </Text>
+                {/* One client keeps the orb field stocked and answers arrivals
+                    with what has changed since the seed. The relay picks which,
+                    and saying so out loud is what makes it obvious when nobody
+                    is doing it. */}
+                <Text style={{ fontSize: 10, marginTop: 3, color: "rgba(120, 150, 185, 0.5)" }}>
+                    {status.mine
+                        ? "the field is yours to keep stocked"
+                        : status.host === null
+                            ? "waiting for the field"
+                            : `player ${status.host} keeps the field stocked`}
+                </Text>
+                {status.dropped !== null && (
+                    <Text style={{ fontSize: 10, marginTop: 3, color: "rgb(240, 170, 90)" }}>
+                        {`the room dropped a message (${status.dropped})`}
+                    </Text>
+                )}
             </View>
 
             {/* Who is longest, right now, on this field. */}

@@ -26,6 +26,19 @@
  * nobody else needs to see that. An attack is one small message and a death is
  * another. A room of twenty four people costs a few kilobytes a second.
  *
+ * An attack goes to one player, so it is sent to one player. It used to be
+ * broadcast with the target's id inside it and filtered by everybody else,
+ * which worked and meant twenty two clients parsed a message about somebody
+ * else for every one that mattered.
+ *
+ * THIS GAME HAS NO HOST, AND THAT IS NOT AN OVERSIGHT
+ *
+ * A room can name one client the owner of shared world state. There is none
+ * here: every well belongs to the player sitting at it, the piece order is each
+ * player's own, and an attack is addressed rather than arbitrated. Nothing in
+ * this game would be more correct if one client were in charge of it, so
+ * nothing asks who the host is.
+ *
  * WHY THIS DRAWS ITSELF INSTEAD OF BUILDING ELEMENTS
  *
  * Falling Blocks builds its well out of two hundred Views, which is the right
@@ -169,12 +182,15 @@ function BlockParty() {
     /** The well we last sent junk to, and how long to keep saying so. */
     const strike = useRef({ to: 0, left: 0 })
     const dirty = useRef(true)
+    /** Peers who have just arrived and are owed a look at this well. */
+    const askers = useRef<number[]>([]).current
     const kos = useRef(0)
 
     const [panel, setPanel] = useState({
         score: 0, lines: 0, kos: 0, pending: 0,
         target: 0, players: 1, connected: false, dying: 0, buriedBy: 0,
     })
+    const [dropped, setDropped] = useState<string | null>(null)
     const board = useLeaderboard({ limit: 4 })
     const submit = useRef(board.submit)
     submit.current = board.submit
@@ -233,18 +249,17 @@ function BlockParty() {
             }
 
             if (data.k === "hi") {
-                // Somebody arrived. Send on the next frame rather than here, so
-                // that two arrivals at once still cost one message.
-                dirty.current = true
+                // Somebody arrived and wants to see the room. Answered on the
+                // next frame rather than here, so that two arrivals at once
+                // cannot cost two passes over the board.
+                if (!askers.includes(from)) askers.push(from)
                 timers.well = 0
                 return
             }
 
             if (data.k === "a") {
-                // Junk, addressed to one player. Everyone else in the room sees
-                // this message and ignores it, which is what a relay costs and
-                // is cheaper than asking the site to route anything.
-                if (num(data.to, -1) !== room.id) return
+                // Junk, and the relay only delivers it to the player it was
+                // addressed to, so arriving is the whole of the check.
                 well.pending = queue(well.pending, num(data.n))
                 lastHit.current = { from, at: Date.now() }
                 flash.current = 0.35
@@ -261,6 +276,18 @@ function BlockParty() {
                     refresh()
                 }
             }
+        },
+        /**
+         * The relay refused to pass something on.
+         *
+         * It used to drop silently, which meant a game that oversent looked
+         * like a game with a mysterious desync. The runtime already writes it
+         * to the console; putting it on screen as well costs a line that a
+         * working game never shows, and turns the next version of that bug
+         * into something a player can report without opening devtools.
+         */
+        onDropped: (reason, detail) => {
+            setDropped(reason)
         },
         onClose: () => refresh(),
     })
@@ -304,7 +331,7 @@ function BlockParty() {
         if (after.sent > 0) {
             const to = targetId()
             if (to !== 0) {
-                room.send({ k: "a", to, n: after.sent })
+                room.send({ k: "a", n: after.sent }, to)
                 strike.current = { to, left: 0.5 }
             }
         }
@@ -436,12 +463,18 @@ function BlockParty() {
         // The well goes out when it has changed, and no more than ten times a
         // second however fast pieces are being slammed down.
         timers.well -= step
-        if (dirty.current && timers.well <= 0) {
+        if (timers.well <= 0 && (dirty.current || askers.length > 0)) {
             timers.well = 1 / WELL_HZ
-            dirty.current = false
-            room.send({
-                k: "w", b: encodeWell(well.board), s: well.score, l: well.lines, o: kos.current,
-            })
+            const board = { k: "w", b: encodeWell(well.board), s: well.score, l: well.lines, o: kos.current }
+            if (dirty.current) {
+                // A broadcast was going out anyway, and it reaches anybody who
+                // had asked, so their answer costs nothing extra.
+                dirty.current = false
+                room.send(board)
+            } else {
+                for (const who of askers) room.send(board, who)
+            }
+            askers.length = 0
         }
 
         host.current?.MarkDirtyRepaint()
@@ -538,6 +571,15 @@ function BlockParty() {
             <Stat y={150} label="KNOCKED OUT" value={String(panel.kos)} />
             <Stat y={190} label="INCOMING" value={String(panel.pending)}
                 tone={panel.pending > 0 ? "rgb(245, 110, 110)" : "rgb(226, 233, 246)"} />
+
+            {dropped !== null && (
+                <Text style={{
+                    position: "absolute", left: PANEL_X, top: 520, width: PANEL_W,
+                    fontSize: 10, color: "rgb(240, 170, 90)",
+                }} pickingMode="Ignore">
+                    {`the room dropped a message (${dropped})`}
+                </Text>
+            )}
 
             <View style={{ position: "absolute", left: PANEL_X, top: 226, width: PANEL_W }} pickingMode="Ignore">
                 <Text style={{ fontSize: 9, color: "rgba(130, 150, 180, 0.7)" }}>NEXT</Text>
