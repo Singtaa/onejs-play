@@ -18,18 +18,31 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 
 | Module | Contents |
 |---|---|
+| `index.ts` | The game-facing surface, aliased to `oj` |
+| `mount.ts` | `mount()` and `useStage()` |
+| `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `stage.ts` | Logical coordinate space and how it maps to the viewport |
+| `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`: a game's own files |
+| `scores.ts` | `scores` and `useLeaderboard` |
+| `room.ts` | `useRoom`: other people, over a relay |
+| `physics.ts` | `usePhysics`, with the per-frame pumping done |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: the container is 2D only |
 | `color.ts` | `Color`, hex parsing shared in behaviour with the particle wire schema |
 | `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
-| `input.ts` | Container-side: the input backend onejs-unity reads through |
-| `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
-| `runtime.ts` | Container-side: builds the `oj` object a game receives |
-| `mount.ts` | `mount()` and `useStage()` |
-| `index.ts` | The game-facing surface, aliased to `oj` |
+| `theme.ts` | The default look of the controls the runtime provides |
 | `container.ts` | The host-facing surface, `onejs-play/container` |
+| `runtime.ts` | Container-side: builds the `oj` object a game receives |
+| `play.ts` | Container-side: where the site is, and the token proving a real session |
+| `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
+| `input.ts` | Container-side: the input backend onejs-unity reads through |
+| `adapter.ts` | Container-side: browser events into that backend |
+| `standalone.ts` | Starting a runtime outside a container, which is what eject needs |
+
+Everything above the `container.ts` line is reachable from a game. Everything
+below it is the host's, and a game bundle cannot see it: `oj` is the package
+root and `onejs-play/container` is a separate entry point.
 
 Value types are pure JavaScript, never bridged. That is faster than the real
 thing (no reflection crossing, no handle-table entry) and it keeps the container
@@ -111,6 +124,33 @@ slider in Particle Lab the same way.
 
 Reading through `input` also gets touch for free, since the same code sees
 `input.touches`.
+
+### A pointer does not survive an eject yet
+
+**Known defect, not yet fixed, and the one place the "same source, no rewrite"
+promise currently fails.**
+
+Inside the container, `createContainerInput` runs every pointer position through
+`toStage`, so a game reads logical stage units with the origin at the top left
+and y counting down, matching everything else it lays out.
+
+Outside one, `standalone.ts` deliberately does not install a backend, so
+`input.mouse.position` comes from the real `InputBridge`, which returns
+`Mouse.current.position`: **Unity screen space, physical pixels, origin bottom
+left, y counting up.** Three differences at once, and the flipped axis is the one
+that will look like a haunting rather than a bug.
+
+So a game steered by the mouse or by touch plays correctly on the site and
+wrongly in an ejected project. Keyboard games are unaffected, which is most of
+the examples here, but `big-fish`, `fireworks`, `murmuration`,
+`drop-everything`, `solitaire` and `space-junk` all read a pointer.
+
+The fix belongs in `standalone.ts`: wrap the real bridge rather than replace it,
+converting the pointer methods through `toStage` and passing keyboard, gamepad
+and haptics straight down. It is written down rather than done because it cannot
+be exercised from here: verifying it needs an ejected project built and run in
+Unity, and coordinate maths that has never been run is worse than a defect that
+has been named.
 
 Edges are frame numbers rather than booleans cleared each frame. That gets the
 awkward cases right: a key pressed and released inside one frame reports both
@@ -297,8 +337,8 @@ way, and they typecheck against `oj` exactly as a published game does:
 | Example | Bundled | Exercises |
 |---|---:|---|
 | `starter` | 1.9 KB | What `/new` scaffolds: one screen, one loop, nothing else |
-| `vowel-play` | 82.9 KB | Turn-based input, CSS Modules, a seeded daily word |
-| `well-stacked` | 9.2 KB | Real-time gravity and key repeat off the frame delta |
+| `wordie` | 82.9 KB | Turn-based input, CSS Modules, a seeded daily word |
+| `falling-blocks` | 9.2 KB | Real-time gravity and key repeat off the frame delta |
 | `twos-company` | 10.6 KB | USS transitions animating a board, stable ids across a move |
 | `fireworks` | 3.8 KB | Particles, and the only game that ships assets |
 | `space-junk` | 7.7 KB | The batched painter drawing a whole arcade game in one path |
@@ -306,19 +346,21 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `wayfinder` | 6.7 KB | Retained-mode elements where almost nothing changes per frame |
 | `drop-everything` | 4.2 KB | The physics world, and a pool because bodies cannot be added |
 | `particle-lab` | 7.6 KB | Sliders driving a real config, printed back out to paste |
-| `patience` | 10.9 KB | Drag and drop, one pointer handler, suits drawn as paths |
+| `solitaire` | 11.1 KB | Drag and drop, suits drawn as paths, no pointer handlers at all |
+| `big-fish` | 8.5 KB | A room, a leaderboard, and a relay you cannot trust |
 
 Every one typechecks against `oj` exactly as a published game does, and the
 logic in each is tested without a screen: `npm test` covers the rules of the
 games, not their pixels.
 
-Three of them are worth reading for a decision rather than a mechanic.
+Four of them are worth reading for a decision rather than a mechanic.
 `wayfinder` uses elements where the arcade games use a painter, because a search
 changes four squares a frame and leaves a thousand alone. `drop-everything`
 creates every body it will ever have up front, because a physics world cannot
-grow. `patience` puts three pointer handlers on the board instead of a hundred
-and fifty six on the cards, because every handler costs a slot in the native
-callback table.
+grow. `solitaire` reads the pointer through `input` in a frame loop rather than
+through React's pointer events, for the reason in the input section above, and
+gets touch for free. `big-fish` is the one to read before writing anything
+multiplayer.
 
 **Input events queue to the frame boundary.** A browser delivers a keydown
 whenever it likes, including between frames. Applying it on arrival stamps it
