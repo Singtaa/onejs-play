@@ -1,20 +1,33 @@
 import { describe, it, expect } from "vitest"
 import { PRESETS, PREVIEW_W, PREVIEW_H, toEmitter, toSource, shiftHue, type Knobs } from "./presets"
 
-const knobs = (): Knobs => ({ ...PRESETS[0]!.knobs })
+const knobs = (): Knobs => ({ ...PRESETS[0]!.layers[0]! })
+
+/** Every layer of every preset, which is what most of these check. */
+const allLayers = (): Knobs[] => PRESETS.flatMap((preset) => preset.layers)
 
 describe("the presets", () => {
     it("are all complete", () => {
         for (const preset of PRESETS) {
             expect(preset.name).toBeTruthy()
-            expect(preset.knobs.ramp.length).toBeGreaterThanOrEqual(2)
-            expect(preset.knobs.rate).toBeGreaterThan(0)
+            expect(preset.layers.length).toBeGreaterThanOrEqual(1)
+            for (const layer of preset.layers) {
+                expect(layer.ramp.length).toBeGreaterThanOrEqual(2)
+                expect(layer.rate).toBeGreaterThan(0)
+            }
         }
     })
 
+    /**
+     * The reason the lab exists rather than a text editor. If every preset were
+     * one emitter, layering would be a feature nothing demonstrated.
+     */
+    it("include some that stack several emitters", () => {
+        expect(PRESETS.some((preset) => preset.layers.length > 1)).toBe(true)
+    })
+
     it("keep every range the right way round", () => {
-        for (const preset of PRESETS) {
-            const k = preset.knobs
+        for (const k of allLayers()) {
             expect(k.speedMin).toBeLessThanOrEqual(k.speedMax)
             expect(k.lifeMin).toBeLessThanOrEqual(k.lifeMax)
             expect(k.sizeMin).toBeLessThanOrEqual(k.sizeMax)
@@ -23,26 +36,24 @@ describe("the presets", () => {
     })
 
     it("use colours the particle system can parse", () => {
-        for (const preset of PRESETS) {
-            for (const colour of preset.knobs.ramp) {
-                expect(colour).toMatch(/^#[0-9a-f]{8}$/i)
-            }
+        for (const layer of allLayers()) {
+            for (const colour of layer.ramp) expect(colour).toMatch(/^#[0-9a-f]{8}$/i)
         }
     })
 
     it("stay inside the additiveness range the shader understands", () => {
-        for (const preset of PRESETS) {
-            expect(preset.knobs.additiveness).toBeGreaterThanOrEqual(0)
-            expect(preset.knobs.additiveness).toBeLessThanOrEqual(1)
+        for (const layer of allLayers()) {
+            expect(layer.additiveness).toBeGreaterThanOrEqual(0)
+            expect(layer.additiveness).toBeLessThanOrEqual(1)
         }
     })
 
     it("start their emitters inside the preview", () => {
-        for (const preset of PRESETS) {
-            expect(preset.knobs.originX).toBeGreaterThanOrEqual(0)
-            expect(preset.knobs.originX).toBeLessThanOrEqual(PREVIEW_W)
-            expect(preset.knobs.originY).toBeGreaterThanOrEqual(0)
-            expect(preset.knobs.originY).toBeLessThanOrEqual(PREVIEW_H)
+        for (const layer of allLayers()) {
+            expect(layer.originX).toBeGreaterThanOrEqual(0)
+            expect(layer.originX).toBeLessThanOrEqual(PREVIEW_W)
+            expect(layer.originY).toBeGreaterThanOrEqual(0)
+            expect(layer.originY).toBeLessThanOrEqual(PREVIEW_H)
         }
     })
 
@@ -54,8 +65,7 @@ describe("the presets", () => {
      */
     it("throw far enough to read as what they are called", () => {
         const rising = (k: Knobs) => k.spreadFrom > 180 && k.spreadTo < 360
-        for (const preset of PRESETS) {
-            const k = preset.knobs
+        for (const k of allLayers()) {
             if (!rising(k) || k.gravity <= 0) continue
             const apex = (k.speedMax * k.speedMax) / (2 * k.gravity)
             expect(apex).toBeGreaterThan(PREVIEW_H * 0.4)
@@ -63,8 +73,7 @@ describe("the presets", () => {
     })
 
     it("start a downward effect near the top", () => {
-        for (const preset of PRESETS) {
-            const k = preset.knobs
+        for (const k of allLayers()) {
             const falling = k.spreadFrom > 0 && k.spreadTo < 180
             if (!falling) continue
             expect(k.originY).toBeLessThan(PREVIEW_H * 0.2)
@@ -121,28 +130,34 @@ describe("toSource", () => {
      * by comparing it to a copy of itself.
      */
     it("prints every field the emitter actually has", () => {
-        const source = toSource(knobs(), 1200)
+        const source = toSource([knobs()], 1200)
         for (const key of Object.keys(toEmitter(knobs()))) {
             expect(source).toContain(`${key}:`)
         }
     })
 
     it("prints the max it was given", () => {
-        expect(toSource(knobs(), 777)).toContain("max: 777")
+        expect(toSource([knobs()], 777)).toContain("max: 777")
     })
 
     it("prints arrays on one line, the way somebody would write them", () => {
-        expect(toSource({ ...knobs(), speedMin: 10, speedMax: 20 }, 100)).toContain("speed: [10, 20]")
+        expect(toSource([{ ...knobs(), speedMin: 10, speedMax: 20 }], 100)).toContain("speed: [10, 20]")
     })
 
     it("quotes colours and leaves numbers bare", () => {
-        const source = toSource({ ...knobs(), ramp: ["#ffffffff", "#00000000"] }, 100)
+        const source = toSource([{ ...knobs(), ramp: ["#ffffffff", "#00000000"] }], 100)
         expect(source).toContain('colorOverLife: ["#ffffffff", "#00000000"]')
         expect(source).toContain("drag: 0")
     })
 
+    it("prints every layer of a stack, not just the first", () => {
+        const source = toSource(PRESETS.find((p) => p.layers.length > 1)!.layers, 1000)
+        // One opening brace per emitter inside the array.
+        expect((source.match(/^ {8}\{$/gm) ?? []).length).toBeGreaterThan(1)
+    })
+
     it("is something a person could paste", () => {
-        const source = toSource(knobs(), 1000)
+        const source = toSource([knobs()], 1000)
         expect(source.startsWith("const fx = useParticles(ref, {")).toBe(true)
         expect(source.trimEnd().endsWith("})")).toBe(true)
     })
@@ -184,7 +199,7 @@ describe("shiftHue", () => {
 
     it("always produces something the particle system can parse", () => {
         for (const preset of PRESETS) {
-            for (const colour of preset.knobs.ramp) {
+            for (const colour of preset.layers.flatMap((l) => l.ramp)) {
                 for (const shift of [-200, -30, 17, 95, 400]) {
                     expect(shiftHue(colour, shift)).toMatch(/^#[0-9a-f]{8}$/i)
                 }

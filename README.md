@@ -159,12 +159,71 @@ both were invisible from the outside:
 - onejs-react's image loader had no URL bypass, so a full URL was mangled into
   `{streamingAssets}/onejs/assets/https://...` and never fetched. onejs-unity's
   own resolver has always had that check; the copy in the reconciler did not.
+  **Not a WebGL bug**, though it was found here: `https://...` is not a rooted
+  path on any platform, so the same mangling happened in the editor and in a
+  desktop build. It only went unnoticed because nothing had loaded a remote
+  image before.
 - On WebGL, `QuickJSUIBridge.Tick()` is never called, because the browser drives
   the JS scheduler instead. Settling completed C# Tasks lived in `Tick()`, so on
   WebGL **every** Task-returning API stayed pending forever: `audio.load` and
   `<Image src="http...">` never resolved and never rejected, in every web build,
   with nothing logged. It is settled from `TickSystems()` now, which is the one
   thing Update does still call.
+
+## Other people
+
+`useRoom(name)` puts a game in a room with everybody else playing it.
+
+```tsx
+const room = useRoom("lobby", {
+    onOpen: (myId, peers) => {},
+    onJoin: (id) => {},
+    onLeave: (id) => {},
+    onMessage: (from, data) => {},
+})
+room.send({ x, y })       // to everyone else
+room.id, room.peers, room.connected
+```
+
+**The site is a relay and runs no game logic**, because a game here is a
+JavaScript bundle and half of it living on a server would end "fork this and
+change it". The rule that makes a dumb relay safe is worth stating twice:
+
+> Every client is the authority on itself and on nothing else.
+
+You broadcast where you are; you decide when *you* died. A kill is not a message
+anybody can send, so the worst a liar can do is refuse to die, which makes them
+strange to watch and harms nobody else's game. Let the bigger player declare the
+kill instead and you have handed every client the ability to eat anyone at any
+distance.
+
+Shared state that needs one owner (a food field, a round timer) goes to the
+lowest peer id present. Everyone evaluates that from `room.peers` alone, with no
+election and no message, and it re-elects on the frame the host leaves.
+
+Budgets: 24 peers a room, 8 KB a message, 60 messages a second a socket. Send
+position at about 15 Hz and interpolate between updates rather than sending
+every frame.
+
+`examples/big-fish` is the reference, and its `ocean.ts` header is the longer
+version of the argument above.
+
+## Leaderboards
+
+```tsx
+const board = useLeaderboard({ limit: 6 })   // {name, score, at}[]
+if (scores.available) board.submit(points)   // never throws
+```
+
+Submitting needs a short-lived token the host mints when it serves the game's
+document, checked against the game it was minted for. **That stops a stranger
+with curl and nothing more.** A player can read the token out of their own page
+and post whatever they like, and nothing short of running the game's rules on a
+server would change that. These boards are for bragging, and the site says so
+where people can read it rather than implying a rigour that is not there.
+
+Guard the call so one run posts one score: a frame loop notices the end of a
+game sixty times a second.
 
 ## Transforms
 

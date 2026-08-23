@@ -1,0 +1,15 @@
+/* The chosen button in a group.
+
+   A class rather than an inline background colour, and that is not only taste:
+   an inline style beats a stylesheet in UI Toolkit exactly as it does on the
+   web, so a button coloured inline would also lose its hover and pressed
+   states. Set here, the runtime theme still handles both. */
+
+.selected {
+    background-color: rgb(52, 96, 158);
+    border-color: rgb(96, 146, 214);
+}
+
+.selected:hover {
+    background-color: rgb(64, 112, 178);
+}
