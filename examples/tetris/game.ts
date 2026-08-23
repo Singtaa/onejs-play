@@ -1,5 +1,5 @@
 /**
- * Tetris rules, with no rendering and no oj in them.
+ * The rules of Tetris, with no screen in them.
  *
  * Pure so it can be unit tested, which matters here because the fiddly parts
  * (rotation near a wall, what counts as a lock, scoring a multi-line clear) are

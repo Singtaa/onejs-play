@@ -1,8 +1,10 @@
 /**
- * Wordle rules, with no rendering and no oj in sight.
+ * The rules of Wordle, with no screen in them.
  *
- * Kept pure so it can be unit tested, which matters most for scoring: the
- * duplicate-letter rule is where nearly every Wordle clone goes wrong.
+ * Separated from the display so they can be tested directly. That matters most
+ * for scoring: the rule about repeated letters is where nearly every Wordle
+ * clone gets it wrong, and it is far easier to be sure of with a test than by
+ * playing until something looks off.
  */
 
 export type LetterState = "correct" | "present" | "absent"

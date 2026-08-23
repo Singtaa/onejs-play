@@ -1,9 +1,16 @@
 /**
- * Tetris, written against oj.
+ * Tetris.
  *
- * Where Wordle only reacts to keystrokes, this runs on a clock: gravity,
- * soft-drop repeat and lock timing all come off useFrame's delta rather than
- * off a timer, so the game keeps its pace whatever the frame rate does.
+ * The screen is React, drawn by Unity rather than by a browser. View and Text
+ * are the building blocks, and they come from "oj", the small runtime this game
+ * runs on.
+ *
+ * Unlike Wordle, this one runs on a clock. Gravity, the repeat rate while a
+ * key is held, and the pause before a piece locks are all measured from the
+ * time between frames rather than from a timer, so the game keeps its pace
+ * whether the display runs at 60 frames a second or 144.
+ *
+ * The rules are in game.ts and know nothing about the screen.
  */
 
 import { useRef, useState } from "react"

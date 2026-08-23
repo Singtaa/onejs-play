@@ -1,12 +1,15 @@
 /**
- * Wordle, written against oj exactly as a published game would be.
+ * Wordle: six guesses at a five letter word.
  *
- * The rules live in game.ts with no oj in them at all, so they unit test on
- * their own; this file is the part that renders and reads input.
+ * The screen is React. View and Text are the building blocks, roughly a div
+ * and a span, and Unity draws them: there is no browser layout underneath, so
+ * the same code renders inside a game as well as on a web page.
  *
- * Worth noting what is NOT here: no CS.*, no build config, no root plumbing.
- * The container supplies oj, mount() knows where to render, and physical keys
- * arrive through the same input API a native OneJS project uses.
+ * They come from "oj", which is the small runtime this game runs on. It is
+ * where the components, the keyboard, and a couple of helpers live.
+ *
+ * The rules are in game.ts and know nothing about the screen. This file is
+ * only what you see and what you press.
  */
 
 import { useState, useMemo } from "react"
@@ -60,7 +63,7 @@ function Row({ guess, answer, draft, revealed }: {
     )
 }
 
-/** Key tints, kept separate from the tile ones. See wordle.module.uss. */
+/** The keyboard uses its own tints, a little darker than the tiles. */
 const KEY_TONE: Record<LetterState, string> = {
     correct: styles.keyCorrect,
     present: styles.keyPresent,
@@ -125,8 +128,9 @@ function Wordle() {
         else if (after === "lost") setMessage(answer)
     }
 
-    // Physical keys, polled once a frame. Same API a native OneJS project uses;
-    // in the container it is fed by browser events through the input backend.
+    // Keys are read once a frame, the way a game loop reads them, rather than
+    // arriving as events. wasKeyPressed is true only on the frame a key went
+    // down, so holding one types a single letter instead of a stream.
     useFrame(() => {
         if (input.keyboard.wasKeyPressed("Enter")) submit()
         else if (input.keyboard.wasKeyPressed("Backspace")) backspace()
@@ -175,4 +179,6 @@ function Wordle() {
     )
 }
 
+// Puts the game on screen. Nothing else is needed: no page, no canvas, no
+// root element to find.
 mount(<Wordle />)
