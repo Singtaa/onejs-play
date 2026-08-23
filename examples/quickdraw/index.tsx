@@ -58,7 +58,6 @@ import { useEffect, useRef, useState } from "react"
 import { View, Text, mount, useFrame, useRoom, useLeaderboard, scores, input, random } from "oj"
 import {
     classify, addClaim, resolve, scoreOf, msOf, submittable, holdFor, credit,
-    isHost, hostOf,
     REACTION_WINDOW, REST, STALE, CEILING_MS,
     type Claim, type Outcome,
 } from "./duel"
@@ -162,7 +161,7 @@ function Quickdraw() {
             // The clock is the host's, and only the host's. Accepted from
             // whoever this client's own election picked, so a peer cannot fire
             // the signal unless it genuinely holds the lowest id in the room.
-            if (from !== hostOf(room.id, room.peers)) return
+            if (from !== room.hostId) return
 
             if (data.k === "set" && Array.isArray(data.s)) {
                 if (data.n <= roundNumber.current) return
@@ -311,7 +310,7 @@ function Quickdraw() {
             beat()
         }
 
-        const host = isHost(room.id, room.peers)
+        const host = room.isHost
         if (host) {
             if (!wasHost.current) {
                 // Just inherited the clock, which happens the moment the peer

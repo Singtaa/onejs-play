@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
     platformRadius, isOff, spawnAt, steer, advance, leashVelocity, leashDelta,
-    beginRound, applyFall, standing, isOver, winnerOf, credit, isHost, hostOf, syncClock, Slots,
+    beginRound, applyFall, standing, isOver, winnerOf, credit, syncClock, Slots,
     ARENA_W, CENTER_X, CENTER_Y, START_RADIUS, MIN_RADIUS, GRACE, SHRINK_PER_SECOND,
     ROUND_CAP, SNAP_DISTANCE, MAX_BLOBS, type Track,
 } from "./arena"
@@ -288,33 +288,6 @@ describe("ending a round", () => {
     })
 })
 
-describe("electing the host", () => {
-    /**
-     * Every client works this out for itself from its own peer list, so the
-     * property that matters is that exactly one of them says yes, for any room.
-     */
-    it("picks exactly one host, whoever is in the room", () => {
-        for (let i = 0; i < 300; i++) {
-            const ids = new Set<number>()
-            while (ids.size < 1 + Math.floor(Math.random() * 12)) {
-                ids.add(1 + Math.floor(Math.random() * 500))
-            }
-            const room = [...ids]
-            const hosts = room.filter((id) => isHost(id, room.filter((other) => other !== id)))
-            expect(hosts).toHaveLength(1)
-        }
-    })
-
-    it("hands over the moment the host leaves, with nobody being told", () => {
-        expect(isHost(9, [4, 9])).toBe(false)
-        expect(isHost(9, [])).toBe(true)
-    })
-
-    it("owns everything while it has no id, which means it is alone", () => {
-        expect(isHost(0, [])).toBe(true)
-    })
-})
-
 describe("handing out bodies", () => {
     it("keeps body 0 for this client", () => {
         const slots = new Slots(4)
@@ -410,9 +383,4 @@ describe("the round clock", () => {
         expect(syncClock(10, 11)).toBeLessThan(11)
     })
 
-    it("names the host everybody else names", () => {
-        expect(hostOf(9, [4, 21])).toBe(4)
-        expect(hostOf(4, [9, 21])).toBe(4)
-        expect(hostOf(7, [])).toBe(7)
-    })
 })

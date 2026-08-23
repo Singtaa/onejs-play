@@ -286,25 +286,6 @@ export function credit(tally: Readonly<Record<number, number>>, id: number | nul
     return { ...tally, [id]: (tally[id] ?? 0) + 1 }
 }
 
-/**
- * Who owns the round clock and the ring.
- *
- * The lowest id in the room, which everybody can evaluate from the peer list
- * alone: no election, no messages, and an instant handover when the host
- * leaves, because the answer changes on the same frame the peer list does. An
- * id of 0 means this client has not been given one yet, which only happens
- * when it is alone with no site behind it, so it owns everything by default.
- */
-export function hostOf(myId: number, peers: readonly number[]): number {
-    let lowest = myId
-    for (const peer of peers) if (peer < lowest) lowest = peer
-    return lowest
-}
-
-export function isHost(myId: number, peers: readonly number[]): boolean {
-    if (myId === 0) return true
-    return hostOf(myId, peers) === myId
-}
 
 /**
  * Moves this client's round clock toward the host's, a fraction at a time.

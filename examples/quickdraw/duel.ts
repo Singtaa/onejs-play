@@ -159,22 +159,3 @@ export function credit(tally: Readonly<Record<number, number>>, id: number | nul
     return { ...tally, [id]: (tally[id] ?? 0) + 1 }
 }
 
-/**
- * Who runs the clock.
- *
- * The lowest id in the room, which everybody can evaluate from the peer list
- * alone: no election, no messages, and an instant handover when the host
- * leaves. The host decides when a round is armed and when the signal fires,
- * because somebody has to and there is nobody else. It decides nothing about
- * who won: see resolve.
- */
-export function hostOf(myId: number, peers: readonly number[]): number {
-    let lowest = myId
-    for (const peer of peers) if (peer < lowest) lowest = peer
-    return lowest
-}
-
-export function isHost(myId: number, peers: readonly number[]): boolean {
-    if (myId === 0) return true
-    return hostOf(myId, peers) === myId
-}

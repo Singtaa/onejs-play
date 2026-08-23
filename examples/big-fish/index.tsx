@@ -100,10 +100,10 @@ function BigFish() {
     const room = useRoom("pond", {
         onOpen: (id, list) => {
             setStatus((s) => ({ ...s, connected: true, players: list.length + 1 }))
-            // The lowest id present owns the food. Alone in the pond, that is
-            // this client, so it lays the field immediately rather than waiting
-            // for a host that is never going to answer.
-            if (list.every((peer) => id < peer)) scatter()
+            // The room says who owns the food. Alone in the pond that is this
+            // client, so it lays the field immediately rather than waiting for
+            // a host that is never going to answer.
+            if (room.isHost) scatter()
             else room.send({ k: "hello" })
         },
         onJoin: () => setStatus((s) => ({ ...s, players: peers.size + 1 })),
@@ -138,7 +138,7 @@ function BigFish() {
             if (data.k === "hello") {
                 // Somebody arrived and wants the field. Only the host answers,
                 // and the host is whoever has the lowest id in the room.
-                if (isHost()) room.send({ k: "field", p: food.map((f) => [Math.round(f.x), Math.round(f.y), f.tone, f.alive ? 1 : 0]) })
+                if (room.isHost) room.send({ k: "field", p: food.map((f) => [Math.round(f.x), Math.round(f.y), f.tone, f.alive ? 1 : 0]) })
                 return
             }
 
@@ -185,13 +185,6 @@ function BigFish() {
         },
         onClose: () => setStatus((s) => ({ ...s, connected: false })),
     })
-
-    /** True when this client has the lowest id in the room, including itself. */
-    const isHost = () => {
-        if (room.id === 0) return true
-        for (const peer of room.peers) if (peer < room.id) return false
-        return true
-    }
 
     /** Ends a life: reports it, banks the score, and starts again. */
     const die = (toWhom: number) => {
@@ -274,7 +267,7 @@ function BigFish() {
         // The host tops the field back up so the pond does not empty out. A
         // handful at a time and in one message, because a pond of two hundred
         // pellets refilled one per tick would never catch up with a busy game.
-        if (isHost()) {
+        if (room.isHost) {
             sinceTopUp.current -= step
             if (sinceTopUp.current <= 0) {
                 sinceTopUp.current = 0.8

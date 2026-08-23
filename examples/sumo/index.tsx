@@ -46,7 +46,7 @@ import {
 } from "oj"
 import {
     platformRadius, isOff, spawnAt, steer, advance, leashVelocity, leashDelta,
-    beginRound, applyFall, standing, isOver, winnerOf, credit, isHost, hostOf,
+    beginRound, applyFall, standing, isOver, winnerOf, credit,
     syncClock, Slots,
     ARENA_W, ARENA_H, CENTER_X, CENTER_Y, BLOB_RADIUS,
     THRUST, DRAG, DASH_SPEED, DASH_COOLDOWN, BOUNCE, SYNC_HZ, SNAP_DISTANCE,
@@ -208,7 +208,7 @@ function Sumo() {
             // trusted sender, and the trust is thin: they are accepted from
             // whoever this client's own election picked, so a peer cannot start
             // rounds or wind the clock unless it genuinely holds the lowest id.
-            if (from !== hostOf(room.id, room.peers)) return
+            if (from !== room.hostId) return
 
             if (data.k === "go" && Array.isArray(data.s)) {
                 // A round this client has already played, or is playing, is not
@@ -312,7 +312,7 @@ function Sumo() {
         const current = live.current ? round.current : null
         const iAmIn = current !== null && current.starters.includes(room.id) && !fallen.current
 
-        if (current === null && isHost(room.id, room.peers)) {
+        if (current === null && room.isHost) {
             // Only the host counts down to the next round, and it announces the
             // roster it saw so that everybody spawns from the same list.
             rest.current -= step
@@ -369,7 +369,7 @@ function Sumo() {
         // says what it is. Four times a second is enough: everybody advances
         // their own copy every frame and only converges on this one, so it
         // corrects drift rather than driving the ring.
-        if (current !== null && isHost(room.id, room.peers)) {
+        if (current !== null && room.isHost) {
             sinceTick.current -= step
             if (sinceTick.current <= 0) {
                 sinceTick.current = 0.25

@@ -1,8 +1,19 @@
 import { describe, it, expect } from "vitest"
 import {
-    classify, addClaim, resolve, scoreOf, msOf, submittable, holdFor, credit,
-    hostOf, isHost,
-    FLOOR_MS, CEILING_MS, MIN_HOLD, MAX_HOLD, REACTION_WINDOW, type Claim,
+    classify,
+    addClaim,
+    resolve,
+    scoreOf,
+    msOf,
+    submittable,
+    holdFor,
+    credit,
+    FLOOR_MS,
+    CEILING_MS,
+    MIN_HOLD,
+    MAX_HOLD,
+    REACTION_WINDOW,
+    type Claim,
 } from "./duel"
 
 const claim = (id: number, ms: number, jumped = false): Claim => ({ id, ms, jumped })
@@ -205,27 +216,3 @@ describe("the tally", () => {
     })
 })
 
-describe("electing the host", () => {
-    /** Every client answers this for itself, so exactly one must say yes. */
-    it("picks exactly one host, whoever is in the room", () => {
-        for (let i = 0; i < 300; i++) {
-            const ids = new Set<number>()
-            while (ids.size < 1 + Math.floor(Math.random() * 12)) {
-                ids.add(1 + Math.floor(Math.random() * 500))
-            }
-            const room = [...ids]
-            const hosts = room.filter((id) => isHost(id, room.filter((other) => other !== id)))
-            expect(hosts).toHaveLength(1)
-        }
-    })
-
-    it("hands over the moment the host leaves", () => {
-        expect(isHost(12, [5, 12])).toBe(false)
-        expect(isHost(12, [])).toBe(true)
-        expect(hostOf(12, [5, 30])).toBe(5)
-    })
-
-    it("owns the round while it has no id, which means it is alone", () => {
-        expect(isHost(0, [])).toBe(true)
-    })
-})

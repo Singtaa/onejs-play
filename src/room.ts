@@ -19,6 +19,19 @@
  * Games that need real authority want a server, and that is a different
  * product. These are for playing with friends.
  *
+ * WHO IS THE HOST
+ *
+ * Some things need one owner: a food field, a round clock. `room.isHost` says
+ * whether that is you, and the answer comes from the room rather than from a
+ * rule each game evaluates for itself.
+ *
+ * That used to be "the lowest peer id present", copied into every multiplayer
+ * game, and it was wrong in a way none of them could see. A socket whose
+ * browser had gone stayed in the peer list, so clients elected a corpse: it
+ * broadcast nothing, everybody fell back to their own clock, and the game
+ * desynced completely. The room is the only party that knows who is actually
+ * connected, so the room decides.
+ *
  *     const room = useRoom("lobby", {
  *         onMessage: (from, data) => others.set(from, data),
  *         onLeave: (id) => others.delete(id),
@@ -32,6 +45,9 @@ import { getPlayContext, socketUrl } from "./play"
 /** Anything JSON can carry. Messages are serialised, so functions are not. */
 export type RoomMessage = unknown
 
+/** How often a client says it is still there. Well under the room's timeout. */
+const HEARTBEAT_MS = 25_000
+
 export interface RoomOptions {
     /** Someone said something. `from` is their peer id. */
     onMessage?: (from: number, data: RoomMessage) => void
@@ -43,6 +59,18 @@ export interface RoomOptions {
     onOpen?: (id: number, peers: readonly number[]) => void
     /** The connection went away. A reconnect is already being attempted. */
     onClose?: (reason: string) => void
+    /**
+     * The room named a new owner for whatever needs one, possibly you.
+     *
+     * Also fired on join and when somebody leaves, since either can change it.
+     */
+    onHost?: (isHost: boolean, hostId: number | null) => void
+    /**
+     * Something you sent went nowhere: too large, or too fast. Worth logging
+     * during development, because the alternative is a game quietly missing
+     * events and nobody knowing why.
+     */
+    onDropped?: (reason: string, detail: string) => void
 }
 
 export interface Room {
@@ -51,8 +79,21 @@ export interface Room {
     readonly id: number
     /** Everybody else, most recent last. */
     readonly peers: readonly number[]
-    /** Sends to everyone else in the room. Silently dropped while offline. */
-    send(data: RoomMessage): void
+    /**
+     * Whether this client owns whatever needs one owner.
+     *
+     * True when alone, so a game works with nobody else there. Decided by the
+     * room, not by a rule you evaluate: see the header.
+     */
+    readonly isHost: boolean
+    /** Who the host is, or null before the welcome arrives. */
+    readonly hostId: number | null
+    /**
+     * Sends to everyone else, or to one peer when `to` is given.
+     *
+     * Silently dropped while offline, so a game can send unconditionally.
+     */
+    send(data: RoomMessage, to?: number): void
     /** Leaves for good. The hook does this on unmount. */
     close(): void
 }
@@ -71,8 +112,11 @@ interface Wire {
     id?: number
     from?: number
     peers?: number[]
+    /** Who the room says owns shared state. Null when the room is empty. */
+    host?: number | null
     d?: unknown
     reason?: string
+    detail?: string
 }
 
 /**
@@ -102,7 +146,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
 
     const socket = useRef<WebSocket | null>(null)
     const closed = useRef(false)
-    const live = useRef({ id: 0, peers: [] as number[], connected: false })
+    const live = useRef({ id: 0, peers: [] as number[], connected: false, hostId: null as number | null })
 
     const facade = useRef<Room | null>(null)
     if (facade.current === null) {
@@ -110,11 +154,25 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             get connected() { return live.current.connected },
             get id() { return live.current.id },
             get peers() { return live.current.peers },
-            send(data: RoomMessage) {
+            get hostId() { return live.current.hostId },
+            /**
+             * True when alone, so a single player game still runs.
+             *
+             * Before the welcome arrives id is 0 and hostId is null, and this
+             * reads true: a game that lays out a level on the first frame
+             * should do it rather than wait for a room it may never reach.
+             */
+            get isHost() {
+                const { id, hostId } = live.current
+                return hostId === null || hostId === id
+            },
+            send(data: RoomMessage, to?: number) {
                 const ws = socket.current
                 if (ws === null || ws.readyState !== 1) return
                 try {
-                    ws.send(JSON.stringify({ t: "msg", d: data }))
+                    ws.send(JSON.stringify(to === undefined
+                        ? { t: "msg", d: data }
+                        : { t: "msg", d: data, to }))
                 } catch (error) {
                     console.warn("[oj] could not send to the room:", error)
                 }
@@ -143,6 +201,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
         closed.current = false
         let retry = RETRY_MIN_MS
         let timer: ReturnType<typeof setTimeout> | null = null
+        let heartbeat: ReturnType<typeof setInterval> | null = null
 
         const apply = (next: Partial<typeof live.current>) => {
             live.current = { ...live.current, ...next }
@@ -160,6 +219,23 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
 
             ws.onopen = () => {
                 retry = RETRY_MIN_MS
+                /**
+                 * A heartbeat, because message traffic is not liveness.
+                 *
+                 * An arcade game sends fifteen times a second and a turn-based
+                 * one can sit silent between rounds, and only one of those
+                 * should be reaped. Without this the room cannot tell a quiet
+                 * player from a closed browser, which is how rooms filled with
+                 * ghosts and games elected a host that was never coming back.
+                 */
+                heartbeat = setInterval(() => {
+                    if (ws.readyState !== 1) return
+                    try {
+                        ws.send(JSON.stringify({ t: "hb" }))
+                    } catch {
+                        // The close handler deals with a socket that has gone.
+                    }
+                }, HEARTBEAT_MS)
             }
 
             ws.onmessage = (event: MessageEvent) => {
@@ -172,9 +248,25 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                 if (wire.t === "welcome") {
                     const mine = wire.id ?? 0
                     const list = wire.peers ?? []
-                    apply({ id: mine, peers: list, connected: true })
+                    apply({ id: mine, peers: list, connected: true, hostId: wire.host ?? null })
                     render()
                     handlers.current.onOpen?.(mine, list)
+                    handlers.current.onHost?.(facade.current!.isHost, live.current.hostId)
+                    return
+                }
+
+                if (wire.t === "host") {
+                    apply({ hostId: wire.host ?? null })
+                    render()
+                    handlers.current.onHost?.(facade.current!.isHost, live.current.hostId)
+                    return
+                }
+
+                if (wire.t === "dropped") {
+                    // Not silent. A game quietly missing events because it was
+                    // over budget is the exact failure this reports.
+                    console.warn(`[oj] the room dropped a message (${wire.reason}): ${wire.detail}`)
+                    handlers.current.onDropped?.(String(wire.reason), String(wire.detail))
                     return
                 }
                 if (wire.t === "join" && wire.id !== undefined) {
@@ -197,9 +289,10 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             }
 
             const gone = (reason: string) => {
+                if (heartbeat !== null) { clearInterval(heartbeat); heartbeat = null }
                 if (socket.current !== ws) return
                 socket.current = null
-                apply({ connected: false, peers: [], id: 0 })
+                apply({ connected: false, peers: [], id: 0, hostId: null })
                 render()
                 handlers.current.onClose?.(reason)
                 if (closed.current) return
@@ -218,6 +311,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
         return () => {
             closed.current = true
             if (timer !== null) clearTimeout(timer)
+            if (heartbeat !== null) clearInterval(heartbeat)
             const ws = socket.current
             socket.current = null
             ws?.close()
