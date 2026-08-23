@@ -28,10 +28,23 @@ export interface Gesture {
     /** Distance travelled in any direction, which decides a tap from a drag. */
     travel: number
     held: number
+    /**
+     * Set when the piece this drag was aimed at has locked.
+     *
+     * A soft drop is aimed at one piece. When that piece lands, the next one
+     * spawns under a finger that is still down and still counts as dragging
+     * downward, so it drops too, and the player never gets the moment they
+     * needed to lift. The intent was spent on the piece that landed, so the
+     * drag stops dropping until the finger comes up.
+     *
+     * Sideways movement deliberately survives, because steering the new piece
+     * with a finger already on the glass is the thing that feels right.
+     */
+    dropSpent: boolean
 }
 
 export function beginGesture(x: number, y: number): Gesture {
-    return { x, y, dx: 0, dy: 0, travel: 0, held: 0 }
+    return { x, y, dx: 0, dy: 0, travel: 0, held: 0, dropSpent: false }
 }
 
 /**
@@ -70,11 +83,17 @@ export type Release = "rotate" | "drop" | "none"
  */
 export function releaseGesture(g: Gesture): Release {
     if (g.travel <= TAP_SLOP && g.held <= TAP_SECONDS) return "rotate"
+    if (g.dropSpent) return "none"
     const speed = g.held > 0 ? g.dy / g.held : 0
     return speed >= FLICK_SPEED ? "drop" : "none"
 }
 
+/** Call when the piece this drag was driving has locked. */
+export function spendDrop(g: Gesture): void {
+    g.dropSpent = true
+}
+
 /** Whether a drag has gone far enough downward to read as a soft drop. */
 export function isSoftDropping(g: Gesture): boolean {
-    return g.dy > SWIPE_STEP
+    return !g.dropSpent && g.dy > SWIPE_STEP
 }

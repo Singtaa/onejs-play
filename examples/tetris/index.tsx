@@ -17,7 +17,9 @@ import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
 import styles from "./tetris.module.uss"
-import { beginGesture, advanceGesture, releaseGesture, isSoftDropping, type Gesture } from "./gestures"
+import {
+    beginGesture, advanceGesture, releaseGesture, isSoftDropping, spendDrop, type Gesture,
+} from "./gestures"
 import {
     emptyBoard, spawn, moved, rotated, fits, merge, clearLines, hardDropped,
     scoreFor, levelFor, dropInterval, cellsOf, shapeOf, KINDS,
@@ -183,6 +185,10 @@ function Tetris() {
 
         if (settled) {
             timers.drop = 0
+            // The drag was aimed at the piece that just landed. Without this the
+            // next one spawns under a finger still counted as dragging down and
+            // falls straight through, before the player can lift.
+            if (drag.current !== null) spendDrop(drag.current.g)
             setGame(lock({ ...game, piece }, pick))
         } else if (piece !== game.piece) {
             setGame({ ...game, piece })

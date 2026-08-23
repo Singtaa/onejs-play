@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
-    beginGesture, advanceGesture, releaseGesture, isSoftDropping,
+    beginGesture, advanceGesture, releaseGesture, isSoftDropping, spendDrop,
     SWIPE_STEP, TAP_SLOP,
 } from "./gestures"
 
@@ -85,5 +85,48 @@ describe("soft drop", () => {
         const g = beginGesture(0, 0)
         advanceGesture(g, 300, 0, 0.2)
         expect(isSoftDropping(g)).toBe(false)
+    })
+})
+
+describe("one drag, one piece", () => {
+    it("stops dropping once the piece it was aimed at has landed", () => {
+        // The piece locks and the next one spawns under a finger that is still
+        // down and still dragging. Without this it drops too, and the player
+        // never gets the moment they needed to lift.
+        const g = beginGesture(0, 0)
+        advanceGesture(g, 0, SWIPE_STEP * 3, 0.3)
+        expect(isSoftDropping(g)).toBe(true)
+        spendDrop(g)
+        expect(isSoftDropping(g)).toBe(false)
+    })
+
+    it("stays spent even as the finger keeps moving down", () => {
+        const g = beginGesture(0, 0)
+        advanceGesture(g, 0, SWIPE_STEP * 2, 0.2)
+        spendDrop(g)
+        advanceGesture(g, 0, SWIPE_STEP * 6, 0.2)
+        expect(isSoftDropping(g)).toBe(false)
+    })
+
+    it("does not hard drop the next piece when the finger finally lifts", () => {
+        // A flick that landed a piece must not also throw the one after it.
+        const g = beginGesture(0, 0)
+        advanceGesture(g, 0, 300, 0.1)
+        spendDrop(g)
+        expect(releaseGesture(g)).toBe("none")
+    })
+
+    it("still steers sideways, which is what a finger already down is for", () => {
+        const g = beginGesture(0, 0)
+        spendDrop(g)
+        expect(advanceGesture(g, SWIPE_STEP * 2, 0, 0.05)).toBe(2)
+    })
+
+    it("comes back fresh on the next touch", () => {
+        const spent = beginGesture(0, 0)
+        spendDrop(spent)
+        const fresh = beginGesture(0, 0)
+        advanceGesture(fresh, 0, SWIPE_STEP * 2, 0.2)
+        expect(isSoftDropping(fresh)).toBe(true)
     })
 })
