@@ -70,6 +70,32 @@ interface KeyRecord {
 const NEVER: Readonly<KeyRecord> = { down: false, downFrame: -1, upFrame: -1 }
 
 /** Browser events go in here. Codes are DOM codes; buttons are DOM button indices. */
+/**
+ * One finger, for as long as it is down plus the frame it lifts on.
+ *
+ * fingerId is a small stable index rather than the browser's pointerId, because
+ * that is what Unity's API means by it and what a game will use to key state to
+ * a finger. The browser's id is kept only to match up later events.
+ */
+interface TouchRecord {
+    fingerId: number
+    pointerId: number
+    x: number
+    y: number
+    prevX: number
+    prevY: number
+    deltaX: number
+    deltaY: number
+    phase: number
+    beganFrame: number
+    /** -1 while still down. */
+    endedFrame: number
+    canceled: boolean
+}
+
+/** Unity's TouchPhase order, which onejs-unity maps back to names. */
+const PHASE_BEGAN = 0, PHASE_MOVED = 1, PHASE_STATIONARY = 2, PHASE_ENDED = 3, PHASE_CANCELED = 4
+
 export interface InputSink {
     keyDown(code: string): void
     keyUp(code: string): void
@@ -77,6 +103,18 @@ export interface InputSink {
     pointerDown(button: number, viewportX?: number, viewportY?: number): void
     pointerUp(button: number, viewportX?: number, viewportY?: number): void
     wheel(deltaX: number, deltaY: number): void
+    /**
+     * A finger, identified by the browser's pointerId.
+     *
+     * Separate from pointerDown even though a touch drives the pointer path
+     * too, because they answer different questions. UI Toolkit needs the
+     * pointer so a tap can press a button; a game needs the touch so it can
+     * tell two fingers apart. Unity behaves the same way: a touch moves the
+     * mouse as well as appearing in Input.touches.
+     */
+    touchDown(pointerId: number, viewportX: number, viewportY: number): void
+    touchMove(pointerId: number, viewportX: number, viewportY: number): void
+    touchUp(pointerId: number, viewportX: number, viewportY: number, canceled?: boolean): void
     /**
      * Focus was lost, so release everything held.
      *
@@ -124,6 +162,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _accumDeltaY = 0
     private _deltaX = 0
     private _deltaY = 0
+    private _touches: TouchRecord[] = []
+
     private _accumScrollX = 0
     private _accumScrollY = 0
     private _scrollX = 0
@@ -141,6 +181,18 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     keyUp(code: string): void {
         this._queue.push(() => this._applyKeyUp(code))
+    }
+
+    touchDown(pointerId: number, viewportX: number, viewportY: number): void {
+        this._queue.push(() => this._applyTouchDown(pointerId, viewportX, viewportY))
+    }
+
+    touchMove(pointerId: number, viewportX: number, viewportY: number): void {
+        this._queue.push(() => this._applyTouchMove(pointerId, viewportX, viewportY))
+    }
+
+    touchUp(pointerId: number, viewportX: number, viewportY: number, canceled = false): void {
+        this._queue.push(() => this._applyTouchUp(pointerId, viewportX, viewportY, canceled))
     }
 
     pointerMove(viewportX: number, viewportY: number): void {
@@ -214,7 +266,53 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         }
     }
 
+    private _findTouch(pointerId: number): TouchRecord | undefined {
+        return this._touches.find((t) => t.pointerId === pointerId)
+    }
+
+    private _applyTouchDown(pointerId: number, viewportX: number, viewportY: number): void {
+        if (this._findTouch(pointerId) !== undefined) return
+        const p = this._toStage(viewportX, viewportY)
+        // Smallest free index, so lifting one finger and putting it back down
+        // reuses the id a game may already have keyed state to, which is what
+        // Unity does.
+        let fingerId = 0
+        while (this._touches.some((t) => t.fingerId === fingerId)) fingerId++
+        this._touches.push({
+            fingerId, pointerId,
+            x: p.x, y: p.y, prevX: p.x, prevY: p.y, deltaX: 0, deltaY: 0,
+            phase: PHASE_BEGAN, beganFrame: this._frame, endedFrame: -1, canceled: false,
+        })
+    }
+
+    private _applyTouchMove(pointerId: number, viewportX: number, viewportY: number): void {
+        const touch = this._findTouch(pointerId)
+        if (touch === undefined || touch.endedFrame !== -1) return
+        const p = this._toStage(viewportX, viewportY)
+        touch.x = p.x
+        touch.y = p.y
+    }
+
+    private _applyTouchUp(pointerId: number, viewportX: number, viewportY: number, canceled: boolean): void {
+        const touch = this._findTouch(pointerId)
+        if (touch === undefined || touch.endedFrame !== -1) return
+        const p = this._toStage(viewportX, viewportY)
+        touch.x = p.x
+        touch.y = p.y
+        touch.canceled = canceled
+        // A tap shorter than a frame arrives with its down and its up in the
+        // same drain. Reporting it as ended straight away would mean a game
+        // watching for began never sees the tap at all, so the end waits a
+        // frame and the touch is reported as began first.
+        touch.endedFrame = touch.beganFrame === this._frame ? this._frame + 1 : this._frame
+    }
+
     private _applyBlur(): void {
+        // A finger whose pointerup went to whatever took focus would otherwise
+        // stay down forever, exactly as a held key would.
+        for (const t of this._touches) {
+            if (t.endedFrame === -1) { t.canceled = true; t.endedFrame = this._frame }
+        }
         for (const key of this._keys.values()) {
             if (!key.down) continue
             key.down = false
@@ -248,6 +346,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._scrollY = this._accumScrollY
         this._accumScrollX = 0
         this._accumScrollY = 0
+        this._advanceTouches()
     }
 
     setStageLayout(layout: StageLayout | null): void {
@@ -257,6 +356,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     reset(): void {
         this._queue = []
+        this._touches = []
         this._keys.clear()
         this._downCount = 0
         this._lastPressFrame = -1
@@ -303,7 +403,13 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             // hear "none connected", which is what makes input.gamepad null.
             GetGamepadCount: () => 0,
             IsGamepadConnected: () => false,
-            GetTouchCount: () => 0,
+            GetTouchCount: () => this._touches.length,
+            GetTouchFingerId: (i: number) => this._touches[i]?.fingerId ?? -1,
+            GetTouchPositionX: (i: number) => this._touches[i]?.x ?? 0,
+            GetTouchPositionY: (i: number) => this._touches[i]?.y ?? 0,
+            GetTouchDeltaX: (i: number) => this._touches[i]?.deltaX ?? 0,
+            GetTouchDeltaY: (i: number) => this._touches[i]?.deltaY ?? 0,
+            GetTouchPhase: (i: number) => this._touches[i]?.phase ?? PHASE_ENDED,
         }
     }
 
@@ -345,15 +451,42 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         return mask
     }
 
+    private _toStage(viewportX: number, viewportY: number): { x: number; y: number } {
+        if (this._stage === null) return { x: viewportX, y: viewportY }
+        return toStage(this._stage, viewportX, viewportY)
+    }
+
     private _syncPointer(): void {
-        if (this._stage === null) {
-            this._stageX = this._viewportX
-            this._stageY = this._viewportY
-            return
-        }
-        const p = toStage(this._stage, this._viewportX, this._viewportY)
+        const p = this._toStage(this._viewportX, this._viewportY)
         this._stageX = p.x
         this._stageY = p.y
+    }
+
+    /**
+     * Advances every touch to the phase this frame should report.
+     *
+     * Runs after the queue drains, so it sees everything that arrived since the
+     * last boundary. A touch that ended is reported once, on the frame it
+     * ended, and is gone the next: that is what lets a game handle a lift by
+     * checking the phase rather than by diffing two frames of touch lists.
+     */
+    private _advanceTouches(): void {
+        for (let i = this._touches.length - 1; i >= 0; i--) {
+            const t = this._touches[i]!
+            if (t.endedFrame !== -1 && t.endedFrame < this._frame) {
+                this._touches.splice(i, 1)
+                continue
+            }
+            t.deltaX = t.x - t.prevX
+            t.deltaY = t.y - t.prevY
+            t.prevX = t.x
+            t.prevY = t.y
+
+            if (t.endedFrame === this._frame) t.phase = t.canceled ? PHASE_CANCELED : PHASE_ENDED
+            else if (t.beganFrame === this._frame) t.phase = PHASE_BEGAN
+            else if (t.deltaX !== 0 || t.deltaY !== 0) t.phase = PHASE_MOVED
+            else t.phase = PHASE_STATIONARY
+        }
     }
 }
 

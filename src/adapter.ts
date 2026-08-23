@@ -92,9 +92,26 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         sink.keyDown(event.code)
     }
     const onKeyUp = (event: any) => { sink.keyUp(event.code) }
-    const onPointerMove = (event: any) => { const [x, y] = at(event); sink.pointerMove(x, y) }
-    const onPointerDown = (event: any) => { const [x, y] = at(event); sink.pointerDown(event.button, x, y) }
-    const onPointerUp = (event: any) => { const [x, y] = at(event); sink.pointerUp(event.button, x, y) }
+    // A touch drives both paths. UI Toolkit needs the pointer so a tap can press
+    // a button, and a game needs the touch so it can tell two fingers apart.
+    // Unity does the same: a touch moves the mouse and appears in Input.touches.
+    const isTouch = (event: any) => event.pointerType === "touch"
+
+    const onPointerMove = (event: any) => {
+        const [x, y] = at(event)
+        sink.pointerMove(x, y)
+        if (isTouch(event)) sink.touchMove(event.pointerId, x, y)
+    }
+    const onPointerDown = (event: any) => {
+        const [x, y] = at(event)
+        sink.pointerDown(event.button, x, y)
+        if (isTouch(event)) sink.touchDown(event.pointerId, x, y)
+    }
+    const onPointerUp = (event: any) => {
+        const [x, y] = at(event)
+        sink.pointerUp(event.button, x, y)
+        if (isTouch(event)) sink.touchUp(event.pointerId, x, y, event.type === "pointercancel")
+    }
     const onWheel = (event: any) => {
         if (preventDefault) event.preventDefault()
         sink.wheel(event.deltaX, event.deltaY)

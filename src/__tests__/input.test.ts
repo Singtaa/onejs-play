@@ -17,6 +17,118 @@ const b = (c: ContainerInput) => c.backend as Record<string, (...a: any[]) => an
 
 afterEach(() => setInputBackend(null))
 
+const BEGAN = 0, MOVED = 1, STATIONARY = 2, ENDED = 3, CANCELED = 4
+
+describe("touches", () => {
+    it("walks one finger through its phases and then forgets it", () => {
+        const c = tick(make())
+        c.sink.touchDown(7, 100, 200)
+        deliver(c)
+        expect(b(c).GetTouchCount()).toBe(1)
+        expect(b(c).GetTouchPhase(0)).toBe(BEGAN)
+        expect(b(c).GetTouchPositionX(0)).toBe(100)
+
+        // Down but not moving is stationary, not moved: a game holding still
+        // should not read a stream of movement.
+        tick(c)
+        expect(b(c).GetTouchPhase(0)).toBe(STATIONARY)
+
+        c.sink.touchMove(7, 130, 200)
+        deliver(c)
+        expect(b(c).GetTouchPhase(0)).toBe(MOVED)
+        expect(b(c).GetTouchDeltaX(0)).toBe(30)
+
+        // The delta is what happened in that frame, so it clears once read.
+        tick(c)
+        expect(b(c).GetTouchDeltaX(0)).toBe(0)
+
+        c.sink.touchUp(7, 130, 200)
+        deliver(c)
+        expect(b(c).GetTouchPhase(0)).toBe(ENDED)
+        expect(b(c).GetTouchCount()).toBe(1)
+
+        // Reported once, then gone, so a lift can be handled by reading the
+        // phase rather than by diffing two frames of touch lists.
+        tick(c)
+        expect(b(c).GetTouchCount()).toBe(0)
+    })
+
+    it("shows a tap faster than a frame as began before ended", () => {
+        // Both events land in the same drain. Collapsing them into ended would
+        // mean a game watching for began never sees the tap at all.
+        const c = tick(make())
+        c.sink.touchDown(1, 10, 10)
+        c.sink.touchUp(1, 10, 10)
+        deliver(c)
+        expect(b(c).GetTouchPhase(0)).toBe(BEGAN)
+        tick(c)
+        expect(b(c).GetTouchPhase(0)).toBe(ENDED)
+        tick(c)
+        expect(b(c).GetTouchCount()).toBe(0)
+    })
+
+    it("gives each finger its own id and reuses one that lifted", () => {
+        const c = tick(make())
+        c.sink.touchDown(11, 0, 0)
+        c.sink.touchDown(12, 50, 50)
+        deliver(c)
+        expect(b(c).GetTouchCount()).toBe(2)
+        expect([b(c).GetTouchFingerId(0), b(c).GetTouchFingerId(1)]).toEqual([0, 1])
+
+        c.sink.touchUp(11, 0, 0)
+        deliver(c)
+        tick(c)
+        expect(b(c).GetTouchCount()).toBe(1)
+        expect(b(c).GetTouchFingerId(0)).toBe(1)
+
+        // The freed id comes back, which is what Unity does and what a game
+        // keying state to a finger depends on.
+        c.sink.touchDown(13, 5, 5)
+        deliver(c)
+        expect(b(c).GetTouchFingerId(1)).toBe(0)
+    })
+
+    it("ignores a move or a lift for a finger it never saw go down", () => {
+        const c = tick(make())
+        c.sink.touchMove(99, 1, 1)
+        c.sink.touchUp(99, 1, 1)
+        deliver(c)
+        expect(b(c).GetTouchCount()).toBe(0)
+    })
+
+    it("cancels every finger when focus is lost", () => {
+        // Otherwise the pointerup goes to whatever took focus and the finger
+        // stays down forever, exactly as a held key would.
+        const c = tick(make())
+        c.sink.touchDown(4, 20, 20)
+        deliver(c)
+        c.sink.blur()
+        deliver(c)
+        expect(b(c).GetTouchPhase(0)).toBe(CANCELED)
+        tick(c)
+        expect(b(c).GetTouchCount()).toBe(0)
+    })
+
+    it("reports touches in stage units, as it does the pointer", () => {
+        const c = make()
+        const stage = normalizeStage({ size: [600, 300], fit: "letterbox" })
+        c.setStageLayout(computeStageLayout(stage, 1200, 600))
+        tick(c)
+        c.sink.touchDown(2, 600, 300)
+        deliver(c)
+        // Halfway across a viewport twice the stage's size is halfway across
+        // the stage, whatever the letterboxing did.
+        expect(b(c).GetTouchPositionX(0)).toBeCloseTo(300, 0)
+        expect(b(c).GetTouchPositionY(0)).toBeCloseTo(150, 0)
+    })
+
+    it("answers none when nothing is touching", () => {
+        const c = tick(make())
+        expect(b(c).GetTouchCount()).toBe(0)
+        expect(b(c).GetTouchFingerId(0)).toBe(-1)
+    })
+})
+
 describe("key edges", () => {
     it("reports pressed only on the frame the key went down", () => {
         const c = tick(make())
