@@ -286,9 +286,7 @@ function BlockParty() {
          * working game never shows, and turns the next version of that bug
          * into something a player can report without opening devtools.
          */
-        onDropped: (reason, detail) => {
-            setDropped(reason)
-        },
+        onDropped: (reason) => setDropped(reason),
         onClose: () => refresh(),
     })
 
@@ -465,14 +463,14 @@ function BlockParty() {
         timers.well -= step
         if (timers.well <= 0 && (dirty.current || askers.length > 0)) {
             timers.well = 1 / WELL_HZ
-            const board = { k: "w", b: encodeWell(well.board), s: well.score, l: well.lines, o: kos.current }
+            const snapshot = { k: "w", b: encodeWell(well.board), s: well.score, l: well.lines, o: kos.current }
             if (dirty.current) {
                 // A broadcast was going out anyway, and it reaches anybody who
                 // had asked, so their answer costs nothing extra.
                 dirty.current = false
-                room.send(board)
+                room.send(snapshot)
             } else {
-                for (const who of askers) room.send(board, who)
+                for (const who of askers) room.send(snapshot, who)
             }
             askers.length = 0
         }

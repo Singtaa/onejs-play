@@ -325,9 +325,7 @@ function Squiggle() {
          * working game never shows, and turns the next version of that bug
          * into something a player can report without opening devtools.
          */
-        onDropped: (reason, detail) => {
-            setStatus((s) => ({ ...s, dropped: reason }))
-        },
+        onDropped: (reason) => setStatus((s) => ({ ...s, dropped: reason })),
         onClose: () => setStatus((s) => ({ ...s, connected: false })),
     })
 
