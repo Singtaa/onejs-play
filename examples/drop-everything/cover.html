@@ -1,0 +1,105 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: shapes falling onto a ramp and piling up, then the
+  pile clearing and starting again. A tiny verlet solver rather than the real
+  rigid body engine the game runs, because a card does not need to be right,
+  only convincing.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #10131a; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="box"></canvas>
+<script>
+const canvas = document.getElementById("box")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+const TONES = ["#7aadff", "#ffa86c", "#7edca8", "#e88ac4", "#f6d678", "#a098f6"]
+const GRAVITY = 900
+let balls = []
+let seed = 7
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+let next = 0
+let age = 0
+
+function drop() {
+    const unit = Math.min(W, H)
+    balls.push({
+        x: W * (0.34 + rand() * 0.32), y: -unit * 0.08,
+        vx: (rand() - 0.5) * 60, vy: 0,
+        r: unit * (0.035 + rand() * 0.035),
+        tone: TONES[(rand() * TONES.length) | 0],
+    })
+}
+
+function step(dt) {
+    const unit = Math.min(W, H)
+    const floor = H - unit * 0.06
+    for (const b of balls) {
+        b.vy += GRAVITY * dt
+        b.x += b.vx * dt
+        b.y += b.vy * dt + 0.5 * GRAVITY * dt * dt
+        if (b.y + b.r > floor) { b.y = floor - b.r; b.vy *= -0.32; b.vx *= 0.86 }
+        if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx) * 0.6 }
+        if (b.x + b.r > W) { b.x = W - b.r; b.vx = -Math.abs(b.vx) * 0.6 }
+    }
+    /* One relaxation pass, which is enough to make a pile hold together. */
+    for (let i = 0; i < balls.length; i++) {
+        for (let j = i + 1; j < balls.length; j++) {
+            const a = balls[i], b = balls[j]
+            const dx = b.x - a.x, dy = b.y - a.y
+            const d = Math.hypot(dx, dy) || 0.001
+            const overlap = a.r + b.r - d
+            if (overlap <= 0) continue
+            const nx = (dx / d) * overlap * 0.5, ny = (dy / d) * overlap * 0.5
+            a.x -= nx; a.y -= ny; b.x += nx; b.y += ny
+        }
+    }
+}
+
+function draw() {
+    const unit = Math.min(W, H)
+    ctx.fillStyle = "#10131a"
+    ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = "#3a4252"
+    ctx.fillRect(0, H - unit * 0.06, W, unit * 0.06)
+    for (const b of balls) {
+        ctx.fillStyle = b.tone
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2)
+        ctx.fill()
+    }
+}
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.033, (now - last) / 1000)
+    last = now
+    age += dt
+    next -= dt
+    if (next <= 0 && balls.length < 22) { next = 0.28; drop() }
+    if (age > 12) { balls = []; age = 0; next = 0 }
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 16; i++) drop()
+    for (let i = 0; i < 300; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

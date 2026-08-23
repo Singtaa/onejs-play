@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Space Junk",
+    "author": "singtaa",
+    "description": "Turn, thrust, shoot. The field has no edges, which turns out to be the hard part.",
+    "entry": "index.tsx",
+    "stage": { "size": [900, 600], "fit": "letterbox" },
+    "tags": ["arcade"],
+    "controls": ["keyboard", "touch"]
+}

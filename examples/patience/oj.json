@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Patience",
+    "author": "singtaa",
+    "description": "Klondike, with drag and drop, a drawn deck and rules that were written down rather than remembered.",
+    "entry": "index.tsx",
+    "stage": { "size": [760, 700], "fit": "letterbox" },
+    "tags": ["cards", "puzzle"],
+    "controls": ["pointer"]
+}

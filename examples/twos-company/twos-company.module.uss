@@ -1,0 +1,91 @@
+/* The board and its tiles.
+
+   Everything about a tile's colour lives here rather than in the component,
+   because the component's job is to say which tile is where and USS's job is to
+   say what a 64 looks like. */
+
+.board {
+    background-color: rgb(30, 34, 42);
+    border-radius: 10px;
+}
+
+.cell {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.035);
+}
+
+/* The whole reason tiles are positioned rather than laid out in a grid.
+
+   UI Toolkit runs a transition when a style changes, including one written
+   straight onto the element from JavaScript, so moving a tile by assigning left
+   and top animates it. A grid would relayout instantly and the board would jump
+   from one arrangement to the next with nothing in between.
+
+   Short on purpose: 90 milliseconds is long enough to read as movement and
+   short enough that holding an arrow key still feels immediate. */
+.tile {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    transition-property: left, top, scale;
+    transition-duration: 0.09s, 0.09s, 0.11s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+/* A tile that just came out of a merge, and one that just appeared.
+
+   Both are set on the element for one turn and then removed, and both animate
+   because scale is in the transition list above. The pop overshoots slightly;
+   the arrival grows from nothing. */
+.popped {
+    scale: 1.12 1.12;
+}
+
+.fresh {
+    scale: 0.55 0.55;
+}
+
+.label {
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+/* The ramp.
+
+   Cool and dim at the bottom, warm and bright at the top, so a glance at the
+   board says how a run is going without reading a single number. The text
+   flips from light to dark where the background gets bright enough to need it. */
+.v2     { background-color: rgb(44, 50, 62); }
+.v4     { background-color: rgb(52, 64, 90); }
+.v8     { background-color: rgb(63, 95, 140); }
+.v16    { background-color: rgb(74, 123, 181); }
+.v32    { background-color: rgb(79, 151, 201); }
+.v64    { background-color: rgb(79, 179, 177); }
+.v128   { background-color: rgb(99, 192, 138); }
+.v256   { background-color: rgb(168, 200, 94); }
+.v512   { background-color: rgb(224, 184, 79); }
+.v1024  { background-color: rgb(239, 143, 74); }
+.v2048  { background-color: rgb(242, 102, 79); }
+.vHuge  { background-color: rgb(217, 79, 126); }
+
+.light { color: rgb(226, 234, 247); }
+.dark  { color: rgb(22, 26, 33); }
+
+/* The panel that covers the board when a run ends or a 2048 lands. */
+.veil {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(20, 24, 29, 0.86);
+    border-radius: 10px;
+    align-items: center;
+    justify-content: center;
+}

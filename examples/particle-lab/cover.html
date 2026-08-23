@@ -1,0 +1,106 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this tool: the preview cycling through the presets it ships with,
+  so the card says what the lab does rather than what it looks like.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #0c0e13; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="fx"></canvas>
+<script>
+const canvas = document.getElementById("fx")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+/* The same presets the lab ships, trimmed to what a card can show. */
+const PRESETS = [
+    { rate: 90, speed: [180, 280], life: [0.8, 1.3], size: [3, 6], aim: [250, 290], gravity: 520, drag: 0, add: 0.4, ramp: ["#9fe8ff", "#3aa0ff"] },
+    { rate: 80, speed: [40, 100], life: [0.5, 1.0], size: [8, 18], aim: [250, 290], gravity: -160, drag: 1.2, add: 1, ramp: ["#fff2c0", "#ff9020"] },
+    { rate: 55, speed: [20, 50], life: [2.4, 4], size: [3, 6], aim: [70, 110], gravity: 22, drag: 0.4, add: 0, ramp: ["#ffffff", "#dfe8ff"] },
+    { rate: 110, speed: [150, 420], life: [0.2, 0.55], size: [2, 4], aim: [0, 360], gravity: 380, drag: 2.2, add: 1, ramp: ["#ffffff", "#ffd27a"] },
+]
+
+let which = 0
+let sinceSwap = 0
+let particles = []
+let spawnDebt = 0
+let seed = 3
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+const between = (r) => r[0] + rand() * (r[1] - r[0])
+
+function spawn() {
+    const p = PRESETS[which]
+    const unit = Math.min(W, H)
+    const angle = (between(p.aim) * Math.PI) / 180
+    const speed = between(p.speed) * (unit / 400)
+    particles.push({
+        x: W / 2, y: H * 0.72,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 0, span: between(p.life),
+        size: between(p.size) * (unit / 400),
+    })
+}
+
+function step(dt) {
+    const p = PRESETS[which]
+    const unit = Math.min(W, H)
+    spawnDebt += p.rate * dt
+    while (spawnDebt >= 1) { spawnDebt -= 1; spawn() }
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const q = particles[i]
+        q.life += dt
+        if (q.life >= q.span) { particles.splice(i, 1); continue }
+        q.vy += p.gravity * (unit / 400) * dt
+        const shed = Math.max(0, 1 - p.drag * dt)
+        q.vx *= shed; q.vy *= shed
+        q.x += q.vx * dt; q.y += q.vy * dt
+    }
+}
+
+function draw() {
+    const p = PRESETS[which]
+    ctx.globalCompositeOperation = "source-over"
+    ctx.fillStyle = "#0c0e13"
+    ctx.fillRect(0, 0, W, H)
+    ctx.globalCompositeOperation = p.add > 0.5 ? "lighter" : "source-over"
+    for (const q of particles) {
+        const t = q.life / q.span
+        ctx.globalAlpha = (1 - t) * (0.55 + p.add * 0.4)
+        ctx.fillStyle = t < 0.5 ? p.ramp[0] : p.ramp[1]
+        ctx.beginPath()
+        ctx.arc(q.x, q.y, q.size * (1 - t * 0.7), 0, Math.PI * 2)
+        ctx.fill()
+    }
+    ctx.globalAlpha = 1
+}
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    sinceSwap += dt
+    if (sinceSwap > 3.2) { sinceSwap = 0; which = (which + 1) % PRESETS.length; particles = [] }
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    which = 1
+    for (let i = 0; i < 120; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

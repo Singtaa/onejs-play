@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: a run of cards sliding onto a column and settling,
+  over and over. CSS rather than canvas, because it is four rectangles moving in
+  a straight line and that is what keyframes are for.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #15302a; overflow: hidden; }
+    .felt { position: absolute; inset: 0; container-type: size; }
+    .card {
+        position: absolute;
+        width: 17cqmin; height: 24cqmin;
+        border-radius: 1.8cqmin;
+        background: #f8fafd;
+        border: 0.35cqmin solid rgba(12, 20, 30, 0.25);
+        font: 700 6cqmin/1 ui-sans-serif, system-ui, sans-serif;
+        padding: 1.2cqmin 0 0 1.6cqmin;
+        box-sizing: border-box;
+    }
+    .back {
+        background: #2e4e78;
+        border-color: rgba(8, 14, 24, 0.4);
+    }
+    .slot {
+        position: absolute;
+        width: 17cqmin; height: 24cqmin;
+        border-radius: 1.8cqmin;
+        border: 0.35cqmin solid rgba(255, 255, 255, 0.08);
+        box-sizing: border-box;
+    }
+    .red { color: #c8283c }
+    .black { color: #1b2430 }
+
+    /* The stack that moves: three cards travelling together, the way a run does. */
+    .run { animation: slide 4.5s cubic-bezier(0.3, 0.9, 0.3, 1) infinite; }
+    @keyframes slide {
+        0%, 12%   { transform: translate(0, 0) }
+        34%, 88%  { transform: translate(37cqmin, 8cqmin) }
+        100%      { transform: translate(0, 0) }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .run { animation: none; transform: translate(37cqmin, 8cqmin) }
+    }
+</style>
+<body>
+<div class="felt">
+    <!-- The column being built on. -->
+    <div class="slot" style="left: 51cqmin; top: 16cqmin"></div>
+    <div class="card black" style="left: 51cqmin; top: 16cqmin">9</div>
+
+    <!-- The stock and a foundation, for context. -->
+    <div class="card back" style="left: 6cqmin; top: 6cqmin"></div>
+    <div class="card red" style="left: 78cqmin; top: 6cqmin">A</div>
+
+    <!-- The run that slides across and lands on the nine. -->
+    <div class="run">
+        <div class="card red" style="left: 14cqmin; top: 32cqmin">8</div>
+        <div class="card black" style="left: 14cqmin; top: 40cqmin">7</div>
+        <div class="card red" style="left: 14cqmin; top: 48cqmin">6</div>
+    </div>
+</div>
+</body>

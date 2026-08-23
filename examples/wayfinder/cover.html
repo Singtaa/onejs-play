@@ -1,0 +1,128 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: two searches crossing the same little grid, one
+  flooding outward and one walking at the goal. The difference is the point, so
+  the card shows it rather than a logo.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #0f1218; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="grid"></canvas>
+<script>
+const canvas = document.getElementById("grid")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+const COLS = 18, ROWS = 14
+const START = 1 + (ROWS - 2) * COLS
+const GOAL = (COLS - 2) + 1 * COLS
+
+/* One fixed map, so the card is recognisable rather than different each time. */
+const walls = new Set([40, 41, 42, 58, 76, 94, 112, 130, 131, 132, 79, 97, 115, 133, 151, 169, 8, 26, 44])
+
+function neighbours(cell) {
+    const col = cell % COLS, row = (cell - col) / COLS
+    const out = []
+    if (col > 0) out.push(cell - 1)
+    if (col < COLS - 1) out.push(cell + 1)
+    if (row > 0) out.push(cell - COLS)
+    if (row < ROWS - 1) out.push(cell + COLS)
+    return out.filter((n) => !walls.has(n))
+}
+
+function makeSearch(guided) {
+    const seen = new Set([START])
+    const queue = [START]
+    return {
+        seen,
+        done: false,
+        step() {
+            if (queue.length === 0) { this.done = true; return }
+            /* The guided one always takes whatever is closest to the goal, which
+               is A star's behaviour boiled down to its visible consequence. */
+            if (guided) {
+                const gx = GOAL % COLS, gy = (GOAL - gx) / COLS
+                queue.sort((a, b) => {
+                    const ax = a % COLS, ay = (a - ax) / COLS
+                    const bx = b % COLS, by = (b - bx) / COLS
+                    return (Math.abs(ax - gx) + Math.abs(ay - gy)) - (Math.abs(bx - gx) + Math.abs(by - gy))
+                })
+            }
+            const cell = queue.shift()
+            if (cell === GOAL) { this.done = true; return }
+            for (const n of neighbours(cell)) {
+                if (seen.has(n)) continue
+                seen.add(n)
+                queue.push(n)
+            }
+        },
+    }
+}
+
+let flood = makeSearch(false)
+let guided = makeSearch(true)
+let hold = 0
+
+function draw() {
+    const paneW = W / 2
+    const cell = Math.min(paneW / COLS, H / ROWS) * 0.92
+    ctx.fillStyle = "#0f1218"
+    ctx.fillRect(0, 0, W, H)
+
+    const panes = [
+        { search: flood, ox: paneW * 0.5 - (COLS * cell) / 2, tint: "#2c5f8f" },
+        { search: guided, ox: paneW * 1.5 - (COLS * cell) / 2, tint: "#c98a2e" },
+    ]
+    const oy = H / 2 - (ROWS * cell) / 2
+
+    for (const pane of panes) {
+        for (let i = 0; i < COLS * ROWS; i++) {
+            const col = i % COLS, row = (i - col) / COLS
+            const x = pane.ox + col * cell, y = oy + row * cell
+            ctx.fillStyle = walls.has(i) ? "#3e4554"
+                : i === START ? "#50ca82"
+                : i === GOAL ? "#f06870"
+                : pane.search.seen.has(i) ? pane.tint
+                : "#181c24"
+            ctx.fillRect(x, y, cell - 1, cell - 1)
+        }
+    }
+}
+
+let last = performance.now()
+let accumulated = 0
+function frame(now) {
+    requestAnimationFrame(frame)
+    accumulated += Math.min(0.05, (now - last) / 1000)
+    last = now
+    while (accumulated > 0.045) {
+        accumulated -= 0.045
+        if (flood.done && guided.done) {
+            hold += 0.045
+            if (hold > 1.6) { flood = makeSearch(false); guided = makeSearch(true); hold = 0 }
+        } else {
+            flood.step(); flood.step()
+            guided.step(); guided.step()
+        }
+    }
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 120; i++) { flood.step(); guided.step() }
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

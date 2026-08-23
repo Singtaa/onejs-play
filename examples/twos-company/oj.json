@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Twos Company",
+    "author": "singtaa",
+    "description": "Push the board around until two of a kind meet. Tiles slide because they keep their identity across a move.",
+    "entry": "index.tsx",
+    "stage": { "size": [520, 700], "fit": "letterbox" },
+    "tags": ["puzzle"],
+    "controls": ["keyboard", "touch"]
+}

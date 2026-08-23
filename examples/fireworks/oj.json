@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Fireworks",
+    "author": "singtaa",
+    "description": "Tap the sky. A C# particle system draws the sparks, React draws everything a person touches, and the sound is arithmetic.",
+    "entry": "index.tsx",
+    "stage": { "size": [960, 540], "fit": "fluid" },
+    "tags": ["toy", "visual"],
+    "controls": ["pointer", "touch"]
+}

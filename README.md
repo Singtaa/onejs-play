@@ -105,6 +105,48 @@ names (`ArrowLeft` to `LeftArrow`), and DOM `MouseEvent.button` disagrees with
 Unity's mask about middle and right, so passing the index straight through would
 silently swap them.
 
+## A game's own files
+
+Until recently a game was text and nothing else: no sprite, no sound, no font.
+Now it can ship them, and `assetUrl` is the one function that knows where they
+went.
+
+```tsx
+import { assetUrl, useTexture, audio } from "oj"
+
+const glow = useTexture("glow.png")            // a Unity texture, or null
+const pop = await audio.load(assetUrl("pop.wav"))
+```
+
+A bare file name, resolved differently on each side of an eject: on the site to
+`/assets/<name>` on the game's own origin, and in a Unity project to the
+project's `assets/` folder in the editor or `StreamingAssets/onejs/assets/` in a
+build. The container passes its origin in as `assetBase` when it creates the
+runtime; with none set, OneJS's own project convention applies, which is exactly
+what an ejected copy needs.
+
+Explicit at the call site on purpose. Teaching every loader a hidden base would
+mean a bare `"glow.png"` resolving through machinery a reader cannot see, and
+two loaders that disagreed about it would be a bug with no visible cause.
+
+`loadTexture` and `useTexture` take the bare name, matching onejs-unity's
+`loadImageAsync`. `audio.load` takes a URL, because it is onejs-unity's function
+passed through unchanged rather than a variant of it, so it gets `assetUrl(...)`
+at the call site.
+
+**Two things had to be fixed in the runtime before any of this worked**, and
+both were invisible from the outside:
+
+- onejs-react's image loader had no URL bypass, so a full URL was mangled into
+  `{streamingAssets}/onejs/assets/https://...` and never fetched. onejs-unity's
+  own resolver has always had that check; the copy in the reconciler did not.
+- On WebGL, `QuickJSUIBridge.Tick()` is never called, because the browser drives
+  the JS scheduler instead. Settling completed C# Tasks lived in `Tick()`, so on
+  WebGL **every** Task-returning API stayed pending forever: `audio.load` and
+  `<Image src="http...">` never resolved and never rejected, in every web build,
+  with nothing logged. It is settled from `TickSystems()` now, which is the one
+  thing Update does still call.
+
 ## Transforms
 
 Painter2D has no transform stack, so coordinates are transformed as they are
@@ -174,13 +216,31 @@ No `CS.*`, no build config, and no root plumbing: `mount()` knows where to
 render because the container told the runtime. `examples/` holds complete games written this
 way, and they typecheck against `oj` exactly as a published game does:
 
-| Example | Source | Bundled | Exercises |
-|---|---|---|---|
-| `wordle` | 4 files, 13.0 KB | 9.0 KB | Turn-based input, CSS Modules, seeded daily word |
-| `tetris` | 3 files, 11.2 KB | 6.8 KB | Real-time gravity and key repeat off frame delta |
+| Example | Bundled | Exercises |
+|---|---:|---|
+| `starter` | 1.9 KB | What `/new` scaffolds: one screen, one loop, nothing else |
+| `vowel-play` | 82.9 KB | Turn-based input, CSS Modules, a seeded daily word |
+| `well-stacked` | 9.2 KB | Real-time gravity and key repeat off the frame delta |
+| `twos-company` | 10.6 KB | USS transitions animating a board, stable ids across a move |
+| `fireworks` | 3.8 KB | Particles, and the only game that ships assets |
+| `space-junk` | 7.7 KB | The batched painter drawing a whole arcade game in one path |
+| `murmuration` | 5.1 KB | A spatial grid, and a simulation that has to stay order-independent |
+| `wayfinder` | 6.7 KB | Retained-mode elements where almost nothing changes per frame |
+| `drop-everything` | 4.2 KB | The physics world, and a pool because bodies cannot be added |
+| `particle-lab` | 7.6 KB | Sliders driving a real config, printed back out to paste |
+| `patience` | 10.9 KB | Drag and drop, one pointer handler, suits drawn as paths |
 
-Both run in the container: Wordle loads in 27 ms, and swapping one for the
-other takes 7 ms.
+Every one typechecks against `oj` exactly as a published game does, and the
+logic in each is tested without a screen: `npm test` covers the rules of the
+games, not their pixels.
+
+Three of them are worth reading for a decision rather than a mechanic.
+`wayfinder` uses elements where the arcade games use a painter, because a search
+changes four squares a frame and leaves a thousand alone. `drop-everything`
+creates every body it will ever have up front, because a physics world cannot
+grow. `patience` puts three pointer handlers on the board instead of a hundred
+and fifty six on the cards, because every handler costs a slot in the native
+callback table.
 
 **Input events queue to the frame boundary.** A browser delivers a keydown
 whenever it likes, including between frames. Applying it on arrival stamps it

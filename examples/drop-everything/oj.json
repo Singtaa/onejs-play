@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Drop Everything",
+    "author": "singtaa",
+    "description": "A box of shapes, some ramps, and real rigid body physics running in C# while JavaScript watches.",
+    "entry": "index.tsx",
+    "stage": { "size": [900, 600], "fit": "letterbox" },
+    "tags": ["toy", "physics"],
+    "controls": ["pointer", "touch"]
+}

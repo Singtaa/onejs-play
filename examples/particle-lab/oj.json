@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Particle Lab",
+    "author": "singtaa",
+    "description": "Turn the knobs, watch the effect, and copy the config that made it. Every control is one field of a real useParticles call.",
+    "entry": "index.tsx",
+    "stage": { "size": [980, 620], "fit": "letterbox" },
+    "tags": ["tool", "visual"],
+    "controls": ["pointer"]
+}

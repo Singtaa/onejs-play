@@ -1,0 +1,107 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game.
+
+  One ship drifting through a slowly turning rock field, drawn the same way the
+  game draws it: outlines only, no fills. Canvas rather than CSS, because the
+  rocks are irregular polygons that turn.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #07090e; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="field"></canvas>
+<script>
+const canvas = document.getElementById("field")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+/* Fixed rather than random, so the card looks the same every time it is seen
+   and a reader can recognise it. */
+function outline(points, seed) {
+    const out = []
+    let a = seed
+    for (let i = 0; i < points; i++) {
+        a = (a * 1103515245 + 12345) & 0x7fffffff
+        out.push(0.74 + (a / 0x7fffffff) * 0.4)
+    }
+    return out
+}
+
+const rocks = [
+    { x: 0.18, y: 0.28, r: 0.13, spin: 0.16, shape: outline(10, 7) },
+    { x: 0.74, y: 0.22, r: 0.09, spin: -0.24, shape: outline(9, 21) },
+    { x: 0.62, y: 0.72, r: 0.16, spin: 0.11, shape: outline(11, 44) },
+    { x: 0.30, y: 0.78, r: 0.06, spin: -0.4, shape: outline(8, 91) },
+]
+
+let t = 0
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.05, (now - last) / 1000)
+    last = now
+    t += dt
+    draw()
+}
+
+function draw() {
+    const unit = Math.min(W, H)
+    ctx.fillStyle = "#07090e"
+    ctx.fillRect(0, 0, W, H)
+    ctx.lineWidth = Math.max(1, unit * 0.005)
+    ctx.lineJoin = "round"
+
+    ctx.strokeStyle = "#8c99ae"
+    for (const rock of rocks) {
+        const cx = rock.x * W, cy = rock.y * H, r = rock.r * unit
+        ctx.beginPath()
+        for (let i = 0; i < rock.shape.length; i++) {
+            const a = t * rock.spin + (i / rock.shape.length) * Math.PI * 2
+            const rr = r * rock.shape[i]
+            const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr
+            i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
+        }
+        ctx.closePath()
+        ctx.stroke()
+    }
+
+    /* The ship circles slowly in the middle, nose along its path. */
+    const orbit = unit * 0.17
+    const a = t * 0.5
+    const sx = W * 0.5 + Math.cos(a) * orbit
+    const sy = H * 0.5 + Math.sin(a) * orbit * 0.6
+    const heading = a + Math.PI / 2
+    const nose = unit * 0.05, tail = unit * 0.03, spread = 2.5
+    const at = (d, s) => [sx + Math.cos(heading + s) * d, sy + Math.sin(heading + s) * d]
+    ctx.strokeStyle = "#dee8f8"
+    ctx.beginPath()
+    let [px, py] = at(nose, 0); ctx.moveTo(px, py)
+    ;[px, py] = at(tail, spread); ctx.lineTo(px, py)
+    ;[px, py] = at(nose * 0.4, Math.PI); ctx.lineTo(px, py)
+    ;[px, py] = at(tail, -spread); ctx.lineTo(px, py)
+    ctx.closePath()
+    ctx.stroke()
+
+    /* A shot, looping out ahead of the nose. */
+    const travel = (t * 0.9) % 1
+    const [bx, by] = at(nose + travel * unit * 0.5, 0)
+    ctx.fillStyle = "#fff2b8"
+    ctx.beginPath()
+    ctx.arc(bx, by, Math.max(1.4, unit * 0.008), 0, Math.PI * 2)
+    ctx.fill()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) draw()
+else requestAnimationFrame(frame)
+</script>
+</body>

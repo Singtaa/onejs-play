@@ -1,0 +1,74 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: a piece falling into a half-built well, a row filling,
+  and the row going. CSS keyframes rather than canvas, because every shape here
+  is a rectangle on a grid.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #121214; overflow: hidden; }
+    .well {
+        position: absolute; inset: 0; container-type: size;
+        display: grid; place-items: center;
+    }
+    .board {
+        position: relative;
+        width: 50cqmin; height: 80cqmin;
+        background: #131315;
+        border: 0.6cqmin solid #3c3c42;
+    }
+    .cell {
+        position: absolute;
+        width: 10cqmin; height: 10cqmin;
+        border: 0.35cqmin solid rgba(0, 0, 0, 0.35);
+        box-sizing: border-box;
+    }
+    .i { background: #46c6d8 } .o { background: #e8c84a }
+    .t { background: #b46bd8 } .s { background: #5ec96a }
+    .z { background: #e06060 } .j { background: #5b7fe0 }
+    .l { background: #e09a4a }
+
+    /* The piece that falls, lands, and completes the bottom row. */
+    .drop { animation: drop 3.6s cubic-bezier(0.4, 0, 0.7, 1) infinite; }
+    @keyframes drop {
+        0%        { transform: translateY(-24cqmin); opacity: 1 }
+        58%, 74%  { transform: translateY(0); opacity: 1 }
+        80%, 100% { transform: translateY(0); opacity: 0 }
+    }
+    /* The row it completed, going out with it. */
+    .clearing { animation: clear 3.6s linear infinite; }
+    @keyframes clear {
+        0%, 74%   { opacity: 1 }
+        80%, 100% { opacity: 0 }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .drop, .clearing { animation: none }
+    }
+</style>
+<body>
+<div class="well">
+    <div class="board">
+        <!-- The settled stack, four rows deep in places. -->
+        <div class="cell j" style="left: 0;        top: 50cqmin"></div>
+        <div class="cell j" style="left: 0;        top: 60cqmin"></div>
+        <div class="cell l" style="left: 10cqmin;  top: 60cqmin"></div>
+        <div class="cell t" style="left: 20cqmin;  top: 60cqmin"></div>
+        <div class="cell s" style="left: 30cqmin;  top: 50cqmin"></div>
+        <div class="cell s" style="left: 30cqmin;  top: 60cqmin"></div>
+        <div class="cell z" style="left: 40cqmin;  top: 60cqmin"></div>
+
+        <!-- The bottom row, one square short of complete. -->
+        <div class="clearing">
+            <div class="cell o" style="left: 0;       top: 70cqmin"></div>
+            <div class="cell o" style="left: 10cqmin; top: 70cqmin"></div>
+            <div class="cell t" style="left: 30cqmin; top: 70cqmin"></div>
+            <div class="cell l" style="left: 40cqmin; top: 70cqmin"></div>
+        </div>
+
+        <!-- The square that completes it. -->
+        <div class="drop">
+            <div class="cell i" style="left: 20cqmin; top: 70cqmin"></div>
+        </div>
+    </div>
+</div>
+</body>

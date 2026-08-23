@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Murmuration",
+    "author": "singtaa",
+    "description": "A few hundred birds following three rules each. Nothing decides what the flock does.",
+    "entry": "index.tsx",
+    "stage": { "size": [960, 600], "fit": "fluid" },
+    "tags": ["toy", "visual"],
+    "controls": ["pointer", "touch"]
+}

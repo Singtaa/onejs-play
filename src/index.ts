@@ -92,6 +92,10 @@ export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // MARK: math
 
+// MARK: a game's own files
+
+export { assetUrl, loadTexture, useTexture } from "./asset"
+
 export { Mathf } from "./mathf"
 export { Vector2 } from "./vec"
 export { Color } from "./color"

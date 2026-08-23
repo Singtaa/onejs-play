@@ -19,6 +19,7 @@
 import * as api from "./index"
 import { computeStageLayout, type StageConfig, type StageLayout } from "./stage"
 import { createContainerInput, type ContainerInput } from "./input"
+import { setAssetBase } from "./asset"
 import { setInputBackend } from "onejs-unity/input"
 
 /** The frame clock, reused rather than reallocated each frame. */
@@ -59,6 +60,14 @@ export interface RuntimeOptions {
     stage: StageConfig
     /** Initial viewport in CSS pixels. */
     viewport?: { width: number; height: number }
+    /**
+     * Where this game's own files are served from, without a trailing slash.
+     *
+     * The container passes its origin plus "/assets". Left out, assetUrl falls
+     * back to OneJS's project convention, which is exactly what an ejected copy
+     * of the same game needs.
+     */
+    assetBase?: string
     /**
      * Applies a freshly computed layout to whatever presents the stage.
      *
@@ -104,6 +113,7 @@ export function getCurrentRuntime(): OjRuntime | null {
 export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     const input = createContainerInput()
     setInputBackend(input.backend)
+    setAssetBase(options.assetBase ?? null)
 
     const time: TimeState = { now: 0, dt: 0, frame: 0 }
     let layout = computeStageLayout(
@@ -172,6 +182,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         dispose() {
             callbacks.clear()
             setInputBackend(null)
+            setAssetBase(null)
             if (current === oj) current = null
         },
     }

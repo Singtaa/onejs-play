@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game.
+
+  Four tiles pushed right, twice, with the pair on the end combining. The whole
+  point of the game in four seconds, and no canvas needed: two keyframed slides
+  and an opacity swap.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #14181d; overflow: hidden; }
+    .board {
+        position: absolute; inset: 0; container-type: size;
+        display: grid; place-items: center;
+    }
+    .grid {
+        position: relative;
+        width: 62cqmin; height: 62cqmin;
+        background: #1e222a; border-radius: 3cqmin;
+    }
+    .cell, .tile {
+        position: absolute;
+        width: 26%; height: 26%;
+        border-radius: 2cqmin;
+    }
+    .cell { background: rgba(255, 255, 255, 0.035); }
+    .tile {
+        display: grid; place-items: center;
+        font: 700 6cqmin/1 ui-sans-serif, system-ui, sans-serif;
+        color: #e2eaf7;
+    }
+    /* Columns at 4%, 28%, 52%, 76% leaves a 4% gutter and a 4% margin. */
+    .c0 { left: 4% }  .c1 { left: 28% }  .c2 { left: 52% }  .c3 { left: 76% }
+    .r1 { top: 28% }  .r2 { top: 52% }
+
+    .v2   { background: #2c323e }
+    .v4   { background: #34405a }
+    .v8   { background: #3f5f8c }
+    .v16  { background: #4a7bb5 }
+    .v32  { background: #4f97c9 }
+
+    /* The two that meet. One slides into the other and hands over. */
+    .slide-a { animation: slideA 4s ease-in-out infinite; }
+    .slide-b { animation: slideB 4s ease-in-out infinite; }
+    .become  { animation: become 4s ease-in-out infinite; }
+    .drift   { animation: drift 4s ease-in-out infinite; }
+
+    @keyframes slideA {
+        0%, 22%   { left: 28%; opacity: 1 }
+        38%, 100% { left: 76%; opacity: 1 }
+    }
+    @keyframes slideB {
+        0%, 22%   { left: 52%; opacity: 1 }
+        38%       { left: 76%; opacity: 0 }
+        100%      { left: 76%; opacity: 0 }
+    }
+    @keyframes become {
+        0%, 36%   { opacity: 0; transform: scale(0.9) }
+        42%       { opacity: 1; transform: scale(1.12) }
+        50%, 100% { opacity: 1; transform: scale(1) }
+    }
+    @keyframes drift {
+        0%, 22%   { left: 4% }
+        38%, 100% { left: 52% }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .slide-a, .slide-b, .become, .drift { animation: none }
+        .slide-a { left: 76%; opacity: 0 }
+        .slide-b { opacity: 0 }
+        .become  { left: 76%; opacity: 1 }
+        .drift   { left: 52% }
+    }
+</style>
+<body>
+    <div class="board">
+        <div class="grid">
+            <div class="cell c0"></div><div class="cell c1"></div>
+            <div class="cell c2"></div><div class="cell c3"></div>
+            <div class="cell c0 r1"></div><div class="cell c1 r1"></div>
+            <div class="cell c2 r1"></div><div class="cell c3 r1"></div>
+            <div class="cell c0 r2"></div><div class="cell c1 r2"></div>
+            <div class="cell c2 r2"></div><div class="cell c3 r2"></div>
+
+            <div class="tile v8 drift">8</div>
+            <div class="tile v4 slide-a">4</div>
+            <div class="tile v4 slide-b">4</div>
+            <div class="tile v8 become c3">8</div>
+
+            <div class="tile v16 c2 r1">16</div>
+            <div class="tile v32 c3 r2">32</div>
+            <div class="tile v2 c0 r2">2</div>
+        </div>
+    </div>
+</body>

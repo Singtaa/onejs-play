@@ -1,0 +1,23 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Well Stacked",
+    "author": "singtaa",
+    "description": "Falling shapes, filled rows, a rising floor of mistakes. Gravity and key repeat run off the frame clock, not a timer.",
+    "entry": "index.tsx",
+    "stage": {
+        "size": [
+            520,
+            560
+        ],
+        "fit": "letterbox"
+    },
+    "tags": [
+        "arcade",
+        "puzzle"
+    ],
+    "controls": [
+        "keyboard",
+        "touch"
+    ]
+}
