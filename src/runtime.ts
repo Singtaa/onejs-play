@@ -20,6 +20,7 @@ import * as api from "./index"
 import { computeStageLayout, type StageConfig, type StageLayout } from "./stage"
 import { createContainerInput, type ContainerInput } from "./input"
 import { setAssetBase } from "./asset"
+import { setPlayContext, type PlayContext } from "./play"
 import { setInputBackend } from "onejs-unity/input"
 
 /** The frame clock, reused rather than reallocated each frame. */
@@ -69,6 +70,12 @@ export interface RuntimeOptions {
      */
     assetBase?: string
     /**
+     * The site behind the game: where its API lives and what proves this is a
+     * real play session. Absent outside a container, which is what makes
+     * leaderboards and rooms report themselves unavailable rather than fail.
+     */
+    play?: PlayContext
+    /**
      * Applies a freshly computed layout to whatever presents the stage.
      *
      * The stage math lives here, but nothing in this package can act on it:
@@ -114,6 +121,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     const input = createContainerInput()
     setInputBackend(input.backend)
     setAssetBase(options.assetBase ?? null)
+    setPlayContext(options.play ?? null)
 
     const time: TimeState = { now: 0, dt: 0, frame: 0 }
     let layout = computeStageLayout(
@@ -183,6 +191,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             callbacks.clear()
             setInputBackend(null)
             setAssetBase(null)
+            setPlayContext(null)
             if (current === oj) current = null
         },
     }

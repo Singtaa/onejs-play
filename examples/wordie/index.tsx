@@ -1,5 +1,5 @@
 /**
- * Vowel Play: six guesses at a five letter word.
+ * Wordie: six guesses at a five letter word.
  *
  * The screen is React. View and Text are the building blocks, roughly a div
  * and a span, and Unity draws them: there is no browser layout underneath, so
@@ -15,7 +15,7 @@
 import { useState, useMemo } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
-import styles from "./vowel-play.module.uss"
+import styles from "./wordie.module.uss"
 import { ANSWERS, isAcceptedGuess } from "./words"
 import {
     scoreGuess, keyboardStates, statusOf, rejectionReason,
@@ -34,7 +34,7 @@ const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
  */
 function wordOfTheDay(): string {
     const today = new Date().toISOString().slice(0, 10)
-    return random(`vowel-play-${today}`).pick(ANSWERS)
+    return random(`wordie-${today}`).pick(ANSWERS)
 }
 
 function Tile({ letter, state, filled }: { letter: string; state?: LetterState; filled: boolean }) {
@@ -90,7 +90,7 @@ function Key({ label, state, wide, onPress }: {
     )
 }
 
-function VowelPlay() {
+function Wordie() {
     const answer = useMemo(wordOfTheDay, [])
     const [guesses, setGuesses] = useState<string[]>([])
     const [draft, setDraft] = useState("")
@@ -143,7 +143,7 @@ function VowelPlay() {
 
     return (
         <View className="flex-1 items-center bg-neutral-900 py-6">
-            <Text className="text-3xl font-bold text-white mb-1">VOWEL PLAY</Text>
+            <Text className="text-3xl font-bold text-white mb-1">WORDIE</Text>
             <Text className="text-xs text-neutral-500 mb-4">{`built with oj  ${guesses.length}/${MAX_GUESSES}`}</Text>
 
             <View className="mb-3">
@@ -181,4 +181,4 @@ function VowelPlay() {
 
 // Puts the game on screen. Nothing else is needed: no page, no canvas, no
 // root element to find.
-mount(<VowelPlay />)
+mount(<Wordie />)

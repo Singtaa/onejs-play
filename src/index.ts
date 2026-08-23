@@ -96,6 +96,16 @@ export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 export { assetUrl, loadTexture, useTexture } from "./asset"
 
+// MARK: the site behind the game
+
+export { scores, useLeaderboard } from "./scores"
+export type { ScoreEntry, ScoreWindow, TopOptions, SubmitOptions, Leaderboard } from "./scores"
+
+export { useRoom, validRoomName } from "./room"
+export type { Room, RoomOptions, RoomMessage } from "./room"
+
+export { isOnline } from "./play"
+
 export { Mathf } from "./mathf"
 export { Vector2 } from "./vec"
 export { Color } from "./color"

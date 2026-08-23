@@ -17,7 +17,10 @@
  */
 
 import { useMemo, useRef, useState } from "react"
-import { View, Text, mount, useFrame, input, random, Painter, batchedVisualContent } from "oj"
+import {
+    View, Text, mount, useFrame, input, random, Painter, batchedVisualContent,
+    useLeaderboard, scores,
+} from "oj"
 import {
     wrap, shortest, touching, shatter, outlineFor, edgeSpawn, SIZES, VALUES, sizeOf,
     type Rock, type Field,
@@ -103,6 +106,18 @@ function SpaceJunk() {
     // Mirrored into state only so the HUD re-renders, which is a handful of
     // times a game rather than sixty times a second.
     const [hud, setHud] = useState({ score: 0, lives: 3, wave: 1, over: false })
+
+    /**
+     * The board, and a guard so one death posts one score.
+     *
+     * The frame loop notices the end of a run, and it runs sixty times a second
+     * after that: without this the board would fill with the same number until
+     * the play token was spent.
+     */
+    const board = useLeaderboard({ limit: 6 })
+    const submitted = useRef(false)
+    const submit = useRef(board.submit)
+    submit.current = board.submit
 
     /**
      * Draws one object as many times as the wrap requires.
@@ -231,6 +246,7 @@ function SpaceJunk() {
     const restart = () => {
         const fresh = newWorld(rng)
         Object.assign(world, fresh)
+        submitted.current = false
         setHud({ score: 0, lives: 3, wave: 1, over: false })
     }
 
@@ -375,6 +391,14 @@ function SpaceJunk() {
         if (changed) {
             setHud({ score: world.score, lives: world.lives, wave: world.wave, over: world.over })
         }
+
+        // One post per run, at the end of it. submit holds its own errors: a
+        // board that cannot be reached is a reason to show less, never a reason
+        // to interrupt somebody who just finished a good run.
+        if (world.over && !submitted.current && scores.available && world.score > 0) {
+            submitted.current = true
+            submit.current(world.score)
+        }
         host.current?.MarkDirtyRepaint()
     }, [])
 
@@ -408,6 +432,27 @@ function SpaceJunk() {
                     <Text style={{ fontSize: 15, marginTop: 8, color: "rgb(150, 162, 184)" }}>
                         {`${hud.score} points, wave ${hud.wave}`}
                     </Text>
+                    {board.entries.length > 0 && (
+                        <View style={{ marginTop: 22, width: 220 }}>
+                            <Text style={{ fontSize: 10, color: "rgb(110, 122, 146)", marginBottom: 5 }}>
+                                BEST EVER
+                            </Text>
+                            {board.entries.map((entry, i) => (
+                                <View key={`${entry.name}-${i}`}
+                                    style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                                    <Text style={{
+                                        fontSize: 12,
+                                        color: entry.score === hud.score ? "rgb(255, 214, 120)" : "rgb(176, 190, 214)",
+                                    }}>
+                                        {entry.name}
+                                    </Text>
+                                    <Text style={{ fontSize: 12, color: "rgb(140, 155, 180)" }}>
+                                        {String(entry.score)}
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
                     <Text style={{ fontSize: 12, marginTop: 22, color: "rgb(122, 134, 156)" }}>
                         Press R, or tap, to go again
                     </Text>

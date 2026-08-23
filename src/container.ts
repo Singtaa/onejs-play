@@ -15,6 +15,9 @@ export type { EvaluateBundleOptions } from "./sandbox"
 
 export { createRuntime, getCurrentRuntime } from "./runtime"
 export { setAssetBase, getAssetBase } from "./asset"
+export { resetTheme, THEME_USS } from "./theme"
+export { setPlayContext, getPlayContext } from "./play"
+export type { PlayContext } from "./play"
 export type { OjRuntime, ContainerRuntime, RuntimeOptions, TimeState } from "./runtime"
 
 export { createContainerInput } from "./input"

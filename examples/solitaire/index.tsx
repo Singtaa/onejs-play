@@ -1,5 +1,5 @@
 /**
- * Patience: Klondike, the one everybody has played.
+ * Solitaire: Klondike, the one everybody has played.
  *
  * The rules are in cards.ts and know nothing about the screen. This file is
  * about the two things a card game actually has to get right on a screen:
@@ -169,12 +169,22 @@ interface Drag {
     grabY: number
 }
 
-function Patience() {
+function Solitaire() {
     const rng = useRef(random()).current
     const [game, setGame] = useState<Game>(() => deal((cards) => rng.shuffle(cards)))
     const drag = useRef<Drag | null>(null)
     const dragLayer = useRef<any>(null)
-    const [dragging, setDragging] = useState<Card[] | null>(null)
+    /**
+     * What is being carried, and where it was picked up from.
+     *
+     * The position is in state rather than only written onto the element,
+     * because the element does not exist yet at the moment of the pick-up: a
+     * ref is attached after the render that creates it, so the imperative move
+     * that follows setDragging lands on null. The layer was therefore drawn
+     * once at its default position, off screen, and the card blinked out for a
+     * frame every time it was touched.
+     */
+    const [dragging, setDragging] = useState<{ cards: Card[]; x: number; y: number } | null>(null)
 
     const restart = () => {
         drag.current = null
@@ -239,8 +249,9 @@ function Patience() {
             grabX: x - originX,
             grabY: y - originY,
         }
-        setDragging(cards)
-        place(x, y)
+        // Exactly where the cards already were, so the first frame of a drag
+        // looks identical to the last frame before it.
+        setDragging({ cards, x: originX, y: originY })
     }
 
     /** Moves the floating stack, written straight onto the element. */
@@ -319,7 +330,7 @@ function Patience() {
     const wasteUnder = game.waste[game.waste.length - 2]
 
     const isDragged = useMemo(() => {
-        const ids = new Set((dragging ?? []).map((c) => c.id))
+        const ids = new Set((dragging?.cards ?? []).map((c) => c.id))
         return (card: Card) => ids.has(card.id)
     }, [dragging])
 
@@ -380,8 +391,9 @@ function Patience() {
             {/* The floating stack. Last in the tree, so it draws over everything,
                 and it exists only while something is being carried. */}
             {dragging !== null && (
-                <View ref={dragLayer} style={{ position: "absolute", left: -999, top: -999 }} pickingMode="Ignore">
-                    {dragging.map((card, i) => (
+                <View ref={dragLayer} style={{ position: "absolute", left: dragging.x, top: dragging.y }}
+                    pickingMode="Ignore">
+                    {dragging.cards.map((card, i) => (
                         <View key={card.id} style={{ position: "absolute", left: 0, top: i * FAN_UP }}>
                             <Face card={card} />
                         </View>
@@ -414,4 +426,4 @@ function Patience() {
     )
 }
 
-mount(<Patience />)
+mount(<Solitaire />)

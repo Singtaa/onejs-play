@@ -16,7 +16,7 @@
    The tone classes below set background-color and border-color, and at equal
    specificity whichever is written last would win. Sharing no property with
    them means the order of this file cannot decide how a piece looks, which is
-   exactly the trap that left Vowel Play's keyboard untinted. */
+   exactly the trap that left Wordie's keyboard untinted. */
 .previewCell {
     width: 16px;
     height: 16px;

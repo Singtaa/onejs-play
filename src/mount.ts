@@ -30,6 +30,7 @@ import { render, View } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { startStandalone } from "./standalone"
 import { computeStageLayout, normalizeStage, type StageInput, type StageLayout } from "./stage"
+import { applyTheme } from "./theme"
 
 /**
  * The host box, in points.
@@ -100,8 +101,13 @@ function StagePresenter({ children }: { children: ReactNode }) {
  * eject download makes. Pass a stage there, since there is no manifest to read
  * it from; the container ignores the argument because the manifest wins.
  */
-export function mount(element: ReactNode, options: { stage?: StageInput } = {}): void {
+export function mount(
+    element: ReactNode,
+    options: { stage?: StageInput; theme?: boolean } = {},
+): void {
     const runtime = getCurrentRuntime() ?? startStandalone(options.stage).oj
+    // Before the render, so the first frame a player sees is already themed.
+    if (options.theme !== false) applyTheme()
     render(createElement(StagePresenter, null, element) as never, runtime.root as never)
 }
 

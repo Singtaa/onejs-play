@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Big Fish",
+    "author": "singtaa",
+    "description": "Swim, eat what is smaller, avoid what is not. Everyone else in the pond is a real person, and nobody can kill you but you.",
+    "entry": "index.tsx",
+    "stage": { "size": [1100, 700], "fit": "fluid" },
+    "tags": ["multiplayer", "arcade"],
+    "controls": ["pointer", "touch"]
+}

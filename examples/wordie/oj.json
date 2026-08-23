@@ -1,9 +1,9 @@
 {
     "schema": 1,
     "runtime": "1.0.0",
-    "name": "Vowel Play",
+    "name": "Wordie",
     "author": "singtaa",
-    "description": "Six guesses, one word, a new one every day. The rule about repeated letters is where most versions of this go wrong.",
+    "description": "Six guesses at a five letter word, a new one every day. The rule about repeated letters is where most versions of this go wrong.",
     "entry": "index.tsx",
     "stage": {
         "size": [

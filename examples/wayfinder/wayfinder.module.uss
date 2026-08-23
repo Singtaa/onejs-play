@@ -21,7 +21,7 @@
 /* The state classes all set background-color, and so does .cell above. They are
    single class selectors, so specificity is equal and source order decides:
    these have to stay below .cell or a square would never leave its base colour.
-   The same trap once left Vowel Play's keyboard untinted. */
+   The same trap once left Wordie's keyboard untinted. */
 
 /* Ground. Slow ground is warm and dark, so a glance says where the cost is. */
 .open { background-color: rgb(24, 28, 36); }

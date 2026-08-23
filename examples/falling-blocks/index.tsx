@@ -1,5 +1,5 @@
 /**
- * Well Stacked: falling shapes, filled rows, a rising floor of mistakes.
+ * Falling Blocks: shapes drop, filled rows go, mistakes pile up.
  *
  * The screen is React, drawn by Unity rather than by a browser. View and Text
  * are the building blocks, and they come from "oj", the small runtime this game
@@ -16,7 +16,7 @@
 import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
-import styles from "./well-stacked.module.uss"
+import styles from "./falling-blocks.module.uss"
 import {
     beginGesture, advanceGesture, releaseGesture, isSoftDropping, spendDrop, type Gesture,
 } from "./gestures"
@@ -109,7 +109,7 @@ function Preview({ kind }: { kind: PieceKind }) {
     )
 }
 
-function WellStacked() {
+function FallingBlocks() {
     const pick = useRef(bag(Math.floor(Date.now() / 86400000))).current
     const [game, setGame] = useState<Game>(() => start(pick))
     const timers = useRef({ drop: 0, left: 0, right: 0, down: 0 }).current
@@ -217,7 +217,7 @@ function WellStacked() {
                 than a gap on the column: USS has no gap property, so those
                 classes compiled to nothing and everything sat flush. */}
             <View className="w-32 ml-6">
-                <Text className="text-2xl font-bold text-white mb-3">WELL STACKED</Text>
+                <Text className="text-2xl font-bold text-white mb-3">FALLING BLOCKS</Text>
                 <View className="mb-3">
                     <Text className="text-xs text-neutral-500">SCORE</Text>
                     <Text className="text-xl font-bold text-white">{String(game.score)}</Text>
@@ -247,4 +247,4 @@ function WellStacked() {
     )
 }
 
-mount(<WellStacked />)
+mount(<FallingBlocks />)

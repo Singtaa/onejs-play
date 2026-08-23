@@ -1,0 +1,127 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: a few fish circling a field of pellets, one of them
+  growing as it eats. Enough to say "several of you, in one pond" without
+  needing a pond.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #060c12; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="pond"></canvas>
+<script>
+const canvas = document.getElementById("pond")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+let seed = 91
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+
+const TONES = ["#59b8ff", "#ff8c4d", "#73dc85", "#f0729e", "#fad159", "#a88cfa"]
+let pellets = []
+let fish = []
+
+function reset() {
+    const unit = Math.min(W, H)
+    pellets = []
+    for (let i = 0; i < 60; i++) {
+        pellets.push({ x: rand() * W, y: rand() * H, tone: TONES[(rand() * TONES.length) | 0] })
+    }
+    fish = []
+    for (let i = 0; i < 4; i++) {
+        fish.push({
+            x: rand() * W, y: rand() * H,
+            size: unit * (0.04 + rand() * 0.05),
+            angle: rand() * Math.PI * 2,
+            turn: (rand() - 0.5) * 1.2,
+            tone: TONES[i % TONES.length],
+        })
+    }
+}
+reset()
+
+function step(dt) {
+    const unit = Math.min(W, H)
+    for (const f of fish) {
+        f.angle += f.turn * dt
+        const speed = unit * 0.16 * Math.pow(unit * 0.04 / f.size, 0.55)
+        f.x += Math.cos(f.angle) * speed * dt
+        f.y += Math.sin(f.angle) * speed * dt
+        /* Turn back rather than wrap: a fish that vanishes off one edge and
+           reappears on the other reads as a glitch on a card this small. */
+        if (f.x < f.size || f.x > W - f.size) { f.angle = Math.PI - f.angle; f.x = Math.min(W - f.size, Math.max(f.size, f.x)) }
+        if (f.y < f.size || f.y > H - f.size) { f.angle = -f.angle; f.y = Math.min(H - f.size, Math.max(f.size, f.y)) }
+
+        for (const p of pellets) {
+            if (p.eaten) continue
+            if (Math.hypot(p.x - f.x, p.y - f.y) < f.size + unit * 0.012) {
+                p.eaten = true
+                f.size = Math.min(unit * 0.13, Math.sqrt(f.size * f.size + unit * unit * 0.0004))
+            }
+        }
+    }
+    if (pellets.every((p) => p.eaten)) reset()
+}
+
+function draw() {
+    const unit = Math.min(W, H)
+    ctx.fillStyle = "#060c12"
+    ctx.fillRect(0, 0, W, H)
+
+    for (const p of pellets) {
+        if (p.eaten) continue
+        ctx.fillStyle = p.tone
+        ctx.globalAlpha = 0.85
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, unit * 0.011, 0, Math.PI * 2)
+        ctx.fill()
+    }
+    ctx.globalAlpha = 1
+
+    for (const f of fish) {
+        ctx.fillStyle = f.tone
+        ctx.globalAlpha = 0.4
+        ctx.beginPath()
+        ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = f.tone
+        ctx.lineWidth = Math.max(1.5, unit * 0.006)
+        ctx.beginPath()
+        ctx.arc(f.x, f.y, f.size - 1, 0, Math.PI * 2)
+        ctx.stroke()
+        /* The eye, which is what turns a circle into something alive. */
+        ctx.fillStyle = "#f2f8ff"
+        ctx.beginPath()
+        ctx.arc(f.x + Math.cos(f.angle) * f.size * 0.38, f.y + Math.sin(f.angle) * f.size * 0.38,
+            Math.max(1.5, f.size * 0.17), 0, Math.PI * 2)
+        ctx.fill()
+    }
+}
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 120; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>
