@@ -49,7 +49,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
-    View, Text, mount, useFrame, useRoom, usePhysics, input,
+    View, Text, mount, useFrame, useRoom, usePhysics, input, isOnline,
     Painter, batchedVisualContent, type BodyConfig,
 } from "oj"
 import {
@@ -356,10 +356,40 @@ function Sumo() {
             if (isOver(round.current, elapsed.current)) finishRound()
         }
 
+        /**
+         * A host that is not in its own round ends it.
+         *
+         * This client's id changes if the socket drops and reconnects, and the
+         * round it is in the middle of still names the old one. Nobody in that
+         * roster can report a fall, so for a solo host the round would sit
+         * there until the cap. Ending it costs one round, and the next one has
+         * everybody in it, which is the shortest way back to a game.
+         */
+        if (live.current && round.current !== null && room.isHost
+            && !round.current.starters.includes(room.id)) {
+            finishRound()
+        }
+
         const current = live.current ? round.current : null
         const iAmIn = current !== null && current.starters.includes(room.id) && !fallen.current
 
-        if (current === null && room.isHost) {
+        /**
+         * A round cannot be opened before this client knows who it is.
+         *
+         * The roster is built from room.id, which is 0 until the relay sends
+         * the welcome. Open a round in that window and the roster names a
+         * player who does not exist: seconds later the id arrives, this client
+         * is not in the round it started itself, and because nobody in that
+         * roster can ever report a fall the round runs to its forty five second
+         * cap with a dimmed blob standing on a ring that has closed to nothing.
+         * That is what a player saw as "the game did not start".
+         *
+         * An ejected copy has no site, never gets an id, and must not wait for
+         * one, which is what the second half of this says.
+         */
+        const knowsWhoItIs = room.connected || !isOnline()
+
+        if (current === null && room.isHost && knowsWhoItIs) {
             // Only the host counts down to the next round, and it announces the
             // roster it saw so that everybody spawns from the same list.
             rest.current -= step
