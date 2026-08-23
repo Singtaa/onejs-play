@@ -58,7 +58,7 @@ export interface Preset {
 
 /** The preview the origins below are measured in. */
 export const PREVIEW_W = 650
-export const PREVIEW_H = 460
+export const PREVIEW_H = 700
 
 /**
  * Six effects that between them touch every knob.

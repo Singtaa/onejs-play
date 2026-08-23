@@ -36,17 +36,21 @@ import labStyles from "./lab.module.uss"
 declare const navigator: { clipboard?: { writeText(text: string): Promise<void> } } | undefined
 
 /**
- * The preview and the printed config get a row each.
+ * The preview gets the whole height.
  *
- * They used to share one box, with the config floating over the bottom of the
- * preview, and it covered the very part of the effect worth watching: a
- * fountain's base sat behind the panel. Two rows costs eighty pixels of height
- * and means nothing is ever hidden behind anything.
+ * A panel printing the config used to take the bottom third, and it read badly:
+ * UI Toolkit's default face is proportional, so indented code does not line up,
+ * and there is no monospace font here to give it. Showing code that looks wrong
+ * is worse than not showing it, and the config was never the thing to look at
+ * anyway. Copy config still puts the real thing on the clipboard, which is what
+ * anybody wanted it for.
+ *
+ * Bringing it back means shipping a monospace font, which a game can now do
+ * (see assetUrl), rather than fighting the default one.
  */
 const PANEL = 330
 const WIDTH = PREVIEW_W + PANEL
-const CODE_H = 240
-const HEIGHT = PREVIEW_H + CODE_H
+const HEIGHT = PREVIEW_H
 const MAX = 1400
 
 const INK = "rgb(226, 234, 247)"
@@ -200,29 +204,16 @@ function ParticleLab() {
 
     return (
         <View style={{ width: WIDTH, height: HEIGHT, flexDirection: "row", backgroundColor: "rgb(12, 14, 19)" }}>
-            <View style={{ width: PREVIEW_W, height: HEIGHT }}>
-                {/* The effect, in a box of its own. The emitter's position is
-                    measured in these pixels, which is why PREVIEW_W and
-                    PREVIEW_H live beside the presets rather than here. */}
-                <View style={{ width: PREVIEW_W, height: PREVIEW_H, overflow: "hidden" }}>
-                    <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
+            {/* The effect, and nothing else. The emitter's position is measured
+                in these pixels, which is why PREVIEW_W and PREVIEW_H live
+                beside the presets rather than here. */}
+            <View style={{ width: PREVIEW_W, height: PREVIEW_H, overflow: "hidden" }}>
+                <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
-                    <View style={{ position: "absolute", left: 22, top: 18 }} pickingMode="Ignore">
-                        <Text style={{ fontSize: 20, color: INK }}>PARTICLE LAB</Text>
-                        <Text style={{ fontSize: 11, marginTop: 2, color: DIM }}>
-                            Every control is one field of the config below
-                        </Text>
-                    </View>
-                </View>
-
-                {/* The config that is running, printed to be taken away. */}
-                <View style={{
-                    width: PREVIEW_W, height: CODE_H,
-                    backgroundColor: "rgb(9, 11, 15)", paddingLeft: 22, paddingTop: 14,
-                    borderTopWidth: 1, borderTopColor: "rgb(30, 35, 45)",
-                }} pickingMode="Ignore">
-                    <Text style={{ fontSize: 11.5, color: "rgb(158, 200, 240)", whiteSpace: "normal" }}>
-                        {source}
+                <View style={{ position: "absolute", left: 22, top: 18 }} pickingMode="Ignore">
+                    <Text style={{ fontSize: 20, color: INK }}>PARTICLE LAB</Text>
+                    <Text style={{ fontSize: 11, marginTop: 2, color: DIM }}>
+                        Every control is one field of a real config. Copy it when it looks right.
                     </Text>
                 </View>
             </View>
