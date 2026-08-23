@@ -5,24 +5,27 @@
  * about the two things a card game actually has to get right on a screen:
  * picking a card up, and putting it down.
  *
- * ONE POINTER HANDLER, NOT EIGHTY
+ * THE POINTER IS READ, NOT HANDLED
  *
- * The obvious way to make cards draggable is to put a handler on each card, and
- * it is the wrong way here. Every JavaScript function assigned to a C# delegate
- * takes a slot in the native callback table, and a board of fifty two cards
- * with three handlers each would take a hundred and fifty six of them, churning
- * on every render.
+ * There are no pointer handlers on anything. The board asks `input` where the
+ * pointer is once a frame and works out what is under it, because every pile is
+ * at a position this file computed in the first place: the arithmetic is
+ * already here, and hit testing is only doing it backwards.
  *
- * So the board has three handlers in total, on the root, and works out what was
- * touched from the coordinates. Every pile is at a position this file computed
- * in the first place, so the arithmetic is already here; the only new part is
- * doing it backwards.
+ * Two reasons, and the second one is why the first version of this did not
+ * work at all. A handler per card would take three slots in the native callback
+ * table per card, a hundred and fifty six of them, churning on every render.
+ * And a React pointer event carries the position in PANEL coordinates, which
+ * are not the stage coordinates everything here is laid out in: a letterboxed
+ * stage offsets one from the other. `input` reports logical stage units on
+ * every platform, which is what the layout is in, and it sees touches too, so
+ * the same code drags a card with a finger.
  *
  * The suits are drawn rather than typed, for reasons in pips.tsx.
  */
 
 import { useMemo, useRef, useState } from "react"
-import { View, Text, Button, mount, random } from "oj"
+import { View, Text, Button, mount, useFrame, input, random } from "oj"
 import {
     deal, draw, toTableau, toFoundation, sendUp, lift, canLift,
     won, canFinish, nextFinishingMove, RANKS,
@@ -192,8 +195,19 @@ function Patience() {
         })
     }
 
-    const onDown = (e: any) => {
-        const target = hit(game, e.localX, e.localY)
+    /**
+     * The state a frame callback reads.
+     *
+     * useFrame subscribes once, so the callback it captured would otherwise see
+     * the opening deal forever. Mirroring into a ref keeps it current without
+     * resubscribing on every render.
+     */
+    const live = useRef(game)
+    live.current = game
+
+    const onDown = (x: number, y: number) => {
+        const game = live.current
+        const target = hit(game, x, y)
         if (target === null) return
         if (target.kind === "stock") {
             setGame(draw(game))
@@ -222,11 +236,11 @@ function Patience() {
         drag.current = {
             source: target.source,
             cards,
-            grabX: e.localX - originX,
-            grabY: e.localY - originY,
+            grabX: x - originX,
+            grabY: y - originY,
         }
         setDragging(cards)
-        place(e.localX, e.localY)
+        place(x, y)
     }
 
     /** Moves the floating stack, written straight onto the element. */
@@ -238,18 +252,14 @@ function Patience() {
         layer.style.top = y - current.grabY
     }
 
-    const onMove = (e: any) => {
-        if (drag.current === null) return
-        place(e.localX, e.localY)
-    }
-
-    const onUp = (e: any) => {
+    const onUp = (x: number, y: number) => {
+        const game = live.current
         const current = drag.current
         if (current === null) return
         drag.current = null
         setDragging(null)
 
-        const target = hit(game, e.localX, e.localY)
+        const target = hit(game, x, y)
         let next = game
 
         if (target !== null && target.kind === "foundation") {
@@ -271,6 +281,36 @@ function Patience() {
         setGame(next)
     }
 
+    /**
+     * One pointer, whether it is a mouse or a finger.
+     *
+     * A touch that began counts as a press and one that ended as a release, so
+     * the same three lines below drag a card either way. The last touch in the
+     * list wins if there are several, which is the same "one at a time" rule
+     * the other games use and the right one for a card: two fingers on one
+     * stack has no meaning.
+     */
+    useFrame(() => {
+        const mouse = input.mouse
+        let x = mouse.position.x
+        let y = mouse.position.y
+        let pressed = mouse.wasLeftPressed
+        let released = mouse.wasLeftReleased
+        let held = mouse.leftButton
+
+        for (const touch of input.touches) {
+            x = touch.position.x
+            y = touch.position.y
+            if (touch.phase === "began") pressed = true
+            else if (touch.phase === "ended" || touch.phase === "canceled") released = true
+            else held = true
+        }
+
+        if (pressed) onDown(x, y)
+        else if (held) place(x, y)
+        if (released) onUp(x, y)
+    }, [])
+
     const complete = won(game)
     const finishable = canFinish(game)
 
@@ -284,12 +324,7 @@ function Patience() {
     }, [dragging])
 
     return (
-        <View
-            style={{ width: W, height: H, backgroundColor: FELT }}
-            onPointerDown={onDown}
-            onPointerMove={onMove}
-            onPointerUp={onUp}
-        >
+        <View style={{ width: W, height: H, backgroundColor: FELT }}>
             {/* The stock, which is a button as much as a pile. */}
             {game.stock.length > 0
                 ? <View style={{ position: "absolute", left: columnX(0), top: TOP_Y }}><Back /></View>

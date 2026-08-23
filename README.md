@@ -93,6 +93,25 @@ onejs-unity's `setInputBackend`. One API, one implementation, a swappable
 source. Writing a second input API here would have been the maintenance
 nightmare in miniature.
 
+**Read the pointer through `input`, not through React's pointer events.** The
+two do not report the same numbers, and nothing warns you:
+
+| | Reports |
+|---|---|
+| `input.mouse.position`, `input.touches[n].position` | logical stage units |
+| `onPointerDown` and friends | **panel** pixels |
+
+A letterboxed stage offsets one from the other, so hit testing against a layout
+written in stage units silently misses by the size of the bars. React's events
+also carry `x` and `y` rather than the `localX` and `localY` a web habit
+reaches for, and a handler typed as `any` accepts both happily: Patience shipped
+with every card unclickable because of exactly that pair of mistakes. Its
+`ChangeEventData` sibling carries `value`, not `newValue`, which broke every
+slider in Particle Lab the same way.
+
+Reading through `input` also gets touch for free, since the same code sees
+`input.touches`.
+
 Edges are frame numbers rather than booleans cleared each frame. That gets the
 awkward cases right: a key pressed and released inside one frame reports both
 `wasKeyPressed` and `wasKeyReleased`, and OS auto-repeat does not re-fire

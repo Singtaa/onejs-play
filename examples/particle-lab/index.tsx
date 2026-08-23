@@ -21,20 +21,28 @@
  */
 
 import { useRef, useState } from "react"
-import { View, Text, Button, Slider, ScrollView, mount, useParticles } from "oj"
-import { PRESETS, toEmitter, toSource, shiftHue, type Knobs } from "./presets"
+import { View, Text, Button, Slider, ScrollView, mount, useParticles, type ChangeEventData } from "oj"
+import { PRESETS, PREVIEW_W, PREVIEW_H, toEmitter, toSource, shiftHue, type Knobs } from "./presets"
 
-const WIDTH = 980
-const HEIGHT = 620
+/**
+ * The preview and the printed config get a row each.
+ *
+ * They used to share one box, with the config floating over the bottom of the
+ * preview, and it covered the very part of the effect worth watching: a
+ * fountain's base sat behind the panel. Two rows costs eighty pixels of height
+ * and means nothing is ever hidden behind anything.
+ */
 const PANEL = 330
-const STAGE_W = WIDTH - PANEL
+const WIDTH = PREVIEW_W + PANEL
+const CODE_H = 240
+const HEIGHT = PREVIEW_H + CODE_H
 const MAX = 1400
 
 const INK = "rgb(226, 234, 247)"
 const DIM = "rgb(126, 138, 162)"
 const PANEL_BG = "rgb(21, 25, 32)"
 
-function Knob({ label, value, min, max, step, onChange, format }: {
+function Knob({ label, value, min, max, step, onChange, format, width }: {
     label: string
     value: number
     min: number
@@ -42,9 +50,11 @@ function Knob({ label, value, min, max, step, onChange, format }: {
     step?: number
     onChange: (next: number) => void
     format?: (n: number) => string
+    /** Set when two knobs share a row. */
+    width?: number
 }) {
     return (
-        <View style={{ marginBottom: 10 }}>
+        <View style={{ marginBottom: 8, width }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={{ fontSize: 11, color: DIM }}>{label}</Text>
                 <Text style={{ fontSize: 11, color: INK }}>
@@ -56,10 +66,29 @@ function Knob({ label, value, min, max, step, onChange, format }: {
                 lowValue={min}
                 highValue={max}
                 pageSize={step ?? 0}
-                onChange={(e: any) => onChange(e.newValue)}
+                // e.value, not e.newValue. Typed rather than left as `any`,
+                // because the untyped version compiled happily while handing
+                // every knob undefined: one drag of any slider and the config
+                // it printed said "undefined" and the render threw.
+                onChange={(e: ChangeEventData<number>) => onChange(e.value)}
             />
         </View>
     )
+}
+
+/**
+ * Two knobs on one line.
+ *
+ * Every range in this lab is a pair, and stacking the halves put the colour
+ * controls below the fold of a panel with no obvious scrollbar: they read as
+ * missing rather than as further down. Side by side, the whole thing fits, and
+ * a minimum sitting next to its maximum is easier to reason about anyway.
+ */
+const PAIR_GAP = 12
+const HALF = (PANEL - 32 - PAIR_GAP) / 2
+
+function Pair({ children }: { children: React.ReactNode }) {
+    return <View style={{ flexDirection: "row", justifyContent: "space-between" }}>{children}</View>
 }
 
 function ParticleLab() {
@@ -68,6 +97,14 @@ function ParticleLab() {
     const [knobs, setKnobs] = useState<Knobs>(() => ({ ...PRESETS[0]!.knobs }))
 
     const set = (patch: Partial<Knobs>) => setKnobs((current) => {
+        // A control that reports something that is not a number is dropped
+        // rather than stored. A lab is a place to drag things quickly, and a
+        // single bad value poisoning the state would take the whole panel down
+        // with it.
+        for (const [key, value] of Object.entries(patch)) {
+            if (typeof value === "number" && !Number.isFinite(value)) return current
+            if (value === undefined) return current
+        }
         const next = { ...current, ...patch }
         // The ranges have to stay the right way round however the two ends are
         // dragged, or the emitter samples an empty range and nothing appears.
@@ -90,36 +127,37 @@ function ParticleLab() {
     // added later cannot be forgotten here.
     const signature = JSON.stringify(knobs)
 
-    useParticles(host, {
-        max: MAX,
-        emitters: [{
-            ...toEmitter(knobs),
-            // The emitter sits at the bottom middle of the preview, which suits
-            // a fountain and a fire; the spread control is what aims it.
-            pos: [STAGE_W / 2, HEIGHT * 0.72],
-        }] as never,
-    }, [signature])
+    // Exactly what the panel below prints, and nothing added on top of it: if
+    // the two could differ, the printed config would be a decoration rather
+    // than something to paste.
+    useParticles(host, { max: MAX, emitters: [toEmitter(knobs)] as never }, [signature])
 
     const source = toSource(knobs, MAX)
 
     return (
         <View style={{ width: WIDTH, height: HEIGHT, flexDirection: "row", backgroundColor: "rgb(12, 14, 19)" }}>
-            <View style={{ width: STAGE_W, height: HEIGHT }}>
-                <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
+            <View style={{ width: PREVIEW_W, height: HEIGHT }}>
+                {/* The effect, in a box of its own. The emitter's position is
+                    measured in these pixels, which is why PREVIEW_W and
+                    PREVIEW_H live beside the presets rather than here. */}
+                <View style={{ width: PREVIEW_W, height: PREVIEW_H, overflow: "hidden" }}>
+                    <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
-                <View style={{ position: "absolute", left: 22, top: 18 }} pickingMode="Ignore">
-                    <Text style={{ fontSize: 20, color: INK }}>PARTICLE LAB</Text>
-                    <Text style={{ fontSize: 11, marginTop: 2, color: DIM }}>
-                        Every control is one field of the config below
-                    </Text>
+                    <View style={{ position: "absolute", left: 22, top: 18 }} pickingMode="Ignore">
+                        <Text style={{ fontSize: 20, color: INK }}>PARTICLE LAB</Text>
+                        <Text style={{ fontSize: 11, marginTop: 2, color: DIM }}>
+                            Every control is one field of the config below
+                        </Text>
+                    </View>
                 </View>
 
-                {/* The printed config, which is the thing to take away. */}
+                {/* The config that is running, printed to be taken away. */}
                 <View style={{
-                    position: "absolute", left: 16, right: 16, bottom: 16,
-                    backgroundColor: "rgba(8, 10, 14, 0.88)", borderRadius: 8, padding: 12,
+                    width: PREVIEW_W, height: CODE_H,
+                    backgroundColor: "rgb(9, 11, 15)", paddingLeft: 22, paddingTop: 14,
+                    borderTopWidth: 1, borderTopColor: "rgb(30, 35, 45)",
                 }} pickingMode="Ignore">
-                    <Text style={{ fontSize: 10.5, color: "rgb(158, 200, 240)", whiteSpace: "normal" }}>
+                    <Text style={{ fontSize: 11.5, color: "rgb(158, 200, 240)", whiteSpace: "normal" }}>
                         {source}
                     </Text>
                 </View>
@@ -145,34 +183,40 @@ function ParticleLab() {
 
                         <Knob label="Rate, per second" value={knobs.rate} min={0} max={600}
                             onChange={(rate) => set({ rate })} />
-                        <Knob label="Speed, slowest" value={knobs.speedMin} min={0} max={600}
-                            onChange={(speedMin) => set({ speedMin })} />
-                        <Knob label="Speed, fastest" value={knobs.speedMax} min={0} max={600}
-                            onChange={(speedMax) => set({ speedMax })} />
-                        <Knob label="Life, shortest" value={knobs.lifeMin} min={0.05} max={6}
-                            onChange={(lifeMin) => set({ lifeMin })}
-                            format={(n) => `${n.toFixed(2)}s`} />
-                        <Knob label="Life, longest" value={knobs.lifeMax} min={0.05} max={6}
-                            onChange={(lifeMax) => set({ lifeMax })}
-                            format={(n) => `${n.toFixed(2)}s`} />
-                        <Knob label="Size, smallest" value={knobs.sizeMin} min={1} max={60}
-                            onChange={(sizeMin) => set({ sizeMin })} />
-                        <Knob label="Size, largest" value={knobs.sizeMax} min={1} max={60}
-                            onChange={(sizeMax) => set({ sizeMax })} />
-                        <Knob label="Aim, from" value={knobs.spreadFrom} min={0} max={360}
-                            onChange={(spreadFrom) => set({ spreadFrom })}
-                            format={(n) => `${Math.round(n)} deg`} />
-                        <Knob label="Aim, to" value={knobs.spreadTo} min={0} max={360}
-                            onChange={(spreadTo) => set({ spreadTo })}
-                            format={(n) => `${Math.round(n)} deg`} />
+                        <Pair>
+                            <Knob label="Speed, slowest" width={HALF} value={knobs.speedMin} min={0} max={700}
+                                onChange={(speedMin) => set({ speedMin })} />
+                            <Knob label="fastest" width={HALF} value={knobs.speedMax} min={0} max={700}
+                                onChange={(speedMax) => set({ speedMax })} />
+                        </Pair>
+                        <Pair>
+                            <Knob label="Life, shortest" width={HALF} value={knobs.lifeMin} min={0.05} max={6}
+                                onChange={(lifeMin) => set({ lifeMin })} format={(n) => `${n.toFixed(2)}s`} />
+                            <Knob label="longest" width={HALF} value={knobs.lifeMax} min={0.05} max={6}
+                                onChange={(lifeMax) => set({ lifeMax })} format={(n) => `${n.toFixed(2)}s`} />
+                        </Pair>
+                        <Pair>
+                            <Knob label="Size, smallest" width={HALF} value={knobs.sizeMin} min={1} max={60}
+                                onChange={(sizeMin) => set({ sizeMin })} />
+                            <Knob label="largest" width={HALF} value={knobs.sizeMax} min={1} max={60}
+                                onChange={(sizeMax) => set({ sizeMax })} />
+                        </Pair>
+                        <Pair>
+                            <Knob label="Aim, from" width={HALF} value={knobs.spreadFrom} min={0} max={360}
+                                onChange={(spreadFrom) => set({ spreadFrom })}
+                                format={(n) => `${Math.round(n)} deg`} />
+                            <Knob label="to" width={HALF} value={knobs.spreadTo} min={0} max={360}
+                                onChange={(spreadTo) => set({ spreadTo })}
+                                format={(n) => `${Math.round(n)} deg`} />
+                        </Pair>
                         <Knob label="Gravity" value={knobs.gravity} min={-800} max={1200}
                             onChange={(gravity) => set({ gravity })} />
-                        <Knob label="Drag" value={knobs.drag} min={0} max={4}
-                            onChange={(drag) => set({ drag })}
-                            format={(n) => n.toFixed(2)} />
-                        <Knob label="Additiveness" value={knobs.additiveness} min={0} max={1}
-                            onChange={(additiveness) => set({ additiveness })}
-                            format={(n) => n.toFixed(2)} />
+                        <Pair>
+                            <Knob label="Drag" width={HALF} value={knobs.drag} min={0} max={4}
+                                onChange={(drag) => set({ drag })} format={(n) => n.toFixed(2)} />
+                            <Knob label="Additiveness" width={HALF} value={knobs.additiveness} min={0} max={1}
+                                onChange={(additiveness) => set({ additiveness })} format={(n) => n.toFixed(2)} />
+                        </Pair>
 
                         <Text style={{ fontSize: 11, color: DIM, marginTop: 6, marginBottom: 6 }}>COLOUR</Text>
                         <View style={{ flexDirection: "row", marginBottom: 8 }}>

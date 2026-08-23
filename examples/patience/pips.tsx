@@ -69,15 +69,30 @@ function diamond(p: Painter, x: number, y: number, size: number): void {
 function club(p: Painter, x: number, y: number, size: number): void {
     const u = (a: number) => x + a * size
     const v = (b: number) => y + b * size
-    // Three overlapping circles and a stem, filled as one path. Non-zero
-    // winding unions them, so the seams where they meet do not show.
+    const r = size * 0.22
+
+    /**
+     * Each circle starts with a moveTo, and that is not tidiness.
+     *
+     * `arc` behaves the way Canvas does: if the path already has a current
+     * point, it draws a straight line from there to where the arc begins.
+     * Three arcs in a row therefore produce three circles joined by two stray
+     * chords, and non-zero winding then knocks a wedge out of the last one. It
+     * looked like a club that had been stepped on.
+     *
+     * Moving to each arc's start first (angle zero, so the point due right of
+     * the centre) begins a new subpath instead, and the three then union
+     * cleanly into one shape.
+     */
+    const circle = (cx: number, cy: number) => {
+        p.moveTo(cx + r, cy)
+        p.arc(cx, cy, r, 0, Math.PI * 2)
+    }
+
     p.beginPath()
-    p.arc(u(0.5), v(0.27), size * 0.22, 0, Math.PI * 2)
-    p.closePath()
-    p.arc(u(0.26), v(0.62), size * 0.22, 0, Math.PI * 2)
-    p.closePath()
-    p.arc(u(0.74), v(0.62), size * 0.22, 0, Math.PI * 2)
-    p.closePath()
+    circle(u(0.5), v(0.27))
+    circle(u(0.26), v(0.62))
+    circle(u(0.74), v(0.62))
     p.moveTo(u(0.34), v(0.99))
     p.bezierCurveTo(u(0.47), v(0.86), u(0.47), v(0.72), u(0.45), v(0.55))
     p.lineTo(u(0.55), v(0.55))

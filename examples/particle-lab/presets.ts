@@ -10,6 +10,20 @@
  */
 
 export interface Knobs {
+    /**
+     * Where the emitter sits in the preview, in its pixels.
+     *
+     * Per preset rather than fixed, because an effect belongs somewhere: a
+     * fountain starts at the bottom and snow starts at the top, and one shared
+     * position makes one of them look wrong whatever it is.
+     *
+     * Part of the knobs, and so part of the printed config, which is the whole
+     * point. An earlier version kept the position in the component and left it
+     * out of what it printed, so the config on screen would have put the
+     * emitter at the top left corner of whatever it was pasted into.
+     */
+    originX: number
+    originY: number
     rate: number
     speedMin: number
     speedMax: number
@@ -33,6 +47,10 @@ export interface Preset {
     knobs: Knobs
 }
 
+/** The preview the origins below are measured in. */
+export const PREVIEW_W = 650
+export const PREVIEW_H = 460
+
 /**
  * Six effects that between them touch every knob.
  *
@@ -44,8 +62,9 @@ export const PRESETS: Preset[] = [
     {
         name: "Fountain",
         knobs: {
-            rate: 260, speedMin: 220, speedMax: 340, lifeMin: 0.9, lifeMax: 1.5,
-            sizeMin: 4, sizeMax: 8, spreadFrom: 250, spreadTo: 290,
+            originX: PREVIEW_W / 2, originY: PREVIEW_H - 60,
+            rate: 300, speedMin: 520, speedMax: 640, lifeMin: 1.1, lifeMax: 1.7,
+            sizeMin: 4, sizeMax: 9, spreadFrom: 252, spreadTo: 288,
             gravity: 620, drag: 0, additiveness: 0.35,
             ramp: ["#9fe8ffff", "#3aa0ffff", "#1a4bd800"], grow: false,
         },
@@ -53,44 +72,51 @@ export const PRESETS: Preset[] = [
     {
         name: "Fire",
         knobs: {
-            rate: 220, speedMin: 40, speedMax: 110, lifeMin: 0.5, lifeMax: 1.1,
-            sizeMin: 10, sizeMax: 22, spreadFrom: 250, spreadTo: 290,
-            gravity: -180, drag: 1.2, additiveness: 1,
+            originX: PREVIEW_W / 2, originY: PREVIEW_H - 70,
+            rate: 260, speedMin: 60, speedMax: 150, lifeMin: 0.7, lifeMax: 1.3,
+            sizeMin: 14, sizeMax: 30, spreadFrom: 250, spreadTo: 290,
+            gravity: -240, drag: 1.1, additiveness: 1,
             ramp: ["#fff2c0ff", "#ff9020ff", "#c0200000"], grow: false,
         },
     },
     {
         name: "Smoke",
         knobs: {
-            rate: 70, speedMin: 20, speedMax: 60, lifeMin: 1.6, lifeMax: 2.8,
-            sizeMin: 18, sizeMax: 40, spreadFrom: 255, spreadTo: 285,
-            gravity: -60, drag: 0.9, additiveness: 0,
+            originX: PREVIEW_W / 2, originY: PREVIEW_H - 60,
+            rate: 80, speedMin: 30, speedMax: 80, lifeMin: 2.0, lifeMax: 3.4,
+            sizeMin: 24, sizeMax: 56, spreadFrom: 255, spreadTo: 285,
+            gravity: -90, drag: 0.8, additiveness: 0,
             ramp: ["#7a7f8c00", "#8d94a4b0", "#5a606c00"], grow: true,
         },
     },
     {
         name: "Snow",
         knobs: {
-            rate: 130, speedMin: 20, speedMax: 55, lifeMin: 3, lifeMax: 5,
-            sizeMin: 3, sizeMax: 7, spreadFrom: 70, spreadTo: 110,
-            gravity: 24, drag: 0.4, additiveness: 0,
+            // At the top, because snow falls. The one preset whose aim points
+            // downward is also the one that has to start above everything.
+            originX: PREVIEW_W / 2, originY: 8,
+            rate: 150, speedMin: 30, speedMax: 70, lifeMin: 4, lifeMax: 6,
+            sizeMin: 3, sizeMax: 8, spreadFrom: 60, spreadTo: 120,
+            gravity: 26, drag: 0.4, additiveness: 0,
             ramp: ["#ffffff00", "#ffffffe0", "#dfe8ff00"], grow: false,
         },
     },
     {
         name: "Sparks",
         knobs: {
-            rate: 340, speedMin: 180, speedMax: 520, lifeMin: 0.2, lifeMax: 0.6,
+            originX: PREVIEW_W / 2, originY: PREVIEW_H * 0.55,
+            rate: 340, speedMin: 220, speedMax: 620, lifeMin: 0.25, lifeMax: 0.7,
             sizeMin: 2, sizeMax: 5, spreadFrom: 0, spreadTo: 360,
-            gravity: 420, drag: 2.4, additiveness: 1,
+            gravity: 480, drag: 2.4, additiveness: 1,
             ramp: ["#ffffffff", "#ffd27aff", "#ff6a0000"], grow: false,
         },
     },
     {
         name: "Bloom",
         knobs: {
-            rate: 90, speedMin: 30, speedMax: 90, lifeMin: 1.4, lifeMax: 2.4,
-            sizeMin: 6, sizeMax: 16, spreadFrom: 0, spreadTo: 360,
+            originX: PREVIEW_W / 2, originY: PREVIEW_H * 0.5,
+            rate: 110, speedMin: 40, speedMax: 120, lifeMin: 1.6, lifeMax: 2.6,
+            sizeMin: 8, sizeMax: 22, spreadFrom: 0, spreadTo: 360,
             gravity: 0, drag: 1.1, additiveness: 0.7,
             ramp: ["#ffd0f000", "#c07affff", "#3a2a9000"], grow: true,
         },
@@ -100,6 +126,7 @@ export const PRESETS: Preset[] = [
 /** One emitter, exactly as onejs-react's useParticles expects it. */
 export function toEmitter(knobs: Knobs): Record<string, unknown> {
     return {
+        pos: [Math.round(knobs.originX), Math.round(knobs.originY)],
         rate: Math.round(knobs.rate),
         angle: [knobs.spreadFrom, knobs.spreadTo],
         speed: [knobs.speedMin, knobs.speedMax],

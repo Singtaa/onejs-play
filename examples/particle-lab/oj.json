@@ -5,7 +5,18 @@
     "author": "singtaa",
     "description": "Turn the knobs, watch the effect, and copy the config that made it. Every control is one field of a real useParticles call.",
     "entry": "index.tsx",
-    "stage": { "size": [980, 620], "fit": "letterbox" },
-    "tags": ["tool", "visual"],
-    "controls": ["pointer"]
+    "stage": {
+        "size": [
+            980,
+            700
+        ],
+        "fit": "letterbox"
+    },
+    "tags": [
+        "tool",
+        "visual"
+    ],
+    "controls": [
+        "pointer"
+    ]
 }

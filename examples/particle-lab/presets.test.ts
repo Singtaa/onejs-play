@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { PRESETS, toEmitter, toSource, shiftHue, type Knobs } from "./presets"
+import { PRESETS, PREVIEW_W, PREVIEW_H, toEmitter, toSource, shiftHue, type Knobs } from "./presets"
 
 const knobs = (): Knobs => ({ ...PRESETS[0]!.knobs })
 
@@ -36,6 +36,40 @@ describe("the presets", () => {
             expect(preset.knobs.additiveness).toBeLessThanOrEqual(1)
         }
     })
+
+    it("start their emitters inside the preview", () => {
+        for (const preset of PRESETS) {
+            expect(preset.knobs.originX).toBeGreaterThanOrEqual(0)
+            expect(preset.knobs.originX).toBeLessThanOrEqual(PREVIEW_W)
+            expect(preset.knobs.originY).toBeGreaterThanOrEqual(0)
+            expect(preset.knobs.originY).toBeLessThanOrEqual(PREVIEW_H)
+        }
+    })
+
+    /**
+     * A preset should look like its name at the size the preview actually is.
+     * An effect thrown upward has to clear a useful part of the box, and one
+     * that aims downward has to start near the top or it lands immediately.
+     * The first version of Fountain rose sixty pixels and read as a puff.
+     */
+    it("throw far enough to read as what they are called", () => {
+        const rising = (k: Knobs) => k.spreadFrom > 180 && k.spreadTo < 360
+        for (const preset of PRESETS) {
+            const k = preset.knobs
+            if (!rising(k) || k.gravity <= 0) continue
+            const apex = (k.speedMax * k.speedMax) / (2 * k.gravity)
+            expect(apex).toBeGreaterThan(PREVIEW_H * 0.4)
+        }
+    })
+
+    it("start a downward effect near the top", () => {
+        for (const preset of PRESETS) {
+            const k = preset.knobs
+            const falling = k.spreadFrom > 0 && k.spreadTo < 180
+            if (!falling) continue
+            expect(k.originY).toBeLessThan(PREVIEW_H * 0.2)
+        }
+    })
 })
 
 describe("toEmitter", () => {
@@ -46,6 +80,15 @@ describe("toEmitter", () => {
 
     it("puts gravity on the vertical axis only", () => {
         expect(toEmitter({ ...knobs(), gravity: 300 }).gravity).toEqual([0, 300])
+    })
+
+    /**
+     * The field the lab exists to get right. It was missing, so the printed
+     * config would have put the emitter in the corner of whatever it was
+     * pasted into while the preview showed it somewhere else entirely.
+     */
+    it("carries the emitter position", () => {
+        expect(toEmitter({ ...knobs(), originX: 120.4, originY: 300.6 }).pos).toEqual([120, 301])
     })
 
     it("passes the ramp through untouched", () => {
