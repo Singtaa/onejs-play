@@ -63,7 +63,7 @@
  */
 
 import { useEffect, useRef, useState } from "react"
-import { View, Text, mount, useFrame, useRoom, useLeaderboard, scores, input, random } from "oj"
+import { View, Text, mount, useFrame, useStage, useRoom, useLeaderboard, scores, input, random } from "oj"
 import {
     classify, addClaim, resolve, scoreOf, msOf, submittable, holdFor, credit,
     REACTION_WINDOW, REST, STALE, CEILING_MS,
@@ -104,6 +104,11 @@ const EMPTY: Snapshot = {
 
 function Quickdraw() {
     const rng = useRef(random()).current
+    // The stage here is fluid, so the widest line has to be a function of the
+    // viewport rather than a constant. Nine characters is the longest thing
+    // this card ever says, and refusing to wrap without this would simply move
+    // the failure from a collision to a word running off a phone.
+    const stage = useStage()
 
     const phase = useRef<Phase>("idle")
     const roundNumber = useRef(0)
@@ -137,7 +142,9 @@ function Quickdraw() {
     const dropped = useRef<string | null>(null)
 
     const [snap, setSnap] = useState<Snapshot>(EMPTY)
-    const board = useLeaderboard({ limit: 6 })
+    // Four, not six: the panel is a fixed height and a row that does not fit is
+    // not dropped, it is squeezed, and six of them drew on top of each other.
+    const board = useLeaderboard({ limit: 4 })
     const submit = useRef(board.submit)
     submit.current = board.submit
 
@@ -421,16 +428,28 @@ function Quickdraw() {
                 backgroundColor: card.background, borderWidth: 1, borderColor: card.border,
                 alignItems: "center", justifyContent: "center",
             }}>
-                <Text style={{ fontSize: card.size, color: card.color, letterSpacing: 4 }}>{card.word}</Text>
-                <Text style={{ fontSize: 13, marginTop: 10, color: card.sub }}>{card.note}</Text>
+                {/* Width and alignment rather than letting the text size
+                    itself. Sized to content, YOU WIN broke after the space and
+                    the note underneath was drawn on top of the second line: the
+                    measure and the render disagreed, and letter spacing on a
+                    line this big is the kind of thing they disagree about. With
+                    a width given, both are decided before either runs. */}
+                <Text style={{
+                    width: "100%", unityTextAlign: "middle-center", whiteSpace: "nowrap",
+                    fontSize: Math.round(Math.min(card.size, stage.width / 9)), color: card.color,
+                }}>{card.word}</Text>
+                <Text style={{
+                    width: "100%", unityTextAlign: "middle-center",
+                    fontSize: 13, marginTop: 10, color: card.sub,
+                }}>{card.note}</Text>
             </View>
 
-            <View style={{ flexDirection: "row", height: 116 }}>
+            <View style={{ flexDirection: "row", height: 124 }}>
                 <Panel title="THIS ROUND" grow={1.3}>
                     {snap.roster.length === 0 && (
                         <Text style={{ fontSize: 12, color: "rgba(150, 175, 205, 0.55)" }}>Waiting for a round.</Text>
                     )}
-                    {snap.roster.slice(0, 5).map((id) => {
+                    {snap.roster.slice(0, 4).map((id) => {
                         const claim = snap.claims.find((entry) => entry.id === id)
                         const said = claim === undefined ? "..." : claim.jumped ? "too soon" : `${Math.round(claim.ms)} ms`
                         return (
@@ -438,13 +457,18 @@ function Quickdraw() {
                                 right={said} dim={claim !== undefined && claim.jumped} />
                         )
                     })}
+                    {snap.roster.length > 4 && (
+                        <Text style={{ fontSize: 11, color: "rgba(150, 175, 205, 0.55)" }}>
+                            {`and ${snap.roster.length - 4} more`}
+                        </Text>
+                    )}
                 </Panel>
 
                 <Panel title="ROUNDS WON" grow={1}>
                     {ranking.length === 0 && (
                         <Text style={{ fontSize: 12, color: "rgba(150, 175, 205, 0.55)" }}>Nobody yet.</Text>
                     )}
-                    {ranking.map((entry) => (
+                    {ranking.slice(0, 4).map((entry) => (
                         <Row key={entry.id} id={entry.id} mine={entry.id === snap.myId} right={String(entry.wins)} />
                     ))}
                 </Panel>
@@ -457,7 +481,7 @@ function Quickdraw() {
                     )}
                     {board.entries.map((entry, i) => (
                         <View key={`${entry.name}-${i}`}
-                            style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 2 }}>
+                            style={{ flexShrink: 0, flexDirection: "row", justifyContent: "space-between", marginBottom: 2 }}>
                             <Text style={{ fontSize: 12, color: "rgba(206, 224, 244, 0.85)" }}>{entry.name}</Text>
                             {/* Stored as the time left on the clock, so a board
                                 that sorts downward puts the fastest on top.
@@ -489,7 +513,12 @@ function Panel({ title, grow, last, children }: {
 /** A player, their colour, and whatever number is theirs in this box. */
 function Row({ id, mine, right, dim }: { id: number; mine: boolean; right: string; dim?: boolean }) {
     return (
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+        // flexShrink 0, because the row would otherwise give up its height to
+        // fit a panel that is too short and print its text over the row above.
+        <View style={{
+            flexShrink: 0, flexDirection: "row", justifyContent: "space-between",
+            alignItems: "center", marginBottom: 2,
+        }}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <View style={{ width: 8, height: 8, borderRadius: 4, marginRight: 6, backgroundColor: toneOf(id) }} />
                 <Text style={{ fontSize: 12, color: mine ? "rgb(255, 214, 120)" : "rgba(206, 224, 244, 0.85)" }}>
