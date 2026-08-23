@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game.
+
+  Any file called cover.html beside your source becomes the card on the
+  gallery. It is a whole page, so CSS animation, canvas and inline script all
+  work. It renders on the game's own origin in a sandboxed frame, so it cannot
+  reach the site around it and cannot open a network connection.
+
+  This one turns over a row of tiles the way the game does when a guess lands.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #14181d; overflow: hidden; }
+    .board {
+        width: 100%; height: 100%; container-type: size;
+        display: grid; place-content: center; gap: 1.6cqmin;
+        grid-template-rows: repeat(3, min-content);
+    }
+    .row { display: grid; grid-template-columns: repeat(5, 13cqmin); gap: 1.6cqmin; }
+    .t {
+        aspect-ratio: 1; border-radius: 8%;
+        background: #3a3f4b;
+        /* Each tile turns a moment after the one before it, which is the thing
+           that makes a Wordle row read as a Wordle row. */
+        animation: flip 6s ease-in-out infinite;
+        animation-delay: calc(var(--i) * 0.18s);
+    }
+    .hit  { --to: #6aaa64 }
+    .near { --to: #c9b458 }
+    .miss { --to: #3a3f4b }
+    @keyframes flip {
+        0%, 8%    { transform: scaleY(1);    background: #22262f }
+        14%       { transform: scaleY(0.06); background: #22262f }
+        20%, 86%  { transform: scaleY(1);    background: var(--to) }
+        94%, 100% { transform: scaleY(1);    background: #22262f }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .t { animation: none; background: var(--to) }
+    }
+</style>
+<body>
+    <div class="board">
+        <div class="row">
+            <i class="t miss" style="--i:0"></i><i class="t near" style="--i:1"></i>
+            <i class="t miss" style="--i:2"></i><i class="t hit"  style="--i:3"></i>
+            <i class="t miss" style="--i:4"></i>
+        </div>
+        <div class="row">
+            <i class="t near" style="--i:5"></i><i class="t hit"  style="--i:6"></i>
+            <i class="t miss" style="--i:7"></i><i class="t hit"  style="--i:8"></i>
+            <i class="t miss" style="--i:9"></i>
+        </div>
+        <div class="row">
+            <i class="t hit" style="--i:10"></i><i class="t hit" style="--i:11"></i>
+            <i class="t hit" style="--i:12"></i><i class="t hit" style="--i:13"></i>
+            <i class="t hit" style="--i:14"></i>
+        </div>
+    </div>
+</body>
