@@ -40,6 +40,8 @@
  */
 
 import { useEffect, useRef, useState } from "react"
+import { EMPTY_ROOM, applyWire, isHost as roomIsHost } from "./wire"
+import type { RoomState } from "./wire"
 import { getPlayContext, socketUrl } from "./play"
 
 /** Anything JSON can carry. Messages are serialised, so functions are not. */
@@ -146,7 +148,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
 
     const socket = useRef<WebSocket | null>(null)
     const closed = useRef(false)
-    const live = useRef({ id: 0, peers: [] as number[], connected: false, hostId: null as number | null })
+    const live = useRef<RoomState>(EMPTY_ROOM)
 
     const facade = useRef<Room | null>(null)
     if (facade.current === null) {
@@ -163,8 +165,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
              * should do it rather than wait for a room it may never reach.
              */
             get isHost() {
-                const { id, hostId } = live.current
-                return hostId === null || hostId === id
+                return roomIsHost(live.current)
             },
             send(data: RoomMessage, to?: number) {
                 const ws = socket.current
@@ -203,7 +204,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
         let timer: ReturnType<typeof setTimeout> | null = null
         let heartbeat: ReturnType<typeof setInterval> | null = null
 
-        const apply = (next: Partial<typeof live.current>) => {
+        const apply = (next: Partial<RoomState>) => {
             live.current = { ...live.current, ...next }
         }
 
@@ -245,46 +246,23 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                 } catch {
                     return
                 }
-                if (wire.t === "welcome") {
-                    const mine = wire.id ?? 0
-                    const list = wire.peers ?? []
-                    apply({ id: mine, peers: list, connected: true, hostId: wire.host ?? null })
+                const { state: next, events } = applyWire(live.current, wire)
+                if (next !== live.current) {
+                    apply(next)
                     render()
-                    handlers.current.onOpen?.(mine, list)
-                    handlers.current.onHost?.(facade.current!.isHost, live.current.hostId)
-                    return
                 }
-
-                if (wire.t === "host") {
-                    apply({ hostId: wire.host ?? null })
-                    render()
-                    handlers.current.onHost?.(facade.current!.isHost, live.current.hostId)
-                    return
-                }
-
-                if (wire.t === "dropped") {
-                    // Not silent. A game quietly missing events because it was
-                    // over budget is the exact failure this reports.
-                    console.warn(`[oj] the room dropped a message (${wire.reason}): ${wire.detail}`)
-                    handlers.current.onDropped?.(String(wire.reason), String(wire.detail))
-                    return
-                }
-                if (wire.t === "join" && wire.id !== undefined) {
-                    const list = [...live.current.peers.filter((p) => p !== wire.id), wire.id]
-                    apply({ peers: list })
-                    render()
-                    handlers.current.onJoin?.(wire.id)
-                    return
-                }
-                if (wire.t === "leave" && wire.id !== undefined) {
-                    const list = live.current.peers.filter((p) => p !== wire.id)
-                    apply({ peers: list })
-                    render()
-                    handlers.current.onLeave?.(wire.id)
-                    return
-                }
-                if (wire.t === "msg" && wire.from !== undefined) {
-                    handlers.current.onMessage?.(wire.from, wire.d)
+                for (const event of events) {
+                    if (event.t === "open") handlers.current.onOpen?.(event.id, event.peers)
+                    else if (event.t === "join") handlers.current.onJoin?.(event.id)
+                    else if (event.t === "leave") handlers.current.onLeave?.(event.id)
+                    else if (event.t === "host") handlers.current.onHost?.(event.isHost, event.hostId)
+                    else if (event.t === "message") handlers.current.onMessage?.(event.from, event.data)
+                    else if (event.t === "dropped") {
+                        // Not silent. A game quietly missing events because it
+                        // was over budget is the exact failure this reports.
+                        console.warn(`[oj] the room dropped a message (${event.reason}): ${event.detail}`)
+                        handlers.current.onDropped?.(event.reason, event.detail)
+                    }
                 }
             }
 
@@ -292,7 +270,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                 if (heartbeat !== null) { clearInterval(heartbeat); heartbeat = null }
                 if (socket.current !== ws) return
                 socket.current = null
-                apply({ connected: false, peers: [], id: 0, hostId: null })
+                apply(EMPTY_ROOM)
                 render()
                 handlers.current.onClose?.(reason)
                 if (closed.current) return
