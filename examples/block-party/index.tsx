@@ -611,7 +611,12 @@ function BlockParty() {
                 </View>
             )}
 
-            {/* One label under each well the painter drew, at the same coordinates. */}
+            {/* One label under each well the painter drew, at the same
+                coordinates. The knockout count rides on the name rather than
+                taking a third column, because fifty pixels does not hold three
+                things and because it is absent most of the time: it is the
+                owner's own broadcast number, so it can be a beat stale here but
+                it cannot disagree with what that player sees. */}
             {shown.map(({ id, rival }, i) => {
                 const at = slotAt(i)
                 return (
@@ -623,7 +628,7 @@ function BlockParty() {
                             fontSize: 9,
                             color: id === panel.target ? "rgb(250, 190, 90)" : "rgba(150, 170, 200, 0.8)",
                         }}>
-                            {`p${id}`}
+                            {rival.kos > 0 ? `p${id} x${rival.kos}` : `p${id}`}
                         </Text>
                         <Text style={{ fontSize: 9, color: "rgba(150, 170, 200, 0.6)" }}>{String(rival.score)}</Text>
                     </View>
