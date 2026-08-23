@@ -343,6 +343,10 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `particle-lab` | 7.6 KB | Sliders driving a real config, printed back out to paste |
 | `solitaire` | 11.1 KB | Drag and drop, suits drawn as paths, no pointer handlers at all |
 | `big-fish` | 8.5 KB | A room, a leaderboard, and a relay you cannot trust |
+| `block-party` | 13.7 KB | Falling blocks against other people, junk rows and all |
+| `squiggle` | 11.8 KB | Dead reckoning between updates, and colliding with a line |
+| `sumo` | 11.3 KB | Rooms and the physics engine at once, on a shrinking floor |
+| `quickdraw` | 9.5 KB | What a room can agree on with no clock to agree against |
 
 Every one typechecks against `oj` exactly as a published game does, and the
 logic in each is tested without a screen: `npm test` covers the rules of the
@@ -413,5 +417,13 @@ cropped, which would make `visible.x > 0` true for every game. See
   two parsers become one.
 - Gamepad, via a browser Gamepad API adapter pushing into `InputSink`.
 - Axis smoothing, as an option on the axis binding rather than a second method.
-- `oj.audio`, `oj.storage`, `oj.assets`, `useFrame`, and the `oj` namespace
-  object: these need the container runtime, which does not exist yet.
+- `oj.storage`. `oj.audio`, `assetUrl`, `useFrame` and the `oj` namespace object
+  were on this list and are all shipped.
+- Unicast in a room. Everything is a broadcast today, so anything private (a
+  hand of cards, a secret word) is filtered client-side, which is to say not
+  private at all.
+- `isHost` in oj. The lowest-peer-id rule is now copied into four games, which
+  is three times too many.
+- Names on peers. A room reports numbers, and a game that wants "Sam" has to
+  invent its own naming. Held back because a name people choose is a moderation
+  surface, not because it is hard.
