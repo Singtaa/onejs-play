@@ -1,0 +1,8 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Catch",
+    "entry": "index.tsx",
+    "stage": { "size": [600, 600], "fit": "letterbox" },
+    "controls": ["keyboard"]
+}
