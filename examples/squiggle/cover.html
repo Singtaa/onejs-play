@@ -1,0 +1,190 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: several lines winding around a field of orbs, one of
+  them crossing another and coming apart into food. Enough to say "you are one
+  of these, and the others are people" without needing a field.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #080a0e; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="field"></canvas>
+<script>
+const canvas = document.getElementById("field")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    reset()
+}
+
+let seed = 77
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+
+const TONES = ["#5cc7ff", "#ff9455", "#78e08c", "#f278a3", "#fad161", "#ae91fd"]
+let snakes = [], orbs = []
+
+function reset() {
+    const unit = Math.min(W, H)
+    orbs = []
+    for (let i = 0; i < 90; i++) orbs.push({ x: rand() * W, y: rand() * H, tone: TONES[(rand() * TONES.length) | 0] })
+    snakes = []
+    for (let i = 0; i < 5; i++) snakes.push(born(i, unit))
+}
+
+function born(i, unit) {
+    const x = W * (0.15 + rand() * 0.7)
+    const y = H * (0.15 + rand() * 0.7)
+    return {
+        x, y,
+        angle: rand() * Math.PI * 2,
+        /* A wandering target rather than a fixed turn, so the lines look
+           steered rather than wound up like clockwork. */
+        wander: rand() * Math.PI * 2,
+        length: unit * (0.7 + rand() * 1.1),
+        nodes: [{ x, y }],
+        tone: TONES[i % TONES.length],
+        width: unit * (0.016 + rand() * 0.012),
+    }
+}
+
+const GAP = 4
+
+function step(dt) {
+    const unit = Math.min(W, H)
+    for (let i = 0; i < snakes.length; i++) {
+        const s = snakes[i]
+        s.wander += (rand() - 0.5) * 2.4 * dt
+        let diff = s.wander - s.angle
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        s.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff))
+
+        const speed = unit * 0.28
+        s.x += Math.cos(s.angle) * speed * dt
+        s.y += Math.sin(s.angle) * speed * dt
+
+        /* Turn back at the edge rather than wrapping: a line that vanishes off
+           one side and reappears on the other reads as a glitch on a card. */
+        if (s.x < s.width || s.x > W - s.width) { s.wander = Math.PI - s.wander; s.angle = Math.PI - s.angle }
+        if (s.y < s.width || s.y > H - s.width) { s.wander = -s.wander; s.angle = -s.angle }
+        s.x = Math.min(W - s.width, Math.max(s.width, s.x))
+        s.y = Math.min(H - s.width, Math.max(s.width, s.y))
+
+        let last = s.nodes[0]
+        while (Math.hypot(s.x - last.x, s.y - last.y) >= GAP) {
+            const d = Math.hypot(s.x - last.x, s.y - last.y)
+            last = { x: last.x + (s.x - last.x) / d * GAP, y: last.y + (s.y - last.y) / d * GAP }
+            s.nodes.unshift(last)
+        }
+        const keep = Math.max(2, Math.round(s.length / GAP))
+        if (s.nodes.length > keep) s.nodes.length = keep
+
+        for (const orb of orbs) {
+            if (orb.eaten) continue
+            if (Math.hypot(orb.x - s.x, orb.y - s.y) < s.width + unit * 0.012) {
+                orb.eaten = true
+                s.length = Math.min(unit * 1.1, s.length + unit * 0.05)
+            }
+        }
+    }
+
+    /* The rule the game is built on, in its smallest form: a head runs into a
+       body and the head is the one that dies. */
+    for (let i = 0; i < snakes.length; i++) {
+        const s = snakes[i]
+        for (let j = 0; j < snakes.length; j++) {
+            if (i === j) continue
+            const other = snakes[j]
+            let hit = false
+            for (const node of other.nodes) {
+                if (Math.hypot(node.x - s.x, node.y - s.y) < s.width * 0.5 + other.width) { hit = true; break }
+            }
+            if (!hit) continue
+            /* The body becomes food, which is the moment worth showing. */
+            for (let n = 0; n < s.nodes.length; n += 9) {
+                const dead = orbs.find((o) => o.eaten)
+                if (dead === undefined) break
+                dead.x = s.nodes[n].x
+                dead.y = s.nodes[n].y
+                dead.tone = s.tone
+                dead.eaten = false
+            }
+            snakes[i] = born(i, Math.min(W, H))
+            break
+        }
+    }
+
+    if (orbs.every((o) => o.eaten)) reset()
+}
+
+function draw() {
+    const unit = Math.min(W, H)
+    ctx.fillStyle = "#080a0e"
+    ctx.fillRect(0, 0, W, H)
+
+    for (const orb of orbs) {
+        if (orb.eaten) continue
+        ctx.fillStyle = orb.tone
+        ctx.globalAlpha = 0.85
+        ctx.beginPath()
+        ctx.arc(orb.x, orb.y, unit * 0.011, 0, Math.PI * 2)
+        ctx.fill()
+    }
+    ctx.globalAlpha = 1
+
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
+    for (const s of snakes) {
+        /* A dark underline slightly wider than the body, so two lines crossing
+           read as two lines rather than as one shape. */
+        for (const pass of [0, 1]) {
+            ctx.strokeStyle = pass === 0 ? "#080a0e" : s.tone
+            ctx.lineWidth = pass === 0 ? s.width * 2 + unit * 0.008 : s.width * 2
+            ctx.beginPath()
+            ctx.moveTo(s.x, s.y)
+            for (const node of s.nodes) ctx.lineTo(node.x, node.y)
+            ctx.stroke()
+        }
+        ctx.fillStyle = s.tone
+        ctx.beginPath()
+        ctx.arc(s.x, s.y, s.width, 0, Math.PI * 2)
+        ctx.fill()
+        /* Eyes, which are what turn a circle on the end of a line into
+           something that is facing a direction. */
+        ctx.fillStyle = "#f4f9ff"
+        for (const turn of [1, -1]) {
+            ctx.beginPath()
+            ctx.arc(
+                s.x + Math.cos(s.angle) * s.width * 0.45 - Math.sin(s.angle) * s.width * 0.45 * turn,
+                s.y + Math.sin(s.angle) * s.width * 0.45 + Math.cos(s.angle) * s.width * 0.45 * turn,
+                Math.max(1.2, s.width * 0.34), 0, Math.PI * 2)
+            ctx.fill()
+        }
+    }
+}
+
+fit(); addEventListener("resize", fit)
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 160; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Squiggle",
+    "author": "singtaa",
+    "description": "You are a growing line. Cross somebody else's and you are the one who dies, so the long way round is usually the fast way. Everyone out there is a real person.",
+    "entry": "index.tsx",
+    "stage": { "size": [1100, 700], "fit": "fluid" },
+    "tags": ["multiplayer", "arcade"],
+    "controls": ["pointer", "touch", "keyboard"]
+}

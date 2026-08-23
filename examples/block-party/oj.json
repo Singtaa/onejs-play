@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Block Party",
+    "author": "singtaa",
+    "description": "Everybody drops their own shapes. Clear two rows at once and the junk lands on whoever is winning, so the lead is easy to take and hard to hold.",
+    "entry": "index.tsx",
+    "stage": { "size": [900, 560], "fit": "letterbox" },
+    "tags": ["multiplayer", "puzzle", "arcade"],
+    "controls": ["keyboard", "touch"]
+}

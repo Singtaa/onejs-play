@@ -1,0 +1,269 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: one well playing, four more beside it taking the
+  consequences. A row goes in the big well, a flare crosses, and a junk row
+  shoves each of the small ones upward. That is the whole game in one loop, and
+  it says "you are not alone in here" without needing a second player.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #0e0f13; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="party"></canvas>
+<script>
+const canvas = document.getElementById("party")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+let seed = 24
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+
+const COLS = 10, ROWS = 20
+const TONES = ["#5ccdee", "#f5d45c", "#bd7ff0", "#73dc87", "#f26e7d", "#618ff5", "#f7a054"]
+const JUNK = "#666e85"
+
+/* No rotation: a card does not need a game, it needs the shape of one. */
+const SHAPES = [
+    [[0, 0], [1, 0], [2, 0], [3, 0]],
+    [[0, 0], [1, 0], [0, 1], [1, 1]],
+    [[0, 0], [1, 0], [2, 0], [1, 1]],
+    [[0, 0], [0, 1], [1, 1], [2, 1]],
+    [[2, 0], [0, 1], [1, 1], [2, 1]],
+    [[1, 0], [2, 0], [0, 1], [1, 1]],
+    [[0, 0], [1, 0], [1, 1], [2, 1]],
+]
+
+const empty = () => Array.from({ length: ROWS }, () => new Array(COLS).fill(0))
+
+let main, minis, piece, fall, flare
+
+function reset() {
+    minis = [empty(), empty(), empty(), empty()]
+    for (const board of minis) seedRubble(board, 2 + Math.floor(rand() * 4))
+    resetMain()
+}
+
+/* Only the big well, so that topping out does not wipe the four beside it and
+   leave the card blank for the several seconds it takes them to refill. */
+function resetMain() {
+    main = empty()
+    seedRubble(main, 3)
+    piece = null
+    fall = 0
+    flare = 0
+}
+
+/* Rubble at the bottom of a well, so the card never opens on empty rectangles
+   that look like placeholders. Sparse enough that a complete row is unlikely,
+   which would clear itself the moment it appeared. */
+function seedRubble(board, rows) {
+    for (let y = ROWS - rows; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (rand() < 0.7) board[y][x] = 1 + Math.floor(rand() * TONES.length)
+        }
+    }
+}
+
+/* Each small well plays a little game of its own: cells land on the stack, full
+   rows go, junk from the big well pushes everything up, and a well that reaches
+   the top starts again. Enough behaviour that the four of them read as four
+   people rather than as decoration. */
+function miniStep(board, dt) {
+    /* A square of four onto the flattest pair of columns, rather than single
+       cells onto random ones. Single cells build spikes, and four small wells
+       of spikes read as a bar chart instead of as four games of this one. */
+    if (rand() < dt * 3.5) {
+        const h = heights(board)
+        let bestX = 0, bestScore = Infinity
+        for (let x = 0; x < COLS - 1; x++) {
+            const score = h[x] + h[x + 1] + rand() * 4
+            if (score < bestScore) { bestScore = score; bestX = x }
+        }
+        const tone = 1 + Math.floor(rand() * TONES.length)
+        for (const x of [bestX, bestX + 1]) {
+            let y = ROWS - 1
+            while (y >= 0 && board[y][x]) y--
+            for (let n = 0; n < 2 && y >= 0; n++, y--) board[y][x] = tone
+        }
+    }
+    for (let y = 0; y < ROWS; y++) {
+        if (board[y].every((c) => c !== 0)) {
+            board.splice(y, 1)
+            board.unshift(new Array(COLS).fill(0))
+        }
+    }
+    if (board[2].some((c) => c !== 0)) {
+        for (const row of board) row.fill(0)
+        seedRubble(board, 2 + Math.floor(rand() * 3))
+    }
+}
+
+/** Column heights, which is all the placement heuristic needs. */
+function heights(board) {
+    const out = new Array(COLS).fill(0)
+    for (let x = 0; x < COLS; x++) {
+        for (let y = 0; y < ROWS; y++) {
+            if (board[y][x]) { out[x] = ROWS - y; break }
+        }
+    }
+    return out
+}
+
+/* Aims for the shallowest part of the stack, which is what keeps rows filling
+   up and clearing. A card that never cleared a row would be a card of a game
+   nobody was winning. */
+function nextPiece() {
+    const cells = SHAPES[Math.floor(rand() * SHAPES.length)]
+    const width = Math.max(...cells.map(([x]) => x)) + 1
+    const h = heights(main)
+    let bestX = 0, bestScore = Infinity
+    for (let x = 0; x <= COLS - width; x++) {
+        let score = 0
+        for (let i = 0; i < width; i++) score += h[x + i]
+        score += rand() * 2
+        if (score < bestScore) { bestScore = score; bestX = x }
+    }
+    return { cells, x: bestX, y: -2, tone: 1 + Math.floor(rand() * TONES.length) }
+}
+
+function lands(board, p, y) {
+    for (const [dx, dy] of p.cells) {
+        const cy = y + dy, cx = p.x + dx
+        if (cy >= ROWS) return true
+        if (cy >= 0 && board[cy][cx]) return true
+    }
+    return false
+}
+
+function addJunk(board) {
+    const hole = Math.floor(rand() * COLS)
+    board.shift()
+    board.push(Array.from({ length: COLS }, (_, x) => (x === hole ? 0 : 8)))
+}
+
+function step(dt) {
+    if (flare > 0) flare = Math.max(0, flare - dt * 1.6)
+    if (piece === null) piece = nextPiece()
+
+    fall += dt * 16
+    while (fall >= 1) {
+        fall -= 1
+        if (lands(main, piece, piece.y + 1)) {
+            for (const [dx, dy] of piece.cells) {
+                const cy = piece.y + dy
+                if (cy >= 0) main[cy][piece.x + dx] = piece.tone
+            }
+            const kept = main.filter((row) => row.some((c) => c === 0))
+            const cleared = ROWS - kept.length
+            if (cleared > 0) {
+                main = [...Array.from({ length: cleared }, () => new Array(COLS).fill(0)), ...kept]
+                flare = 1
+                for (const board of minis) addJunk(board)
+            }
+            /* Topped out, which on a card is a cue to start over rather than
+               an ending anybody needs to see. */
+            if (main[1].some((c) => c !== 0)) { resetMain(); return }
+            piece = nextPiece()
+        } else {
+            piece.y += 1
+        }
+    }
+
+    for (const board of minis) miniStep(board, dt)
+}
+
+function drawWell(board, ox, oy, cell) {
+    ctx.fillStyle = "#15171d"
+    ctx.fillRect(ox, oy, COLS * cell, ROWS * cell)
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            const cell_ = board[y][x]
+            if (!cell_) continue
+            ctx.fillStyle = cell_ === 8 ? JUNK : TONES[(cell_ - 1) % TONES.length]
+            ctx.fillRect(ox + x * cell + cell * 0.06, oy + y * cell + cell * 0.06, cell * 0.88, cell * 0.88)
+        }
+    }
+}
+
+function draw() {
+    const cell = Math.min(H / 23, W / 30)
+    const small = cell * 0.42
+    const mainW = COLS * cell
+    const miniW = COLS * small
+    const total = mainW + cell * 1.8 + miniW * 2 + cell * 0.8
+    const ox = (W - total) / 2
+    const oy = (H - ROWS * cell) / 2
+
+    ctx.fillStyle = "#0e0f13"
+    ctx.fillRect(0, 0, W, H)
+
+    drawWell(main, ox, oy, cell)
+    if (piece !== null) {
+        ctx.fillStyle = TONES[(piece.tone - 1) % TONES.length]
+        for (const [dx, dy] of piece.cells) {
+            const cy = piece.y + dy
+            if (cy < 0) continue
+            ctx.fillRect(ox + (piece.x + dx) * cell + cell * 0.06, oy + cy * cell + cell * 0.06,
+                cell * 0.88, cell * 0.88)
+        }
+    }
+    ctx.strokeStyle = flare > 0 ? "#f26e7d" : "#2c313c"
+    ctx.lineWidth = Math.max(1, cell * (flare > 0 ? 0.14 : 0.06))
+    ctx.strokeRect(ox, oy, mainW, ROWS * cell)
+
+    const gridX = ox + mainW + cell * 1.8
+    for (let i = 0; i < minis.length; i++) {
+        const x = gridX + (i % 2) * (miniW + cell * 0.8)
+        const y = oy + Math.floor(i / 2) * (ROWS * small + cell * 0.8)
+        drawWell(minis[i], x, y, small)
+        ctx.strokeStyle = "#252a34"
+        ctx.lineWidth = 1
+        ctx.strokeRect(x, y, miniW, ROWS * small)
+    }
+
+    /* The attack itself: a line from the well that cleared to the ones paying
+       for it, drawn only while it is travelling. */
+    if (flare > 0) {
+        ctx.globalAlpha = flare * 0.8
+        ctx.strokeStyle = "#ffc36b"
+        ctx.lineWidth = Math.max(1.5, cell * 0.1)
+        for (let i = 0; i < minis.length; i++) {
+            const x = gridX + (i % 2) * (miniW + cell * 0.8)
+            const y = oy + Math.floor(i / 2) * (ROWS * small + cell * 0.8)
+            ctx.beginPath()
+            ctx.moveTo(ox + mainW, oy + ROWS * cell * 0.5)
+            ctx.lineTo(x, y + ROWS * small * 0.5)
+            ctx.stroke()
+        }
+        ctx.globalAlpha = 1
+    }
+}
+
+reset()
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 200; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>
