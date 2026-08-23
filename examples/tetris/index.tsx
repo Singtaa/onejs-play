@@ -17,6 +17,7 @@ import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
 import styles from "./tetris.module.uss"
+import { beginGesture, advanceGesture, releaseGesture, isSoftDropping, type Gesture } from "./gestures"
 import {
     emptyBoard, spawn, moved, rotated, fits, merge, clearLines, hardDropped,
     scoreFor, levelFor, dropInterval, cellsOf, shapeOf, KINDS,
@@ -110,10 +111,17 @@ function Tetris() {
     const pick = useRef(bag(Math.floor(Date.now() / 86400000))).current
     const [game, setGame] = useState<Game>(() => start(pick))
     const timers = useRef({ drop: 0, left: 0, right: 0, down: 0 }).current
+    const drag = useRef<{ id: number; g: Gesture } | null>(null)
 
     useFrame((dt) => {
+        // One finger at a time: a second one during a drag would fight the first
+        // for the same piece.
+        const touch = input.touchCount > 0 ? input.touches[0] : null
+        const began = touch !== null && touch.phase === "began"
+        const lifted = touch !== null && (touch.phase === "ended" || touch.phase === "canceled")
+
         if (game.over) {
-            if (input.keyboard.wasKeyPressed("Enter")) setGame(start(pick))
+            if (input.keyboard.wasKeyPressed("Enter") || began) setGame(start(pick))
             return
         }
 
@@ -136,13 +144,34 @@ function Tetris() {
 
         if (input.keyboard.wasKeyPressed("UpArrow")) piece = rotated(board, piece)
 
+        // A drag walks the piece across, a still tap rotates, a flick drops.
+        // What each of those means lives in gestures.ts; this only applies it.
+        let flicked = false
+        if (began) {
+            drag.current = { id: touch!.fingerId, g: beginGesture(touch!.position.x, touch!.position.y) }
+        } else if (touch !== null && drag.current !== null && touch.fingerId === drag.current.id) {
+            const columns = advanceGesture(drag.current.g, touch.position.x, touch.position.y, dt)
+            for (let i = 0; i < Math.abs(columns); i++) {
+                const next = moved(piece, Math.sign(columns), 0)
+                if (!fits(board, next)) break
+                piece = next
+            }
+            if (lifted) {
+                const release = releaseGesture(drag.current.g)
+                if (release === "rotate") piece = rotated(board, piece)
+                else if (release === "drop") flicked = true
+                drag.current = null
+            }
+        }
+
         let settled = false
-        if (input.keyboard.wasKeyPressed("Space")) {
+        if (input.keyboard.wasKeyPressed("Space") || flicked) {
             piece = hardDropped(board, piece)
             settled = true
         }
 
         const soft = input.keyboard.isKeyDown("DownArrow")
+            || (drag.current !== null && isSoftDropping(drag.current.g))
         timers.drop += dt
         const interval = soft ? 0.03 : dropInterval(levelFor(game.lines))
         if (!settled && timers.drop >= interval) {
@@ -199,8 +228,13 @@ function Tetris() {
                     <Text className="text-xs text-neutral-500 mb-1">NEXT</Text>
                     <Preview kind={game.next} />
                 </View>
+                {/* Both sets, because the same build runs on a desktop and a
+                    phone and there is no reliable way to ask which one this is.
+                    A gesture nobody is told about is a gesture nobody uses. */}
                 <Text className="text-xs text-neutral-600">
-                    {game.over ? "GAME OVER\nEnter to restart" : "arrows move\nup rotates\nspace drops"}
+                    {game.over
+                        ? "GAME OVER\nEnter or tap\nto restart"
+                        : "arrows move\nup rotates\nspace drops\n\ndrag to move\ntap to rotate\nflick down\nto drop"}
                 </Text>
             </View>
         </View>
