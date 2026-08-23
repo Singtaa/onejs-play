@@ -63,7 +63,7 @@
  */
 
 import { useEffect, useRef, useState } from "react"
-import { View, Text, mount, useFrame, useStage, useRoom, useLeaderboard, scores, input, random } from "oj"
+import { View, Text, mount, useFrame, useStage, useRoom, useLeaderboard, scores, input, isOnline, random } from "oj"
 import {
     classify, addClaim, resolve, scoreOf, msOf, submittable, holdFor, credit,
     REACTION_WINDOW, REST, STALE, CEILING_MS,
@@ -272,8 +272,20 @@ function Quickdraw() {
         beat()
     }
 
-    /** The round clock. Only the client the room named host runs it. */
+    /**
+     * The round clock. Only the client the room named host runs it.
+     *
+     * It does not start one until this client knows its own id. The roster goes
+     * out in the `set` message and is built from room.id, which is 0 until the
+     * relay sends the welcome, so a round armed in that window names a player
+     * who does not exist: everybody else reads a roster they are not in and
+     * sits the round out, and the host spends it playing alone in a room with
+     * people in it. Sumo had the same bug in a worse form, where the round
+     * could not end at all. An ejected copy never gets an id and must not wait
+     * for one, which is the second half of the condition.
+     */
     const runClock = (dt: number) => {
+        if (!room.connected && isOnline()) return
         hostTimer.current -= dt
         // A round is over when everybody has answered, which is usually about a
         // second in. Waiting out the rest of the window would make every round
