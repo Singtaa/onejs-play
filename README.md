@@ -343,10 +343,10 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `particle-lab` | 7.6 KB | Sliders driving a real config, printed back out to paste |
 | `solitaire` | 11.1 KB | Drag and drop, suits drawn as paths, no pointer handlers at all |
 | `big-fish` | 8.5 KB | A room, a leaderboard, and a relay you cannot trust |
-| `block-party` | 13.7 KB | Falling blocks against other people, junk rows and all |
-| `squiggle` | 11.8 KB | Dead reckoning between updates, and colliding with a line |
-| `sumo` | 11.3 KB | Rooms and the physics engine at once, on a shrinking floor |
-| `quickdraw` | 9.5 KB | What a room can agree on with no clock to agree against |
+| `block-party` | 13.7 KB | The same well as falling-blocks, drawn as one path because a room holds 24 of them |
+| `squiggle` | 11.8 KB | A field every client lays from one seed, so a join needs no handshake |
+| `sumo` | 11.3 KB | A physics world and a room at once, and a shove nobody can be told they took |
+| `quickdraw` | 9.5 KB | A reaction measured with no clock to share, and a board that sorts the wrong way |
 
 Every one typechecks against `oj` exactly as a published game does, and the
 logic in each is tested without a screen: `npm test` covers the rules of the
