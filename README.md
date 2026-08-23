@@ -153,10 +153,34 @@ Unity, and coordinate maths that has never been run is worse than a defect that
 has been named.
 
 Edges are frame numbers rather than booleans cleared each frame. That gets the
-awkward cases right: a key pressed and released inside one frame reports both
-`wasKeyPressed` and `wasKeyReleased`, and OS auto-repeat does not re-fire
-pressed. `blur()` releases everything held, without which alt-tabbing while
-holding a key leaves it held forever.
+awkward cases right: **in the container**, a key pressed and released inside one
+frame reports both `wasKeyPressed` and `wasKeyReleased`, and OS auto-repeat does
+not re-fire pressed. `blur()` releases everything held, without which alt-tabbing
+while holding a key leaves it held forever.
+
+That guarantee is the container's own, because `createContainerInput` is where
+those frame numbers are stamped. Off the Play site the same API is served by
+Unity's `ButtonControl`, which records a press and a release in separate fields
+and so *can* report both, but only records a transition when it samples one.
+Write the handler to tolerate both being true in the same frame either way; do
+not rely on both always being true outside the container.
+
+### Positions are one object, refilled
+
+`input.mouse.position`, `.delta` and `.scroll`, and the gamepad sticks, hand
+back the **same object every call**, rewritten in place. So this does not do
+what it looks like:
+
+```tsx
+const start = input.mouse.position     // not a snapshot
+// ... later ...
+const dragged = input.mouse.position.x - start.x   // always 0
+```
+
+Copy the numbers out at the moment you read them. Every game here does, which is
+why none of them has this bug, but it is luck rather than a design that prevents
+it. The keyboard axis helpers (`wasd()`, `arrows()`, `axis2D()`) do return fresh
+objects, so the rule is not uniform and has to be checked per API.
 
 The sink speaks DOM and the backend speaks Unity, translating once on
 ingestion. Two places that bite: DOM `KeyboardEvent.code` maps onto Unity key
