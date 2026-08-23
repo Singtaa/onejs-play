@@ -148,6 +148,8 @@ function Sumo() {
 
     /** This client's blob, as of the last tick. Stale by design: see below. */
     const mine = useRef({ x: CENTER_X, y: CENTER_Y })
+    /** The ring size the painter last drew, so it is not asked to draw it twice. */
+    const drawn = useRef(Number.NaN)
     /** The last thing the relay refused to carry, if it ever has. */
     const dropped = useRef<string | null>(null)
     const sinceSync = useRef(0)
@@ -465,7 +467,19 @@ function Sumo() {
             }
         }
 
-        canvas.current?.MarkDirtyRepaint()
+        // The painter draws the ring and the floor under it, and nothing else:
+        // the blobs are elements that C# moves, so they are already on screen
+        // without JavaScript redrawing anything. That means a repaint is only
+        // worth asking for while the ring is actually changing size, which is
+        // not most of a round: it holds still through the grace period, again
+        // once it reaches its smallest, and through the whole gap between
+        // rounds. Measured because it mattered: one of these containers under a
+        // software rasteriser was taking five and a half cores, which is what
+        // made a second browser on the same machine stop answering at all.
+        if (ring !== drawn.current) {
+            drawn.current = ring
+            canvas.current?.MarkDirtyRepaint()
+        }
     }, [world])
 
     /** Gathers what the panel shows. Called on events and four times a second. */
