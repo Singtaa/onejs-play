@@ -193,8 +193,9 @@ function Sumo() {
             const slot = slots.release(id)
             tracks.delete(id)
             if (slot !== null && world !== null) {
-                world.setBodyEnabled(slot, false)
+                // Position before disable: see place() in startRound.
                 world.setPosition(slot, OFF_FIELD, OFF_FIELD)
+                world.setBodyEnabled(slot, false)
             }
             beat()
         },
@@ -277,12 +278,35 @@ function Sumo() {
         fallen.current = false
         dashLeft.current = 0
 
+        /**
+         * Puts a blob on the ring, in the one order that works.
+         *
+         * Switched on FIRST, then moved. A Rigidbody2D that is not simulating
+         * does not take a position: the write is accepted and thrown away, and
+         * the body wakes up wherever it was parked. This game parks bodies off
+         * the field at minus six hundred, so every blob in every round started
+         * its life a long way outside the ring, reported itself off the edge on
+         * the first tick, and the round ended before anybody saw a player.
+         *
+         * The symptom was three separate things that did not look related: no
+         * blob on screen, rounds lasting four seconds instead of twenty, and a
+         * ring that never shrank. All three are this line being in the wrong
+         * order. drop-everything had it right and this did not, which is the
+         * argument for reading the example next door before writing the one
+         * after it.
+         */
         const place = (body: number, index: number) => {
             const at = spawnAt(index, starters.length)
+            world.setBodyEnabled(body, true)
             world.setPosition(body, at.x, at.y)
             world.setVelocity(body, 0, 0)
-            world.setBodyEnabled(body, true)
             return at
+        }
+
+        /** Parks a body out of the way, in the same order for the same reason. */
+        const park = (body: number) => {
+            world.setPosition(body, OFF_FIELD, OFF_FIELD)
+            world.setBodyEnabled(body, false)
         }
 
         const seat = starters.indexOf(room.id)
@@ -290,8 +314,7 @@ function Sumo() {
             const at = place(0, seat)
             mine.current = { x: at.x, y: at.y }
         } else {
-            world.setBodyEnabled(0, false)
-            world.setPosition(0, OFF_FIELD, OFF_FIELD)
+            park(0)
         }
 
         for (const peer of starters) {
@@ -304,8 +327,7 @@ function Sumo() {
         // Anybody in the room but not in the round watches this one out.
         for (const [peer, slot] of slots.entries()) {
             if (starters.includes(peer)) continue
-            world.setBodyEnabled(slot, false)
-            world.setPosition(slot, OFF_FIELD, OFF_FIELD)
+            park(slot)
         }
         beat()
     }
@@ -448,8 +470,8 @@ function Sumo() {
                         // Gone without saying goodbye.
                         tracks.delete(peer)
                         slots.release(peer)
-                        world.setBodyEnabled(slot, false)
                         world.setPosition(slot, OFF_FIELD, OFF_FIELD)
+                        world.setBodyEnabled(slot, false)
                         continue
                     }
                     const x = transforms[slot * 3]!
@@ -518,8 +540,10 @@ function Sumo() {
         if (world === null) return
         for (let slot = 0; slot < MAX_BLOBS; slot++) {
             if (blobs[slot]) world.bind(slot, blobs[slot])
-            world.setBodyEnabled(slot, false)
+            // Parked while it is still simulating, then switched off, because
+            // the other order writes a position that is quietly discarded.
             world.setPosition(slot, OFF_FIELD, OFF_FIELD)
+            world.setBodyEnabled(slot, false)
         }
     }, [world])
 
