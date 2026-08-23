@@ -243,12 +243,24 @@ function Quickdraw() {
      */
     const answer = (ms: number | null) => {
         const early = ms === null || classify(ms) === "early"
-        myMs.current = early ? null : ms
+        /**
+         * Rounded once, here, and then used everywhere.
+         *
+         * Two browsers showed the same answer as 1333 ms on one screen and
+         * 1332 on the other. The owner was displaying its own raw float and
+         * everybody else was displaying the value off the wire, which is
+         * rounded to a tenth, and rounding twice can cross a half and land a
+         * millisecond apart. Nobody would lose a round over it, but two screens
+         * disagreeing about a number is exactly what this game is supposed to
+         * be able to promise they will not do.
+         */
+        const said = early ? 0 : Math.round((ms as number) * 10) / 10
+        myMs.current = early ? null : said
         phase.current = early ? "early" : "answered"
-        claims.current = addClaim(claims.current, { id: room.id, ms: ms ?? 0, jumped: early })
+        claims.current = addClaim(claims.current, { id: room.id, ms: said, jumped: early })
         room.send(early
             ? { k: "early", n: roundNumber.current }
-            : { k: "hit", n: roundNumber.current, ms: Math.round((ms as number) * 10) / 10 })
+            : { k: "hit", n: roundNumber.current, ms: said })
         beat()
     }
 
