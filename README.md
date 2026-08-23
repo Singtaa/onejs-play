@@ -125,68 +125,39 @@ slider in Particle Lab the same way.
 Reading through `input` also gets touch for free, since the same code sees
 `input.touches`.
 
-### A pointer does not survive an eject yet
+### A pointer used to be wrong after an eject
 
-**Known defect, not yet fixed, and the one place the "same source, no rewrite"
-promise currently fails.**
+**Fixed. Kept here because the shape of the bug is the useful part.**
 
-Inside the container, `createContainerInput` runs every pointer position through
-`toStage`, so a game reads logical stage units with the origin at the top left
-and y counting down, matching everything else it lays out.
+`createRuntime` installs the container's input backend, because that is what the
+container needs, and `startStandalone` calls `createRuntime`. So an ejected game
+got that backend with nothing feeding it: no adapter pushes browser events into
+it in a Unity project, and there are no browser events to push. Every key read
+as up, the mouse sat at the origin, no touch ever arrived. Not a wrong answer,
+an answer that never changed. `standalone.ts` documented the opposite, which was
+its intent and not its behaviour.
 
-Outside one, `standalone.ts` deliberately does not install a backend, so
-`input.mouse.position` comes from the real `InputBridge`, which returns
-`Mouse.current.position`: **Unity screen space, physical pixels, origin bottom
-left, y counting up.** Three differences at once, and the flipped axis is the one
-that will look like a haunting rather than a bug.
+Installing nothing would have been half a fix. onejs-unity then falls through to
+the real `InputBridge`, so input works, and reports Unity screen space:
+**physical pixels, origin at the bottom left, y counting up**, against a game
+laid out in stage units from the top left with y counting down. Three
+differences at once, and the flipped axis reads as a haunting rather than a bug.
 
-So a game steered by the mouse or by touch plays correctly on the site and
-wrongly in an ejected project. Keyboard games are unaffected, which is most of
-the examples here, but `big-fish`, `fireworks`, `murmuration`,
-`drop-everything`, `solitaire` and `space-junk` all read a pointer.
+So `hostinput.ts` wraps the real bridge rather than replacing it. Keyboard,
+gamepad and haptics pass straight through, because they were never in a
+coordinate space; the pointer methods convert through `screenToStage`, and only
+those. A delta converts separately from a position: a delta has no origin, and
+running one through the position path adds the viewport height to every vertical
+movement, which still looks like it works until something crosses the middle of
+the screen.
 
-The fix belongs in `standalone.ts`: wrap the real bridge rather than replace it,
-converting the pointer methods through `toStage` and passing keyboard, gamepad
-and haptics straight down. It is written down rather than done because it cannot
-be exercised from here: verifying it needs an ejected project built and run in
-Unity, and coordinate maths that has never been run is worse than a defect that
-has been named.
+The arithmetic is unit tested and does not need Unity. What still does is that
+the bridge is reachable at all, which is the one thing those tests cannot prove.
 
-Edges are frame numbers rather than booleans cleared each frame. That gets the
-awkward cases right: **in the container**, a key pressed and released inside one
-frame reports both `wasKeyPressed` and `wasKeyReleased`, and OS auto-repeat does
-not re-fire pressed. `blur()` releases everything held, without which alt-tabbing
-while holding a key leaves it held forever.
-
-That guarantee is the container's own, because `createContainerInput` is where
-those frame numbers are stamped. Off the Play site the same API is served by
-Unity's `ButtonControl`, which records a press and a release in separate fields
-and so *can* report both, but only records a transition when it samples one.
-Write the handler to tolerate both being true in the same frame either way; do
-not rely on both always being true outside the container.
-
-### Positions are one object, refilled
-
-`input.mouse.position`, `.delta` and `.scroll`, and the gamepad sticks, hand
-back the **same object every call**, rewritten in place. So this does not do
-what it looks like:
-
-```tsx
-const start = input.mouse.position     // not a snapshot
-// ... later ...
-const dragged = input.mouse.position.x - start.x   // always 0
-```
-
-Copy the numbers out at the moment you read them. Every game here does, which is
-why none of them has this bug, but it is luck rather than a design that prevents
-it. The keyboard axis helpers (`wasd()`, `arrows()`, `axis2D()`) do return fresh
-objects, so the rule is not uniform and has to be checked per API.
-
-The sink speaks DOM and the backend speaks Unity, translating once on
-ingestion. Two places that bite: DOM `KeyboardEvent.code` maps onto Unity key
-names (`ArrowLeft` to `LeftArrow`), and DOM `MouseEvent.button` disagrees with
-Unity's mask about middle and right, so passing the index straight through would
-silently swap them.
+**Input actions are not covered.** A backend is not consulted for them, so an
+ejected game using an action reaches the real bridge directly. Correct for
+everything except a position read out of an action, which will be in screen
+space. Narrow, and written down rather than papered over.
 
 ## A game's own files
 

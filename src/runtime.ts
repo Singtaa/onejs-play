@@ -76,6 +76,20 @@ export interface RuntimeOptions {
      */
     play?: PlayContext
     /**
+     * Where input comes from.
+     *
+     * "container" installs the browser-fed backend, which is right when
+     * something is pushing DOM events into it and useless when nothing is.
+     * "host" leaves the real InputBridge in place, which is what a game running
+     * in an ordinary Unity project needs; standalone.ts then wraps it so the
+     * coordinates match the stage.
+     *
+     * Defaulting to "container" keeps the container's call unchanged. It was
+     * also the bug: startStandalone calls createRuntime, so an ejected game got
+     * a backend with nothing feeding it and read no input at all.
+     */
+    inputSource?: "container" | "host"
+    /**
      * Applies a freshly computed layout to whatever presents the stage.
      *
      * The stage math lives here, but nothing in this package can act on it:
@@ -119,7 +133,7 @@ export function getCurrentRuntime(): OjRuntime | null {
 
 export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     const input = createContainerInput()
-    setInputBackend(input.backend)
+    if (options.inputSource !== "host") setInputBackend(input.backend)
     setAssetBase(options.assetBase ?? null)
     setPlayContext(options.play ?? null)
 

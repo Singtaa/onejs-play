@@ -1,14 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-    normalizeStage,
-    computeStageLayout,
-    toStage,
-    fromStage,
-    DEFAULT_STAGE_WIDTH,
-    DEFAULT_STAGE_HEIGHT,
-    DEFAULT_STAGE_MATTE,
-    type StageConfig,
-} from "../stage"
+import { normalizeStage, computeStageLayout, toStage, fromStage, DEFAULT_STAGE_WIDTH, DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_MATTE, type StageConfig, screenToStage, screenDeltaToStage } from "../stage"
 
 const stage = (over: Partial<StageConfig> = {}): StageConfig => ({
     width: 960,
@@ -333,5 +324,92 @@ describe("the stage matte", () => {
     it("rejects a matte that is not a colour string", () => {
         expect(() => normalizeStage({ matte: 0 as never })).toThrow(/matte/)
         expect(() => normalizeStage({ matte: "  " })).toThrow(/matte/)
+    })
+})
+
+/**
+ * Unity's input and UI Toolkit disagree about where the origin is, which way y
+ * goes, and whether a pixel is physical or logical. These are the tests that
+ * make the eject path's pointer conversion something other than a guess.
+ */
+describe("screenToStage", () => {
+    /** 800x600 logical viewport, a 400x300 stage letterboxed into the middle. */
+    const layout = computeStageLayout(
+        normalizeStage({ size: [400, 300], fit: "letterbox" }), 800, 600,
+    )
+
+    it("puts the bottom of the screen at the bottom of the stage", () => {
+        // Unity y = 0 is the BOTTOM. In stage units the bottom is y = height.
+        expect(screenToStage(layout, 0, 0, 1).y).toBeCloseTo(layout.height, 4)
+    })
+
+    it("puts the top of the screen at the top of the stage", () => {
+        expect(screenToStage(layout, 0, layout.viewportHeight, 1).y).toBeCloseTo(0, 4)
+    })
+
+    it("leaves x alone apart from the scale", () => {
+        const middle = screenToStage(layout, layout.viewportWidth / 2, 0, 1)
+        expect(middle.x).toBeCloseTo(layout.width / 2, 4)
+    })
+
+    it("maps the centre of the screen to the centre of the stage", () => {
+        const centre = screenToStage(layout, layout.viewportWidth / 2, layout.viewportHeight / 2, 1)
+        expect(centre.x).toBeCloseTo(layout.width / 2, 4)
+        expect(centre.y).toBeCloseTo(layout.height / 2, 4)
+    })
+
+    it("divides physical pixels down to logical ones", () => {
+        // The same physical point on a 2x display is the same stage point.
+        const dense = computeStageLayout(normalizeStage({ size: [400, 300] }), 800, 600)
+        const at1x = screenToStage(dense, 400, 300, 1)
+        const at2x = screenToStage(dense, 800, 600, 2)
+        expect(at2x.x).toBeCloseTo(at1x.x, 4)
+        expect(at2x.y).toBeCloseTo(at1x.y, 4)
+    })
+
+    it("survives a pixel ratio of zero rather than dividing by it", () => {
+        expect(Number.isFinite(screenToStage(layout, 100, 100, 0).x)).toBe(true)
+    })
+
+    /** The round trip is the strongest statement: convert out, convert back. */
+    it("round-trips against fromStage through the flip", () => {
+        for (const [sx, sy] of [[0, 0], [123, 45], [400, 300], [799, 599]]) {
+            const stage = screenToStage(layout, sx!, sy!, 1)
+            const viewport = fromStage(layout, stage.x, stage.y)
+            expect(viewport.x).toBeCloseTo(sx!, 3)
+            expect(layout.viewportHeight - viewport.y).toBeCloseTo(sy!, 3)
+        }
+    })
+})
+
+describe("screenDeltaToStage", () => {
+    const layout = computeStageLayout(
+        normalizeStage({ size: [400, 300], fit: "letterbox" }), 800, 600,
+    )
+
+    it("flips the vertical direction and leaves the horizontal alone", () => {
+        const moved = screenDeltaToStage(layout, 10, 10, 1)
+        expect(moved.x).toBeGreaterThan(0)
+        // Moving up in Unity is moving toward smaller y on the stage.
+        expect(moved.y).toBeLessThan(0)
+    })
+
+    it("scales by the stage, not by the viewport", () => {
+        expect(screenDeltaToStage(layout, layout.scaleX, 0, 1).x).toBeCloseTo(1, 5)
+    })
+
+    /**
+     * The mistake this function exists to prevent: a delta run through
+     * screenToStage picks up the viewport height and reads as a huge jump.
+     */
+    it("does not pick up the viewport height the way a position does", () => {
+        expect(Math.abs(screenDeltaToStage(layout, 0, 0, 1).y)).toBeCloseTo(0, 6)
+        expect(screenToStage(layout, 0, 0, 1).y).toBeGreaterThan(100)
+    })
+
+    it("has no origin, so zero movement is zero", () => {
+        const still = screenDeltaToStage(layout, 0, 0, 1)
+        expect(still.x).toBe(0)
+        expect(Math.abs(still.y)).toBe(0)
     })
 })

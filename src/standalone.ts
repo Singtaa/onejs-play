@@ -12,9 +12,11 @@
  *
  *   - No global shadowing. An ejected game is the developer's own code in their
  *     own project, and taking CS away from them there would be pure obstruction.
- *   - No input backend override. onejs-unity falls back to the real InputBridge
- *     when no backend is installed, which is the better source anyway: it sees
- *     gamepads and touches that the browser adapter cannot.
+ *   - Input comes from the real InputBridge rather than the browser adapter,
+ *     which is the better source here: it sees gamepads and touches no browser
+ *     event could supply. Its pointer coordinates are converted to stage units
+ *     on the way through, because Unity reports screen space from the bottom
+ *     left and a game lays itself out from the top left. See hostinput.ts.
  *
  * What it keeps is the part a game depends on: the frame clock, the stage, and
  * the panel scaling that makes a declared stage fill the window.
@@ -22,6 +24,8 @@
 
 import { createRuntime, getCurrentRuntime, type ContainerRuntime } from "./runtime"
 import { normalizeStage, type StageInput, type StageLayout } from "./stage"
+import { createHostInputBackend } from "./hostinput"
+import { setInputBackend } from "onejs-unity/input"
 
 declare const globalThis: any
 
@@ -108,7 +112,26 @@ export function startStandalone(stage?: StageInput): ContainerRuntime {
         stage: normalizeStage(stage),
         viewport: size,
         onLayout: present,
+        inputSource: "host",
     })
+
+    /**
+     * The real bridge, with its pointer coordinates converted.
+     *
+     * Installed after createRuntime rather than inside it, because the wrapper
+     * needs a layout to convert against and the layout is what createRuntime
+     * produces. The layout is read fresh on every call, so a window resize is
+     * picked up without reinstalling anything.
+     *
+     * Nothing is installed when there is no bridge to wrap: onejs-unity then
+     * takes its own default path and reports its own error, which says more
+     * than anything this file could invent.
+     */
+    const hostInput = createHostInputBackend({
+        layout: () => standalone!.oj.stage,
+        pixelRatio,
+    })
+    if (hostInput !== null) setInputBackend(hostInput)
 
     let last = { width: size?.width ?? 0, height: size?.height ?? 0, dpr: pixelRatio() }
     // null rather than 0 for "no frame yet": a timestamp of exactly 0 is a

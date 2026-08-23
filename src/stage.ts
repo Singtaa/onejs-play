@@ -255,6 +255,51 @@ export function toStage(layout: StageLayout, viewportX: number, viewportY: numbe
     }
 }
 
+/**
+ * Converts a Unity screen position into logical stage units.
+ *
+ * Three things differ at once between what Unity's input reports and what a
+ * game here lays itself out in, which is why this exists rather than a
+ * subtraction at each call site:
+ *
+ *   Unity screen space counts from the BOTTOM left with y going up. Everything
+ *   in UI Toolkit, and therefore everything a game positions, counts from the
+ *   top left with y going down.
+ *   Unity reports PHYSICAL pixels. A layout is computed in logical ones.
+ *   A letterboxed stage is offset and scaled inside the viewport.
+ *
+ * Get any one of them wrong and a pointer lands somewhere plausible but not
+ * where the finger is; get the flip wrong and the game reads as haunted.
+ *
+ * The viewport height comes from the layout rather than from Screen, so a stale
+ * Screen reading cannot disagree with the layout the game is actually drawn
+ * against. They are the same number when both are fresh.
+ */
+export function screenToStage(
+    layout: StageLayout, screenX: number, screenY: number, pixelRatio: number,
+): { x: number; y: number } {
+    const dpr = pixelRatio > 0 ? pixelRatio : 1
+    return toStage(layout, screenX / dpr, layout.viewportHeight - screenY / dpr)
+}
+
+/**
+ * The same for a movement rather than a position.
+ *
+ * A delta has no origin, so only the scale and the flipped axis apply. Passing
+ * one through screenToStage instead would add the viewport height to every
+ * vertical movement, which is the kind of mistake that still looks like it is
+ * working until something crosses the middle of the screen.
+ */
+export function screenDeltaToStage(
+    layout: StageLayout, deltaX: number, deltaY: number, pixelRatio: number,
+): { x: number; y: number } {
+    const dpr = pixelRatio > 0 ? pixelRatio : 1
+    return {
+        x: deltaX / (dpr * layout.scaleX),
+        y: -deltaY / (dpr * layout.scaleY),
+    }
+}
+
 /** Converts a logical stage position into viewport pixels. */
 export function fromStage(layout: StageLayout, stageX: number, stageY: number): { x: number; y: number } {
     return {
