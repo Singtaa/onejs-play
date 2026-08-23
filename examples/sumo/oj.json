@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Sumo",
+    "author": "singtaa",
+    "description": "Everyone is a blob on a platform that keeps getting smaller. Shove them off, and try not to be the one who slides.",
+    "entry": "index.tsx",
+    "stage": { "size": [960, 640], "fit": "letterbox" },
+    "tags": ["multiplayer", "physics", "arcade"],
+    "controls": ["keyboard", "pointer", "touch"]
+}

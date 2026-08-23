@@ -1,0 +1,190 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: four blobs bumping around a ring that keeps closing
+  in on them, until one is left and it starts again. Enough to say "several of
+  you, and the floor is going away" without needing a match.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #090b10; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="ring"></canvas>
+<script>
+const canvas = document.getElementById("ring")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+let seed = 37
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+
+const TONES = ["#5cb8ff", "#ff8c4d", "#73dc85", "#f0729e", "#fad159", "#a88cfa"]
+
+let blobs = []
+let age = 0
+/* How long the match has been decided, so the last blob gets a moment alone
+   before the card starts over. */
+let settled = 0
+
+/* The ring in the game holds its size for a moment and then closes at a steady
+   rate. Same shape here, scaled to whatever the card happens to be. */
+const startRadius = () => Math.min(W, H) * 0.42
+const minRadius = () => Math.min(W, H) * 0.12
+function radius() {
+    if (age < 1.2) return startRadius()
+    return Math.max(minRadius(), startRadius() - (age - 1.2) * Math.min(W, H) * 0.055)
+}
+
+function reset() {
+    age = 0
+    settled = 0
+    blobs = []
+    const size = Math.min(W, H) * 0.055
+    for (let i = 0; i < 4; i++) {
+        const angle = (Math.PI * 2 * i) / 4 - Math.PI / 2
+        blobs.push({
+            x: W / 2 + Math.cos(angle) * startRadius() * 0.6,
+            y: H / 2 + Math.sin(angle) * startRadius() * 0.6,
+            vx: (rand() - 0.5) * W * 0.12,
+            vy: (rand() - 0.5) * W * 0.12,
+            r: size,
+            charge: 0.4 + rand() * 1.2,
+            tone: TONES[i % TONES.length],
+            out: false,
+            fade: 1,
+        })
+    }
+}
+reset()
+
+function step(dt) {
+    age += dt
+    const r = radius()
+
+    const unit = Math.min(W, H)
+    for (const b of blobs) {
+        if (b.out) { b.fade = Math.max(0, b.fade - dt * 1.6); continue }
+
+        /* Everybody goes for the nearest neighbour, and dashes when they get
+           close, which is what a player does and what makes blobs leave the
+           ring rather than settle in the middle of it. */
+        let target = null
+        let near = Infinity
+        for (const other of blobs) {
+            if (other === b || other.out) continue
+            const d = Math.hypot(other.x - b.x, other.y - b.y)
+            if (d < near) { near = d; target = other }
+        }
+        const toX = target === null ? W / 2 - b.x : target.x - b.x
+        const toY = target === null ? H / 2 - b.y : target.y - b.y
+        const length = Math.hypot(toX, toY) || 1
+        b.vx += (toX / length) * unit * 0.5 * dt
+        b.vy += (toY / length) * unit * 0.5 * dt
+
+        b.charge -= dt
+        if (b.charge <= 0 && target !== null && near < unit * 0.3) {
+            b.vx += (toX / length) * unit * 0.34
+            b.vy += (toY / length) * unit * 0.34
+            b.charge = 0.9 + rand() * 1.1
+        }
+
+        b.vx *= 1 - dt * 1.1
+        b.vy *= 1 - dt * 1.1
+        b.x += b.vx * dt
+        b.y += b.vy * dt
+        if (Math.hypot(b.x - W / 2, b.y - H / 2) > r) b.out = true
+    }
+
+    /* Equal masses bouncing off each other, which is what the game's physics
+       engine works out properly and this only has to look like. */
+    for (let i = 0; i < blobs.length; i++) {
+        for (let j = i + 1; j < blobs.length; j++) {
+            const a = blobs[i], b = blobs[j]
+            if (a.out || b.out) continue
+            const dx = b.x - a.x, dy = b.y - a.y
+            const d = Math.hypot(dx, dy)
+            if (d === 0 || d > a.r + b.r) continue
+            const nx = dx / d, ny = dy / d
+            const push = (a.r + b.r - d) / 2
+            a.x -= nx * push; a.y -= ny * push
+            b.x += nx * push; b.y += ny * push
+            const along = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
+            if (along > 0) continue
+            /* Slightly more than an exchange, so a hit reads as a shove. */
+            a.vx += nx * along * 1.35; a.vy += ny * along * 1.35
+            b.vx -= nx * along * 1.35; b.vy -= ny * along * 1.35
+        }
+    }
+
+    const standing = blobs.filter((b) => !b.out).length
+    if (standing <= 1) settled += dt
+    else settled = 0
+    if (settled > 1.6 || age > 16) reset()
+}
+
+function draw() {
+    const r = radius()
+    ctx.fillStyle = "#090b10"
+    ctx.fillRect(0, 0, W, H)
+
+    /* The band the ring is about to give up, so a still frame still says the
+       floor is going. */
+    ctx.fillStyle = "rgba(107, 41, 51, 0.55)"
+    ctx.beginPath()
+    ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = "#1a212c"
+    ctx.beginPath()
+    ctx.arc(W / 2, H / 2, Math.max(minRadius(), r - Math.min(W, H) * 0.03), 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.strokeStyle = "rgba(92, 118, 153, 0.9)"
+    ctx.lineWidth = Math.max(1.5, Math.min(W, H) * 0.006)
+    ctx.beginPath()
+    ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2)
+    ctx.stroke()
+
+    for (const b of blobs) {
+        if (b.fade <= 0) continue
+        ctx.globalAlpha = b.out ? b.fade * 0.5 : 1
+        ctx.fillStyle = b.tone
+        ctx.globalAlpha *= 0.45
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.globalAlpha = b.out ? b.fade * 0.5 : 1
+        ctx.strokeStyle = b.tone
+        ctx.lineWidth = Math.max(1.5, b.r * 0.16)
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.r - 1, 0, Math.PI * 2)
+        ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+}
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 200; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this game: the wait, the word, and four hands landing a few
+  hundredths apart. It runs the same loop the game does, at card speed, so what
+  it shows is what happens rather than a picture of it.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #080a0e; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="draw"></canvas>
+<script>
+const canvas = document.getElementById("draw")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+fit(); addEventListener("resize", fit)
+
+let seed = 61
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+
+const TONES = ["#5cb8ff", "#ff8c4d", "#73dc85", "#f0729e"]
+
+/* wait, then the signal, then the times, then round again. */
+let phase = "wait"
+let timer = 0
+let hands = []
+
+function reset() {
+    phase = "wait"
+    timer = 0.9 + rand() * 1.4
+    hands = TONES.map((tone, i) => ({
+        tone,
+        /* A spread of plausible human reactions, which is what makes the card
+           read as a race rather than as four things happening at once. */
+        at: 0.17 + rand() * 0.22,
+        ms: 0,
+        done: false,
+        i,
+    }))
+}
+reset()
+
+function step(dt) {
+    timer -= dt
+    if (phase === "wait") {
+        if (timer <= 0) { phase = "now"; timer = 1.5 }
+        return
+    }
+    if (phase === "now") {
+        const since = 1.5 - timer
+        for (const hand of hands) {
+            if (!hand.done && since >= hand.at) { hand.done = true; hand.ms = Math.round(hand.at * 1000) }
+        }
+        if (timer <= 0) { phase = "shown"; timer = 2.2 }
+        return
+    }
+    if (timer <= 0) reset()
+}
+
+function draw() {
+    ctx.fillStyle = "#080a0e"
+    ctx.fillRect(0, 0, W, H)
+
+    const pad = Math.min(W, H) * 0.09
+    const cardH = H - pad * 2 - Math.min(H * 0.22, 90)
+    const cardW = W - pad * 2
+
+    ctx.fillStyle = phase === "now" ? "#4ade94" : phase === "wait" ? "#1c1418" : "#101822"
+    roundRect(pad, pad, cardW, cardH, Math.min(W, H) * 0.035)
+    ctx.fill()
+
+    const winner = hands.reduce((a, b) => (a.at <= b.at ? a : b))
+    const word = phase === "now" ? "NOW" : phase === "wait" ? "WAIT" : `${winner.ms} ms`
+    ctx.fillStyle = phase === "now" ? "#0a1a12" : "#dce7f5"
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    const size = Math.min(cardW * 0.19, cardH * 0.42)
+    ctx.font = `600 ${size}px ui-sans-serif, system-ui, sans-serif`
+    ctx.fillText(word, W / 2, pad + cardH / 2)
+
+    /* The four hands along the bottom, filling as each one lands. */
+    const rowY = pad + cardH + Math.min(H * 0.06, 26)
+    const gap = cardW / hands.length
+    for (const hand of hands) {
+        const x = pad + gap * hand.i + gap / 2
+        ctx.globalAlpha = hand.done ? 1 : 0.28
+        ctx.fillStyle = hand.tone
+        ctx.beginPath()
+        ctx.arc(x, rowY, Math.min(W, H) * 0.018, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.globalAlpha = 1
+        if (hand.done) {
+            ctx.fillStyle = hand === winner ? "#ffe096" : "rgba(190, 210, 235, 0.75)"
+            ctx.font = `500 ${Math.min(W, H) * 0.042}px ui-sans-serif, system-ui, sans-serif`
+            ctx.fillText(`${hand.ms}`, x, rowY + Math.min(W, H) * 0.062)
+        }
+    }
+}
+
+function roundRect(x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+    ctx.closePath()
+}
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    /* Held on the moment the word is up and two of the four have landed,
+       which is the one frame that says what the game is. */
+    while (phase !== "now") step(1 / 60)
+    for (let i = 0; i < 15; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>
