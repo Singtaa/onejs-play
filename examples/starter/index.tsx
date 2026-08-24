@@ -14,23 +14,29 @@ const start = () => ({ x: STAGE / 2, y: STAGE / 3, vx: 170, vy: 240 })
 function Rally() {
     const [score, setScore] = useState(0)
     const [best, setBest] = useState(0)
+    const rally = useRef(0)
     const ball = useRef(start())
     const paddleX = useRef((STAGE - PADDLE_W) / 2)
+    const lastPointerX = useRef<number | null>(null)
     const ballEl = useRef<any>(null)
     const paddleEl = useRef<any>(null)
 
     useFrame((dt) => {
         const keys = input.keyboard.arrows()
-        paddleX.current = keys.x !== 0
-            ? paddleX.current + keys.x * KEY_SPEED * dt
-            : input.mouse.position.x - PADDLE_W / 2
+        const pointerX = input.mouse.position.x
+        const pointerMoved = lastPointerX.current !== null && pointerX !== lastPointerX.current
+        lastPointerX.current = pointerX
+
+        if (keys.x !== 0) paddleX.current += keys.x * KEY_SPEED * dt
+        else if (pointerMoved) paddleX.current = pointerX - PADDLE_W / 2
         paddleX.current = Mathf.Clamp(paddleX.current, 0, STAGE - PADDLE_W)
 
         const b = ball.current
         b.x += b.vx * dt
         b.y += b.vy * dt
 
-        if (b.x < 0 || b.x > STAGE - BALL) b.vx = -b.vx
+        if (b.x < 0) b.vx = Math.abs(b.vx)
+        if (b.x > STAGE - BALL) b.vx = -Math.abs(b.vx)
         if (b.y < 0) b.vy = Math.abs(b.vy)
 
         const onPaddle = b.vy > 0
@@ -41,11 +47,13 @@ function Rally() {
             const offset = (b.x + BALL / 2 - paddleX.current) / PADDLE_W - 0.5
             b.vx = Mathf.Clamp(b.vx + offset * 420, -560, 560)
             b.vy = -b.vy * SPEEDUP
-            setScore((n) => n + 1)
+            rally.current += 1
+            setScore(rally.current)
         }
 
         if (b.y > STAGE) {
-            setBest((high) => Math.max(high, score))
+            setBest((high) => Math.max(high, rally.current))
+            rally.current = 0
             setScore(0)
             ball.current = start()
         }
@@ -55,7 +63,7 @@ function Rally() {
             ballEl.current.style.top = b.y
         }
         if (paddleEl.current) paddleEl.current.style.left = paddleX.current
-    }, [score])
+    }, [])
 
     return (
         <View style={{ width: STAGE, height: STAGE, backgroundColor: "#12151b" }}>
