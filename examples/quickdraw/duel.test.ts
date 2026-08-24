@@ -18,7 +18,6 @@ import {
 
 const claim = (id: number, ms: number, jumped = false): Claim => ({ id, ms, jumped })
 
-/** A shuffled copy, for the properties that must not depend on message order. */
 function shuffled<T>(items: readonly T[]): T[] {
     const out = [...items]
     for (let i = out.length - 1; i > 0; i--) {
@@ -43,7 +42,6 @@ describe("what a reported time is worth", () => {
         expect(classify(-40)).toBe("early")
     })
 
-    /** Nothing that is not a real number of milliseconds may win a round. */
     it("refuses nonsense rather than believing it", () => {
         expect(classify(NaN)).toBe("early")
         expect(classify(Infinity)).toBe("early")
@@ -83,11 +81,6 @@ describe("who won the round", () => {
         expect(resolve([claim(1, 300), claim(2, 210), claim(3, 450)]).winner).toBe(2)
     })
 
-    /**
-     * The property the whole room agreement rests on. Nobody holds the claims
-     * in the same order, because the relay delivers in its own order and never
-     * echoes a client its own message, so the answer must not depend on it.
-     */
     it("reaches the same answer whatever order the claims arrived in", () => {
         for (let i = 0; i < 500; i++) {
             const claims: Claim[] = []
@@ -112,7 +105,6 @@ describe("who won the round", () => {
         expect(resolve([claim(1, 120, true)]).winner).toBe(null)
     })
 
-    /** The only cheat a room with no server can refuse on its own. */
     it("throws out a time nobody could have made", () => {
         expect(resolve([claim(1, 2), claim(2, 240)]).winner).toBe(2)
         expect(resolve([claim(1, 0), claim(2, 0)]).winner).toBe(null)
@@ -128,10 +120,6 @@ describe("who won the round", () => {
         expect(resolve([claim(1, 30), claim(2, 200, true)])).toEqual({ winner: null, ms: null })
     })
 
-    /**
-     * Nobody drew in time, so nobody won it. This is also what keeps two
-     * clients holding different claims from disagreeing: see resolve.
-     */
     it("gives a round where everybody was slower than the ceiling to nobody", () => {
         expect(resolve([claim(5, 1400), claim(6, 40)]).winner).toBe(null)
         expect(resolve([claim(5, CEILING_MS - 1)]).winner).toBe(5)
@@ -192,17 +180,12 @@ describe("the wait before the signal", () => {
         }
     })
 
-    /** A fixed wait would be learnable, which is a different game. */
     it("is different from round to round", () => {
         const holds = new Set<number>()
         for (let i = 0; i < 40; i++) holds.add(holdFor(Math.random))
         expect(holds.size).toBeGreaterThan(30)
     })
 
-    /**
-     * The argument in resolve rests on this gap, and a future edit that closed
-     * it would reintroduce a disagreement nothing else would catch.
-     */
     it("leaves a window far longer than any time that can win", () => {
         expect(REACTION_WINDOW * 1000).toBeGreaterThan(CEILING_MS * 2)
     })

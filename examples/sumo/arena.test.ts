@@ -6,7 +6,7 @@ import {
     ROUND_CAP, SNAP_DISTANCE, MAX_BLOBS, SETTLE, REST, type Track,
 } from "./arena"
 
-const track = (x: number, y: number, vx = 0, vy = 0): Track => ({ x, y, vx, vy, quiet: 0 })
+const track = (x: number, y: number, vx = 0, vy = 0): Track => ({ x, y, vx, vy, sinceReport: 0 })
 
 describe("the ring", () => {
     it("holds its full size through the grace period", () => {
@@ -50,7 +50,6 @@ describe("falling off", () => {
         }
     })
 
-    /** The ring closing under a blob that has not moved has to put it out. */
     it("catches somebody the ring shrank away from", () => {
         const x = CENTER_X + START_RADIUS - 10
         expect(isOff(x, CENTER_Y, platformRadius(0))).toBe(false)
@@ -101,7 +100,6 @@ describe("steering", () => {
             const y = (Math.random() - 0.5) * 2000
             const push = steer(x, y)
             expect(Math.hypot(push.x, push.y)).toBeCloseTo(1, 10)
-            // Same direction: the cross product of two parallel vectors is 0.
             expect(x * push.y - y * push.x).toBeCloseTo(0, 6)
         }
     })
@@ -156,16 +154,15 @@ describe("the leash on somebody else's blob", () => {
         advance(t, 0.001)
         expect(t.x).toBeCloseTo(100.06, 6)
         expect(t.y).toBeCloseTo(99.97, 6)
-        expect(t.quiet).toBeCloseTo(0.001, 10)
+        expect(t.sinceReport).toBeCloseTo(0.001, 10)
     })
 
-    /** A tab closed without a clean disconnect leaves a track running. */
     it("coasts a peer that has gone quiet to a stop instead of out of the world", () => {
         const t = track(100, 100, 400, 400)
         for (let i = 0; i < 60; i++) advance(t, 1 / 15)
         expect(Math.hypot(t.vx, t.vy)).toBeLessThan(1)
         expect(Math.hypot(t.x - 100, t.y - 100)).toBeLessThan(400)
-        expect(t.quiet).toBeCloseTo(4, 6)
+        expect(t.sinceReport).toBeCloseTo(4, 6)
     })
 
     it("never coasts backwards, whatever the step", () => {
@@ -187,11 +184,6 @@ describe("who is out", () => {
         expect(standing(applyFall(round(), 2, { n: 1 }))).toEqual([1, 3, 4])
     })
 
-    /**
-     * The rule the whole game rests on. A claim carrying somebody else's id has
-     * to be worth nothing, whatever it says, or any player could clear the ring
-     * from the sofa.
-     */
     it("never lets a message put anybody but its sender out", () => {
         for (let i = 0; i < 500; i++) {
             const from = 1 + Math.floor(Math.random() * 4)
@@ -244,11 +236,6 @@ describe("ending a round", () => {
         expect(winnerOf(state)).toBe(null)
     })
 
-    /**
-     * Messages arrive in whatever order the relay hands them over, so the
-     * outcome cannot depend on that order or two clients would disagree about
-     * who won the round they both watched.
-     */
     it("reaches the same answer whatever order the falls arrive in", () => {
         const starters = [3, 8, 11, 14, 21]
         for (let i = 0; i < 300; i++) {
@@ -274,19 +261,12 @@ describe("ending a round", () => {
         expect(winnerOf(fell)).toBe(null)
     })
 
-    /**
-     * The round that used to be scored two different ways on two screens. Both
-     * players slide off the closing ring within a moment of each other, and
-     * each client learns of its own fall first. Whatever order the two arrive
-     * in, once both are in there is nobody standing and nobody won.
-     */
     it("gives a round where both fell to nobody, in either order", () => {
         expect(winnerOf(play([1, 2], [1, 2]))).toBe(null)
         expect(winnerOf(play([1, 2], [2, 1]))).toBe(null)
         expect(standing(play([1, 2], [2, 1]))).toEqual([])
     })
 
-    /** The window that makes the above reachable rather than theoretical. */
     it("waits longer than a relay round trip and less than the gap between rounds", () => {
         expect(SETTLE).toBeGreaterThan(0.2)
         expect(SETTLE).toBeLessThan(REST)
@@ -332,7 +312,6 @@ describe("handing out bodies", () => {
 
     it("has room for every socket the relay allows", () => {
         const slots = new Slots()
-        // The room holds MAX_BLOBS sockets, one of which is this client.
         for (let peer = 1; peer < MAX_BLOBS; peer++) expect(slots.take(peer)).not.toBe(null)
         expect(slots.take(999)).toBe(null)
     })
@@ -352,7 +331,6 @@ describe("handing out bodies", () => {
         expect(new Slots().release(5)).toBe(null)
     })
 
-    /** Churn is the normal case: people join and leave for hours. */
     it("survives arrivals and departures without leaking a body", () => {
         const slots = new Slots()
         const present = new Set<number>()
@@ -373,11 +351,6 @@ describe("handing out bodies", () => {
 })
 
 describe("the round clock", () => {
-    /**
-     * Everybody has to be standing on the same ring, and the ring is a function
-     * of this number, so the only property that matters is that a client which
-     * keeps hearing from the host ends up agreeing with it.
-     */
     it("converges on the host's clock from either side", () => {
         for (const start of [0, 3, 40]) {
             let local = start
