@@ -3,7 +3,6 @@ import { PRESETS, PREVIEW_W, PREVIEW_H, toEmitter, toSource, shiftHue, type Knob
 
 const knobs = (): Knobs => ({ ...PRESETS[0]!.layers[0]! })
 
-/** Every layer of every preset, which is what most of these check. */
 const allLayers = (): Knobs[] => PRESETS.flatMap((preset) => preset.layers)
 
 describe("the presets", () => {
@@ -18,10 +17,6 @@ describe("the presets", () => {
         }
     })
 
-    /**
-     * The reason the lab exists rather than a text editor. If every preset were
-     * one emitter, layering would be a feature nothing demonstrated.
-     */
     it("include some that stack several emitters", () => {
         expect(PRESETS.some((preset) => preset.layers.length > 1)).toBe(true)
     })
@@ -57,12 +52,6 @@ describe("the presets", () => {
         }
     })
 
-    /**
-     * A preset should look like its name at the size the preview actually is.
-     * An effect thrown upward has to clear a useful part of the box, and one
-     * that aims downward has to start near the top or it lands immediately.
-     * The first version of Fountain rose sixty pixels and read as a puff.
-     */
     it("throw far enough to read as what they are called", () => {
         const rising = (k: Knobs) => k.spreadFrom > 180 && k.spreadTo < 360
         for (const k of allLayers()) {
@@ -91,11 +80,6 @@ describe("toEmitter", () => {
         expect(toEmitter({ ...knobs(), gravity: 300 }).gravity).toEqual([0, 300])
     })
 
-    /**
-     * The field the lab exists to get right. It was missing, so the printed
-     * config would have put the emitter in the corner of whatever it was
-     * pasted into while the preview showed it somewhere else entirely.
-     */
     it("carries the emitter position", () => {
         expect(toEmitter({ ...knobs(), originX: 120.4, originY: 300.6 }).pos).toEqual([120, 301])
     })
@@ -124,11 +108,6 @@ describe("toEmitter", () => {
 })
 
 describe("toSource", () => {
-    /**
-     * The property that makes the lab worth anything: what it prints has to be
-     * what it is running. Checked by reading the printed text back rather than
-     * by comparing it to a copy of itself.
-     */
     it("prints every field the emitter actually has", () => {
         const source = toSource([knobs()], 1200)
         for (const key of Object.keys(toEmitter(knobs()))) {
@@ -152,7 +131,6 @@ describe("toSource", () => {
 
     it("prints every layer of a stack, not just the first", () => {
         const source = toSource(PRESETS.find((p) => p.layers.length > 1)!.layers, 1000)
-        // One opening brace per emitter inside the array.
         expect((source.match(/^ {8}\{$/gm) ?? []).length).toBeGreaterThan(1)
     })
 
@@ -176,10 +154,6 @@ describe("shiftHue", () => {
         expect(shiftHue("#ff0000ff", 120).toLowerCase()).toBe("#00ff00ff")
     })
 
-    /**
-     * Most ramps start or end transparent so the effect fades. A picker that
-     * silently made those opaque would turn every preset into a hard blob.
-     */
     it("keeps the alpha exactly as it was", () => {
         expect(shiftHue("#ff000000", 40).slice(7)).toBe("00")
         expect(shiftHue("#ff0000b0", 40).slice(7)).toBe("b0")

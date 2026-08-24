@@ -3,9 +3,8 @@ import { Grid, step, DEFAULTS, type Boid, type Rules } from "./flock"
 
 const boid = (x: number, y: number, vx = 0, vy = 0): Boid => ({ x, y, vx, vy })
 
-/** Rules with everything off, so one behaviour can be tested at a time. */
 const only = (overrides: Partial<Rules>): Rules => ({
-    ...DEFAULTS, separation: 0, alignment: 0, cohesion: 0, edge: 0, minSpeed: 0, maxSpeed: 1e9,
+    ...DEFAULTS, separation: 0, alignment: 0, cohesion: 0, edgeForce: 0, minSpeed: 0, maxSpeed: 1e9,
     ...overrides,
 })
 
@@ -29,7 +28,6 @@ describe("Grid", () => {
         expect(grid.indexOf(10, 50)).toBe(3)
     })
 
-    /** A bird nudged just past the wall must land somewhere rather than nowhere. */
     it("clamps a point outside the field into the nearest bucket", () => {
         const grid = new Grid(120, 120, 40)
         expect(grid.indexOf(-30, -30)).toBe(0)
@@ -60,17 +58,12 @@ describe("Grid", () => {
         expect(seen).toEqual([])
     })
 
-    /**
-     * The bug a hand-rolled grid usually has: visiting a bucket twice at the
-     * field's edge, which silently doubles a neighbour's influence.
-     */
     it("visits each neighbour exactly once, including in a corner", () => {
         const grid = new Grid(120, 120, 40)
         for (let i = 0; i < 9; i++) grid.insert(i, i)
         const seen: number[] = []
         grid.near(5, 5, (b) => seen.push(b))
         expect(seen.length).toBe(new Set(seen).size)
-        // Only the four buckets that exist around a corner.
         expect(new Set(seen)).toEqual(new Set([0, 1, 3, 4]))
     })
 
@@ -149,14 +142,14 @@ describe("edges", () => {
     it("turns a bird back before it reaches the wall", () => {
         const boids = [boid(10, 200, -50, 0)]
         const grid = new Grid(400, 400, DEFAULTS.range)
-        step(boids, grid, only({ edge: 400, margin: 90, maxSpeed: 1e9 }), 1 / 60, null)
+        step(boids, grid, only({ edgeForce: 400, margin: 90, maxSpeed: 1e9 }), 1 / 60, null)
         expect(boids[0]!.vx).toBeGreaterThan(-50)
     })
 
     it("turns harder the closer to the wall a bird is", () => {
         const nudge = (x: number) => {
             const boids = [boid(x, 200, 0, 0)]
-            step(boids, new Grid(400, 400, DEFAULTS.range), only({ edge: 400, margin: 90 }), 1 / 60, null)
+            step(boids, new Grid(400, 400, DEFAULTS.range), only({ edgeForce: 400, margin: 90 }), 1 / 60, null)
             return boids[0]!.vx
         }
         expect(nudge(5)).toBeGreaterThan(nudge(70))
@@ -228,12 +221,6 @@ describe("speed", () => {
 })
 
 describe("the flock as a whole", () => {
-    /**
-     * The reason positions are read and velocities written in one pass, then
-     * everything moved in another. Reacting to a neighbour that has already
-     * moved makes the result depend on array order, so the same flock in a
-     * different order would behave differently.
-     */
     it("does not depend on the order the birds are stored in", () => {
         const make = (): Boid[] => [
             boid(100, 100, 30, 10), boid(130, 110, -20, 40), boid(160, 90, 10, -30), boid(120, 150, 5, 5),

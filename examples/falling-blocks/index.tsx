@@ -1,18 +1,3 @@
-/**
- * Falling Blocks: shapes drop, filled rows go, mistakes pile up.
- *
- * The screen is React, drawn by Unity rather than by a browser. View and Text
- * are the building blocks, and they come from "oj", the small runtime this game
- * runs on.
- *
- * Unlike a turn-based puzzle, this one runs on a clock. Gravity, the repeat rate while a
- * key is held, and the pause before a piece locks are all measured from the
- * time between frames rather than from a timer, so the game keeps its pace
- * whether the display runs at 60 frames a second or 144.
- *
- * The rules are in game.ts and know nothing about the screen.
- */
-
 import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
@@ -28,7 +13,6 @@ import {
 
 const COLOURS = ["", styles.i, styles.o, styles.t, styles.s, styles.z, styles.j, styles.l]
 
-/** How long a held direction waits before repeating, and how fast after. */
 const REPEAT_DELAY = 0.16
 const REPEAT_RATE = 0.05
 
@@ -50,7 +34,6 @@ function start(pick: () => PieceKind): Game {
     return { board: emptyBoard(), piece: spawn(pick()), next: pick(), score: 0, lines: 0, over: false }
 }
 
-/** Settles the piece, clears what it completed, and brings in the next one. */
 function lock(game: Game, pick: () => PieceKind): Game {
     const merged = merge(game.board, game.piece)
     const { board, cleared } = clearLines(merged)
@@ -62,7 +45,6 @@ function lock(game: Game, pick: () => PieceKind): Game {
         next: pick(),
         score: game.score + scoreFor(cleared, levelFor(game.lines)),
         lines,
-        // Nowhere to put the new piece means the stack reached the top.
         over: !fits(board, piece),
     }
 }
@@ -71,14 +53,6 @@ function Cell({ tone }: { tone: string }) {
     return <View className={`${styles.cell} ${tone}`} />
 }
 
-/**
- * The piece that comes next.
- *
- * Drawn to its own bounding box rather than a fixed 4x4: only I spans four
- * columns, so a fixed grid leaves every other piece sitting off-centre with
- * dead space beside it. Trimming to the occupied cells lets the panel centre
- * whatever it gets.
- */
 function Preview({ kind }: { kind: PieceKind }) {
     const cells = shapeOf(kind)
     const xs = cells.map(([x]) => x)
@@ -91,9 +65,6 @@ function Preview({ kind }: { kind: PieceKind }) {
     const tone = COLOURS[KINDS.indexOf(kind) + 1] ?? ""
 
     return (
-        // Fixed height so the panel does not jump between an I piece, which is
-        // one row, and everything else, which is two. Left-aligned to match the
-        // labels above it rather than floating in the middle of the column.
         <View className="items-start justify-center h-20">
             {Array.from({ length: height }, (_, row) => (
                 <View key={row} className="flex-row">
@@ -116,8 +87,6 @@ function FallingBlocks() {
     const drag = useRef<{ id: number; g: Gesture } | null>(null)
 
     useFrame((dt) => {
-        // One finger at a time: a second one during a drag would fight the first
-        // for the same piece.
         const touch = input.touchCount > 0 ? input.touches[0] : null
         const began = touch !== null && touch.phase === "began"
         const lifted = touch !== null && (touch.phase === "ended" || touch.phase === "canceled")
@@ -135,8 +104,6 @@ function FallingBlocks() {
             timers[key] = timers[key] === 0 ? REPEAT_DELAY : REPEAT_RATE
         }
 
-        // Held directions repeat on a delay then a faster rate, which is what
-        // makes a stack placeable rather than a test of tapping speed.
         for (const [key, code, dx] of [["left", "LeftArrow", -1], ["right", "RightArrow", 1]] as const) {
             if (input.keyboard.isKeyDown(code)) {
                 if (input.keyboard.wasKeyPressed(code)) { timers[key] = 0; shift(dx, key) }
@@ -146,8 +113,6 @@ function FallingBlocks() {
 
         if (input.keyboard.wasKeyPressed("UpArrow")) piece = rotated(board, piece)
 
-        // A drag walks the piece across, a still tap rotates, a flick drops.
-        // What each of those means lives in gestures.ts; this only applies it.
         let flicked = false
         if (began) {
             drag.current = { id: touch!.fingerId, g: beginGesture(touch!.position.x, touch!.position.y) }
@@ -185,9 +150,6 @@ function FallingBlocks() {
 
         if (settled) {
             timers.drop = 0
-            // The drag was aimed at the piece that just landed. Without this the
-            // next one spawns under a finger still counted as dragging down and
-            // falls straight through, before the player can lift.
             if (drag.current !== null) spendDrop(drag.current.g)
             setGame(lock({ ...game, piece }, pick))
         } else if (piece !== game.piece) {
@@ -195,7 +157,6 @@ function FallingBlocks() {
         }
     }, [game])
 
-    // The falling piece is drawn over a copy so the board itself stays settled.
     const view = game.board.map((row) => row.slice())
     if (!game.over) {
         for (const [x, y] of cellsOf(game.piece)) {
@@ -213,9 +174,8 @@ function FallingBlocks() {
                 ))}
             </View>
 
-            {/* ml-6 rather than a gap on the row, and mb-* on each block rather
-                than a gap on the column: USS has no gap property, so those
-                classes compiled to nothing and everything sat flush. */}
+            {/* ml-6 and mb-* rather than gap classes: USS has no gap property, so
+                gap-* compiles to nothing and everything sits flush. */}
             <View className="w-32 ml-6">
                 <Text className="text-2xl font-bold text-white mb-3">FALLING BLOCKS</Text>
                 <View className="mb-3">
@@ -234,10 +194,7 @@ function FallingBlocks() {
                     <Text className="text-xs text-neutral-500 mb-1">NEXT</Text>
                     <Preview kind={game.next} />
                 </View>
-                {/* Both sets, because the same build runs on a desktop and a
-                    phone and there is no reliable way to ask which one this is.
-                    A gesture nobody is told about is a gesture nobody uses. */}
-                <Text className="text-xs text-neutral-600">
+                    <Text className="text-xs text-neutral-600">
                     {game.over
                         ? "GAME OVER\nEnter or tap\nto restart"
                         : "arrows move\nup rotates\nspace drops\n\ndrag to move\ntap to rotate\nflick down\nto drop"}

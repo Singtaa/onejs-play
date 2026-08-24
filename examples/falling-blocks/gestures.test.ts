@@ -12,8 +12,6 @@ describe("dragging sideways", () => {
     })
 
     it("walks several columns in one frame when the finger jumps", () => {
-        // A frame can be long, and a fast drag arrives as one big step. Moving
-        // one column for it would make the piece lag behind the finger.
         const g = beginGesture(0, 0)
         expect(advanceGesture(g, SWIPE_STEP * 3, 0, 0.05)).toBe(3)
     })
@@ -38,8 +36,6 @@ describe("letting go", () => {
     })
 
     it("still reads a rotate when the finger drifted a little", () => {
-        // A finger on glass is never perfectly still, and requiring that would
-        // make rotate feel broken.
         const g = beginGesture(0, 0)
         advanceGesture(g, TAP_SLOP - 2, 0, 0.1)
         expect(releaseGesture(g)).toBe("rotate")
@@ -58,8 +54,6 @@ describe("letting go", () => {
     })
 
     it("does not drop for a slow drag down", () => {
-        // Dragging down is a soft drop while it happens; it must not also fire
-        // a hard drop the moment the finger lifts.
         const g = beginGesture(0, 0)
         advanceGesture(g, 0, 200, 1.5)     // about 130 a second
         expect(releaseGesture(g)).toBe("none")
@@ -90,9 +84,6 @@ describe("soft drop", () => {
 
 describe("one drag, one piece", () => {
     it("stops dropping once the piece it was aimed at has landed", () => {
-        // The piece locks and the next one spawns under a finger that is still
-        // down and still dragging. Without this it drops too, and the player
-        // never gets the moment they needed to lift.
         const g = beginGesture(0, 0)
         advanceGesture(g, 0, SWIPE_STEP * 3, 0.3)
         expect(isSoftDropping(g)).toBe(true)
@@ -109,7 +100,6 @@ describe("one drag, one piece", () => {
     })
 
     it("does not hard drop the next piece when the finger finally lifts", () => {
-        // A flick that landed a piece must not also throw the one after it.
         const g = beginGesture(0, 0)
         advanceGesture(g, 0, 300, 0.1)
         spendDrop(g)

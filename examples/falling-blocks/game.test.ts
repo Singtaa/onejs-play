@@ -45,8 +45,6 @@ describe("fits", () => {
         expect(fits(emptyBoard(), moved(spawn("O"), 0, ROWS))).toBe(false)
     })
 
-    // A piece spawns partly above the ceiling; treating that as a collision
-    // would end the game the instant it starts.
     it("allows cells above the ceiling", () => {
         const p = { ...spawn("I"), y: -2 }
         expect(fits(emptyBoard(), p)).toBe(true)
@@ -73,8 +71,6 @@ describe("rotation", () => {
         expect(rotated(emptyBoard(), p).rotation).toBe(p.rotation)
     })
 
-    // Without wall kicks a piece flush to the wall silently refuses to turn,
-    // which reads as an unresponsive game rather than as a rule.
     it("kicks off the left wall instead of refusing", () => {
         const b = emptyBoard()
         const against = { ...spawn("I"), x: -2, rotation: 1 }
@@ -179,7 +175,6 @@ describe("scoring and pace", () => {
 
 describe("shapeOf", () => {
     it("returns the unpositioned offsets, which is what a preview needs", () => {
-        // O is the one piece with a single rotation, so its shape is fixed.
         expect(shapeOf("O")).toEqual([[1, 0], [2, 0], [1, 1], [2, 1]])
     })
 
@@ -218,7 +213,6 @@ describe("shapeOf", () => {
     })
 })
 
-/** How many distinct rotations a kind has, derived rather than hard-coded. */
 function SHAPE_STATES(kind: (typeof KINDS)[number]): number {
     let n = 1
     while (n < 4 && JSON.stringify(shapeOf(kind, n)) !== JSON.stringify(shapeOf(kind, 0))) n++

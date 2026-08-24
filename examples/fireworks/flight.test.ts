@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { aim, advance, speedToReach, wander, GRAVITY, type Rocket } from "./flight"
 
-/** Runs a shell until it bursts, and says where that happened. */
 function fly(rocket: Rocket, dt = 1 / 120): { x: number; y: number; frames: number } {
     for (let frames = 1; frames <= 10000; frames++) {
         if (advance(rocket, dt)) return { x: rocket.x, y: rocket.y, frames }
@@ -12,7 +11,6 @@ function fly(rocket: Rocket, dt = 1 / 120): { x: number; y: number; frames: numb
 describe("speedToReach", () => {
     it("is the speed that exactly spends itself over the rise", () => {
         expect(speedToReach(0)).toBe(0)
-        // v = sqrt(2gh), so quadrupling the height doubles the speed.
         expect(speedToReach(400) / speedToReach(100)).toBeCloseTo(2, 5)
     })
 
@@ -53,11 +51,6 @@ describe("aim", () => {
         expect(high.frames).toBeGreaterThan(low.frames)
     })
 
-    /**
-     * A tap on the ground, or below it. The climb is zero, and the horizontal
-     * speed is a distance divided by that: without the guard it is Infinity and
-     * the shell leaves the universe on frame one.
-     */
     it("survives a target at ground level", () => {
         const rocket = aim(300, 600, 500, 600, 0, false)
         expect(Number.isFinite(rocket.vx)).toBe(true)
@@ -91,11 +84,6 @@ describe("advance", () => {
         expect(rocket.vy).toBeCloseTo(-100 + GRAVITY * 0.5, 5)
     })
 
-    /**
-     * The property the exact position step exists for: where a shell ends up
-     * must not depend on how often it was asked to move. One step of a second
-     * and a hundred steps of ten milliseconds have to agree.
-     */
     it("lands in the same place however finely it is stepped", () => {
         const coarse: Rocket = { x: 0, y: 0, vx: 40, vy: -300, shell: 0, heavy: false }
         const fine: Rocket = { x: 0, y: 0, vx: 40, vy: -300, shell: 0, heavy: false }
@@ -107,13 +95,9 @@ describe("advance", () => {
     })
 
     it("bursts within a frame of the apex whatever the frame rate", () => {
-        // A slow frame must not let the shell visibly fall before it bursts.
         for (const dt of [1 / 30, 1 / 60, 1 / 144]) {
             const rocket = aim(300, 600, 300, 200, 0, false)
             const burst = fly(rocket, dt)
-            // Never above the target, and never far below it.
-            // The apex itself is exact, so the only slack is the part of a
-            // frame between the true apex and the frame that noticed it.
             expect(burst.y).toBeGreaterThanOrEqual(199.9)
             expect(burst.y).toBeLessThan(200 + 0.5 * GRAVITY * dt * dt + 0.01)
         }

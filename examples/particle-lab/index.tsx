@@ -1,33 +1,3 @@
-/**
- * Particle Lab: turn the knobs, watch the effect, copy the config.
- *
- * This one is a tool rather than a game, and the thing it is a tool for is the
- * particle system in oj. Every control here maps to one field of the config a
- * game passes to useParticles, and the panel at the bottom prints exactly the
- * config that is running, so what is on screen can be lifted into a real
- * project without translating anything.
- *
- * WHY IT IS A STACK AND NOT ONE EMITTER
- *
- * A single emitter is something anybody can write by hand in a minute, and a
- * lab for it would be a toy. Fire that reads as fire is a flame, a plume of
- * smoke above it and a few embers coming off: three emitters whose ranges have
- * to agree with each other, which is exactly the thing that is miserable to
- * tune by editing numbers and rebuilding. That is what this replaces.
- *
- * WHY IT REBUILDS THE SYSTEM ON EVERY CHANGE
- *
- * A particle system reads its config once, when it is created: the whole point
- * of the design is that steady-state emission costs no JavaScript at all, and
- * that is only possible because C# owns the numbers. Nothing sends a new speed
- * range to a running system.
- *
- * So changing a knob here disposes the system and makes a new one, which is why
- * the effect restarts as a slider moves. In a game that would be wrong; in a lab
- * it is the honest thing, because it is exactly what the printed config would do
- * if it were pasted somewhere.
- */
-
 import { useRef, useState } from "react"
 import { View, Text, Button, Slider, ScrollView, mount, useParticles, type ChangeEventData } from "oj"
 import { PRESETS, PREVIEW_W, PREVIEW_H, toEmitter, toSource, shiftHue, type Knobs } from "./presets"
@@ -35,19 +5,6 @@ import labStyles from "./lab.module.uss"
 
 declare const navigator: { clipboard?: { writeText(text: string): Promise<void> } } | undefined
 
-/**
- * The preview gets the whole height.
- *
- * A panel printing the config used to take the bottom third, and it read badly:
- * UI Toolkit's default face is proportional, so indented code does not line up,
- * and there is no monospace font here to give it. Showing code that looks wrong
- * is worse than not showing it, and the config was never the thing to look at
- * anyway. Copy config still puts the real thing on the clipboard, which is what
- * anybody wanted it for.
- *
- * Bringing it back means shipping a monospace font, which a game can now do
- * (see assetUrl), rather than fighting the default one.
- */
 const PANEL = 330
 const WIDTH = PREVIEW_W + PANEL
 const HEIGHT = PREVIEW_H
@@ -66,7 +23,6 @@ function Knob({ label, value, min, max, step, onChange, format, width }: {
     step?: number
     onChange: (next: number) => void
     format?: (n: number) => string
-    /** Set when two knobs share a row. */
     width?: number
 }) {
     return (
@@ -82,31 +38,14 @@ function Knob({ label, value, min, max, step, onChange, format, width }: {
                 lowValue={min}
                 highValue={max}
                 pageSize={step ?? 0}
-                // e.value, not e.newValue. Typed rather than left as `any`,
-                // because the untyped version compiled happily while handing
-                // every knob undefined: one drag of any slider and the config
-                // it printed said "undefined" and the render threw.
+                // e.value, not e.newValue. Left untyped it compiles and hands every knob undefined.
                 onChange={(e: ChangeEventData<number>) => onChange(e.value)}
             />
         </View>
     )
 }
 
-/**
- * Two knobs on one line.
- *
- * Every range in this lab is a pair, and stacking the halves put the colour
- * controls below the fold of a panel with no obvious scrollbar: they read as
- * missing rather than as further down. Side by side, the whole thing fits, and
- * a minimum sitting next to its maximum is easier to reason about anyway.
- */
-/**
- * Wide enough that the left knob's value and the right knob's label do not read
- * as one word.
- *
- * They sit against each other at the boundary, so a gap sized for boxes is not
- * a gap sized for text: at twelve pixels the panel said "60fastest".
- */
+// A gap sized for boxes is not one sized for text: at 12 the panel read "60fastest".
 const PAIR_GAP = 22
 const HALF = (PANEL - 32 - PAIR_GAP) / 2
 
@@ -124,18 +63,12 @@ function ParticleLab() {
     const layer = layers[Math.min(selected, layers.length - 1)]!
 
     const set = (patch: Partial<Knobs>) => setLayers((current) => {
-        // A control that reports something that is not a number is dropped
-        // rather than stored. A lab is a place to drag things quickly, and a
-        // single bad value poisoning the state would take the whole panel down
-        // with it.
         for (const [key, value] of Object.entries(patch)) {
             if (typeof value === "number" && !Number.isFinite(value)) return current
             if (value === undefined) return current
         }
         const index = Math.min(selected, current.length - 1)
         const next = { ...current[index]!, ...patch }
-        // The ranges have to stay the right way round however the two ends are
-        // dragged, or the emitter samples an empty range and nothing appears.
         if (next.speedMin > next.speedMax) next.speedMax = next.speedMin
         if (next.lifeMin > next.lifeMax) next.lifeMax = next.lifeMin
         if (next.sizeMin > next.sizeMax) next.sizeMax = next.sizeMin
@@ -152,7 +85,6 @@ function ParticleLab() {
 
     const rotate = (degrees: number) => set({ ramp: layer.ramp.map((c) => shiftHue(c, degrees)) })
 
-    /** Copies the selected layer and puts it on top of the stack. */
     const addLayer = () => {
         setLayers((current) => [...current, { ...current[Math.min(selected, current.length - 1)]! }])
         setSelected(layers.length)
@@ -165,14 +97,6 @@ function ParticleLab() {
         setSelected(Math.max(0, index - 1))
     }
 
-    /**
-     * Puts the config on the clipboard, which is the whole point of printing it.
-     *
-     * The frame carries allow="clipboard-write" from the site, so this works
-     * across the sandbox boundary. It can still be refused (an older browser, a
-     * permission denied), and then the panel says so rather than pretending it
-     * worked and leaving somebody pasting whatever was there before.
-     */
     const copy = () => {
         const clipboard = typeof navigator === "undefined" ? undefined : navigator?.clipboard
         if (clipboard === undefined) {
@@ -185,17 +109,10 @@ function ParticleLab() {
         )
     }
 
-    // The dependency list is the whole stack, because any of it changing means a
-    // different system. Serialised rather than listed field by field so a knob
-    // added later cannot be forgotten here.
     const signature = JSON.stringify(layers)
 
-    // Exactly what the panel below prints, and nothing added on top of it: if
-    // the two could differ, the printed config would be a decoration rather
-    // than something to paste.
     const fx = useParticles(host, { max: MAX, emitters: layers.map(toEmitter) as never }, [signature])
 
-    /** Fires the selected layer as a one-shot, for designing an explosion. */
     const burst = () => {
         fx.burst({ x: layer.originX, y: layer.originY, count: 160, emitter: Math.min(selected, layers.length - 1) })
     }
@@ -204,9 +121,6 @@ function ParticleLab() {
 
     return (
         <View style={{ width: WIDTH, height: HEIGHT, flexDirection: "row", backgroundColor: "rgb(12, 14, 19)" }}>
-            {/* The effect, and nothing else. The emitter's position is measured
-                in these pixels, which is why PREVIEW_W and PREVIEW_H live
-                beside the presets rather than here. */}
             <View style={{ width: PREVIEW_W, height: PREVIEW_H, overflow: "hidden" }}>
                 <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
@@ -234,9 +148,6 @@ function ParticleLab() {
                             ))}
                         </View>
 
-                        {/* The stack. Every knob below edits whichever of these
-                            is selected, which is the difference between a lab
-                            and a form with twelve sliders on it. */}
                         <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
                             <Text style={{ fontSize: 11, color: DIM }}>LAYERS</Text>
                             <Text style={{ fontSize: 11, color: DIM }}>
@@ -317,10 +228,6 @@ function ParticleLab() {
                         />
 
                         <View style={{ flexDirection: "row", marginTop: 14 }}>
-                            {/* One shot rather than a stream, which is how an
-                                explosion is designed: the config is the same,
-                                what changes is that a game calls burst instead
-                                of leaving the rate up. */}
                             <Button text="Burst" onClick={burst} style={{ marginRight: 6 }} />
                             <Button text="Copy config" onClick={copy} />
                         </View>

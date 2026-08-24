@@ -1,27 +1,4 @@
-/**
- * The starting points, and the code that turns the lab's knobs back into a
- * config a game can paste.
- *
- * Kept apart from the screen because it is the part with an answer: given a set
- * of values, there is exactly one config they mean, and printing that config
- * accurately is the whole reason the lab is useful rather than merely pretty.
- * A lab whose printed output does not match what it is showing is worse than no
- * lab at all.
- */
-
 export interface Knobs {
-    /**
-     * Where the emitter sits in the preview, in its pixels.
-     *
-     * Per preset rather than fixed, because an effect belongs somewhere: a
-     * fountain starts at the bottom and snow starts at the top, and one shared
-     * position makes one of them look wrong whatever it is.
-     *
-     * Part of the knobs, and so part of the printed config, which is the whole
-     * point. An earlier version kept the position in the component and left it
-     * out of what it printed, so the config on screen would have put the
-     * emitter at the top left corner of whatever it was pasted into.
-     */
     originX: number
     originY: number
     rate: number
@@ -36,37 +13,18 @@ export interface Knobs {
     gravity: number
     drag: number
     additiveness: number
-    /** Colours the particle passes through, as hex with alpha. */
     ramp: string[]
-    /** Starts at full size and ends at nothing, or the reverse. */
     grow: boolean
 }
 
-/**
- * A preset is a stack of emitters, not one.
- *
- * This is the whole reason the lab is worth opening. A single emitter is
- * something you can write by hand in a minute; fire that reads as fire is a
- * flame, a plume of smoke above it and a few embers coming off, three emitters
- * whose ranges have to agree with each other. Tuning that by editing numbers and
- * rebuilding is exactly the loop this replaces.
- */
 export interface Preset {
     name: string
     layers: Knobs[]
 }
 
-/** The preview the origins below are measured in. */
 export const PREVIEW_W = 650
 export const PREVIEW_H = 700
 
-/**
- * Six effects that between them touch every knob.
- *
- * Chosen so that reading any two of them side by side says what a knob does:
- * fire and smoke differ mostly in additiveness and colour, snow and sparks
- * mostly in speed and lifetime.
- */
 export const PRESETS: Preset[] = [
     {
         name: "Fountain",
@@ -79,8 +37,7 @@ export const PRESETS: Preset[] = [
                 ramp: ["#9fe8ffff", "#3aa0ffff", "#1a4bd800"], grow: false,
             },
             {
-                // The spray at the top, which is what stops the column reading
-                // as a solid rod of water.
+                // Spray, so the column does not read as a solid rod of water.
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 60,
                 rate: 90, speedMin: 560, speedMax: 700, lifeMin: 1.4, lifeMax: 2.0,
                 sizeMin: 2, sizeMax: 4, spreadFrom: 240, spreadTo: 300,
@@ -100,7 +57,7 @@ export const PRESETS: Preset[] = [
                 ramp: ["#fff2c0ff", "#ff9020ff", "#c0200000"], grow: false,
             },
             {
-                // Smoke, slower and wider, above the flame rather than in it.
+                // Smoke, slower and wider, starting above the flame.
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 110,
                 rate: 45, speedMin: 25, speedMax: 70, lifeMin: 1.6, lifeMax: 2.8,
                 sizeMin: 26, sizeMax: 60, spreadFrom: 255, spreadTo: 285,
@@ -108,7 +65,7 @@ export const PRESETS: Preset[] = [
                 ramp: ["#3a3a4200", "#5a5a66a0", "#2a2a3200"], grow: true,
             },
             {
-                // Embers: few, fast, and the thing the eye actually follows.
+                // Embers, few and fast.
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 70,
                 rate: 22, speedMin: 120, speedMax: 260, lifeMin: 0.9, lifeMax: 1.8,
                 sizeMin: 2, sizeMax: 4, spreadFrom: 235, spreadTo: 305,
@@ -133,9 +90,6 @@ export const PRESETS: Preset[] = [
         name: "Snow",
         layers: [
             {
-                // At the top, because snow falls. The one preset whose aim
-                // points downward is also the one that has to start above
-                // everything else.
                 originX: PREVIEW_W / 2, originY: 8,
                 rate: 150, speedMin: 30, speedMax: 70, lifeMin: 4, lifeMax: 6,
                 sizeMin: 3, sizeMax: 8, spreadFrom: 60, spreadTo: 120,
@@ -155,8 +109,7 @@ export const PRESETS: Preset[] = [
                 ramp: ["#ffffffff", "#ffd27aff", "#ff6a0000"], grow: false,
             },
             {
-                // A slower, dimmer set underneath, so the burst has depth
-                // rather than being one flat sheet of dots.
+                // A slower, dimmer set underneath, so the burst has depth.
                 originX: PREVIEW_W / 2, originY: PREVIEW_H * 0.55,
                 rate: 90, speedMin: 60, speedMax: 200, lifeMin: 0.6, lifeMax: 1.4,
                 sizeMin: 3, sizeMax: 7, spreadFrom: 0, spreadTo: 360,
@@ -179,7 +132,6 @@ export const PRESETS: Preset[] = [
     },
 ]
 
-/** One emitter, exactly as onejs-react's useParticles expects it. */
 export function toEmitter(knobs: Knobs): Record<string, unknown> {
     return {
         pos: [Math.round(knobs.originX), Math.round(knobs.originY)],
@@ -198,13 +150,6 @@ export function toEmitter(knobs: Knobs): Record<string, unknown> {
 
 const round = (n: number) => Math.round(n * 100) / 100
 
-/**
- * The config as a game would write it.
- *
- * Hand-formatted rather than JSON.stringify, because what a person wants to
- * paste is TypeScript with unquoted keys and short arrays kept on one line, and
- * JSON.stringify produces neither.
- */
 export function toSource(layers: readonly Knobs[], max: number): string {
     const lines: string[] = []
     lines.push("const fx = useParticles(ref, {")
@@ -229,13 +174,6 @@ function format(value: unknown): string {
     return typeof value === "string" ? `"${value}"` : String(value)
 }
 
-/**
- * Nudges one colour of the ramp along a hue wheel.
- *
- * The alpha is deliberately preserved: the first and last entries of most ramps
- * fade to nothing, and a colour picker that quietly made them opaque would turn
- * every effect into a hard-edged blob and look like the lab was broken.
- */
 export function shiftHue(hex: string, degrees: number): string {
     const clean = hex.replace("#", "")
     const r = parseInt(clean.slice(0, 2), 16) / 255
