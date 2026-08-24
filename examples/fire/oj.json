@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Tinder",
+    "author": "singtaa",
+    "description": "A fire with no art in it. Two scrolling noise fields, a tapered mask and a colour ramp, composed on the GPU every frame. Blow on it.",
+    "entry": "index.tsx",
+    "stage": { "size": [600, 600], "fit": "letterbox" },
+    "tags": ["toy", "visual"],
+    "controls": ["pointer", "touch"]
+}

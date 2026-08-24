@@ -96,6 +96,21 @@ export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 export { assetUrl, loadTexture, useTexture } from "./asset"
 
+/**
+ * The texture pipeline: build and process images on the GPU.
+ *
+ *     import { fx } from "oj"
+ *     const flame = fx.useAnimatedTexture(512, 512, (t) => ...)
+ *
+ * A namespace rather than loose exports, because fx has a useTexture of its own
+ * and oj already exports one that loads a game asset. Two hooks with one name,
+ * doing unrelated things, is worse than one extra word at the call site.
+ *
+ * Everything in here is fragment blits, so it works in the browser. The compute
+ * shader path it deliberately avoids does not exist on WebGL at all.
+ */
+export * as fx from "onejs-unity/fx"
+
 // MARK: the site behind the game
 
 export { scores, useLeaderboard } from "./scores"
