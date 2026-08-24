@@ -2,9 +2,11 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { setInputBackend } from "onejs-unity/input"
 import { createRuntime, getCurrentRuntime } from "../runtime"
 import { normalizeStage } from "../stage"
+import * as api from "../index"
 
+/** A container, which is the only kind of host that passes the api. */
 const make = (over = {}) =>
-    createRuntime({ root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540] }), ...over })
+    createRuntime({ api, root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540] }), ...over })
 
 afterEach(() => { setInputBackend(null); vi.restoreAllMocks() })
 
@@ -14,6 +16,25 @@ describe("the oj object", () => {
         for (const name of ["View", "Text", "Button", "render", "Vector2", "Color", "Mathf", "random", "input", "Painter"]) {
             expect(oj).toHaveProperty(name)
         }
+    })
+
+    /**
+     * The other half of the contract. mount() in an ordinary project imports
+     * oj directly, so a host that does not evaluate a bundle has no reason to
+     * carry the package, and carrying it made the whole surface reachable from
+     * a file that draws a box.
+     */
+    it("carries none of it when the host did not ask for it", () => {
+        const { oj } = createRuntime({
+            root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540] }),
+        })
+        for (const name of ["View", "Text", "render", "Mathf", "input", "Painter"]) {
+            expect(oj).not.toHaveProperty(name)
+        }
+        // What every host provides is still there.
+        expect(oj.version).toBe("1.4.2")
+        expect(oj.stage.width).toBe(960)
+        expect(typeof oj.onFrame).toBe("function")
     })
 
     it("carries what only the host knows", () => {

@@ -16,7 +16,7 @@
  *     // on resize:  runtime.setViewport(w, h)
  */
 
-import * as api from "./index"
+import type * as api from "./index"
 import { computeStageLayout, type StageConfig, type StageLayout } from "./stage"
 import { createContainerInput, type ContainerInput } from "./input"
 import { setAssetBase } from "./asset"
@@ -35,7 +35,15 @@ export interface TimeState {
 
 type Api = typeof api
 
-export interface OjRuntime extends Api {
+/**
+ * What every host provides: the clock, the stage, and the root to render into.
+ *
+ * Separate from OjRuntime because only a host that EVALUATES a bundle has to
+ * carry the package on this object. mount() in an ordinary project imports oj
+ * directly, so making it carry the surface too made the whole package
+ * reachable from a file that draws a box: 103 KB on a hello world.
+ */
+export interface HostRuntime {
     readonly version: string
     /** The root VisualElement a game renders into. */
     readonly root: unknown
@@ -52,7 +60,25 @@ export interface OjRuntime extends Api {
     onFrame(callback: (dt: number) => void): () => void
 }
 
+/**
+ * A host runtime that also carries the whole oj surface.
+ *
+ * This is what a container hands to a game it evaluated: the bundle's imports
+ * resolve against this object, so every export has to be on it. Produced only
+ * when createRuntime is given `api`.
+ */
+export interface OjRuntime extends HostRuntime, Api {}
+
 export interface RuntimeOptions {
+    /**
+     * The whole oj surface, for a host that evaluates a bundle against it.
+     *
+     * Passed in rather than imported here. Importing the barrel made it
+     * reachable from mount(), so an ordinary project carried physics and
+     * particles whether it touched them or not. A container needs it and
+     * already imports it; nothing else does.
+     */
+    api?: Record<string, unknown>
     /** The root VisualElement. */
     root: unknown
     /** The pinned runtime version, as resolved from the manifest. */
@@ -124,10 +150,10 @@ export interface ContainerRuntime {
  * the game's bundle has no way to reach the container's instance, so the
  * current runtime is module state. Same seam shape as the input backend.
  */
-let current: OjRuntime | null = null
+let current: HostRuntime | null = null
 
 /** The running runtime, or null outside a container. */
-export function getCurrentRuntime(): OjRuntime | null {
+export function getCurrentRuntime(): HostRuntime | null {
     return current
 }
 
@@ -158,8 +184,8 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
 
     const callbacks = new Set<(dt: number) => void>()
 
-    const oj: OjRuntime = {
-        ...api,
+    const oj: HostRuntime = {
+        ...(options.api ?? {}),
         version: options.version,
         root: options.root,
         get stage() {
@@ -176,7 +202,10 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     current = oj
 
     return {
-        oj,
+        // Only a caller that passed `api` gets the whole surface on this
+        // object; everything else gets HostRuntime, which is all mount,
+        // useFrame and useStage read.
+        oj: oj as OjRuntime,
         input,
 
         beginFrame(dtSeconds: number) {
