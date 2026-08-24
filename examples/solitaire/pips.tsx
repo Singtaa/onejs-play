@@ -39,13 +39,16 @@ function heart(p: Painter, x: number, y: number, size: number): void {
 function spade(p: Painter, x: number, y: number, size: number): void {
     const u = (a: number) => x + a * size
     const v = (b: number) => y + b * size
-    // The heart, upside down, plus a stem. Both in one path so the overlap
-    // where the stem meets the body fills as a single shape.
+    // The heart upside down, then a stem, each filled on its own. See club()
+    // for why they are not one path.
     p.beginPath()
     p.moveTo(u(0.5), v(0.05))
     p.bezierCurveTo(u(1.08), v(0.45), u(0.94), v(0.90), u(0.5), v(0.66))
     p.bezierCurveTo(u(0.06), v(0.90), u(-0.08), v(0.45), u(0.5), v(0.05))
     p.closePath()
+    p.fill()
+
+    p.beginPath()
     p.moveTo(u(0.36), v(0.98))
     p.bezierCurveTo(u(0.47), v(0.86), u(0.47), v(0.74), u(0.46), v(0.6))
     p.lineTo(u(0.54), v(0.6))
@@ -89,10 +92,27 @@ function club(p: Painter, x: number, y: number, size: number): void {
         p.arc(cx, cy, r, 0, Math.PI * 2)
     }
 
+    /**
+     * The lobes and the stem are filled SEPARATELY, and that is the second
+     * thing about this shape that is not tidiness.
+     *
+     * Non-zero winding adds up the directions of the subpaths it covers, so
+     * two that overlap while running opposite ways cancel and leave a hole. An
+     * arc and a hand-written closed curve are not guaranteed to agree about
+     * which way round they go, and here they did not: the stem ran against the
+     * lobes and knocked a notch out of the middle of every club on the table.
+     *
+     * Overlapping fills of the same colour union whichever way each one is
+     * wound, so filling twice cannot go wrong the way one fill can. It costs a
+     * second fill per pip, in a batch that crosses to C# once either way.
+     */
     p.beginPath()
     circle(u(0.5), v(0.27))
     circle(u(0.26), v(0.62))
     circle(u(0.74), v(0.62))
+    p.fill()
+
+    p.beginPath()
     p.moveTo(u(0.34), v(0.99))
     p.bezierCurveTo(u(0.47), v(0.86), u(0.47), v(0.72), u(0.45), v(0.55))
     p.lineTo(u(0.55), v(0.55))
