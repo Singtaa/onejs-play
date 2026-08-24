@@ -1,48 +1,35 @@
 <!doctype html>
 <meta charset="utf-8">
-<!--
-  The card for this game.
-
-  Any file called cover.html beside your source becomes the card on the
-  gallery. It is a whole page, so CSS animation, canvas and inline script all
-  work. It renders on the game's own origin in a sandboxed frame, so it cannot
-  reach the site around it and cannot open a network connection.
-
-  Keep it light: a gallery shows a lot of these at once.
--->
+<!-- Any cover.html beside your source becomes this game's card. Keep it light. -->
 <style>
-    html, body { margin: 0; height: 100%; background: #14181d; overflow: hidden; }
-    .field { position: relative; width: 100%; height: 100%; }
-    .box {
-        position: absolute; border-radius: 12%;
-        /* Sized against the smaller edge so the card holds its look at any
-           aspect the gallery gives it. */
-        width: 14cqmin; height: 14cqmin;
+    html, body { margin: 0; height: 100%; background: #12151b; overflow: hidden; }
+    .field { position: relative; width: 100%; height: 100% }
+    .ball {
+        position: absolute; width: 8cqmin; height: 8cqmin; border-radius: 50%;
+        background: #ffd166; animation: bounce 2.4s cubic-bezier(.4,0,.6,1) infinite;
     }
-    .player { background: #e8edf7; animation: chase 4s ease-in-out infinite; }
-    .target { background: #ffd166; width: 9cqmin; height: 9cqmin; animation: blink 4s ease-in-out infinite; }
-    @keyframes chase {
-        0%   { left: 12%; top: 62% }
-        45%  { left: 62%; top: 20% }
-        50%  { left: 66%; top: 16% }
-        95%  { left: 20%; top: 66% }
-        100% { left: 12%; top: 62% }
+    .paddle {
+        position: absolute; bottom: 12%; width: 34cqmin; height: 5cqmin;
+        border-radius: 3cqmin; background: #5ac8fa;
+        animation: track 2.4s cubic-bezier(.4,0,.6,1) infinite;
     }
-    @keyframes blink {
-        0%, 44%   { left: 68%; top: 18%; opacity: 1 }
-        50%, 52%  { opacity: 0 }
-        58%, 100% { left: 18%; top: 64%; opacity: 1 }
+    @keyframes bounce {
+        0%   { left: 22%; top: 14% }
+        50%  { left: 62%; top: 74% }
+        100% { left: 22%; top: 14% }
     }
-    /* Anyone who would rather things held still. */
+    @keyframes track {
+        0%   { left: 14% }
+        50%  { left: 52% }
+        100% { left: 14% }
+    }
     @media (prefers-reduced-motion: reduce) {
-        .player, .target { animation: none }
-        .player { left: 12%; top: 62% }
-        .target { left: 68%; top: 18% }
+        .ball, .paddle { animation: none }
+        .ball { left: 42%; top: 40% }
+        .paddle { left: 33% }
     }
 </style>
-<body>
-    <div class="field" style="container-type: size">
-        <div class="box target"></div>
-        <div class="box player"></div>
-    </div>
-</body>
+<div class="field">
+    <div class="ball"></div>
+    <div class="paddle"></div>
+</div>

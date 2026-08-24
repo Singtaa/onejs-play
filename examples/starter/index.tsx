@@ -1,93 +1,83 @@
-/**
- * Catch: move the white square, touch the yellow one, score.
- *
- * This is the starting point for a new game, and it is meant to be read and
- * then taken apart. Everything a game needs is here and nothing else is.
- *
- * The screen is React. View and Text are the building blocks, roughly a div
- * and a span, and Unity draws them rather than a browser. They come from "oj",
- * the small runtime this game runs on, along with the keyboard and a few
- * helpers.
- *
- * The one thing that works differently from the web: useFrame runs once per
- * frame and is handed the seconds since the last one. Movement is multiplied
- * by that number, so the square travels at the same speed whether the display
- * runs at 60 frames a second or 144.
- */
-
 import { useRef, useState } from "react"
-import { View, Text, mount, useFrame, input, random } from "oj"
+import { View, Text, mount, useFrame, input, Mathf } from "oj"
 
-const STAGE = 600          // the square play area, in points
-const PLAYER = 44
-const TARGET = 30
-const SPEED = 260          // points per second
+const STAGE = 600
+const PADDLE_W = 110
+const PADDLE_H = 14
+const PADDLE_Y = STAGE - 48
+const BALL = 18
+const KEY_SPEED = 520
+const SPEEDUP = 1.04
 
-/** Somewhere inside the stage that the given square fits entirely within. */
-function somewhere(size: number) {
-    return {
-        x: random().range(0, STAGE - size),
-        y: random().range(0, STAGE - size),
-    }
-}
+const start = () => ({ x: STAGE / 2, y: STAGE / 3, vx: 170, vy: 240 })
 
-function Catch() {
+function Rally() {
     const [score, setScore] = useState(0)
-    const [target, setTarget] = useState(() => somewhere(TARGET))
-
-    // The player's position lives in a ref rather than in state. It changes
-    // every frame, and putting it in state would re-render the whole game
-    // sixty times a second to move one square.
-    const player = useRef({ x: (STAGE - PLAYER) / 2, y: (STAGE - PLAYER) / 2 })
-    const box = useRef<any>(null)
+    const [best, setBest] = useState(0)
+    const ball = useRef(start())
+    const paddleX = useRef((STAGE - PADDLE_W) / 2)
+    const ballEl = useRef<any>(null)
+    const paddleEl = useRef<any>(null)
 
     useFrame((dt) => {
-        // Held arrow keys, as a direction: x and y are each -1, 0 or 1.
-        const dir = input.keyboard.arrows()
-        const p = player.current
-        p.x += dir.x * SPEED * dt
-        // Screen coordinates count downward, so "up" has to subtract.
-        p.y -= dir.y * SPEED * dt
+        const keys = input.keyboard.arrows()
+        paddleX.current = keys.x !== 0
+            ? paddleX.current + keys.x * KEY_SPEED * dt
+            : input.mouse.position.x - PADDLE_W / 2
+        paddleX.current = Mathf.Clamp(paddleX.current, 0, STAGE - PADDLE_W)
 
-        // Keep the square on the stage.
-        p.x = Math.max(0, Math.min(STAGE - PLAYER, p.x))
-        p.y = Math.max(0, Math.min(STAGE - PLAYER, p.y))
+        const b = ball.current
+        b.x += b.vx * dt
+        b.y += b.vy * dt
 
-        // Moved directly, not through React, for the same reason as above.
-        if (box.current) {
-            box.current.style.left = p.x
-            box.current.style.top = p.y
-        }
+        if (b.x < 0 || b.x > STAGE - BALL) b.vx = -b.vx
+        if (b.y < 0) b.vy = Math.abs(b.vy)
 
-        // Two squares overlap when they overlap on both axes.
-        const hit = p.x < target.x + TARGET && p.x + PLAYER > target.x
-            && p.y < target.y + TARGET && p.y + PLAYER > target.y
-        if (hit) {
+        const onPaddle = b.vy > 0
+            && b.y + BALL >= PADDLE_Y && b.y + BALL <= PADDLE_Y + PADDLE_H
+            && b.x + BALL > paddleX.current && b.x < paddleX.current + PADDLE_W
+
+        if (onPaddle) {
+            const offset = (b.x + BALL / 2 - paddleX.current) / PADDLE_W - 0.5
+            b.vx = Mathf.Clamp(b.vx + offset * 420, -560, 560)
+            b.vy = -b.vy * SPEEDUP
             setScore((n) => n + 1)
-            setTarget(somewhere(TARGET))
         }
-    }, [target])
+
+        if (b.y > STAGE) {
+            setBest((high) => Math.max(high, score))
+            setScore(0)
+            ball.current = start()
+        }
+
+        if (ballEl.current) {
+            ballEl.current.style.left = b.x
+            ballEl.current.style.top = b.y
+        }
+        if (paddleEl.current) paddleEl.current.style.left = paddleX.current
+    }, [score])
 
     return (
-        <View style={{ width: STAGE, height: STAGE, backgroundColor: "#14181d" }}>
-            <Text style={{ position: "absolute", left: 16, top: 12, fontSize: 20, color: "#e8edf7" }}>
-                {`Score ${score}`}
+        <View style={{ width: STAGE, height: STAGE, backgroundColor: "#12151b" }}>
+            <Text style={{ position: "absolute", left: 20, top: 16, fontSize: 34, color: "#f2f5fb" }}>
+                {score}
             </Text>
-            <Text style={{ position: "absolute", left: 16, top: 40, fontSize: 12, color: "#7b869c" }}>
-                Arrow keys to move
+            <Text style={{ position: "absolute", left: 20, top: 58, fontSize: 13, color: "#6d7789" }}>
+                {best > 0 ? `best ${best}` : "move with the pointer or arrow keys"}
             </Text>
 
-            <View style={{
-                position: "absolute", left: target.x, top: target.y,
-                width: TARGET, height: TARGET, backgroundColor: "#ffd166", borderRadius: 6,
+            <View ref={ballEl} style={{
+                position: "absolute", left: ball.current.x, top: ball.current.y,
+                width: BALL, height: BALL, borderRadius: BALL / 2, backgroundColor: "#ffd166",
             }} />
 
-            <View ref={box} style={{
-                position: "absolute", left: player.current.x, top: player.current.y,
-                width: PLAYER, height: PLAYER, backgroundColor: "#e8edf7", borderRadius: 8,
+            <View ref={paddleEl} style={{
+                position: "absolute", left: paddleX.current, top: PADDLE_Y,
+                width: PADDLE_W, height: PADDLE_H, borderRadius: PADDLE_H / 2,
+                backgroundColor: "#5ac8fa",
             }} />
         </View>
     )
 }
 
-mount(<Catch />)
+mount(<Rally />)

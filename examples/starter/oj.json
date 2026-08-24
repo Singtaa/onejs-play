@@ -1,8 +1,8 @@
 {
     "schema": 1,
     "runtime": "1.0.0",
-    "name": "Catch",
+    "name": "Rally",
     "entry": "index.tsx",
     "stage": { "size": [600, 600], "fit": "letterbox" },
-    "controls": ["keyboard"]
+    "controls": ["keyboard", "pointer", "touch"]
 }
