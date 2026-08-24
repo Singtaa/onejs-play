@@ -14,7 +14,6 @@ describe("wrap", () => {
         expect(wrap(900, 900)).toBe(0)
     })
 
-    /** JavaScript's remainder keeps the sign of the left side, so -5 % 900 is -5. */
     it("brings a negative coordinate to the far end rather than leaving it negative", () => {
         expect(wrap(-5, 900)).toBe(895)
         expect(wrap(-900, 900)).toBe(0)
@@ -37,7 +36,6 @@ describe("shortest", () => {
     })
 
     it("goes round the back when that is shorter", () => {
-        // 895 to 5 is ten forwards, not eight hundred and ninety backwards.
         expect(shortest(895, 5, 900)).toBe(10)
         expect(shortest(5, 895, 900)).toBe(-10)
     })
@@ -65,11 +63,6 @@ describe("touching", () => {
         expect(touching(FIELD, 400, 300, 10, 420, 300, 10)).toBe(true)
     })
 
-    /**
-     * The bug this file exists for. Without measuring the short way round, a
-     * shot near the right edge passes through a rock that has just wrapped to
-     * the left, which reads as the game ignoring a direct hit.
-     */
     it("sees a hit across the left and right edges", () => {
         expect(touching(FIELD, 895, 300, 8, 5, 300, 8)).toBe(true)
     })
@@ -119,11 +112,6 @@ describe("shatter", () => {
         expect(pieces.every((p) => p.x === 100 && p.y === 100)).toBe(true)
     })
 
-    /**
-     * A piece is the parent's motion plus a throw, never a throw on its own. A
-     * rock broken while drifting right should scatter to the right; pieces that
-     * forgot the parent's velocity would spray symmetrically from a standstill.
-     */
     it("carries the parent's drift into the pieces", () => {
         for (let i = 0; i < 200; i++) {
             const parent = rockOf(SIZES[0]!)

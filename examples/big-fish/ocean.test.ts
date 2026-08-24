@@ -44,9 +44,7 @@ describe("eating", () => {
     it("needs both a size margin and an overlap", () => {
         const big = fish(100, 100, 40)
         expect(canEat(big, fish(100, 100, 40 / EAT_RATIO - 1))).toBe(true)
-        // Big enough, far away.
         expect(canEat(big, fish(400, 400, 10))).toBe(false)
-        // Close enough, not big enough.
         expect(canEat(fish(100, 100, 20), fish(100, 100, 19))).toBe(false)
     })
 
@@ -55,11 +53,6 @@ describe("eating", () => {
         expect(canEat(fish(105, 100, 30), fish(100, 100, 30))).toBe(false)
     })
 
-    /**
-     * The rule the whole design rests on: a fish decides only that IT was
-     * eaten, so the test that matters is that the relation is one-directional
-     * for any pair. If both could eat each other, both would report a death.
-     */
     it("is never mutual", () => {
         for (let i = 0; i < 500; i++) {
             const a = fish(Math.random() * 200, Math.random() * 200, 10 + Math.random() * 60)
@@ -70,7 +63,6 @@ describe("eating", () => {
 
     it("requires the prey to be well inside, not merely touching", () => {
         const big = fish(0, 0, 40)
-        // Just inside three quarters of the radius.
         expect(overlaps(big, fish(29, 0, 10), 0.75)).toBe(true)
         expect(overlaps(big, fish(31, 0, 10), 0.75)).toBe(false)
     })
@@ -102,7 +94,6 @@ describe("swimming", () => {
         expect(f.x).toBeCloseTo(104, 5)
     })
 
-    /** Without a dead zone a fish vibrates when the pointer sits on it. */
     it("holds still when the target is already under it", () => {
         const f = fish(100, 100)
         swim(f, 101, 100, 1)
@@ -146,7 +137,6 @@ describe("pellets", () => {
         expect(pelletsEaten(fish(0, 0, 10), [{ x: 900, y: 900, tone: 0, alive: true }])).toEqual([])
     })
 
-    /** An eaten pellet keeps its index so everyone stays agreed on the field. */
     it("ignores one that has already been eaten", () => {
         const pellets = [{ x: 100, y: 100, tone: 0, alive: false }]
         expect(pelletsEaten(fish(100, 100, 20), pellets)).toEqual([])

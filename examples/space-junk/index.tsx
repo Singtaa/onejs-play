@@ -1,21 +1,3 @@
-/**
- * Space Junk: turn, thrust, shoot, try not to hit anything.
- *
- * The screen is React, drawn by Unity rather than by a browser, but almost
- * nothing here is a React element. The whole playfield is one View with a
- * single vector drawing on it, because a ship, thirty rocks and a handful of
- * shots redrawn sixty times a second is a job for a path, not for a component
- * tree. Only the HUD, which changes when something happens rather than every
- * frame, is made of elements.
- *
- * The batched painter is what makes that cheap. Every drawing call below
- * records into a buffer, and the whole frame crosses into C# once, instead of
- * once per line.
- *
- * The rules of the wrapping field are in space.ts, and they are worth reading
- * first: the field has no edges, and that turns out to be the hard part.
- */
-
 import { useMemo, useRef, useState } from "react"
 import {
     View, Text, mount, useFrame, input, random, Painter, batchedVisualContent,
@@ -28,17 +10,17 @@ import {
 
 const FIELD: Field = { width: 900, height: 600 }
 
-const TURN = 3.4              // radians per second
-const THRUST = 280            // pixels per second squared
-const DRAG = 0.55             // fraction of speed shed per second
+const TURN = 3.4
+const THRUST = 280
+const DRAG = 0.55
 const MAX_SPEED = 430
 const SHOT_SPEED = 540
 const SHOT_LIFE = 1.05
 const RELOAD = 0.17
-const MAX_SHOTS = 5           // the classic limit, and the reason aim matters
+const MAX_SHOTS = 5
 const SHIP_RADIUS = 11
 const RESPAWN_PAUSE = 1.1
-const MERCY = 2.2             // seconds of invulnerability after respawning
+const MERCY = 2.2
 
 interface Shot { x: number; y: number; vx: number; vy: number; life: number }
 
@@ -48,8 +30,7 @@ interface World {
     shots: Shot[]
     debris: { x: number; y: number; vx: number; vy: number; life: number }[]
     reload: number
-    /** Seconds until the ship comes back, or 0 when it is flying. */
-    down: number
+    respawnIn: number
     mercy: number
     lives: number
     score: number
@@ -61,7 +42,7 @@ function newWorld(rng: { next(): number }): World {
     const world: World = {
         ship: { x: FIELD.width / 2, y: FIELD.height / 2, vx: 0, vy: 0, angle: -Math.PI / 2, thrusting: false },
         rocks: [], shots: [], debris: [],
-        reload: 0, down: 0, mercy: MERCY, lives: 3, score: 0, wave: 0, over: false,
+        reload: 0, respawnIn: 0, mercy: MERCY, lives: 3, score: 0, wave: 0, over: false,
     }
     startWave(world, rng)
     return world
@@ -73,7 +54,6 @@ function startWave(world: World, rng: { next(): number }): void {
     for (let i = 0; i < count; i++) {
         const at = edgeSpawn(FIELD, () => rng.next())
         const angle = rng.next() * Math.PI * 2
-        // A little faster each wave, but not so much that wave ten is a blur.
         const speed = 26 + rng.next() * 34 + world.wave * 3
         world.rocks.push({
             x: at.x, y: at.y,
@@ -86,7 +66,6 @@ function startWave(world: World, rng: { next(): number }): void {
     }
 }
 
-/** A puff of short-lived sparks, for a rock breaking or a ship going up. */
 function scatter(world: World, x: number, y: number, count: number, rng: { next(): number }): void {
     for (let i = 0; i < count; i++) {
         const angle = rng.next() * Math.PI * 2
@@ -103,29 +82,14 @@ function SpaceJunk() {
     const rng = useRef(random()).current
     const host = useRef<any>(null)
     const world = useRef<World>(newWorld(rng)).current
-    // Mirrored into state only so the HUD re-renders, which is a handful of
-    // times a game rather than sixty times a second.
     const [hud, setHud] = useState({ score: 0, lives: 3, wave: 1, over: false })
 
-    /**
-     * The board, and a guard so one death posts one score.
-     *
-     * The frame loop notices the end of a run, and it runs sixty times a second
-     * after that: without this the board would fill with the same number until
-     * the play token was spent.
-     */
     const board = useLeaderboard({ limit: 6 })
     const submitted = useRef(false)
     const submit = useRef(board.submit)
     submit.current = board.submit
 
-    /**
-     * Draws one object as many times as the wrap requires.
-     *
-     * Something straddling an edge is in two places at once, and a corner puts
-     * it in four. Drawing only the base position leaves half a rock missing
-     * exactly when a player is trying to judge whether they will hit it.
-     */
+    // Anything straddling an edge is in two places at once, and in four at a corner.
     const wrapped = (x: number, y: number, radius: number, draw: (x: number, y: number) => void) => {
         const xs = [x]
         const ys = [y]
@@ -137,7 +101,6 @@ function SpaceJunk() {
     }
 
     const drawShip = (p: Painter, x: number, y: number, angle: number) => {
-        // A nose and two swept-back corners, which is the whole ship.
         const nose = 15
         const tail = 9
         const spread = 2.5
@@ -159,7 +122,7 @@ function SpaceJunk() {
         p.stroke()
 
         if (world.ship.thrusting) {
-            // A flame that flickers, so holding thrust does not look frozen.
+            // Random on purpose: the flame flickers so held thrust does not look frozen.
             const reach = 8 + rng.next() * 9
             const [fx, fy] = point(6 + reach, Math.PI)
             p.strokeColor(1, 0.62, 0.2, 0.95)
@@ -187,11 +150,7 @@ function SpaceJunk() {
         p.stroke()
     }
 
-    /**
-     * Built once. Every value it reads lives in a ref, so it never goes stale,
-     * and rebuilding it each render would hand the element a new delegate and
-     * churn a slot in the native callback table sixty times a second.
-     */
+    // Built once. A new delegate every render would churn a native callback slot.
     const paint = useMemo(() => batchedVisualContent((p: Painter) => {
         p.lineWidth(1.6)
         p.lineCap(Painter.LineCap.Round)
@@ -218,9 +177,7 @@ function SpaceJunk() {
             p.fill()
         }
 
-        if (world.down <= 0 && !world.over) {
-            // Blinking while invulnerable is how the player knows it is still
-            // free, without a label saying so.
+        if (world.respawnIn <= 0 && !world.over) {
             const blink = world.mercy > 0 && Math.floor(world.mercy * 9) % 2 === 0
             p.strokeColor(0.87, 0.93, 1, blink ? 0.35 : 1)
             wrapped(world.ship.x, world.ship.y, 18, (x, y) => drawShip(p, x, y, world.ship.angle))
@@ -228,15 +185,13 @@ function SpaceJunk() {
     }), [])
 
     const fire = () => {
-        if (world.reload > 0 || world.down > 0 || world.over) return
+        if (world.reload > 0 || world.respawnIn > 0 || world.over) return
         if (world.shots.length >= MAX_SHOTS) return
         world.reload = RELOAD
         const { ship } = world
         world.shots.push({
             x: ship.x + Math.cos(ship.angle) * 15,
             y: ship.y + Math.sin(ship.angle) * 15,
-            // The ship's own motion is added, so shooting while flying forward
-            // does not let the player overtake their own shots.
             vx: ship.vx + Math.cos(ship.angle) * SHOT_SPEED,
             vy: ship.vy + Math.sin(ship.angle) * SHOT_SPEED,
             life: SHOT_LIFE,
@@ -266,9 +221,6 @@ function SpaceJunk() {
         if (keys.wasKeyPressed("Space")) fire()
         if (keys.wasKeyPressed("R")) restart()
 
-        // Touch: hold anywhere to steer toward the finger and thrust, and every
-        // new touch also fires. A tap is therefore a shot and a hold is flying,
-        // which needs no on-screen buttons over the playfield.
         for (const touch of input.touches) {
             if (touch.phase === "began") fire()
             if (touch.phase === "ended" || touch.phase === "canceled") continue
@@ -276,8 +228,8 @@ function SpaceJunk() {
                 shortest(ship.y, touch.position.y, FIELD.height),
                 shortest(ship.x, touch.position.x, FIELD.width),
             )
-            // The short way round the circle, so the ship never spins the long
-            // way to reach a heading just behind it.
+            // The short way round the circle, or the ship spins most of a turn
+            // to reach a heading just behind it.
             let delta = want - ship.angle
             while (delta > Math.PI) delta -= Math.PI * 2
             while (delta < -Math.PI) delta += Math.PI * 2
@@ -289,9 +241,9 @@ function SpaceJunk() {
         world.reload = Math.max(0, world.reload - dt)
         world.mercy = Math.max(0, world.mercy - dt)
 
-        if (world.down > 0) {
-            world.down -= dt
-            if (world.down <= 0) {
+        if (world.respawnIn > 0) {
+            world.respawnIn -= dt
+            if (world.respawnIn <= 0) {
                 ship.x = FIELD.width / 2
                 ship.y = FIELD.height / 2
                 ship.vx = 0
@@ -306,8 +258,8 @@ function SpaceJunk() {
                 ship.vx += Math.cos(ship.angle) * THRUST * dt
                 ship.vy += Math.sin(ship.angle) * THRUST * dt
             }
-            // Drag as a fraction per second rather than a subtraction, so the
-            // ship coasts to a stop instead of reversing through zero.
+            // A fraction of speed per second, so the ship coasts to a stop
+            // instead of reversing through zero.
             const shed = Math.max(0, 1 - DRAG * dt)
             ship.vx *= shed
             ship.vy *= shed
@@ -352,8 +304,8 @@ function SpaceJunk() {
 
         let changed = false
 
-        // Shots against rocks. Backwards through both, so removing an entry
-        // never skips the one that shuffled into its place.
+        // Backwards through both, so a splice never skips the entry that
+        // shuffled into the hole it left.
         for (let s = world.shots.length - 1; s >= 0; s--) {
             const shot = world.shots[s]!
             for (let r = world.rocks.length - 1; r >= 0; r--) {
@@ -369,14 +321,12 @@ function SpaceJunk() {
             }
         }
 
-        // The ship against rocks, which only matters while it is out there and
-        // out of mercy.
-        if (world.down <= 0 && world.mercy <= 0 && !world.over) {
+        if (world.respawnIn <= 0 && world.mercy <= 0 && !world.over) {
             for (const rock of world.rocks) {
                 if (!touching(FIELD, ship.x, ship.y, SHIP_RADIUS, rock.x, rock.y, rock.radius)) continue
                 scatter(world, ship.x, ship.y, 26, rng)
                 world.lives--
-                world.down = RESPAWN_PAUSE
+                world.respawnIn = RESPAWN_PAUSE
                 world.over = world.lives <= 0
                 changed = true
                 break
@@ -392,9 +342,6 @@ function SpaceJunk() {
             setHud({ score: world.score, lives: world.lives, wave: world.wave, over: world.over })
         }
 
-        // One post per run, at the end of it. submit holds its own errors: a
-        // board that cannot be reached is a reason to show less, never a reason
-        // to interrupt somebody who just finished a good run.
         if (world.over && !submitted.current && scores.available && world.score > 0) {
             submitted.current = true
             submit.current(world.score)

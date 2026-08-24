@@ -1,25 +1,3 @@
-/**
- * Drop Everything: a box of shapes and a floor, and nothing to achieve.
- *
- * A real rigid body simulation runs this, in C#, over Unity's 2D physics. What
- * this file does is describe the world once and then get out of the way: the
- * bodies fall, collide and settle without JavaScript being involved in any
- * frame of it. The only per-frame work here is asking whether a finger is down.
- *
- * THE SHAPE OF THE CONSTRAINT
- *
- * A world is built with all of its bodies at once, because they are created in
- * C# when the world is. There is no "add a body" that does not mean throwing the
- * simulation away and starting over, which would drop everything already on
- * screen every time something new arrived.
- *
- * So the sandbox is bottomless without ever growing: every shape it will ever
- * have exists from the first frame, switched off. Dropping one switches it on
- * where the pointer is, and running out means the oldest one makes way. pool.ts
- * is the bookkeeping for that, and it is the only part with a test, because it
- * is the only part that is not the physics engine's job.
- */
-
 import { useEffect, useRef, useState } from "react"
 import { View, Text, Button, mount, useFrame, usePhysics, input, random, type BodyConfig } from "oj"
 import { Pool } from "./pool"
@@ -27,10 +5,11 @@ import { Pool } from "./pool"
 const WIDTH = 900
 const HEIGHT = 600
 
-/** How many droppable shapes exist, ever. */
 const SHAPES = 90
 
-/** The palette a dropped shape is coloured from, chosen when it is made. */
+// A held pointer at 144 frames a second would empty the pool in half a second.
+const DROP_INTERVAL = 0.08
+
 const TONES = [
     "rgb(122, 173, 255)", "rgb(255, 168, 108)", "rgb(126, 220, 168)",
     "rgb(232, 138, 196)", "rgb(246, 214, 120)", "rgb(160, 152, 246)",
@@ -42,14 +21,8 @@ interface Shape {
     tone: string
 }
 
-/**
- * The pool's shapes, decided once.
- *
- * A body's size cannot change after the world is built, so variety has to be
- * baked in here rather than chosen at the moment something is dropped. Cycling
- * through a short list gives a mixed pile without any randomness at all, which
- * also means the sandbox looks the same to everyone the first time they open it.
- */
+// A body's size is fixed when the world is built, so the variety is baked in
+// here rather than chosen at the moment something is dropped.
 const SHAPE_CYCLE: Shape[] = []
 for (let i = 0; i < SHAPES; i++) {
     const kind = i % 3 === 0 ? "box" : "circle"
@@ -57,7 +30,6 @@ for (let i = 0; i < SHAPES; i++) {
     SHAPE_CYCLE.push({ kind, size, tone: TONES[i % TONES.length]! })
 }
 
-/** Ramps and ledges for things to land on and roll off. */
 const SCENERY: { x: number; y: number; w: number; h: number; rotation: number }[] = [
     { x: 210, y: 300, w: 300, h: 16, rotation: 14 },
     { x: 660, y: 250, w: 260, h: 16, rotation: -18 },
@@ -66,7 +38,7 @@ const SCENERY: { x: number; y: number; w: number; h: number; rotation: number }[
     { x: 780, y: 470, w: 170, h: 16, rotation: 22 },
 ]
 
-/** Scenery first, so a scenery index is also a body index. */
+// Scenery first, so a scenery index is also a body index.
 const BODIES: BodyConfig[] = [
     ...SCENERY.map((piece): BodyConfig => ({
         type: "static", shape: "box",
@@ -78,9 +50,8 @@ const BODIES: BodyConfig[] = [
         shape: shape.kind,
         radius: shape.size / 2,
         size: [shape.size, shape.size],
-        // Parked off the top. A disabled body still has a position, and one
-        // left in the middle of the field would flash into view for a frame
-        // when it is switched on and before it is moved.
+        // Parked off screen: a disabled body still has a position, and one left
+        // in the field would flash into view for a frame when it is switched on.
         x: -400, y: -400,
         density: 1, friction: 0.35, restitution: 0.28,
     })),
@@ -95,7 +66,6 @@ function DropEverything() {
     const elements = useRef<any[]>([]).current
     const [dropped, setDropped] = useState(0)
     const [inverted, setInverted] = useState(false)
-    /** Set while a finger or button is held, so a drag leaves a stream. */
     const nextDrop = useRef(0)
 
     const world = usePhysics(host, {
@@ -106,9 +76,6 @@ function DropEverything() {
         bodies: BODIES,
     })
 
-    // Bodies are bound after mount, when the refs have something in them. The
-    // scenery elements are bound too, so a rotated ramp is drawn at the angle
-    // the simulation actually gave it rather than the one written above.
     useEffect(() => {
         if (world === null) return
         for (let i = 0; i < elements.length; i++) {
@@ -119,15 +86,12 @@ function DropEverything() {
 
     const drop = (x: number, y: number) => {
         if (world === null) return
-        // The recycled body and the one handed out are the same body, so a
-        // recycle needs no extra handling here: it is moved and re-thrown like
-        // any other, and the shape simply reappears at the pointer.
         const { body: slot } = pool.take()
 
+        // Enable first, then move. A position written to a body that is not
+        // simulating is silently discarded.
         world.setBodyEnabled(shapeBody(slot), true)
         world.setPosition(shapeBody(slot), x, y)
-        // A little sideways drift, so a held finger produces a pile rather than
-        // a single tower that topples the moment it is tall enough.
         world.setVelocity(shapeBody(slot), rng.range(-60, 60), 0)
         const element = elements[shapeBody(slot)]
         if (element) element.style.opacity = 1
@@ -160,18 +124,14 @@ function DropEverything() {
             if (touch.phase === "ended" || touch.phase === "canceled") continue
             holding = { x: touch.position.x, y: touch.position.y }
         }
-        // Rate limited rather than one per frame: a held pointer at 144 frames a
-        // second would empty the whole pool in well under a second.
         if (holding !== null && nextDrop.current <= 0) {
-            nextDrop.current = 0.08
+            nextDrop.current = DROP_INTERVAL
             drop(holding.x, holding.y)
         }
     }, [world])
 
     return (
         <View style={{ width: WIDTH, height: HEIGHT, backgroundColor: "rgb(16, 19, 26)" }}>
-            {/* The physics world is bounded by this element, so it is the field
-                rather than a container: walls sit on its edges. */}
             <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }}>
                 {SCENERY.map((piece, i) => (
                     <View

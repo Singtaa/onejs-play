@@ -39,7 +39,6 @@ describe("Pool", () => {
         expect(pool.take().recycled).toBe(order[0])
         expect(pool.take().recycled).toBe(order[1])
         expect(pool.take().recycled).toBe(order[2])
-        // And round again, in the same order.
         expect(pool.take().recycled).toBe(order[0])
     })
 
@@ -79,7 +78,6 @@ describe("Pool", () => {
         const a = pool.take().body
         const b = pool.take().body
         pool.take()
-        // a was recycled and is now the newest, so b is the oldest.
         expect(pool.snapshot()).toEqual([b, a])
     })
 
