@@ -1,27 +1,3 @@
-/**
- * Twos Company: push the board around until two of a kind meet.
- *
- * The screen is React, drawn by Unity rather than by a browser. View and Text
- * are the building blocks, roughly a div and a span, and they come from "oj",
- * the small runtime this game runs on.
- *
- * The rules live in game.ts and know nothing about the screen. This file is
- * about one problem the rules do not have: making the board move.
- *
- * WHY TILES ARE POSITIONED RATHER THAN LAID OUT
- *
- * The obvious way to draw a four by four board is a grid of rows, and it looks
- * right for exactly one frame at a time. Laid out that way, a move replaces the
- * arrangement and the tiles teleport. So every tile is instead placed at an
- * absolute left and top computed from its row and column, and a USS transition
- * on those two properties turns each assignment into a slide.
- *
- * That only works because a tile keeps its identity across a move: game.ts
- * hands back the same id for a tile that shifted, React keys on it, and the
- * same element is still there to be animated. Rebuilding the tiles from scratch
- * each turn would animate nothing, however good the stylesheet was.
- */
-
 import { useEffect, useRef, useState } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
@@ -35,10 +11,9 @@ const BOARD = GAP + SIZE * CELL + (SIZE - 1) * GAP + GAP
 const BOARD_X = 30
 const BOARD_Y = 196
 
-/** Where a tile sits, in stage units, for a given row and column. */
+// Tiles are placed at an absolute left and top so a USS transition can slide them.
 const at = (index: number) => GAP + index * (CELL + GAP)
 
-/** Which colour class a value gets. Everything past 2048 shares one. */
 function toneOf(value: number): string {
     const named: Record<number, string> = {
         2: styles.v2, 4: styles.v4, 8: styles.v8, 16: styles.v16,
@@ -48,10 +23,9 @@ function toneOf(value: number): string {
     return named[value] ?? styles.vHuge
 }
 
-/** Bright tiles need dark text. The ramp turns bright at 256. */
+// The colour ramp is bright from 256 to 1024, so those need dark text.
 const inkOf = (value: number) => (value >= 256 && value < 2048 ? styles.dark : styles.light)
 
-/** Big numbers need smaller type to fit the same square. */
 function sizeOf(value: number): number {
     if (value < 100) return 44
     if (value < 1000) return 38
@@ -59,14 +33,6 @@ function sizeOf(value: number): number {
     return 24
 }
 
-/**
- * The best score, kept between visits.
- *
- * localStorage is the one bit of browser the container leaves alone, because it
- * behaves the same in a Unity build. Both directions are wrapped: a browser
- * refusing storage (a private window, or a person who turned it off) should
- * cost a remembered number, not the game.
- */
 const BEST_KEY = "twos-company.best"
 
 function readBest(): number {
@@ -82,7 +48,7 @@ function writeBest(score: number): void {
     try {
         localStorage.setItem(BEST_KEY, String(score))
     } catch {
-        // Nothing to do, and nothing worth interrupting the game over.
+        // A refused write costs a remembered number, not the game.
     }
 }
 
@@ -96,12 +62,9 @@ function Score({ label, value }: { label: string; value: number }) {
 }
 
 function TwosCompany() {
-    // One generator for the whole run, held in a ref: calling random() again
-    // each turn would make a new stream and start it from a new seed.
     const rng = useRef(random()).current
     const [game, setGame] = useState<Game>(() => newGame(rng))
     const [best, setBest] = useState(readBest)
-    /** Set once the player waves away the panel that appears at 2048. */
     const [dismissed, setDismissed] = useState(false)
     const swipe = useRef(newSwipe()).current
     /** The finger currently driving the board, so a second one cannot fight it. */
@@ -112,8 +75,6 @@ function TwosCompany() {
         setGame((current) => {
             if (current.over) return current
             const result = move(current, direction)
-            // A move that changes nothing must not produce a tile, or pushing
-            // against a wall would fill the board for free.
             if (!result.moved) return current
 
             spawn(result.game, rng)
@@ -127,15 +88,7 @@ function TwosCompany() {
         setGame(newGame(rng))
     }
 
-    /**
-     * Clears the one-turn marks a moment after they are applied.
-     *
-     * A tile pops or fades in by carrying a class briefly and then losing it:
-     * the transition runs on the change back, so something has to take the
-     * class away. Doing it here rather than in the rules keeps game.ts free of
-     * anything to do with how long an animation lasts. It settles after one
-     * pass, because the board it produces has no marks left to find.
-     */
+    // Tiles pop and fade by wearing a class for a moment, so something has to take it off again.
     useEffect(() => {
         if (!game.tiles.some((t) => t.merged || t.fresh)) return
         const timer = setTimeout(() => setGame((current) => ({
@@ -145,8 +98,6 @@ function TwosCompany() {
         return () => clearTimeout(timer)
     }, [game])
 
-    // Written out here rather than inside the move, because storing a score is
-    // not part of making one and a state update inside another one is a trap.
     useEffect(() => {
         if (game.score <= best) return
         setBest(game.score)
@@ -161,9 +112,6 @@ function TwosCompany() {
         if (keys.wasKeyPressed("DownArrow") || keys.wasKeyPressed("S")) push("down")
         if (keys.wasKeyPressed("R")) restart()
 
-        // One finger at a time. Whichever touched down first owns the gesture
-        // until it lifts, so a second finger cannot push the board sideways
-        // while the first is still deciding.
         for (const touch of input.touches) {
             if (finger.current === null && touch.phase === "began") {
                 finger.current = touch.fingerId
@@ -203,8 +151,6 @@ function TwosCompany() {
 
             <View className={styles.board}
                 style={{ position: "absolute", left: BOARD_X, top: BOARD_Y, width: BOARD, height: BOARD }}>
-                {/* The empty grid underneath, which never changes and so is
-                    placed from the same numbers the tiles use. */}
                 {Array.from({ length: SIZE * SIZE }, (_, i) => (
                     <View key={`cell-${i}`} className={styles.cell}
                         style={{ left: at(i % SIZE), top: at(Math.floor(i / SIZE)) }} />

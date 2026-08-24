@@ -1,11 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { move, stuck, newGame, spawn, highest, SIZE, type Game, type Tile, type Direction } from "./game"
 
-/**
- * The board is written out as rows of numbers, because a test that reads like
- * the thing it is testing is a test somebody will still trust in a year. 0 is
- * an empty cell.
- */
+/** The board as rows of numbers. 0 is an empty cell. */
 let id = 1
 function board(rows: number[][]): Game {
     const tiles: Tile[] = []
@@ -60,11 +56,6 @@ describe("merging", () => {
             .toEqual([4, 0, 0, 0])
     })
 
-    /**
-     * The rule this genre gets wrong most often. A tile that has just been made
-     * by a merge is finished for the turn, so 2 2 4 gives 4 4 and never 8, and
-     * 4 2 2 gives 4 4 rather than one 8 as well.
-     */
     it("lets a tile merge only once per move", () => {
         expect(push([[2, 2, 4, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], "left")[0])
             .toEqual([4, 4, 0, 0])
@@ -73,13 +64,11 @@ describe("merging", () => {
     })
 
     it("merges the pair nearest the wall when four are equal", () => {
-        // 2 2 2 2 to the left is two 4s, not one 8 and not a 4 and two 2s.
         expect(push([[2, 2, 2, 2], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], "left")[0])
             .toEqual([4, 4, 0, 0])
     })
 
     it("resolves from the pushed wall, so direction changes which pair combines", () => {
-        // 4 4 8 pushed right leaves the 8 alone and combines the 4s behind it.
         expect(push([[0, 4, 4, 8], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], "right")[0])
             .toEqual([0, 0, 8, 8])
     })
@@ -133,7 +122,6 @@ describe("winning and losing", () => {
 })
 
 describe("spawning", () => {
-    /** A source that hands back a fixed sequence, so a test can place a tile exactly. */
     const scripted = (values: number[]) => {
         let i = 0
         return { next: () => values[i++ % values.length]! }

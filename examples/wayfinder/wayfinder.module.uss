@@ -1,15 +1,3 @@
-/* The states a square can be in.
-
-   Colours live here rather than in the component for a reason that is not only
-   taste: a square's colour is changed thousands of times while a search runs,
-   and writing `element.style.backgroundColor = "rgb(...)"` from JavaScript does
-   not work. The style setter hands the string straight to C#, which wants a
-   StyleColor and cannot convert one from a string, so every write fails with an
-   ArgumentException and the grid never changes colour.
-
-   Swapping a class does work, costs the same one crossing, and puts the palette
-   somewhere a person can change it without reading any code. */
-
 .cell {
     width: 13px;
     height: 13px;
@@ -18,22 +6,14 @@
     background-color: rgb(24, 28, 36);
 }
 
-/* The state classes all set background-color, and so does .cell above. They are
-   single class selectors, so specificity is equal and source order decides:
-   these have to stay below .cell or a square would never leave its base colour.
-   The same trap once left Wordie's keyboard untinted. */
-
-/* Ground. Slow ground is warm and dark, so a glance says where the cost is. */
+/* Equal specificity with .cell, so these have to stay below it. */
 .open { background-color: rgb(24, 28, 36); }
 .slow { background-color: rgb(52, 44, 32); }
 .wall { background-color: rgb(62, 69, 84); }
 
-/* The search. Frontier is what it is about to look at, visited what it has
-   finished with, so the bright edge is always the leading one. */
 .visited  { background-color: rgb(28, 62, 94); }
 .frontier { background-color: rgb(60, 128, 190); }
 
-/* The answer, and the two ends it runs between. */
 .route { background-color: rgb(255, 198, 96); }
 .start { background-color: rgb(80, 202, 130); }
 .goal  { background-color: rgb(240, 104, 112); }

@@ -20,7 +20,6 @@ function parse(rows: string[], slowCost = 4): Maze {
     return maze
 }
 
-/** Runs a search to completion and reports what happened. */
 function run(maze: Maze, start: number, goal: number, kind: Kind) {
     const search = createSearch(maze, start, goal, kind)
     let guard = 0
@@ -59,7 +58,6 @@ describe("Heap", () => {
         const out: number[] = []
         while (heap.size > 0) out.push(heap.pop()!)
         expect(out).toHaveLength(400)
-        // Popped in key order, which is checked by re-reading each item's key.
         expect(out.length).toBe(new Set(out).size)
     })
 
@@ -146,10 +144,6 @@ describe("all three searches", () => {
 })
 
 describe("what makes them different", () => {
-    /**
-     * A corridor of slow ground straight ahead, and a longer way round it. The
-     * whole point of the game in one map.
-     */
     const mud = parse([
         ".~~~~~~~.",
         ".~~~~~~~.",
@@ -161,7 +155,6 @@ describe("what makes them different", () => {
     it("breadth first takes the fewest squares, whatever they cost", () => {
         const result = run(mud, start, goal, "breadth")
         expect(result.steps).toBe(8)
-        // Straight through the mud: eight squares, most of them expensive.
         expect(result.cost).toBeGreaterThan(8)
     })
 
@@ -177,10 +170,6 @@ describe("what makes them different", () => {
         expect(guided.cost).toBe(cheap.cost)
     })
 
-    /**
-     * The reason A star is worth the extra line. On open ground Dijkstra spreads
-     * out in every direction and A star walks more or less straight at the goal.
-     */
     it("a star settles fewer squares than dijkstra on open ground", () => {
         const field = parse(Array.from({ length: 21 }, () => ".".repeat(21)))
         const from = index(field, 0, 10)
@@ -191,8 +180,6 @@ describe("what makes them different", () => {
     })
 
     it("a star never settles for a worse route than dijkstra, on any map", () => {
-        // The property that makes the heuristic legitimate rather than merely
-        // fast. Checked over a spread of generated maps rather than argued.
         let seed = 1
         const next = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
         for (let trial = 0; trial < 40; trial++) {
@@ -215,7 +202,6 @@ describe("stepping", () => {
     it("reports the squares that changed, and nothing else", () => {
         const search = createSearch(field, 0, 14, "astar")
         const changed = search.step()
-        // The start settles, and its two neighbours become frontier.
         expect(changed).toContain(0)
         expect(changed.length).toBeLessThanOrEqual(5)
     })

@@ -1,29 +1,3 @@
-/**
- * Solitaire: Klondike, the one everybody has played.
- *
- * The rules are in cards.ts and know nothing about the screen. This file is
- * about the two things a card game actually has to get right on a screen:
- * picking a card up, and putting it down.
- *
- * THE POINTER IS READ, NOT HANDLED
- *
- * There are no pointer handlers on anything. The board asks `input` where the
- * pointer is once a frame and works out what is under it, because every pile is
- * at a position this file computed in the first place: the arithmetic is
- * already here, and hit testing is only doing it backwards.
- *
- * Two reasons, and the second one is why the first version of this did not
- * work at all. A handler per card would take three slots in the native callback
- * table per card, a hundred and fifty six of them, churning on every render.
- * And a React pointer event carries the position in PANEL coordinates, which
- * are not the stage coordinates everything here is laid out in: a letterboxed
- * stage offsets one from the other. `input` reports logical stage units on
- * every platform, which is what the layout is in, and it sees touches too, so
- * the same code drags a card with a finger.
- *
- * The suits are drawn rather than typed, for reasons in pips.tsx.
- */
-
 import { useMemo, useRef, useState } from "react"
 import { View, Text, Button, mount, useFrame, input, random } from "oj"
 import {
@@ -68,7 +42,6 @@ function offsets(game: Game, column: number): number[] {
 const inside = (x: number, y: number, left: number, top: number, w = CARD_W, h = CARD_H) =>
     x >= left && x <= left + w && y >= top && y <= top + h
 
-/** What sits under a point: a source to pick up, the stock, or nothing. */
 type Target =
     | { kind: "stock" }
     | { kind: "source"; source: Source }
@@ -92,8 +65,7 @@ function hit(game: Game, x: number, y: number): Target {
         if (pile.length === 0) {
             return inside(x, y, left, TABLE_Y) ? { kind: "tableau", pile: column } : null
         }
-        // Backwards, because the last card is drawn on top of the ones before
-        // it and so is the one a pointer over the overlap actually lands on.
+        // Backwards: the last card is drawn on top, so it is the one a pointer over the overlap lands on.
         const tops = offsets(game, column)
         for (let depth = pile.length - 1; depth >= 0; depth--) {
             if (!inside(x, y, left, TABLE_Y + tops[depth]!)) continue
@@ -174,16 +146,7 @@ function Solitaire() {
     const [game, setGame] = useState<Game>(() => deal((cards) => rng.shuffle(cards)))
     const drag = useRef<Drag | null>(null)
     const dragLayer = useRef<any>(null)
-    /**
-     * What is being carried, and where it was picked up from.
-     *
-     * The position is in state rather than only written onto the element,
-     * because the element does not exist yet at the moment of the pick-up: a
-     * ref is attached after the render that creates it, so the imperative move
-     * that follows setDragging lands on null. The layer was therefore drawn
-     * once at its default position, off screen, and the card blinked out for a
-     * frame every time it was touched.
-     */
+    // The position is state as well, because the ref does not exist yet on the frame a drag starts.
     const [dragging, setDragging] = useState<{ cards: Card[]; x: number; y: number } | null>(null)
 
     const restart = () => {
@@ -192,7 +155,6 @@ function Solitaire() {
         setGame(deal((cards) => rng.shuffle(cards)))
     }
 
-    /** Sends everything up, one card at a time, once nothing is hidden. */
     const finish = () => {
         setGame((current) => {
             let next = current
@@ -205,13 +167,7 @@ function Solitaire() {
         })
     }
 
-    /**
-     * The state a frame callback reads.
-     *
-     * useFrame subscribes once, so the callback it captured would otherwise see
-     * the opening deal forever. Mirroring into a ref keeps it current without
-     * resubscribing on every render.
-     */
+    // useFrame subscribes once, so the callback it captured needs a ref to see the current game.
     const live = useRef(game)
     live.current = game
 
@@ -228,8 +184,6 @@ function Solitaire() {
         const cards = lift(game, target.source)
         if (cards.length === 0) return
 
-        // Where the pointer sits inside the stack it just grabbed, so the cards
-        // stay under the finger instead of jumping their corner to it.
         let originX = 0
         let originY = 0
         if (target.source.from === "waste") {
@@ -249,12 +203,9 @@ function Solitaire() {
             grabX: x - originX,
             grabY: y - originY,
         }
-        // Exactly where the cards already were, so the first frame of a drag
-        // looks identical to the last frame before it.
         setDragging({ cards, x: originX, y: originY })
     }
 
-    /** Moves the floating stack, written straight onto the element. */
     const place = (x: number, y: number) => {
         const current = drag.current
         const layer = dragLayer.current
@@ -283,24 +234,14 @@ function Solitaire() {
             next = toFoundation(game, current.source, target.source.index)
         }
 
-        // A drop that went nowhere is treated as a click, which is the
-        // shortcut every version of this game has: tap a card to send it up if
-        // anywhere will take it.
+        // A drop that went nowhere counts as a tap, which sends a single card up if anywhere takes it.
         if (next === game && current.cards.length === 1) {
             next = sendUp(game, current.source)
         }
         setGame(next)
     }
 
-    /**
-     * One pointer, whether it is a mouse or a finger.
-     *
-     * A touch that began counts as a press and one that ended as a release, so
-     * the same three lines below drag a card either way. The last touch in the
-     * list wins if there are several, which is the same "one at a time" rule
-     * the other games use and the right one for a card: two fingers on one
-     * stack has no meaning.
-     */
+    // input reports stage units for mouse and touch alike. A React pointer event would give panel coordinates.
     useFrame(() => {
         const mouse = input.mouse
         let x = mouse.position.x
@@ -325,7 +266,6 @@ function Solitaire() {
     const complete = won(game)
     const finishable = canFinish(game)
 
-    /** Only the top card of the waste is playable, so only it is drawn in full. */
     const wasteTop = game.waste[game.waste.length - 1]
     const wasteUnder = game.waste[game.waste.length - 2]
 
@@ -336,13 +276,11 @@ function Solitaire() {
 
     return (
         <View style={{ width: W, height: H, backgroundColor: FELT }}>
-            {/* The stock, which is a button as much as a pile. */}
             {game.stock.length > 0
                 ? <View style={{ position: "absolute", left: columnX(0), top: TOP_Y }}><Back /></View>
                 : <Slot x={columnX(0)} y={TOP_Y} hint={game.waste.length > 0 ? "again" : ""} />}
 
-            {/* The waste. The card under the top one shows a sliver, so the pile
-                does not look empty the moment the top card is picked up. */}
+            {/* The card under the top one shows a sliver, so the pile does not look empty mid drag. */}
             {wasteUnder !== undefined && !isDragged(wasteUnder) && (
                 <View style={{ position: "absolute", left: columnX(1), top: TOP_Y }} pickingMode="Ignore">
                     <Face card={wasteUnder} dimmed />
@@ -388,8 +326,7 @@ function Solitaire() {
                 )
             })}
 
-            {/* The floating stack. Last in the tree, so it draws over everything,
-                and it exists only while something is being carried. */}
+            {/* The floating stack, last in the tree so it draws over everything. */}
             {dragging !== null && (
                 <View ref={dragLayer} style={{ position: "absolute", left: dragging.x, top: dragging.y }}
                     pickingMode="Ignore">

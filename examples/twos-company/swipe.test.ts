@@ -25,7 +25,6 @@ describe("swipe", () => {
     it("picks the axis the finger actually travelled furthest on", () => {
         const s = newSwipe()
         begin(s, 100, 100)
-        // Mostly sideways with a little drift downward is a sideways swipe.
         expect(moveTo(s, 160, 120)).toBe("right")
     })
 
@@ -54,7 +53,6 @@ describe("swipe", () => {
     })
 
     it("treats a new touch as a new gesture even without an end", () => {
-        // Two fingers, or a touch the platform never told us about ending.
         const s = newSwipe()
         begin(s, 100, 100)
         expect(moveTo(s, 200, 100)).toBe("right")
@@ -65,8 +63,6 @@ describe("swipe", () => {
     it("measures a diagonal by its longer side, not its length", () => {
         const s = newSwipe()
         begin(s, 0, 0)
-        // Each axis is under the threshold, so the gesture has not resolved yet
-        // even though the finger has travelled further than it in a straight line.
         const just = THRESHOLD - 2
         expect(moveTo(s, just, just)).toBeNull()
     })

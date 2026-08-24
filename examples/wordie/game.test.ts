@@ -11,9 +11,6 @@ describe("scoreGuess", () => {
         expect(scoreGuess("BUMPS", "CRANE")).toEqual(Array(5).fill("absent"))
     })
 
-    // The rule this genre gets wrong most often. BOBBY has three Bs, ABBEY has
-    // two, and one of those is already an exact match, so exactly one B may
-    // come back present and the other must be absent.
     it("does not over-mark duplicate letters", () => {
         expect(scoreGuess("BOBBY", "ABBEY")).toEqual(["present", "absent", "correct", "absent", "correct"])
     })
@@ -50,7 +47,6 @@ describe("scoreGuess", () => {
 
 describe("keyboardStates", () => {
     it("keeps the best state a letter has earned, not the latest", () => {
-        // C is correct in the first guess and merely present in the second.
         const states = keyboardStates(["CRANE", "SCARF"], "CRANE")
         expect(states.C).toBe("correct")
     })
@@ -98,8 +94,6 @@ describe("rejectionReason", () => {
 
 describe("the word lists", () => {
     it("accepts the openers players actually type", () => {
-        // The bug this guards: one 380-word list served as both the answer pool
-        // and the accepted-guess set, so every one of these bounced.
         for (const opener of ["SLATE", "AUDIO", "ADIEU", "ARISE", "TEARS", "CRANE", "ROATE", "STARE"]) {
             expect(isAcceptedGuess(opener)).toBe(true)
         }

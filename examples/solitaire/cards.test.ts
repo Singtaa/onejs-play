@@ -11,7 +11,6 @@ const card = (rank: number, suit: number, id = rank * 10 + suit): Card =>
 
 const SPADE = 0, HEART = 1, DIAMOND = 2, CLUB = 3
 
-/** A game with nothing in it, to be filled in by each test. */
 function empty(): Game {
     return { stock: [], waste: [], foundations: [[], [], [], []], tableau: [[], [], [], [], [], [], []], passes: 0, moves: 0 }
 }
@@ -177,15 +176,9 @@ describe("drawing", () => {
         expect(game.waste).toHaveLength(0)
     })
 
-    /**
-     * The waste goes back under the stock in the order it was dealt out, so a
-     * second pass shows the same cards in the same order. Forgetting the
-     * reverse silently changes the game into a different, easier one.
-     */
     it("turns the waste back into the stock in the original order", () => {
         const game = empty()
         game.stock = [card(3, SPADE), card(4, HEART), card(5, CLUB)]
-        // The stock is drawn from its end, so the first pass turns up 5, 4, 3.
         let next = draw(draw(draw(game)))
         expect(next.stock).toHaveLength(0)
         expect(next.waste.map((c) => c.rank)).toEqual([5, 4, 3])
@@ -195,9 +188,6 @@ describe("drawing", () => {
         expect(next.stock.map((c) => c.rank)).toEqual([3, 4, 5])
         expect(next.passes).toBe(1)
 
-        // And the second pass turns them up in the same order as the first,
-        // which is the property the reverse exists for. Forgetting it silently
-        // turns Klondike into a different, easier game.
         let pass = next
         const order: number[] = []
         for (let i = 0; i < 3; i++) {
@@ -246,10 +236,6 @@ describe("moving onto a column", () => {
         expect(toTableau(game, { from: "tableau", pile: 0, depth: 0 }, 1)).toBe(game)
     })
 
-    /**
-     * Dropping a stack back where it came from. The cards are removed before
-     * they are added, so without a guard this deletes them.
-     */
     it("refuses to move a column onto itself", () => {
         const game = empty()
         game.tableau[0] = [up(card(9, SPADE)), up(card(8, HEART))]
@@ -295,7 +281,6 @@ describe("moving up to a foundation", () => {
         expect(toFoundation(game, { from: "waste" }, SPADE)).toBe(game)
     })
 
-    /** Even when every card in it would be legal on its own. */
     it("refuses to send a run up together", () => {
         const game = empty()
         game.foundations[SPADE] = [card(1, SPADE)]
@@ -408,11 +393,9 @@ describe("finishing", () => {
         expect(nextFinishingMove(game)).toBeNull()
     })
 
-    /** Repeatedly taking the lowest available card must actually finish. */
     it("finishes a laid-out game by taking the lowest each time", () => {
         const game = empty()
         for (let suit = 0; suit < 4; suit++) {
-            // Each suit spread across a column, kings at the bottom.
             const pile: Slot[] = []
             for (let rank = 13; rank >= 1; rank--) pile.push(up(card(rank, suit)))
             game.tableau[suit] = pile

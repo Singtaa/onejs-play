@@ -1,17 +1,3 @@
-/**
- * Wordie: six guesses at a five letter word.
- *
- * The screen is React. View and Text are the building blocks, roughly a div
- * and a span, and Unity draws them: there is no browser layout underneath, so
- * the same code renders inside a game as well as on a web page.
- *
- * They come from "oj", which is the small runtime this game runs on. It is
- * where the components, the keyboard, and a couple of helpers live.
- *
- * The rules are in game.ts and know nothing about the screen. This file is
- * only what you see and what you press.
- */
-
 import { useState, useMemo } from "react"
 import { View, Text, mount, useFrame, input, random } from "oj"
 import "onejs:tailwind"
@@ -25,13 +11,7 @@ import {
 const KEY_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-/**
- * One word a day, the same for everyone, without a server telling us which.
- *
- * The date is UTC, so the word turns over at the same instant worldwide rather
- * than sweeping across timezones, and the seed makes the choice reproducible:
- * two players on the same day get the same word from the same list.
- */
+// UTC, so the day turns over at the same moment for everyone.
 function wordOfTheDay(): string {
     const today = new Date().toISOString().slice(0, 10)
     return random(`wordie-${today}`).pick(ANSWERS)
@@ -63,7 +43,6 @@ function Row({ guess, answer, draft, revealed }: {
     )
 }
 
-/** The keyboard uses its own tints, a little darker than the tiles. */
 const KEY_TONE: Record<LetterState, string> = {
     correct: styles.keyCorrect,
     present: styles.keyPresent,
@@ -76,8 +55,6 @@ function Key({ label, state, wide, onPress }: {
     wide?: boolean
     onPress: () => void
 }) {
-    // A letter already proven absent cannot help, so the key goes dark and
-    // stops responding rather than letting a player spend a guess on it.
     const dead = state === "absent"
     const tone = state ? KEY_TONE[state] : ""
     return (
@@ -99,8 +76,6 @@ function Wordie() {
     const status = statusOf(guesses, answer)
     const keys = useMemo(() => keyboardStates(guesses, answer), [guesses, answer])
 
-    // Both update from the previous draft rather than the one captured when
-    // this render ran, so two keys arriving in the same frame both land.
     const type = (letter: string) => {
         if (status !== "playing") return
         setMessage("")
@@ -128,9 +103,6 @@ function Wordie() {
         else if (after === "lost") setMessage(answer)
     }
 
-    // Keys are read once a frame, the way a game loop reads them, rather than
-    // arriving as events. wasKeyPressed is true only on the frame a key went
-    // down, so holding one types a single letter instead of a stream.
     useFrame(() => {
         if (input.keyboard.wasKeyPressed("Enter")) submit()
         else if (input.keyboard.wasKeyPressed("Backspace")) backspace()
@@ -158,8 +130,7 @@ function Wordie() {
                 ))}
             </View>
 
-            {/* Fixed height, so the board does not jump when a message
-                appears and disappears between guesses. */}
+            {/* Fixed height, so the board does not jump when a message appears. */}
             <View className="h-6 mb-3">
                 <Text className="text-sm font-bold text-white">{message}</Text>
             </View>
@@ -179,6 +150,4 @@ function Wordie() {
     )
 }
 
-// Puts the game on screen. Nothing else is needed: no page, no canvas, no
-// root element to find.
 mount(<Wordie />)

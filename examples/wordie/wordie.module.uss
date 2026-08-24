@@ -1,7 +1,4 @@
-/* Spacing lives on the children, not as a gap on the row.
-   UI Toolkit has no gap property at all, so the gap-1.5 classes this used to
-   carry compiled to nothing and every tile sat flush against its neighbour.
-   3px on each side puts 6px between neighbours, which is what gap-1.5 meant. */
+/* UI Toolkit has no gap property, so spacing is a margin on each child. */
 .tile {
     width: 56px;
     height: 56px;
@@ -40,16 +37,9 @@
 .keyWide { width: 62px; }
 .keyNarrow { width: 40px; }
 
-/* Key states are their own classes rather than reusing the tile ones.
-   .key sets a background and, at equal specificity, the later rule wins, so
-   sharing .correct/.present/.absent with the tiles meant whichever came last in
-   this file decided the colour. It was .key, so no key ever tinted. Naming them
-   separately and declaring them after .key makes the outcome independent of the
-   order anyone happens to write them in. */
+/* Separate from the tile classes: sharing them would collide with .key at equal specificity. */
 .keyCorrect { background-color: rgb(83, 141, 78); }
 .keyPresent { background-color: rgb(181, 159, 59); }
 
-/* A letter proven absent is dark and dead: it cannot be in the answer, so
-   offering it as a button invites a guess the game will reject. */
 .keyAbsent { background-color: rgb(52, 53, 55); }
 .keyLabelAbsent { color: rgb(108, 110, 112); }
