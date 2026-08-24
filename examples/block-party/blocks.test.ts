@@ -1,13 +1,3 @@
-/**
- * The well's rules, checked without a screen.
- *
- * Copied from Falling Blocks along with the module it covers, so that the
- * pieces, the kicks and the clears stay verified here rather than being trusted
- * because they were verified somewhere else. The block at the end is the part
- * that is new: this game's gravity deliberately stops accelerating earlier than
- * the solo game's, and a floor that quietly drifted back down would change how
- * every fight ends.
- */
 import { describe, it, expect } from "vitest"
 import {
     emptyBoard, spawn, moved, rotated, fits, merge, clearLines, hardDropped,
@@ -55,8 +45,6 @@ describe("fits", () => {
         expect(fits(emptyBoard(), moved(spawn("O"), 0, ROWS))).toBe(false)
     })
 
-    // A piece spawns partly above the ceiling; treating that as a collision
-    // would end the game the instant it starts.
     it("allows cells above the ceiling", () => {
         const p = { ...spawn("I"), y: -2 }
         expect(fits(emptyBoard(), p)).toBe(true)
@@ -83,8 +71,6 @@ describe("rotation", () => {
         expect(rotated(emptyBoard(), p).rotation).toBe(p.rotation)
     })
 
-    // Without wall kicks a piece flush to the wall silently refuses to turn,
-    // which reads as an unresponsive game rather than as a rule.
     it("kicks off the left wall instead of refusing", () => {
         const b = emptyBoard()
         const against = { ...spawn("I"), x: -2, rotation: 1 }
@@ -189,7 +175,6 @@ describe("scoring and pace", () => {
 
 describe("shapeOf", () => {
     it("returns the unpositioned offsets, which is what a preview needs", () => {
-        // O is the one piece with a single rotation, so its shape is fixed.
         expect(shapeOf("O")).toEqual([[1, 0], [2, 0], [1, 1], [2, 1]])
     })
 
@@ -228,7 +213,6 @@ describe("shapeOf", () => {
     })
 })
 
-/** How many distinct rotations a kind has, derived rather than hard-coded. */
 function SHAPE_STATES(kind: (typeof KINDS)[number]): number {
     let n = 1
     while (n < 4 && JSON.stringify(shapeOf(kind, n)) !== JSON.stringify(shapeOf(kind, 0))) n++
@@ -236,12 +220,6 @@ function SHAPE_STATES(kind: (typeof KINDS)[number]): number {
 }
 
 describe("gravity in a fight", () => {
-    /**
-     * The one number this game changed from the solo original. Falling Blocks
-     * lets gravity run away to a twentieth of a second, which is a fine way for
-     * a solo run to end. Here the ending worth having is somebody else's
-     * garbage, so the piece must never be the thing that beats you.
-     */
     it("stops accelerating while the game is still playable", () => {
         expect(dropInterval(99)).toBeGreaterThanOrEqual(0.15)
         for (let level = 0; level < 40; level++) {
@@ -262,7 +240,6 @@ describe("gravity in a fight", () => {
 })
 
 describe("the piece bag", () => {
-    /** A repeatable source, so a failure can be reproduced from its seed. */
     const seeded = (seed: number) => {
         let state = seed
         return () => ((state = (state * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
@@ -276,11 +253,6 @@ describe("the piece bag", () => {
         }
     })
 
-    /**
-     * The promise a bag actually makes to a player: the piece you are waiting
-     * for is always close. The worst case is the end of one bag and the start of
-     * the next, which is thirteen draws apart.
-     */
     it("never leaves a player waiting longer than two bags for a kind", () => {
         const draw = sevenBag(seeded(17))
         const lastSeen = new Map<string, number>()

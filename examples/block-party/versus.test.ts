@@ -6,7 +6,6 @@ import {
 } from "./versus"
 import { emptyBoard, COLS, ROWS, GARBAGE, type Board } from "./blocks"
 
-/** A cheap repeatable source, so a failing case can be reproduced from its seed. */
 function seeded(seed: number): () => number {
     let state = seed
     return () => ((state = (state * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
@@ -58,12 +57,6 @@ describe("what a clear is worth", () => {
 })
 
 describe("cancelling", () => {
-    /**
-     * The property that matters: rows are conserved. Everything the attack does
-     * not spend cancelling is sent on, and everything it does spend has come off
-     * the queue. A version that dropped rows on the floor would be very hard to
-     * notice while playing and would quietly make the game gentler.
-     */
     it("spends the attack on the queue first and passes the rest on", () => {
         const roll = seeded(7)
         for (let i = 0; i < 500; i++) {
@@ -104,7 +97,6 @@ describe("the queue", () => {
         expect(takeGarbage(0)).toEqual({ taken: 0, left: 0 })
     })
 
-    /** Draining has to terminate, or a flood becomes a debt nobody can pay off. */
     it("empties in a bounded number of locks however full it is", () => {
         let left = queue(0, 10000)
         let locks = 0
@@ -200,11 +192,6 @@ describe("junk arriving", () => {
 })
 
 describe("being buried", () => {
-    /**
-     * The question that ends a life, and the reason it is asked before the junk
-     * lands rather than after: the rows that no longer fit are gone by the time
-     * the new board exists, so afterwards there is nothing left to look at.
-     */
     it("reports the stack going through the ceiling before the rows are added", () => {
         expect(buries(boardWith([[1, fullRow()]]), 2)).toBe(true)
         expect(buries(boardWith([[1, fullRow()]]), 1)).toBe(false)
@@ -224,7 +211,6 @@ describe("being buried", () => {
             const before = board.flat().filter((cell) => cell !== 0).length
             const kept = addGarbage(board, rows, 0).flat().filter((cell) => cell !== 0).length
             const junk = Math.min(ROWS, rows) * (COLS - 1)
-            // Anything lost off the top is exactly what buries() promised.
             expect(kept - junk < before).toBe(buries(board, rows))
         }
     })
@@ -239,7 +225,6 @@ describe("choosing a target", () => {
         expect(chooseTarget(1, [{ id: 1, score: 9000 }, { id: 2, score: 400 }, { id: 3, score: 100 }])).toBe(2)
     })
 
-    /** Every client has to reach the same answer, so ties cannot be arbitrary. */
     it("breaks a tie the same way for everybody", () => {
         const rivals = [{ id: 7, score: 500 }, { id: 3, score: 500 }, { id: 5, score: 500 }]
         expect(chooseTarget(1, rivals)).toBe(3)
@@ -276,11 +261,6 @@ describe("the board on the wire", () => {
         expect(encodeWell(emptyBoard())).toHaveLength(ROWS * COLS)
     })
 
-    /**
-     * Its input is whatever another player chose to send. A decoder that threw
-     * on a malformed board would hand every player in the room a way to end
-     * everybody else's session.
-     */
     it("answers with an empty well for anything that is not one", () => {
         const empty = emptyBoard()
         for (const junk of [null, undefined, 42, {}, [], "", "abc", "0".repeat(199), "0".repeat(201)]) {
@@ -313,13 +293,6 @@ describe("stack height", () => {
         expect(stackHeight(boardWith([[ROWS - 4, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]]]))).toBe(4)
     })
 
-    /**
-     * Junk raises the stack by exactly what arrived, right up until the point
-     * where the top of it is pushed out of the well, and that point is the one
-     * buries() reports. Stated together because the pair is the whole of what
-     * happens to a well under attack, and because a height that could exceed
-     * the well would mean a mini board drawn off the top of its own frame.
-     */
     it("rises by exactly the rows that arrived, until the ceiling takes some", () => {
         const roll = seeded(59)
         for (let i = 0; i < 400; i++) {

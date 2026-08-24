@@ -8,13 +8,11 @@ import {
     type Snake,
 } from "./snake"
 
-/** A repeatable source, so a failing case can be reproduced from its seed. */
 function seeded(seed: number): () => number {
     let state = seed
     return () => ((state = (state * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
 }
 
-/** Swims a snake around for a while, turning at random, and hands it back. */
 function wander(snake: Snake, steps: number, roll: () => number, dt = 1 / 60): Snake {
     for (let i = 0; i < steps; i++) {
         snake.angle = steer(snake.angle, roll() * Math.PI * 2, dt)
@@ -24,12 +22,6 @@ function wander(snake: Snake, steps: number, roll: () => number, dt = 1 / 60): S
 }
 
 describe("the shape of a body", () => {
-    /**
-     * The one invariant here that is not a matter of taste. If the points of a
-     * line were further apart than a body is wide, a head could pass between
-     * two of them and out the other side without ever touching either, and the
-     * game would lose deaths that everybody watching saw happen.
-     */
     it("keeps its points closer together than a body is wide", () => {
         expect(NODE_GAP).toBeLessThan(2 * MIN_RADIUS)
         expect(NODE_GAP).toBeLessThan(2 * radiusOf(START_LENGTH))
@@ -81,11 +73,6 @@ describe("the shape of a body", () => {
         expect(snake.nodes.length).toBe(nodeBudget(300))
     })
 
-    /**
-     * The claim the collision broad phase rests on: a point of a body is never
-     * further from its own head than the distance walked to get there, which is
-     * the length plus at most the one gap between the head and its first point.
-     */
     it("never puts a point further from the head than its own length", () => {
         const roll = seeded(37)
         for (let run = 0; run < 20; run++) {
@@ -141,7 +128,6 @@ describe("steering", () => {
         }
     })
 
-    /** Without this, a two degree correction across due west is a full loop. */
     it("takes the short way round rather than the long way", () => {
         const almost = Math.PI - 0.05
         const turned = steer(almost, -almost, 0.02)
@@ -179,7 +165,6 @@ describe("how wide a snake is", () => {
         }
     })
 
-    /** Growth is worth most when you are small, which is what gives a new snake a chance. */
     it("widens fastest at the start", () => {
         expect(radiusOf(400) - radiusOf(START_LENGTH))
             .toBeGreaterThan(radiusOf(MAX_LENGTH) - radiusOf(MAX_LENGTH - 270))
@@ -192,7 +177,6 @@ describe("how wide a snake is", () => {
 })
 
 describe("running into somebody", () => {
-    /** The same question asked without the early return, for comparison. */
     const brute = (hx: number, hy: number, headRadius: number, other: Snake): boolean => {
         const reach = headRadius * GRAZE + radiusOf(other.length)
         return other.nodes.some((node) => Math.hypot(hx - node.x, hy - node.y) <= reach)
@@ -206,11 +190,6 @@ describe("running into somebody", () => {
         expect(hitsBody(node.x + 900, node.y + 900, MIN_RADIUS, other)).toBe(false)
     })
 
-    /**
-     * The early return skips a body whose head is too far away for any of it to
-     * be in reach. That is a claim about geometry rather than a guess, so it has
-     * to agree with the slow answer everywhere, including just at the edge.
-     */
     it("agrees with the exhaustive answer everywhere", () => {
         const roll = seeded(71)
         for (let run = 0; run < 30; run++) {
@@ -218,8 +197,6 @@ describe("running into somebody", () => {
             other.length = START_LENGTH + roll() * (MAX_LENGTH - START_LENGTH)
             wander(other, 600 + Math.floor(roll() * 900), roll)
             for (let probe = 0; probe < 300; probe++) {
-                // Half the probes near the body, half anywhere at all, so both
-                // sides of the early return are exercised.
                 const near = other.nodes[Math.floor(roll() * other.nodes.length)]!
                 const hx = probe % 2 === 0 ? near.x + (roll() - 0.5) * 30 : roll() * WORLD_W
                 const hy = probe % 2 === 0 ? near.y + (roll() - 0.5) * 30 : roll() * WORLD_H
@@ -235,11 +212,6 @@ describe("running into somebody", () => {
         expect(hitsBody(100, 100, MIN_RADIUS, bare)).toBe(false)
     })
 
-    /**
-     * Forgiving, and it has to be. Everybody else's line is drawn from what
-     * they said a moment ago, so a head that is a hair inside it on this screen
-     * may be a hair outside it on theirs.
-     */
     it("forgives a graze that a full body width would have killed", () => {
         const other = makeSnake(1000, 1000, 0)
         other.nodes = [{ x: 1000, y: 1000 }]
@@ -279,7 +251,6 @@ describe("boosting", () => {
         expect(boostDrain(START_LENGTH, 100)).toBe(BOOST_FLOOR)
     })
 
-    /** Held forever, a boost has to settle rather than run a snake into nothing. */
     it("converges on the floor however long it is held", () => {
         let length = MAX_LENGTH
         for (let i = 0; i < 10000; i++) length = boostDrain(length, 1 / 60)
@@ -300,11 +271,6 @@ describe("orbs", () => {
         }
     })
 
-    /**
-     * The whole reason the field costs one number to describe. Everyone runs
-     * this from the same seed and gets the same field, so a room agrees on
-     * where the food is without anybody ever sending a list of it.
-     */
     it("lays exactly the same field from the same source", () => {
         expect(scatterOrbs(120, seeded(9))).toEqual(scatterOrbs(120, seeded(9)))
         expect(scatterOrbs(120, seeded(9))).not.toEqual(scatterOrbs(120, seeded(10)))
