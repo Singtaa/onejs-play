@@ -45,32 +45,46 @@ function buildEnvelope(lean: number) {
             rotation: lean,
         })
         .clamp(0, 1)
-        .blur(20)
+        .blur(80)
     const fromBase = fx.image
         .gradient(TEX, TEX, [
             { color: [1, 1, 1, 1], at: 0 },
             { color: [0.06, 0.06, 0.06, 1], at: 1 },
         ], 90)
-        .pow(1.3)
+        .pow(1.13)
     return shape.multiply(fromBase)
 }
 
 /**
  * One layer of rising turbulence.
  *
- * Stretched three to one, because an isotropic field gives round blobs and a
- * flame is made of vertical streaks; the aspect is doing more for the look here
- * than the octave count is.
+ * Stretched, because an isotropic field gives round blobs and a flame is made of
+ * vertical streaks; the aspect is doing more for the look here than the octave
+ * count is. The two fields are independent all the way down, so the detail can
+ * move and break up on its own terms rather than being a scaled copy.
  *
  * The offset is negative in y because the field has to travel the way the flame
  * rises. Scrolling it positive is the same picture flowing downward, which is
  * unmistakable once seen and invisible in any numeric check.
  */
-const layer = (sx: number, sy: number, octaves: number, seed: number, ox: number, y: number) =>
+const layer = (f: Field, seed: number, ox: number, t: number) =>
     fx.image.noise(TEX, TEX, {
-        scale: [sx, sy], octaves, seed, type: "simplex",
-        lacunarity: 3.1, gain: 0.72, offset: [ox, -y],
+        scale: [f.scaleX, f.scaleY], octaves: f.octaves, seed, type: "simplex",
+        lacunarity: f.lacunarity, gain: f.gain, offset: [ox, -t * f.speed],
     })
+
+/**
+ * The two fields, tuned by dragging every one of these on a slider in the dev
+ * app's version of this. See Assets/Scenes/MainScene/App/~/examples/fire.tsx,
+ * which is the same effect with the panel still attached.
+ */
+interface Field {
+    scaleX: number; scaleY: number; speed: number
+    octaves: number; lacunarity: number; gain: number
+}
+const BODY: Field = { scaleX: 0.5, scaleY: 0.24, speed: 0.17, octaves: 3, lacunarity: 4.22, gain: 0.95 }
+const DETAIL: Field = { scaleX: 0.5, scaleY: 0.29, speed: 0.21, octaves: 3, lacunarity: 4.22, gain: 0.95 }
+const MIX = 0.517
 
 function Tinder() {
     // Quantised, so the envelope is rebuilt only when the lean visibly changes
@@ -94,14 +108,14 @@ function Tinder() {
     const flame = fx.useAnimatedTexture(TEX, TEX, (t) => {
         // Two rates, so the fine detail outruns the body and the whole thing
         // never resolves into one sliding texture.
-        const turbulence = layer(2.6, 0.9, 4, 1, 0, t * 0.8)
-            .multiply(0.56)
-            .add(layer(6.5, 2.2, 4, 2, 3.7, t * 1.5).multiply(0.44))
+        const turbulence = layer(BODY, 1, 0, t)
+            .multiply(1 - MIX)
+            .add(layer(DETAIL, 2, 3.7, t).multiply(MIX))
         const heat = envelope ? turbulence.multiply(envelope) : turbulence
         // The threshold is what turns fog into licks: the band starts above the
         // product's mean so only the peaks survive, and the envelope's falloff
         // means fewer of them survive the higher up they are.
-        return heat.remap(0.13, 0.52, 0, 1).clamp(0, 1).ramp(EMBERS)
+        return heat.remap(0.112, 0.342, 0, 1).clamp(0, 1).ramp(EMBERS)
     }, [envelope])
 
     return (
