@@ -19,5 +19,12 @@
     "controls": [
         "pointer",
         "touch"
-    ]
+    ],
+    "cover": {
+        "seconds": 6,
+        "stage": [
+            960,
+            540
+        ]
+    }
 }
