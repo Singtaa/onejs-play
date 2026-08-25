@@ -313,15 +313,15 @@ function Tinder() {
 
                 <View style={{ flexDirection: "row", justifyContent: "center",
                                marginTop: 14 }}>
-                    <View style={{ marginHorizontal: 10 }}>
+                    <View style={{ marginLeft: 10, marginRight: 10 }}>
                         <FieldThumb label="field A, the body" pick={fieldA} seed={1} ox={0}
                                     live={live} />
                     </View>
-                    <View style={{ marginHorizontal: 10 }}>
+                    <View style={{ marginLeft: 10, marginRight: 10 }}>
                         <FieldThumb label="field B, the detail" pick={fieldB} seed={2} ox={3.7}
                                     live={live} />
                     </View>
-                    <View style={{ marginHorizontal: 10 }}>
+                    <View style={{ marginLeft: 10, marginRight: 10 }}>
                         {/* No render of its own: the flame already holds this one. */}
                         <Thumb label="envelope, blurred"
                                texture={envelope ? envelope.texture() : null} />
