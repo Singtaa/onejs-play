@@ -39,19 +39,19 @@ const EMBERS: { color: [number, number, number, number]; at: number }[] = [
 function buildEnvelope(lean: number) {
     const shape = fx.image
         .sdf(TEX, TEX, "unevenCapsule", {
-            rBottom: 0.22, rTop: 0.012, h: 0.72, y: -0.26,
+            rBottom: 0.206, rTop: 0.012, h: 0.72, y: -0.133,
             // Leaning the silhouette is what selling "blowing on it" needs: the
             // noise alone reads as flicker, not as direction.
             rotation: lean,
         })
         .clamp(0, 1)
-        .blur(58)
+        .blur(61)
     const fromBase = fx.image
         .gradient(TEX, TEX, [
             { color: [1, 1, 1, 1], at: 0 },
             { color: [0.06, 0.06, 0.06, 1], at: 1 },
         ], 90)
-        .pow(1.13)
+        .pow(0.94)
     return shape.multiply(fromBase)
 }
 
@@ -82,9 +82,9 @@ interface Field {
     scaleX: number; scaleY: number; speed: number
     octaves: number; lacunarity: number; gain: number
 }
-const BODY: Field = { scaleX: 0.36, scaleY: 0.24, speed: 0.17, octaves: 2, lacunarity: 1.88, gain: 0.95 }
-const DETAIL: Field = { scaleX: 0.5, scaleY: 0.43, speed: 0.256, octaves: 3, lacunarity: 3.11, gain: 0.95 }
-const MIX = 0.517
+const BODY: Field = { scaleX: 0.36, scaleY: 0.24, speed: 0.17, octaves: 3, lacunarity: 2.35, gain: 0.99 }
+const DETAIL: Field = { scaleX: 0.5, scaleY: 0.43, speed: 0.256, octaves: 3, lacunarity: 2.7, gain: 0.95 }
+const MIX = 0.45
 
 function Tinder() {
     // Quantised, so the envelope is rebuilt only when the lean visibly changes
