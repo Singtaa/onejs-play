@@ -45,7 +45,7 @@ function buildEnvelope(lean: number) {
             rotation: lean,
         })
         .clamp(0, 1)
-        .blur(80)
+        .blur(58)
     const fromBase = fx.image
         .gradient(TEX, TEX, [
             { color: [1, 1, 1, 1], at: 0 },
@@ -82,8 +82,8 @@ interface Field {
     scaleX: number; scaleY: number; speed: number
     octaves: number; lacunarity: number; gain: number
 }
-const BODY: Field = { scaleX: 0.5, scaleY: 0.24, speed: 0.17, octaves: 3, lacunarity: 4.22, gain: 0.95 }
-const DETAIL: Field = { scaleX: 0.5, scaleY: 0.29, speed: 0.21, octaves: 3, lacunarity: 4.22, gain: 0.95 }
+const BODY: Field = { scaleX: 0.36, scaleY: 0.24, speed: 0.17, octaves: 2, lacunarity: 1.88, gain: 0.95 }
+const DETAIL: Field = { scaleX: 0.5, scaleY: 0.43, speed: 0.256, octaves: 3, lacunarity: 3.11, gain: 0.95 }
 const MIX = 0.517
 
 function Tinder() {
