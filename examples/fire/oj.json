@@ -10,7 +10,7 @@
             960,
             700
         ],
-        "fit": "letterbox"
+        "fit": "fluid"
     },
     "tags": [
         "toy",

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { View, Text, Button, Slider, ScrollView, mount, useFrame, fx, Mathf } from "oj"
+import { View, Text, Button, Slider, ScrollView, mount, useFrame, useStage, fx, Mathf } from "oj"
 
 /**
  * A fire with no art in it.
@@ -18,11 +18,16 @@ import { View, Text, Button, Slider, ScrollView, mount, useFrame, fx, Mathf } fr
  * gone to static look much the same through the ramp.
  */
 
-const STAGE_W = 960
-const STAGE_H = 700
 const TEX = 512
+/** Thumbnails render at this size whatever they are shown at: the noise is a
+ *  function of normalised uv, so a smaller box is the same field sampled coarser. */
 const PREVIEW = 96
-const FLAME = 470
+const PAD = 20
+const GAP = 16
+const PANEL_W = 320
+/** Below this the flame and the panel side by side leave neither enough room,
+ *  so the panel stops taking a column and overlays instead. */
+const SIDE_BY_SIDE_MIN = 900
 
 /** How far, in degrees, a drag all the way to one edge leans the flame. */
 const LEAN_MAX = 14
@@ -175,10 +180,10 @@ const fieldB = (p: Params): Field => ({
     octaves: p.octavesB, lacunarity: p.lacunarityB, gain: p.gainB,
 })
 
-function Thumb({ label, texture }: { label: string; texture: unknown }) {
+function Thumb({ label, texture, size }: { label: string; texture: unknown; size: number }) {
     return (
         <View style={{ alignItems: "center" }}>
-            <View style={{ width: PREVIEW, height: PREVIEW, backgroundColor: "#101014",
+            <View style={{ width: size, height: size, backgroundColor: "#101014",
                            borderWidth: 1, borderColor: "#26262f", borderRadius: 4,
                            backgroundImage: texture as any }} />
             <Text style={{ color: "#6b6b7a", fontSize: 10, marginTop: 5 }}>{label}</Text>
@@ -194,13 +199,13 @@ function Thumb({ label, texture }: { label: string; texture: unknown }) {
  * Rendered small, since the noise is a function of normalised uv: a 96 square is
  * the same field as the 512 one, just sampled coarser.
  */
-function FieldThumb({ label, pick, seed, ox, live }: {
+function FieldThumb({ label, pick, seed, ox, live, size }: {
     label: string; pick: (p: Params) => Field; seed: number; ox: number
-    live: { current: Params }
+    live: { current: Params }; size: number
 }) {
     const tex = fx.useAnimatedTexture(PREVIEW, PREVIEW,
         (t) => layer(pick(live.current), seed, ox, t, PREVIEW), [])
-    return <Thumb label={label} texture={tex} />
+    return <Thumb label={label} texture={tex} size={size} />
 }
 
 function Knob({ c, value, onChange }: {
@@ -223,6 +228,20 @@ function Knob({ c, value, onChange }: {
 function Tinder() {
     const [p, setP] = useState<Params>(DEFAULTS)
     const [panel, setPanel] = useState(true)
+    const stage = useStage()
+
+    // Every size below is derived from the stage rather than declared, which is
+    // the whole difference between this and the fixed 960x700 it used to be.
+    const sideBySide = stage.width >= SIDE_BY_SIDE_MIN
+    const preview = Math.round(Mathf.Clamp(stage.width * 0.09, 52, PREVIEW))
+    const thumbGap = preview >= 80 ? 10 : 6
+    // The thumbnails, their labels and the hint all sit under the flame.
+    const belowFlame = preview + 66
+    const columnW = stage.width - PAD * 2 - (sideBySide && panel ? PANEL_W + GAP : 0)
+    const flameSize = Math.round(Mathf.Clamp(
+        Math.min(columnW, stage.height - PAD * 2 - belowFlame), 160, 560))
+    const panelW = Math.round(Math.min(PANEL_W, stage.width - PAD * 2))
+    const panelH = Math.round(stage.height - PAD * 2)
 
     /**
      * The same values the sliders show, readable from inside the frame loop.
@@ -295,9 +314,9 @@ function Tinder() {
     }, [envelope])
 
     return (
-        <View style={{ width: STAGE_W, height: STAGE_H, backgroundColor: "#07070a",
+        <View style={{ width: "100%", height: "100%", backgroundColor: "#07070a",
                        flexDirection: "row", alignItems: "center",
-                       justifyContent: "center", padding: 20 }}>
+                       justifyContent: "center", padding: PAD }}>
 
             {/* The fire, and the gesture. Handlers sit here rather than on the
                 stage root so dragging a slider never also leans the flame. */}
@@ -309,21 +328,21 @@ function Tinder() {
                 onPointerLeave={() => { drag.current.active = false }}
             >
                 <View ref={flameBox as any}
-                      style={{ width: FLAME, height: FLAME, backgroundImage: flame as any }} />
+                      style={{ width: flameSize, height: flameSize, backgroundImage: flame as any }} />
 
                 <View style={{ flexDirection: "row", justifyContent: "center",
                                marginTop: 14 }}>
-                    <View style={{ marginLeft: 10, marginRight: 10 }}>
+                    <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
                         <FieldThumb label="field A, the body" pick={fieldA} seed={1} ox={0}
-                                    live={live} />
+                                    live={live} size={preview} />
                     </View>
-                    <View style={{ marginLeft: 10, marginRight: 10 }}>
+                    <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
                         <FieldThumb label="field B, the detail" pick={fieldB} seed={2} ox={3.7}
-                                    live={live} />
+                                    live={live} size={preview} />
                     </View>
-                    <View style={{ marginLeft: 10, marginRight: 10 }}>
+                    <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
                         {/* No render of its own: the flame already holds this one. */}
-                        <Thumb label="envelope, blurred"
+                        <Thumb label="envelope, blurred" size={preview}
                                texture={envelope ? envelope.texture() : null} />
                     </View>
                 </View>
@@ -334,9 +353,14 @@ function Tinder() {
             </View>
 
             {panel && (
-                <View style={{ width: 320, height: STAGE_H - 40, marginLeft: 16,
-                               backgroundColor: "#0b0b10", borderRadius: 8,
-                               borderWidth: 1, borderColor: "#1c1c24", padding: 14 }}>
+                <View style={sideBySide
+                    ? { width: PANEL_W, height: panelH, marginLeft: GAP,
+                        backgroundColor: "#0b0b10", borderRadius: 8,
+                        borderWidth: 1, borderColor: "#1c1c24", padding: 14 }
+                    : { position: "absolute", right: PAD, top: PAD,
+                        width: panelW, height: panelH,
+                        backgroundColor: "#0b0b10", borderRadius: 8,
+                        borderWidth: 1, borderColor: "#1c1c24", padding: 14 }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between",
                                    alignItems: "center", marginBottom: 4 }}>
                         <Text style={{ color: "#e8e8ef", fontSize: 14 }}>Fire, from nothing</Text>
@@ -365,7 +389,7 @@ function Tinder() {
             )}
 
             {!panel && (
-                <View style={{ position: "absolute", top: 20, right: 20 }}>
+                <View style={{ position: "absolute", top: PAD, right: PAD }}>
                     <Button text="controls" onClick={() => setPanel(true)}
                             style={{ fontSize: 11 }} />
                 </View>
