@@ -29,6 +29,26 @@ const PANEL_W = 320
  *  so the panel stops taking a column and overlays instead. */
 const SIDE_BY_SIDE_MIN = 900
 
+/**
+ * Below this there is not room for the game and its explanation at once.
+ *
+ * Measured rather than picked: at 500x300 the panel covered two thirds of the
+ * width and the whole height, the flame was not on screen at all, and the hint
+ * text ran under the thumbnails. On a 360x640 phone the panel covered the
+ * frame entirely and the fire was invisible. What a visitor got was a list of
+ * sliders for a fire they never saw.
+ *
+ * So under this size the panel starts closed and opens as a sheet over the
+ * flame, and the parts that explain the fire rather than being it, the three
+ * field thumbnails and the drag hint, are dropped. The fire is the game; the
+ * explanation is what a bigger frame buys.
+ */
+const COMPACT_W = 620
+const COMPACT_H = 420
+/** Padding, and the flame's floor, both of which a small frame cannot afford. */
+const COMPACT_PAD = 8
+const COMPACT_FLAME_MIN = 110
+
 /** How far, in degrees, a drag all the way to one edge leans the flame. */
 const LEAN_MAX = 14
 
@@ -226,22 +246,32 @@ function Knob({ c, value, onChange }: {
 }
 
 function Tinder() {
-    const [p, setP] = useState<Params>(DEFAULTS)
-    const [panel, setPanel] = useState(true)
     const stage = useStage()
+    const compact = stage.width < COMPACT_W || stage.height < COMPACT_H
+
+    const [p, setP] = useState<Params>(DEFAULTS)
+    // Closed on a small frame, because there it is a sheet over the fire
+    // rather than a column beside it, and a visitor who has not asked for the
+    // controls should see the thing the controls are for.
+    const [panel, setPanel] = useState(() => !compact)
 
     // Every size below is derived from the stage rather than declared, which is
     // the whole difference between this and the fixed 960x700 it used to be.
     const sideBySide = stage.width >= SIDE_BY_SIDE_MIN
+    const pad = compact ? COMPACT_PAD : PAD
     const preview = Math.round(Mathf.Clamp(stage.width * 0.09, 52, PREVIEW))
     const thumbGap = preview >= 80 ? 10 : 6
-    // The thumbnails, their labels and the hint all sit under the flame.
-    const belowFlame = preview + 66
-    const columnW = stage.width - PAD * 2 - (sideBySide && panel ? PANEL_W + GAP : 0)
+    // The thumbnails, their labels and the hint all sit under the flame, and
+    // on a compact frame they are not there at all.
+    const belowFlame = compact ? 0 : preview + 66
+    const columnW = stage.width - pad * 2 - (sideBySide && panel ? PANEL_W + GAP : 0)
     const flameSize = Math.round(Mathf.Clamp(
-        Math.min(columnW, stage.height - PAD * 2 - belowFlame), 160, 560))
-    const panelW = Math.round(Math.min(PANEL_W, stage.width - PAD * 2))
-    const panelH = Math.round(stage.height - PAD * 2)
+        Math.min(columnW, stage.height - pad * 2 - belowFlame),
+        compact ? COMPACT_FLAME_MIN : 160, 560))
+    // A sheet on a compact frame, a 320 column otherwise. Full bleed rather
+    // than hanging off the right edge, which is what it did at 500x300.
+    const panelW = Math.round(compact ? stage.width - pad * 2 : Math.min(PANEL_W, stage.width - pad * 2))
+    const panelH = Math.round(stage.height - pad * 2)
 
     /**
      * The same values the sliders show, readable from inside the frame loop.
@@ -316,7 +346,7 @@ function Tinder() {
     return (
         <View style={{ width: "100%", height: "100%", backgroundColor: "#07070a",
                        flexDirection: "row", alignItems: "center",
-                       justifyContent: "center", padding: PAD }}>
+                       justifyContent: "center", padding: pad }}>
 
             {/* The fire, and the gesture. Handlers sit here rather than on the
                 stage root so dragging a slider never also leans the flame. */}
@@ -330,6 +360,7 @@ function Tinder() {
                 <View ref={flameBox as any}
                       style={{ width: flameSize, height: flameSize, backgroundImage: flame as any }} />
 
+                {!compact && (
                 <View style={{ flexDirection: "row", justifyContent: "center",
                                marginTop: 14 }}>
                     <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
@@ -346,10 +377,13 @@ function Tinder() {
                                texture={envelope ? envelope.texture() : null} />
                     </View>
                 </View>
+                )}
 
-                <Text style={{ color: "#5a5a68", fontSize: 12, marginTop: 14 }}>
-                    drag across the flame to blow on it
-                </Text>
+                {!compact && (
+                    <Text style={{ color: "#5a5a68", fontSize: 12, marginTop: 14 }}>
+                        drag across the flame to blow on it
+                    </Text>
+                )}
             </View>
 
             {panel && (
@@ -357,7 +391,7 @@ function Tinder() {
                     ? { width: PANEL_W, height: panelH, marginLeft: GAP,
                         backgroundColor: "#0b0b10", borderRadius: 8,
                         borderWidth: 1, borderColor: "#1c1c24", padding: 14 }
-                    : { position: "absolute", right: PAD, top: PAD,
+                    : { position: "absolute", right: pad, top: pad,
                         width: panelW, height: panelH,
                         backgroundColor: "#0b0b10", borderRadius: 8,
                         borderWidth: 1, borderColor: "#1c1c24", padding: 14 }}>
@@ -389,7 +423,7 @@ function Tinder() {
             )}
 
             {!panel && (
-                <View style={{ position: "absolute", top: PAD, right: PAD }}>
+                <View style={{ position: "absolute", top: pad, right: pad }}>
                     <Button text="controls" onClick={() => setPanel(true)}
                             style={{ fontSize: 11 }} />
                 </View>
