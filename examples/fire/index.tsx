@@ -24,10 +24,26 @@ const TEX = 512
 const PREVIEW = 96
 const PAD = 20
 const GAP = 16
+/** The panel's column: a share of the stage, floored and capped. */
 const PANEL_W = 320
-/** Below this the flame and the panel side by side leave neither enough room,
- *  so the panel stops taking a column and overlays instead. */
-const SIDE_BY_SIDE_MIN = 900
+const PANEL_MIN = 210
+const PANEL_SHARE = 0.42
+
+/**
+ * Below this the panel cannot have a column at all and the game folds.
+ *
+ * 900 was far too high, and the sizes that show it are measured rather than
+ * guessed. The editor's preview pane is 619 wide in a 1440 window and 859 in a
+ * 1920 one; the game page's own stage is 801 at 1280. So at 900 the panel was
+ * folded away in the editor even on a 1080p screen, which is where somebody
+ * building a game actually looks, and the sliders and thumbnails they were
+ * working with had to be dragged into view.
+ *
+ * 520 is the editor's pane at 1280 wide, 539, with room to spare. The panel
+ * takes a share of the stage rather than a fixed 320 so it can fit there:
+ * about 226 at 539, the full 320 by 800.
+ */
+const SIDE_BY_SIDE_MIN = 520
 
 /**
  * Below this HEIGHT, or whenever the panel cannot take a column of its own,
@@ -269,13 +285,14 @@ function Tinder() {
     // The thumbnails, their labels and the hint all sit under the flame, and
     // on a compact frame they are not there at all.
     const belowFlame = compact ? 0 : preview + 66
-    const columnW = stage.width - pad * 2 - (sideBySide && panel ? PANEL_W + GAP : 0)
+    const panelColumn = Math.round(Mathf.Clamp(stage.width * PANEL_SHARE, PANEL_MIN, PANEL_W))
+    const columnW = stage.width - pad * 2 - (sideBySide && panel ? panelColumn + GAP : 0)
     const flameSize = Math.round(Mathf.Clamp(
         Math.min(columnW, stage.height - pad * 2 - belowFlame),
         compact ? COMPACT_FLAME_MIN : 160, 560))
     // A sheet on a compact frame, a 320 column otherwise. Full bleed rather
     // than hanging off the right edge, which is what it did at 500x300.
-    const panelW = Math.round(compact ? stage.width - pad * 2 : Math.min(PANEL_W, stage.width - pad * 2))
+    const panelW = Math.round(compact ? stage.width - pad * 2 : Math.min(panelColumn, stage.width - pad * 2))
     const panelH = Math.round(stage.height - pad * 2)
 
     /**
@@ -393,7 +410,7 @@ function Tinder() {
 
             {panel && (
                 <View style={sideBySide
-                    ? { width: PANEL_W, height: panelH, marginLeft: GAP,
+                    ? { width: panelColumn, height: panelH, marginLeft: GAP,
                         backgroundColor: "#0b0b10", borderRadius: 8,
                         borderWidth: 1, borderColor: "#1c1c24", padding: 14 }
                     : { position: "absolute", right: pad, top: pad,
