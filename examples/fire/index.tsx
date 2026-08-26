@@ -30,7 +30,8 @@ const PANEL_W = 320
 const SIDE_BY_SIDE_MIN = 900
 
 /**
- * Below this there is not room for the game and its explanation at once.
+ * Below this HEIGHT, or whenever the panel cannot take a column of its own,
+ * there is not room for the game and its explanation at once.
  *
  * Measured rather than picked: at 500x300 the panel covered two thirds of the
  * width and the whole height, the flame was not on screen at all, and the hint
@@ -38,12 +39,11 @@ const SIDE_BY_SIDE_MIN = 900
  * frame entirely and the fire was invisible. What a visitor got was a list of
  * sliders for a fire they never saw.
  *
- * So under this size the panel starts closed and opens as a sheet over the
+ * So in that case the panel starts closed and opens as a sheet over the
  * flame, and the parts that explain the fire rather than being it, the three
  * field thumbnails and the drag hint, are dropped. The fire is the game; the
  * explanation is what a bigger frame buys.
  */
-const COMPACT_W = 620
 const COMPACT_H = 420
 /** Padding, and the flame's floor, both of which a small frame cannot afford. */
 const COMPACT_PAD = 8
@@ -247,7 +247,12 @@ function Knob({ c, value, onChange }: {
 
 function Tinder() {
     const stage = useStage()
-    const compact = stage.width < COMPACT_W || stage.height < COMPACT_H
+    // Compact whenever the panel cannot take a column of its own, which is the
+    // same question as sideBySide asked from the other side. Two rules left a
+    // middle where the panel overlaid the flame as a 320 wide block: that is
+    // what the site's own game pane is, about 630 by 450, and it is the case
+    // the first version of this shipped broken. One rule, no middle.
+    const compact = stage.width < SIDE_BY_SIDE_MIN || stage.height < COMPACT_H
 
     const [p, setP] = useState<Params>(DEFAULTS)
     // Closed on a small frame, because there it is a sheet over the fire
