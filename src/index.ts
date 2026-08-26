@@ -94,7 +94,8 @@ export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // MARK: a game's own files
 
-export { assetUrl, loadTexture, useTexture } from "./asset"
+export { assetUrl, loadTexture, useTexture, useFlipbook, loadSheet } from "./asset"
+export type { UvRect } from "./asset"
 
 /**
  * The texture pipeline: build and process images on the GPU.
