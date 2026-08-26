@@ -9,30 +9,30 @@ import { View, Text, mount, fx } from "oj"
  * and says nothing about what the game is. This shows the flame and the three
  * fields it is built from, which is the whole idea in one picture.
  *
- * Two things a cover has to get right, and both are the reason this file exists
- * rather than the recorder being cleverer.
+ * A cover has two jobs, and they are why this file exists at all.
  *
- * It is authored at the card's shape. The stage below is 16 by 9, the same
- * aspect the card is drawn at, so nothing is cropped and there are no letterbox
- * bars in the recording.
+ * It has to be built at the card's shape. The stage below is 16 by 9, the same
+ * aspect the card is drawn at, so nothing is cropped and the recording has no
+ * letterbox bars in it.
  *
- * And it loops. A card plays on repeat forever next to fifteen others, so a clip
- * that does not join up announces its own wrap every few seconds. See LOOP.
+ * And it has to loop. A card plays on repeat forever next to fifteen others, so
+ * a clip that does not join up announces its own wrap every few seconds. How
+ * that is done is under LOOP below, and it is the interesting part of this file.
  */
 
 const SECONDS = 6
 /*
- * The crossfade's period, deliberately a little longer than the clip.
+ * The crossfade's period, a little longer than the clip on purpose.
  *
  * The blend below runs from 0 to 1 across PERIOD and then resets. Recording for
- * exactly PERIOD would start a couple of frames after the scene did and so run
- * past the reset, catching the jump inside the clip. Recording a little less
+ * exactly PERIOD would start a couple of frames after the scene did and run
+ * past that reset, catching the jump inside the clip. Recording slightly less
  * than a period never reaches it: the last frame sits at a weight near 1, which
  * is the copy one period back, which is where the first frame came from.
- * The margin is small on purpose. At six percent the clip ended with six
- * percent of a frame six seconds away mixed in, which closed only a seventh of
- * the gap; at one percent the copy it lands on is a twentieth of a second from
- * where the clip began. Measured by comparing the last frame against the first.
+ *
+ * The margin is one percent rather than more, because the clip ends on a copy
+ * of a moment that far back, and a small number puts that moment close to where
+ * the clip began.
  */
 const PERIOD = SECONDS * 1.01
 const STAGE_W = 960

@@ -2,72 +2,71 @@ import { useRef, useState } from "react"
 import { View, Text, Button, Slider, ScrollView, mount, useFrame, useStage, fx, Mathf } from "oj"
 
 /**
- * A fire with no art in it.
+ * Fire, drawn from nothing. No art files and no particle system.
  *
- * Vertically stretched noise rising through a soft tapered envelope, thresholded
- * into tongues and coloured by a ramp. Every frame is one crossing into C# and a
- * handful of fragment blits, which is why this runs in a browser at all: the
- * compute shader version of this effect cannot, because WebGL2 has no compute
- * shaders.
+ * The whole effect is four steps, run again every frame:
  *
- * Every number that shapes it is on a slider, because none of them can be
- * reasoned to: the only way to find them is to watch the picture while you move
- * them. The three thumbnails under the flame are its actual inputs, which the
- * finished picture never shows: it multiplies them, thresholds the product and
- * colours what survives, and by then a field that has gone flat and one that has
- * gone to static look much the same through the ramp.
+ *   1. Generate two layers of moving noise, stretched tall so they read as
+ *      rising streaks instead of round blobs.
+ *   2. Blend the two together.
+ *   3. Multiply by an envelope: a soft flame-shaped mask saying where fire is
+ *      allowed to be.
+ *   4. Keep only the bright peaks of what is left, and colour those through a
+ *      ramp from dark red to near white.
+ *
+ * Every number in those steps is on a slider, so you can move one and watch
+ * what it does. The three thumbnails under the flame show the raw ingredients
+ * from steps 1 and 3, which the finished picture hides.
+ *
+ * A good place to start reading is the Tinder component near the bottom, which
+ * lays the screen out and calls everything above it.
  */
 
+/** Generated textures are this many pixels square. */
 const TEX = 512
-/** Thumbnails render at this size whatever they are shown at: the noise is a
- *  function of normalised uv, so a smaller box is the same field sampled coarser. */
+/**
+ * The thumbnails are generated smaller, and it costs them nothing. The noise is
+ * a function of position from 0 to 1, so a small texture is the same field
+ * sampled more coarsely rather than a different picture.
+ */
 const PREVIEW = 96
 const PAD = 20
 const GAP = 16
-/** The panel's column: a share of the stage, floored and capped. */
+/** The controls column: a share of the stage, with a floor and a ceiling. */
 const PANEL_W = 320
 const PANEL_MIN = 210
 const PANEL_SHARE = 0.42
 
 /**
- * Below this the panel cannot have a column at all and the game folds.
+ * Narrower than this and the controls cannot have a column of their own, so the
+ * layout folds and the panel becomes a sheet you open over the flame.
  *
- * 900 was far too high, and the sizes that show it are measured rather than
- * guessed. The editor's preview pane is 619 wide in a 1440 window and 859 in a
- * 1920 one; the game page's own stage is 801 at 1280. So at 900 the panel was
- * folded away in the editor even on a 1080p screen, which is where somebody
- * building a game actually looks, and the sliders and thumbnails they were
- * working with had to be dragged into view.
- *
- * 520 is the editor's pane at 1280 wide, 539, with room to spare. The panel
- * takes a share of the stage rather than a fixed 320 so it can fit there:
- * about 226 at 539, the full 320 by 800.
+ * A game here is played at very different sizes, from a phone to a full window,
+ * so a layout built for one size is wrong nearly everywhere. useStage, further
+ * down, reports the size this game actually got.
  */
 const SIDE_BY_SIDE_MIN = 520
 
 /**
- * Below this HEIGHT, or whenever the panel cannot take a column of its own,
- * there is not room for the game and its explanation at once.
- *
- * Measured rather than picked: at 500x300 the panel covered two thirds of the
- * width and the whole height, the flame was not on screen at all, and the hint
- * text ran under the thumbnails. On a 360x640 phone the panel covered the
- * frame entirely and the fire was invisible. What a visitor got was a list of
- * sliders for a fire they never saw.
- *
- * So in that case the panel starts closed and opens as a sheet over the
- * flame, and the parts that explain the fire rather than being it, the three
- * field thumbnails and the drag hint, are dropped. The fire is the game; the
- * explanation is what a bigger frame buys.
+ * Shorter than this and there is no room for the flame and its explanation at
+ * once, however wide the frame is. The fire is the game, so the fire is what
+ * stays: the thumbnails and the hint are what a larger frame buys you.
  */
 const COMPACT_H = 420
-/** Padding, and the flame's floor, both of which a small frame cannot afford. */
+/** Padding, and a smallest flame, that only a roomy frame can afford. */
 const COMPACT_PAD = 8
 const COMPACT_FLAME_MIN = 110
 
 /** How far, in degrees, a drag all the way to one edge leans the flame. */
 const LEAN_MAX = 14
 
+/**
+ * The colour ramp: a number from 0 to 1 goes in, a colour comes out, and the
+ * stops in between are blended.
+ *
+ * Most of what makes this look like fire is the shape. The ramp is what makes
+ * the shape look hot.
+ */
 const EMBERS: { color: [number, number, number, number]; at: number }[] = [
     { color: [0.15, 0, 0, 0], at: 0 },          // transparent: sits on any background
     { color: [0.7, 0.06, 0, 0.55], at: 0.3 },   // dark red, still see-through
@@ -76,7 +75,7 @@ const EMBERS: { color: [number, number, number, number]; at: number }[] = [
     { color: [1, 0.93, 0.62, 1], at: 1 },       // near-white, only at the hottest
 ]
 
-/** One noise field. The two are independent all the way down. */
+/** The settings for one noise layer. There are two, independent all the way down. */
 interface Field {
     scaleX: number; scaleY: number; speed: number
     octaves: number; lacunarity: number; gain: number
@@ -93,7 +92,12 @@ interface Params {
     lo: number; hi: number
 }
 
-/** Found by dragging, which is the only way any of these were ever going to be. */
+/**
+ * Where the sliders start.
+ *
+ * There is no way to reason these out. They were found by dragging and
+ * watching, which is what the sliders are for.
+ */
 const DEFAULTS: Params = {
     scaleXA: 0.36, scaleYA: 0.24, speedA: 0.17,
     octavesA: 3, lacunarityA: 2.35, gainA: 0.99,
@@ -106,8 +110,11 @@ const DEFAULTS: Params = {
 }
 
 /**
- * Which knobs feed the envelope, and so cost a blur when they move. Everything
- * else is read fresh each frame and costs nothing to change.
+ * The knobs that feed the envelope.
+ *
+ * Moving one of these rebuilds the envelope, which costs a blur, so they are
+ * listed here and used as the rebuild condition further down. Every other knob
+ * is read fresh each frame and is free to move.
  */
 const ENVELOPE_KEYS = ["rBottom", "rTop", "height", "baseY", "blur", "falloff"] as const
 
@@ -122,10 +129,12 @@ interface Control {
 }
 
 /**
- * Ranges are deliberately generous at the low end. The first pass floored scale
- * at 0.5 and stretch at 0.2, and the settings worth having turned out to sit on
- * both of those stops, which is the shape of a range that is wrong rather than a
- * value that is right.
+ * Every slider: which parameter it moves, its range, and the heading it sits
+ * under.
+ *
+ * The ranges reach further down than looks sensible. That is deliberate. If the
+ * settings worth having end up sitting on a slider's stop, the range is wrong
+ * rather than the value.
  */
 const CONTROLS: Control[] = [
     { key: "scaleXA", label: "scale X", min: 0.05, max: 8, group: "Field A, the body" },
@@ -156,29 +165,31 @@ const CONTROLS: Control[] = [
 ]
 
 /**
- * The envelope: where a flame is allowed to exist, and how strongly.
+ * Step 3: the envelope, a soft mask saying where flame is allowed to be, and
+ * how strongly.
  *
- * Soft on purpose. A hard mask multiplied into the field leaves the silhouette's
- * own outline visible wherever the noise was bright, which reads as a lit shape
- * rather than as fire. Blurred, the product falls off gradually and the
- * threshold downstream cuts a ragged edge out of it instead.
+ * An sdf gives the silhouette, a capsule wide at the base and narrow at the
+ * tip. The blur is the part that matters. A hard mask leaves its own outline
+ * showing wherever the noise behind it was bright, which reads as a lit shape
+ * rather than as fire. Blurred, the edge fades out gradually and step 4 cuts a
+ * ragged line through it instead.
  *
- * Multiplied by a base-to-tip falloff, so the flame is dense at the base and
- * thin enough at the top for the threshold to break it into separate tongues.
- * That falloff is what makes it read as rising rather than as a filled shape.
+ * That is then multiplied by a gradient fading from base to tip, so the flame
+ * is dense at the bottom and thin enough at the top to break into separate
+ * tongues. This is what makes it read as rising rather than as a filled shape.
  */
 function buildEnvelope(p: Params, lean: number) {
     const shape = fx.image
         .sdf(TEX, TEX, "unevenCapsule", {
             rBottom: p.rBottom, rTop: p.rTop, h: p.height, y: p.baseY,
-            // Leaning the silhouette is what selling "blowing on it" needs: the
-            // noise alone reads as flicker, not as direction.
+            // Leaning the silhouette is what sells "blowing on it". Noise alone
+            // reads as flicker, never as direction.
             rotation: lean,
         })
         .clamp(0, 1)
         .blur(Math.round(p.blur))
     // The gradient's 0 stop sits at low v, and low v is the bottom of the
-    // element, so white at 0 is a bright base.
+    // element, so white at 0 means a bright base.
     const fromBase = fx.image
         .gradient(TEX, TEX, [
             { color: [1, 1, 1, 1], at: 0 },
@@ -189,17 +200,19 @@ function buildEnvelope(p: Params, lean: number) {
 }
 
 /**
- * One layer of rising turbulence.
+ * Step 1: one layer of rising turbulence.
  *
- * Stretching it, rather than adding octaves, is what makes it read as flame: an
- * isotropic field gives round blobs, and a flame is vertical streaks.
+ * The scale is uneven on purpose. An even field gives round blobs, and a flame
+ * is vertical streaks, so the noise is stretched tall before anything else
+ * happens to it.
  *
- * The offset is negative in y because the field has to travel the way the flame
- * rises. Scrolling it positive is the same picture flowing downward, which is
- * unmistakable to look at and invisible to every numeric check.
+ * The offset is negative in y because the field has to travel the way a flame
+ * rises. Scrolling it positive gives the same picture flowing downward, which
+ * is unmistakable on screen and invisible to any numeric check.
  *
- * Simplex, not the default value noise. Value noise interpolates a square grid,
- * so at the octave gain a flame wants its cells show through as blocks.
+ * Simplex rather than the default value noise. Value noise interpolates a
+ * square grid, and at the settings a flame wants, its cells show through as
+ * blocks.
  */
 const layer = (f: Field, seed: number, ox: number, t: number, size = TEX) =>
     fx.image.noise(size, size, {
@@ -228,12 +241,12 @@ function Thumb({ label, texture, size }: { label: string; texture: unknown; size
 }
 
 /**
- * Its own component, so its animated target is its own. Deps are empty on
- * purpose: the build reads the live params, so a slider changes what this shows
- * on the next frame without tearing down the loop.
+ * A thumbnail that animates its own field, so it shows what that field is doing
+ * right now rather than a still.
  *
- * Rendered small, since the noise is a function of normalised uv: a 96 square is
- * the same field as the 512 one, just sampled coarser.
+ * The deps array is empty on purpose. The draw function reads live.current, so
+ * moving a slider changes what this shows on the next frame without tearing the
+ * loop down and building a new one.
  */
 function FieldThumb({ label, pick, seed, ox, live, size }: {
     label: string; pick: (p: Params) => Field; seed: number; ox: number
@@ -263,45 +276,44 @@ function Knob({ c, value, onChange }: {
 
 function Tinder() {
     const stage = useStage()
-    // Compact whenever the panel cannot take a column of its own, which is the
-    // same question as sideBySide asked from the other side. Two rules left a
-    // middle where the panel overlaid the flame as a 320 wide block: that is
-    // what the site's own game pane is, about 630 by 450, and it is the case
-    // the first version of this shipped broken. One rule, no middle.
+    // Is there room for the flame and the controls at once? Asked as a single
+    // question, so there is no in-between size where the panel ends up sitting
+    // on top of the flame instead of beside it.
     const compact = stage.width < SIDE_BY_SIDE_MIN || stage.height < COMPACT_H
 
     const [p, setP] = useState<Params>(DEFAULTS)
-    // Closed on a small frame, because there it is a sheet over the fire
-    // rather than a column beside it, and a visitor who has not asked for the
-    // controls should see the thing the controls are for.
+    // Closed to begin with on a small frame, where the panel is a sheet over
+    // the fire rather than a column beside it. Somebody who has not asked for
+    // the controls should see the thing the controls are for.
     const [panel, setPanel] = useState(() => !compact)
 
-    // Every size below is derived from the stage rather than declared, which is
-    // the whole difference between this and the fixed 960x700 it used to be.
+    // Every size below is worked out from the stage rather than written down,
+    // which is what lets one layout serve a phone and a full window.
     const sideBySide = stage.width >= SIDE_BY_SIDE_MIN
     const pad = compact ? COMPACT_PAD : PAD
     const preview = Math.round(Mathf.Clamp(stage.width * 0.09, 52, PREVIEW))
     const thumbGap = preview >= 80 ? 10 : 6
-    // The thumbnails, their labels and the hint all sit under the flame, and
-    // on a compact frame they are not there at all.
+    // The thumbnails, their labels and the hint all sit under the flame, and on
+    // a compact frame they are not drawn at all.
     const belowFlame = compact ? 0 : preview + 66
     const panelColumn = Math.round(Mathf.Clamp(stage.width * PANEL_SHARE, PANEL_MIN, PANEL_W))
     const columnW = stage.width - pad * 2 - (sideBySide && panel ? panelColumn + GAP : 0)
     const flameSize = Math.round(Mathf.Clamp(
         Math.min(columnW, stage.height - pad * 2 - belowFlame),
         compact ? COMPACT_FLAME_MIN : 160, 560))
-    // A sheet on a compact frame, a 320 column otherwise. Full bleed rather
-    // than hanging off the right edge, which is what it did at 500x300.
+    // A column beside the flame when there is room, a full width sheet over it
+    // when there is not.
     const panelW = Math.round(compact ? stage.width - pad * 2 : Math.min(panelColumn, stage.width - pad * 2))
     const panelH = Math.round(stage.height - pad * 2)
 
     /**
-     * The same values the sliders show, readable from inside the frame loop.
+     * The same values the sliders show, but readable from inside the frame loop.
      *
-     * State alone would not do: the animated chain is built by a callback whose
-     * effect only re-runs when its deps change, so it would keep whichever
-     * params it closed over. Putting them in a ref lets every knob outside the
-     * envelope take effect on the very next frame without restarting the loop.
+     * State alone will not do here. The animated chain is built by a callback
+     * that only re-runs when its deps change, so it would keep whichever params
+     * it captured when it was built. A ref is always current, so every knob
+     * outside the envelope takes effect on the very next frame without
+     * restarting the loop.
      */
     const live = useRef<Params>(p)
     const set = (k: keyof Params, v: number) => {
@@ -310,21 +322,14 @@ function Tinder() {
     }
     const reset = () => { live.current = DEFAULTS; setP(DEFAULTS) }
 
-    // Quantised, so the envelope is rebuilt only when the lean visibly changes
-    // rather than on every pointer move: it contains a blur.
     const [lean, setLean] = useState(0)
     const target = useRef(0)
 
     /**
-     * The flame's own box, used to turn a pointer position into a lean.
+     * The flame's box on screen, used to turn a pointer position into a lean.
      *
-     * A pointer event reports { x, y } in PANEL space, and worldBound is in that
-     * same space, so the two subtract cleanly whatever the stage is scaled to.
-     * The previous version read input.mouse.position instead, which is Unity
-     * screen space: a different origin, physical rather than logical pixels, and
-     * blind to the letterbox offset. It also tested input.mouse.held, which does
-     * not exist on the mouse (the member is leftButton), so the whole gesture was
-     * reading undefined and the flame never leaned at all.
+     * A pointer event reports x and y in panel space, and worldBound is in that
+     * same space, so the two subtract cleanly however the stage is scaled.
      */
     const flameBox = useRef<any>(null)
     const drag = useRef({ active: false, nx: 0 })
@@ -333,14 +338,17 @@ function Tinder() {
         const el = flameBox.current
         if (el === null) return 0
         const b = el.worldBound
-        // worldBound is NaN until the first layout pass, and NaN propagates
-        // silently through the lerp into the envelope's rotation, where it
-        // renders as nothing at all rather than as an error.
+        // worldBound is NaN until the first layout pass, and NaN spreads
+        // quietly: it reaches the envelope's rotation and the flame then draws
+        // as nothing at all, with no error anywhere to say why.
         if (!b || !(b.width > 0)) return 0
         const nx = ((e.x - b.x) / b.width - 0.5) * 2
         return Number.isNaN(nx) ? 0 : Mathf.Clamp(nx, -1, 1)
     }
 
+    // Ease toward the lean the drag is asking for, then round it to every other
+    // degree. The envelope contains a blur, so it is worth rebuilding only when
+    // the lean changes visibly rather than on every pointer move.
     useFrame((dt) => {
         const wanted = drag.current.active ? drag.current.nx * LEAN_MAX : 0
         target.current = Mathf.Lerp(target.current, wanted, 1 - Math.pow(0.02, dt))
@@ -351,16 +359,17 @@ function Tinder() {
     const envelope = fx.useImage(() => buildEnvelope(p, lean),
         [...ENVELOPE_KEYS.map(k => p[k]), lean])
 
+    // Steps 1, 2 and 4, once per frame. Step 3, the envelope, is built above.
     const flame = fx.useAnimatedTexture(TEX, TEX, (t) => {
         const q = live.current
-        // Two rates, so the fine detail outruns the body and the whole thing
-        // never resolves into one sliding texture.
+        // Two speeds, so the fine detail outruns the body and the picture never
+        // settles into one texture sliding along.
         const turbulence = layer(fieldA(q), 1, 0, t)
             .multiply(1 - q.mix)
             .add(layer(fieldB(q), 2, 3.7, t).multiply(q.mix))
         const heat = envelope ? turbulence.multiply(envelope) : turbulence
-        // The threshold is what turns fog into licks: the band starts above the
-        // product's mean so only the peaks survive, and the envelope's falloff
+        // The threshold is what turns fog into licks. The band starts above the
+        // average brightness, so only peaks survive, and the envelope's fade
         // means fewer of them survive the higher up they are.
         return heat.remap(q.lo, q.hi, 0, 1).clamp(0, 1).ramp(EMBERS)
     }, [envelope])
@@ -370,8 +379,9 @@ function Tinder() {
                        flexDirection: "row", alignItems: "center",
                        justifyContent: "center", padding: pad }}>
 
-            {/* The fire, and the gesture. Handlers sit here rather than on the
-                stage root so dragging a slider never also leans the flame. */}
+            {/* The fire, and the gesture that blows on it. The handlers sit
+                here rather than on the root so that dragging a slider does not
+                also lean the flame. */}
             <View
                 style={{ alignItems: "center", justifyContent: "center", flexGrow: 1 }}
                 onPointerDown={(e: any) => { drag.current.active = true; drag.current.nx = leanFrom(e) }}
@@ -394,7 +404,8 @@ function Tinder() {
                                     live={live} size={preview} />
                     </View>
                     <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
-                        {/* No render of its own: the flame already holds this one. */}
+                        {/* No animation of its own: the flame above already
+                            builds this one, so it just shows that texture. */}
                         <Thumb label="envelope, blurred" size={preview}
                                texture={envelope ? envelope.texture() : null} />
                     </View>
