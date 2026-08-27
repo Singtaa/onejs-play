@@ -48,7 +48,7 @@ function Bounce() {
                 p.fill()
             })}>
             <Text style={{ color: "#5a5a68", fontSize: 13, marginTop: 16 }}>
-                {taps === 0 ? "click the ball" : `${taps} nudges`}
+                {taps === 0 ? "click anywhere on the game" : `${taps} nudges`}
             </Text>
         </View>
     )

@@ -2,12 +2,12 @@ import { useRef } from "react"
 import { View, Text, mount, useFrame, useStage, batchedVisualContent } from "oj"
 
 /**
- * This file is the game's card: the little clip that plays on the gallery tile
- * and at the top of the page. Name a file cover.tsx, put it beside your game,
- * and this is what gets recorded when you publish.
+ * This file is the game's card: the short clip that stands in for it wherever
+ * it is shown. Name a file cover.tsx, put it beside your game, and this is
+ * what gets recorded when you publish.
  *
- * Delete it and nothing breaks. Your game gets filmed instead, exactly as a
- * player sees it in a card-shaped window.
+ * Delete it and nothing breaks. Your index.tsx gets filmed instead, exactly as
+ * a player sees it in a card-shaped window.
  */
 
 /** Six seconds is the default take. Change it with cover.seconds in oj.json. */
@@ -71,6 +71,7 @@ mount(<Cover />)
  *     cover.gif                 same, animated
  *     cover.tsx                 this file, recorded when you publish
  *     cover.png or cover.jpg    a still, used as is
+ *     index.tsx                 your game itself, filmed, if you provide none
  *
  * That is the whole of it. Publish, and the card looks after itself.
  */
