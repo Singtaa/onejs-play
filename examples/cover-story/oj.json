@@ -1,0 +1,25 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Cover Story",
+    "author": "singtaa",
+    "description": "How to give your game a card. Read cover.tsx: it is about forty lines, and it is the whole of what you need to know. The bouncing ball is only here so there is something to make a card for.",
+    "entry": "index.tsx",
+    "stage": {
+        "size": [
+            960,
+            540
+        ],
+        "fit": "fluid"
+    },
+    "tags": [
+        "toy"
+    ],
+    "controls": [
+        "pointer",
+        "touch"
+    ],
+    "cover": {
+        "seconds": 6
+    }
+}
