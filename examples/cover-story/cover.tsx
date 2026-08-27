@@ -68,14 +68,13 @@ mount(<Cover />)
  * beside your game and it wins:
  *
  *     cover.mp4 or cover.webm   a video you made yourself, used as is
- *     cover.gif                 same, animated
  *     cover.tsx                 this file, recorded when you publish
  *     cover.png or cover.jpg    a still, used as is
  *     index.tsx                 your game itself, filmed, if you provide none
  *
  * The Assets panel stores png and jpeg, and converts anything else as it comes
- * in. So a gif dragged in arrives as a still png. For an animation you did not
- * write as code, upload cover.mp4 or cover.webm instead.
+ * in, so a gif dragged in arrives as a still png. For an animation you did not
+ * write as code, upload cover.mp4 or cover.webm.
  *
  * That is the whole of it. Publish, and the card looks after itself.
  */
