@@ -296,7 +296,6 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
         }
         // Deliberately keyed on the room alone: the handlers live in a ref, so
         // a parent re-rendering does not disconnect everyone.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [name])
 
     return facade.current

@@ -24,6 +24,9 @@ import { useEffect, useState } from "react"
 import { loadImageAsync, loadTextAsync } from "onejs-unity/assets"
 import type { SheetConfig } from "onejs-react"
 
+// Type-level redeclaration only, so dynamic host globals typecheck;
+// no runtime binding is created.
+// eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
 
 /**

@@ -143,6 +143,9 @@ export const THEME_USS = `
 }
 `
 
+// Type-level redeclaration only, so dynamic host globals typecheck;
+// no runtime binding is created.
+// eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
 
 let applied = false

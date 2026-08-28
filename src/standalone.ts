@@ -27,6 +27,9 @@ import { normalizeStage, type StageInput, type StageLayout } from "./stage"
 import { createHostInputBackend } from "./hostinput"
 import { setInputBackend } from "onejs-unity/input"
 
+// Type-level redeclaration only, so dynamic host globals typecheck;
+// no runtime binding is created.
+// eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
 
 /** The standalone runtime, if mount() has started one. */

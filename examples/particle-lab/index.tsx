@@ -63,7 +63,7 @@ function ParticleLab() {
     const layer = layers[Math.min(selected, layers.length - 1)]!
 
     const set = (patch: Partial<Knobs>) => setLayers((current) => {
-        for (const [key, value] of Object.entries(patch)) {
+        for (const [, value] of Object.entries(patch)) {
             if (typeof value === "number" && !Number.isFinite(value)) return current
             if (value === undefined) return current
         }

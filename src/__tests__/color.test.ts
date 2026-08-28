@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest"
+// A deliberate reach into the sibling's internals: this is a contract test
+// on the wire normalization itself, which onejs-react does not export as API.
+// eslint-disable-next-line no-restricted-imports
 import { toWire } from "onejs-react/src/particles"
 import { Color } from "../color"
 

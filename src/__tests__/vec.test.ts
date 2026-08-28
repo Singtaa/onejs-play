@@ -53,7 +53,7 @@ describe("Vector2", () => {
         })
         it("does not mutate the source", () => {
             const v = new Vector2(3, 4)
-            v.normalized
+            void v.normalized
             expect(v.x).toBe(3)
             expect(v.y).toBe(4)
         })

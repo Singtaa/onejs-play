@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { View, Text, Image, mount, useFrame, assetUrl } from "oj"
+import { View, Text, mount, useFrame } from "oj"
 import "onejs:tailwind"
 
 /*

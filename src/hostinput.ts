@@ -37,6 +37,9 @@
 
 import { screenToStage, screenDeltaToStage, type StageLayout } from "./stage"
 
+// Type-level redeclaration only, so dynamic host globals typecheck;
+// no runtime binding is created.
+// eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
 
 /** Methods whose return value is a position in Unity screen space. */
