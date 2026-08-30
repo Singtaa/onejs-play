@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Tuner",
+    "author": "singtaa",
+    "description": "A field of light is drifting out of tune. Match it before the round ends. The picture is a shader you can read, written in the same TypeScript as the rest of the game.",
+    "entry": "index.tsx",
+    "stage": { "size": [960, 600], "fit": "letterbox" },
+    "tags": ["puzzle", "toy"],
+    "controls": ["keyboard", "pointer"]
+}
