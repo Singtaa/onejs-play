@@ -108,3 +108,36 @@ describe("container surface", () => {
         expect(typeof oj.render).toBe("function")
     })
 })
+
+describe("the shader language is reachable from oj", () => {
+    it("exposes sl, encode and ShaderProgram", () => {
+        // Every phase of this could be finished and a Play author still unable
+        // to reach any of it. That gap is invisible from inside the packages
+        // that built it, which is why it is a test rather than a note.
+        expect(typeof (oj as any).sl).toBe("object")
+        expect(typeof (oj as any).sl.program).toBe("function")
+        expect(typeof (oj as any).encode).toBe("function")
+        expect((oj as any).ShaderProgram).toBeDefined()
+    })
+
+    it("records and encodes a program end to end", () => {
+        const sl = (oj as any).sl
+        const p = sl.program(({ uv, time }: any) => {
+            const q = uv.mul(8).add(time.mul(0.4))
+            const v = sl.sin(q.x).add(sl.sin(q.y))
+            return sl.ramp(v.mul(0.25).add(0.5), ["#000018", "#0080ff", "#ffffff"])
+        })
+        const e = (oj as any).encode(p)
+        expect(e.hash).toMatch(/^[0-9a-f]{8}$/)
+        expect(e.instructions).toBeGreaterThan(0)
+        expect(e.registersUsed).toBeLessThanOrEqual(8)
+    })
+
+    it("can build the manifest an ejected project compiles from", () => {
+        const sl = (oj as any).sl
+        const p = sl.program(({ uv }: any) => sl.vec4(uv, 0, 1))
+        const m = (oj as any).manifest([p])
+        expect(m.programs[0].hash).toBe(p.hash)
+        expect(m.programs[0].hlsl).toContain("Shader ")
+    })
+})
