@@ -1,27 +1,20 @@
 import { useRef, useState } from "react"
-import {
-    View, Text, mount, useFrame, input, random,
-    sl, encode, ShaderProgram,
-} from "oj"
-import {
-    DIAL_NAMES, ROUND_SECONDS, closeness, isTuned, makeTarget, roundScore, clamp01,
-    type DialName, type Dials,
-} from "./tuner"
+import { View, Text, mount, useFrame, input, sl, encode, ShaderProgram } from "oj"
+import { DIALS, DIAL_NAMES, clamp01, turnRate, type DialName, type Dials } from "./tuner"
 
 /**
- * THE SHADER IS THE GAME.
+ * THE SHADER IS THE POINT.
  *
- * Two panels run the SAME program with different uniform values. One holds the
- * target, one holds yours, and matching them is the round. That is also the
- * clearest way to see what a program is: a constant, recorded once, with the
- * values that actually vary passed in beside it.
+ * This is not a game. It is the shortest honest answer to "can the Play
+ * container do shader programming, and is it pleasant?" So it shows a program
+ * running on the GPU, the three numbers feeding it, and the code that produced
+ * it, all at once. Nothing is hidden and there is nothing to win.
  *
- * Recorded at module scope on purpose. `sl.program` runs the function ONCE, here
- * at load, to record a graph; it does not run per pixel or per frame. Building
- * it inside a component would re-record it on every render for no reason.
+ * Recorded at module scope on purpose. `sl.program` runs the function ONCE,
+ * here at load, to record a graph; it does not run per pixel or per frame.
+ * Building it inside a component would re-record it on every render.
  */
 const field = encode(sl.program(({ uv, time }) => {
-    // Uniforms are the parts a round changes. Everything else is baked in.
     const warp = sl.uniform.float("warp", 0.5)
     const hue = sl.uniform.float("hue", 0.5)
     const speed = sl.uniform.float("speed", 0.5)
@@ -29,157 +22,164 @@ const field = encode(sl.program(({ uv, time }) => {
     const t = time.mul(speed.mul(1.6).add(0.1))
     const p = uv.sub(0.5).mul(warp.mul(14).add(2))
 
-    // Three drifting waves. Their sum is the pattern, and the fact that it
-    // never repeats is the whole reason this is a shader rather than a texture.
     const v = sl.sin(p.x.add(t))
         .add(sl.sin(p.y.sub(t.mul(0.8))))
         .add(sl.sin(p.x.add(p.y).mul(0.7).add(t.mul(1.3))))
 
     const n = v.mul(0.22).add(0.5).saturate()
 
-    // Hue has to be a uniform, so a colour ramp cannot do this: a ramp's stops
-    // are constants. hsv2rgb takes the hue as a value like any other.
     const rgb = sl.hsv2rgb(sl.vec3(hue.add(n.mul(0.18)).fract(), 0.75, n.mul(0.7).add(0.25)))
     return sl.vec4(rgb, 1)
 }))
 
-const STEP = 0.02
-const rand = random()
+/**
+ * The same program, as text, because seeing it is the demonstration.
+ *
+ * Kept beside the real thing and pinned by a test: code shown next to its own
+ * output is only worth anything if it is actually the code that ran, and a
+ * snippet that drifts is worse than none.
+ */
+const SOURCE = [
+    "sl.program(({ uv, time }) => {",
+    "  const warp  = sl.uniform.float(\"warp\", 0.5)",
+    "  const hue   = sl.uniform.float(\"hue\", 0.5)",
+    "  const speed = sl.uniform.float(\"speed\", 0.5)",
+    "",
+    "  const t = time.mul(speed.mul(1.6).add(0.1))",
+    "  const p = uv.sub(0.5).mul(warp.mul(14).add(2))",
+    "",
+    "  const v = sl.sin(p.x.add(t))",
+    "    .add(sl.sin(p.y.sub(t.mul(0.8))))",
+    "    .add(sl.sin(p.x.add(p.y).mul(0.7).add(t.mul(1.3))))",
+    "",
+    "  const n = v.mul(0.22).add(0.5).saturate()",
+    "  const rgb = sl.hsv2rgb(",
+    "    sl.vec3(hue.add(n.mul(0.18)).fract(), 0.75,",
+    "            n.mul(0.7).add(0.25)))",
+    "  return sl.vec4(rgb, 1)",
+    "})",
+]
 
-function Panel({ dials, label, tint }: { dials: Dials; label: string; tint: string }) {
-    return (
-        <View style={{ alignItems: "center" }}>
-            <Text style={{ color: tint, fontSize: 15, marginBottom: 6, letterSpacing: 1, whiteSpace: "nowrap" }}>{label}</Text>
-            <ShaderProgram
-                program={field}
-                uniforms={{ warp: dials.warp, hue: dials.hue, speed: dials.speed }}
-                style={{
-                    width: 320, height: 320, borderRadius: 12,
-                    borderWidth: 2, borderColor: tint,
-                }}
-            />
-        </View>
-    )
-}
+const INK = "#e6edf3"
+const DIM = "#8b95a5"
+const FAINT = "#6b7688"
+const GOLD = "#ffd166"
 
-function Dial({ name, value, target, selected }: {
-    name: DialName; value: number; target: number; selected: boolean
+/** One uniform: what it is called, what it does, and where it currently sits. */
+function Dial({ name, does, value, selected }: {
+    name: DialName; does: string; value: number; selected: boolean
 }) {
-    const near = closeness(value, target)
     return (
         <View style={{
-            flexDirection: "row", alignItems: "center", marginBottom: 8,
-            paddingLeft: 10, paddingRight: 10, paddingTop: 6, paddingBottom: 6,
-            borderRadius: 8,
-            backgroundColor: selected ? "#ffffff18" : "#00000000",
+            flexDirection: "row", alignItems: "center", marginBottom: 6,
+            paddingLeft: 10, paddingRight: 10, paddingTop: 5, paddingBottom: 5,
+            borderRadius: 8, backgroundColor: selected ? "#ffffff14" : "#00000000",
         }}>
-            <Text style={{ color: selected ? "#ffd166" : "#9aa4b2", width: 70, fontSize: 15 }}>
+            <Text style={{
+                color: selected ? GOLD : DIM, width: 84, fontSize: 15,
+                whiteSpace: "nowrap",
+            }}>
                 {selected ? "▸ " : "  "}{name}
             </Text>
-            {/* The meter is the only feedback there is. Without it you are
-                guessing at a picture; with it you are converging on one. */}
-            <View style={{ width: 220, height: 10, backgroundColor: "#1b2130", borderRadius: 5 }}>
+
+            {/* A real slider: the knob is WHERE THE VALUE IS. The version this
+                replaced drew distance from a hidden target, which looked
+                exactly like a slider and moved the opposite way when you were
+                past the target. Nobody could read it, correctly. */}
+            <View style={{ width: 240, height: 6, backgroundColor: "#1b2130", borderRadius: 3 }}>
                 <View style={{
-                    width: Math.max(2, near * 220), height: 10, borderRadius: 5,
-                    backgroundColor: near > 0.94 ? "#7ee787" : near > 0.7 ? "#ffd166" : "#4a5568",
+                    width: clamp01(value) * 240, height: 6, borderRadius: 3,
+                    backgroundColor: selected ? GOLD : "#3d4553",
                 }} />
             </View>
+
+            <Text style={{ color: selected ? INK : DIM, width: 52, fontSize: 14, marginLeft: 10 }}>
+                {value.toFixed(2)}
+            </Text>
+            <Text style={{ color: FAINT, fontSize: 13, whiteSpace: "nowrap" }}>{does}</Text>
         </View>
     )
 }
 
-function Game() {
-    const [target, setTarget] = useState<Dials>(() => makeTarget(() => rand.next()))
+function App() {
     const [dials, setDials] = useState<Dials>({ warp: 0.5, hue: 0.5, speed: 0.5 })
     const [picked, setPicked] = useState(0)
-    const [score, setScore] = useState(0)
-    const [left, setLeft] = useState(ROUND_SECONDS)
-    const [flash, setFlash] = useState("")
 
-    /**
-     * The frame loop reads the latest state through refs rather than through
-     * its closure.
-     *
-     * Everything below could be written with `dials` and `target` directly and
-     * a dependency array, and it would be subtly wrong: useFrame would capture
-     * whatever they were when the effect last ran, so a round could be scored
-     * against a stale target. Refs are read at the moment the frame runs.
-     */
-    const now = useRef({ target, dials, left, picked, hold: 0 })
-    now.current.target = target
+    // The frame loop reads the latest state through refs rather than through
+    // its closure, which would capture whatever these were when the effect ran.
+    const now = useRef({ dials, picked, hold: 0 })
     now.current.dials = dials
-    now.current.left = left
     now.current.picked = picked
 
     useFrame((dt) => {
         const s = now.current
 
-        if (input.keyboard.wasKeyPressed("UpArrow")) setPicked((i) => (i + DIAL_NAMES.length - 1) % DIAL_NAMES.length)
-        if (input.keyboard.wasKeyPressed("DownArrow")) setPicked((i) => (i + 1) % DIAL_NAMES.length)
+        // Unity's spelling. The browser calls these ArrowUp and ArrowDown, and
+        // the container stores them under these names; asking for the browser
+        // spelling used to match nothing at all and silently do nothing.
+        if (input.keyboard.wasKeyPressed("UpArrow")) {
+            setPicked((i) => (i + DIAL_NAMES.length - 1) % DIAL_NAMES.length)
+        }
+        if (input.keyboard.wasKeyPressed("DownArrow")) {
+            setPicked((i) => (i + 1) % DIAL_NAMES.length)
+        }
 
-        const move = (input.keyboard.isKeyDown("RightArrow") ? 1 : 0) - (input.keyboard.isKeyDown("LeftArrow") ? 1 : 0)
+        const move = (input.keyboard.isKeyDown("RightArrow") ? 1 : 0)
+            - (input.keyboard.isKeyDown("LeftArrow") ? 1 : 0)
         s.hold = move === 0 ? 0 : s.hold + dt
+        if (move === 0) return
 
-        let next = s.dials
-        if (move !== 0) {
-            // Accelerates while held, so a coarse sweep and a fine nudge are the
-            // same control rather than two.
-            const rate = STEP * (1 + Math.min(s.hold, 1.5) * 6) * 60 * dt
-            const name = DIAL_NAMES[s.picked]
-            next = { ...s.dials, [name]: clamp01(s.dials[name] + move * rate) }
-            setDials(next)
-        }
-
-        const remaining = s.left - dt
-
-        // Both transitions happen HERE, in the frame, not during render. An
-        // earlier version scored the round while rendering, which only ever
-        // converged by luck: a fresh target that happened to already be tuned
-        // would have set state during render forever.
-        if (isTuned(s.target, next)) {
-            const gained = roundScore(remaining)
-            setScore((v) => v + gained)
-            setFlash("+" + gained)
-            setTarget(makeTarget(() => rand.next()))
-            setLeft(ROUND_SECONDS)
-            return
-        }
-        if (remaining <= 0) {
-            setFlash("out of time")
-            setTarget(makeTarget(() => rand.next()))
-            setLeft(ROUND_SECONDS)
-            return
-        }
-        setLeft(remaining)
+        const name = DIAL_NAMES[s.picked]!
+        setDials({ ...s.dials, [name]: clamp01(s.dials[name] + move * turnRate(s.hold) * dt) })
     }, [])
 
     return (
-        <View style={{ flexGrow: 1, backgroundColor: "#0c1016", alignItems: "center", paddingTop: 18 }}>
-            <View style={{ flexDirection: "row", width: 900, justifyContent: "space-between", marginBottom: 10 }}>
-                <Text style={{ color: "#e6edf3", fontSize: 22 }}>Tuner</Text>
-                <Text style={{ color: "#7ee787", fontSize: 22 }}>{score}</Text>
+        <View style={{ flexGrow: 1, backgroundColor: "#0c1016", paddingLeft: 30, paddingRight: 30, paddingTop: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
+                <Text style={{ color: INK, fontSize: 22, whiteSpace: "nowrap" }}>Tuner</Text>
+                <Text style={{ color: FAINT, fontSize: 14, marginLeft: 12, whiteSpace: "nowrap" }}>
+                    a shader, its uniforms, and the code that made it
+                </Text>
             </View>
 
-            <View style={{ flexDirection: "row" }}>
-                <Panel dials={target} label="TARGET" tint="#58a6ff" />
-                <View style={{ width: 24 }} />
-                <Panel dials={dials} label="YOURS" tint="#ffd166" />
+            <View style={{ flexDirection: "row", marginTop: 8 }}>
+                <ShaderProgram
+                    program={field}
+                    uniforms={{ warp: dials.warp, hue: dials.hue, speed: dials.speed }}
+                    style={{ width: 330, height: 330, borderRadius: 12, borderWidth: 2, borderColor: "#232a37" }}
+                />
+
+                {/* The code, beside its own output. This is the demonstration:
+                    that is a GPU shader, and this is all it took. */}
+                <View style={{
+                    marginLeft: 22, paddingLeft: 16, paddingRight: 16, paddingTop: 12, paddingBottom: 12,
+                    backgroundColor: "#070a0f", borderRadius: 10, borderWidth: 1, borderColor: "#1b2130",
+                    flexGrow: 1,
+                }}>
+                    {SOURCE.map((line, i) => (
+                        <Text key={i} style={{
+                            color: line.trimStart().startsWith("const") || line.trimStart().startsWith("return")
+                                ? "#9db2d0" : DIM,
+                            fontSize: 12.5, whiteSpace: "nowrap",
+                        }}>
+                            {line === "" ? " " : line}
+                        </Text>
+                    ))}
+                </View>
             </View>
 
-            <View style={{ marginTop: 16 }}>
-                {DIAL_NAMES.map((n, i) => (
-                    <Dial key={n} name={n} value={dials[n]} target={target[n]} selected={i === picked} />
+            <View style={{ marginTop: 14 }}>
+                {DIALS.map((d, i) => (
+                    <Dial key={d.name} name={d.name} does={d.does}
+                        value={dials[d.name]} selected={i === picked} />
                 ))}
             </View>
 
-            <Text style={{ color: "#6b7688", fontSize: 13, marginTop: 6 }}>
-                up and down to pick a dial, left and right to turn it
-            </Text>
-            <Text style={{ color: "#9aa4b2", fontSize: 15, marginTop: 8 }}>
-                {flash || `${Math.ceil(left)}s`}
+            <Text style={{ color: FAINT, fontSize: 13, marginTop: 6, whiteSpace: "nowrap" }}>
+                up and down to pick a uniform, left and right to change it
             </Text>
         </View>
     )
 }
 
-mount(<Game />)
+mount(<App />)

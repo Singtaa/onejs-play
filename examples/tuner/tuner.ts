@@ -1,70 +1,47 @@
 /**
- * The rules of Tuner, with no screen anywhere in them.
+ * The parts of Tuner that are not the shader.
  *
- * Same split every example here uses: the rules are ordinary functions with
- * unit tests, and index.tsx draws them. It is also what makes a game readable
- * to somebody who forks it.
+ * Tuner is a demonstration rather than a game: it exists to show that the Play
+ * container can do real shader programming, and that doing it is ergonomic. So
+ * there is no target to find and no score. There are three uniforms, three
+ * controls, and the code that turns them into pixels shown beside the result.
  */
 
-/** The three values a round asks you to match. Each is 0..1. */
-export interface Dials {
-    warp: number
-    hue: number
-    speed: number
-}
+export type DialName = "warp" | "hue" | "speed"
 
-export const DIAL_NAMES = ["warp", "hue", "speed"] as const
-export type DialName = (typeof DIAL_NAMES)[number]
-
-/** How close counts as tuned, per dial. */
-export const TOLERANCE = 0.06
-export const ROUND_SECONDS = 30
-
-export function clamp01(v: number): number {
-    return v < 0 ? 0 : v > 1 ? 1 : v
-}
+export interface Dials { warp: number; hue: number; speed: number }
 
 /**
- * A target far enough from the middle to be worth hunting.
+ * Each uniform, and what it does to the picture.
  *
- * Pushed away from 0.5 on purpose: a target near the centre is solved by
- * leaving every dial where it starts, which is not a round.
+ * The description is not decoration. Somebody meeting a shader for the first
+ * time needs to know that a uniform is an ordinary number they can change,
+ * which is easiest to believe while watching one change something.
  */
-export function makeTarget(rand: () => number): Dials {
-    const away = () => {
-        const v = rand()
-        return v < 0.5 ? v * 0.7 : 1 - (1 - v) * 0.7
-    }
-    return { warp: away(), hue: away(), speed: away() }
-}
+export const DIALS: readonly { name: DialName; does: string }[] = [
+    { name: "warp", does: "how tightly the waves fold" },
+    { name: "hue", does: "where the colour ramp starts" },
+    { name: "speed", does: "how fast time moves" },
+]
 
-export function distance(a: Dials, b: Dials): number {
-    return Math.max(
-        Math.abs(a.warp - b.warp),
-        Math.abs(a.hue - b.hue),
-        Math.abs(a.speed - b.speed),
-    )
-}
+export const DIAL_NAMES: readonly DialName[] = DIALS.map((d) => d.name)
 
-export function isTuned(a: Dials, b: Dials): boolean {
-    return distance(a, b) <= TOLERANCE
-}
+export const clamp01 = (value: number) => (value < 0 ? 0 : value > 1 ? 1 : value)
 
 /**
- * Per dial closeness, 0 to 1, for the meter beside each one.
+ * How fast a held key turns a dial, in units per second.
  *
- * The meter is the whole game: without it you are guessing at a picture, and
- * with it you are converging on one.
+ * Tuned rather than guessed, because the first version was not: it moved a
+ * dial through its whole range in under a second at rest and accelerated
+ * tenfold, so a tap crossed half the range and nothing could be set on
+ * purpose. A dial should take a couple of seconds end to end, and holding
+ * should help without taking over.
  */
-export function closeness(a: number, b: number): number {
-    return clamp01(1 - Math.abs(a - b) / 0.5)
-}
+export const RATE = 0.35
+export const RAMP = 3
+export const RAMP_SECONDS = 1.5
 
-/**
- * Score for a solved round. Faster is worth more, and every round is worth
- * something, because a round that pays nothing reads as a punishment for
- * playing rather than a reward for finishing.
- */
-export function roundScore(secondsLeft: number): number {
-    return 100 + Math.round(Math.max(0, secondsLeft) * 20)
+export function turnRate(heldSeconds: number): number {
+    const ramped = Math.min(Math.max(heldSeconds, 0), RAMP_SECONDS) / RAMP_SECONDS
+    return RATE * (1 + ramped * (RAMP - 1))
 }
