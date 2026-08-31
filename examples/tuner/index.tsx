@@ -65,6 +65,9 @@ const DIM = "#8b95a5"
 const FAINT = "#6b7688"
 const GOLD = "#ffd166"
 
+/** One space of code indentation, in pixels, since the indent is padding. */
+const INDENT_PX = 6
+
 /** One uniform: what it is called, what it does, and where it currently sits. */
 function Dial({ name, does, value, selected }: {
     name: DialName; does: string; value: number; selected: boolean
@@ -156,15 +159,24 @@ function App() {
                     backgroundColor: "#070a0f", borderRadius: 10, borderWidth: 1, borderColor: "#1b2130",
                     flexGrow: 1,
                 }}>
-                    {SOURCE.map((line, i) => (
-                        <Text key={i} style={{
-                            color: line.trimStart().startsWith("const") || line.trimStart().startsWith("return")
-                                ? "#9db2d0" : DIM,
-                            fontSize: 12.5, whiteSpace: "nowrap",
-                        }}>
-                            {line === "" ? " " : line}
-                        </Text>
-                    ))}
+                    {SOURCE.map((line, i) => {
+                        // Indent with padding, not with spaces. UI Toolkit
+                        // collapses leading whitespace in a Text, so the spaces
+                        // in SOURCE render flush left and every line lands in
+                        // the same column.
+                        const body = line.trimStart()
+                        const indent = line.length - body.length
+                        return (
+                            <Text key={i} style={{
+                                color: body.startsWith("const") || body.startsWith("return")
+                                    ? "#9db2d0" : DIM,
+                                fontSize: 12.5, whiteSpace: "nowrap",
+                                paddingLeft: indent * INDENT_PX,
+                            }}>
+                                {body === "" ? " " : body}
+                            </Text>
+                        )
+                    })}
                 </View>
             </View>
 
