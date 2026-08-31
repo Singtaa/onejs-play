@@ -49,7 +49,7 @@ const rand = random()
 function Panel({ dials, label, tint }: { dials: Dials; label: string; tint: string }) {
     return (
         <View style={{ alignItems: "center" }}>
-            <Text style={{ color: tint, fontSize: 15, marginBottom: 6, letterSpacing: 1 }}>{label}</Text>
+            <Text style={{ color: tint, fontSize: 15, marginBottom: 6, letterSpacing: 1, whiteSpace: "nowrap" }}>{label}</Text>
             <ShaderProgram
                 program={field}
                 uniforms={{ warp: dials.warp, hue: dials.hue, speed: dials.speed }}
@@ -114,10 +114,10 @@ function Game() {
     useFrame((dt) => {
         const s = now.current
 
-        if (input.keyboard.wasKeyPressed("ArrowUp")) setPicked((i) => (i + DIAL_NAMES.length - 1) % DIAL_NAMES.length)
-        if (input.keyboard.wasKeyPressed("ArrowDown")) setPicked((i) => (i + 1) % DIAL_NAMES.length)
+        if (input.keyboard.wasKeyPressed("UpArrow")) setPicked((i) => (i + DIAL_NAMES.length - 1) % DIAL_NAMES.length)
+        if (input.keyboard.wasKeyPressed("DownArrow")) setPicked((i) => (i + 1) % DIAL_NAMES.length)
 
-        const move = (input.keyboard.isKeyDown("ArrowRight") ? 1 : 0) - (input.keyboard.isKeyDown("ArrowLeft") ? 1 : 0)
+        const move = (input.keyboard.isKeyDown("RightArrow") ? 1 : 0) - (input.keyboard.isKeyDown("LeftArrow") ? 1 : 0)
         s.hold = move === 0 ? 0 : s.hold + dt
 
         let next = s.dials
