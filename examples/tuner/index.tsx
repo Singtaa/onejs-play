@@ -1,6 +1,6 @@
-import { useRef, useState } from "react"
-import { View, Text, mount, useFrame, useStage, input, sl, encode, ShaderProgram } from "oj"
-import { DIALS, DIAL_NAMES, clamp01, turnRate, type DialName, type Dials } from "./tuner"
+import { useState } from "react"
+import { View, Text, Slider, mount, useStage, sl, encode, ShaderProgram } from "oj"
+import { DIALS, type DialName, type Dials } from "./tuner"
 
 /**
  * THE SHADER IS THE POINT.
@@ -97,43 +97,38 @@ function stepFor(width: number): Step {
         gap: 10, stacked: true, prose: false, strapline: false, code_: false }
 }
 
-/** One uniform: what it is called, what it does, and where it currently sits. */
-function Dial({ name, does, value, selected, step }: {
-    name: DialName; does: string; value: number; selected: boolean; step: Step
+/** One uniform: what it is called, what it does, and a control for it. */
+function Dial({ name, does, value, onChange, step }: {
+    name: DialName; does: string; value: number
+    onChange: (value: number) => void; step: Step
 }) {
     return (
         <View style={{
-            flexDirection: "row", alignItems: "center", marginBottom: 6,
-            paddingLeft: 10, paddingRight: 10, paddingTop: 5, paddingBottom: 5,
-            borderRadius: 8, backgroundColor: selected ? "#ffffff14" : "#00000000",
+            flexDirection: "row", alignItems: "center", marginBottom: 4,
+            paddingLeft: 10, paddingRight: 10, paddingTop: 3, paddingBottom: 3,
         }}>
-            <Text style={{
-                color: selected ? GOLD : DIM, width: 82, fontSize: step.body,
-                whiteSpace: "nowrap",
-            }}>
-                {selected ? "▸ " : "  "}{name}
+            <Text style={{ color: DIM, width: 82, fontSize: step.body, whiteSpace: "nowrap" }}>
+                {name}
             </Text>
 
-            {/* A real slider: the knob is WHERE THE VALUE IS. The version this
-                replaced drew distance from a hidden target, which looked
-                exactly like a slider and moved the opposite way when you were
-                past the target. Nobody could read it, correctly.
+            {/*
+             * UI Toolkit's own Slider, which is a focus target that drags with
+             * a pointer and nudges with the arrow keys, and which the
+             * container's theme already styles.
+             *
+             * This was a bar drawn by hand and moved only by polling the
+             * keyboard, so it looked like a control and was not one: nobody
+             * could drag it, and it was the only way to change a uniform. A
+             * demonstration that the container can do shaders should not also
+             * be demonstrating that it cannot do a slider.
+             */}
+            <Slider
+                value={value} lowValue={0} highValue={1}
+                onChange={(e: { value: number }) => onChange(e.value)}
+                style={{ flexGrow: 1, marginRight: 10 }}
+            />
 
-                The track flexes; the label and the readout beside it do not.
-                Those are type, and type has a size. */}
-            <View style={{
-                flexGrow: 1, height: 6, backgroundColor: "#1b2130", borderRadius: 3,
-                marginRight: 10,
-            }}>
-                <View style={{
-                    width: `${clamp01(value) * 100}%`, height: 6, borderRadius: 3,
-                    backgroundColor: selected ? GOLD : "#3d4553",
-                }} />
-            </View>
-
-            <Text style={{
-                color: selected ? INK : DIM, width: 46, fontSize: step.small, whiteSpace: "nowrap",
-            }}>
+            <Text style={{ color: INK, width: 46, fontSize: step.small, whiteSpace: "nowrap" }}>
                 {value.toFixed(2)}
             </Text>
 
@@ -146,35 +141,6 @@ function Dial({ name, does, value, selected, step }: {
 
 function App() {
     const [dials, setDials] = useState<Dials>({ warp: 0.5, hue: 0.5, speed: 0.5 })
-    const [picked, setPicked] = useState(0)
-
-    // The frame loop reads the latest state through refs rather than through
-    // its closure, which would capture whatever these were when the effect ran.
-    const now = useRef({ dials, picked, hold: 0 })
-    now.current.dials = dials
-    now.current.picked = picked
-
-    useFrame((dt) => {
-        const s = now.current
-
-        // Unity's spelling. The browser calls these ArrowUp and ArrowDown, and
-        // the container stores them under these names; asking for the browser
-        // spelling used to match nothing at all and silently do nothing.
-        if (input.keyboard.wasKeyPressed("UpArrow")) {
-            setPicked((i) => (i + DIAL_NAMES.length - 1) % DIAL_NAMES.length)
-        }
-        if (input.keyboard.wasKeyPressed("DownArrow")) {
-            setPicked((i) => (i + 1) % DIAL_NAMES.length)
-        }
-
-        const move = (input.keyboard.isKeyDown("RightArrow") ? 1 : 0)
-            - (input.keyboard.isKeyDown("LeftArrow") ? 1 : 0)
-        s.hold = move === 0 ? 0 : s.hold + dt
-        if (move === 0) return
-
-        const name = DIAL_NAMES[s.picked]!
-        setDials({ ...s.dials, [name]: clamp01(s.dials[name] + move * turnRate(s.hold) * dt) })
-    }, [])
 
     const stage = useStage()
     const step = stepFor(stage.width)
@@ -254,14 +220,15 @@ function App() {
             </View>
 
             <View style={{ marginTop: 14 }}>
-                {DIALS.map((d, i) => (
+                {DIALS.map((d) => (
                     <Dial key={d.name} name={d.name} does={d.does} step={step}
-                        value={dials[d.name]} selected={i === picked} />
+                        value={dials[d.name]}
+                        onChange={(v) => setDials((cur) => ({ ...cur, [d.name]: v }))} />
                 ))}
             </View>
 
             <Text style={{ color: FAINT, fontSize: step.small, marginTop: 6, whiteSpace: "nowrap" }}>
-                up and down to pick a uniform, left and right to change it
+drag a slider, or tab to one and use the arrow keys
             </Text>
         </View>
     )

@@ -25,23 +25,3 @@ export const DIALS: readonly { name: DialName; does: string }[] = [
 ]
 
 export const DIAL_NAMES: readonly DialName[] = DIALS.map((d) => d.name)
-
-export const clamp01 = (value: number) => (value < 0 ? 0 : value > 1 ? 1 : value)
-
-/**
- * How fast a held key turns a dial, in units per second.
- *
- * Tuned rather than guessed, because the first version was not: it moved a
- * dial through its whole range in under a second at rest and accelerated
- * tenfold, so a tap crossed half the range and nothing could be set on
- * purpose. A dial should take a couple of seconds end to end, and holding
- * should help without taking over.
- */
-export const RATE = 0.35
-export const RAMP = 3
-export const RAMP_SECONDS = 1.5
-
-export function turnRate(heldSeconds: number): number {
-    const ramped = Math.min(Math.max(heldSeconds, 0), RAMP_SECONDS) / RAMP_SECONDS
-    return RATE * (1 + ramped * (RAMP - 1))
-}

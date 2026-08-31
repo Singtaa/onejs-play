@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { DIALS, DIAL_NAMES, clamp01, turnRate, RATE, RAMP, RAMP_SECONDS } from "./tuner"
+import { DIALS, DIAL_NAMES } from "./tuner"
 
 describe("the dials", () => {
     it("names each uniform the shader actually declares", () => {
@@ -18,51 +18,15 @@ describe("the dials", () => {
         }
     })
 
-    it("keeps a value on the slider", () => {
-        expect(clamp01(-0.4)).toBe(0)
-        expect(clamp01(1.4)).toBe(1)
-        expect(clamp01(0.25)).toBe(0.25)
-    })
-})
-
-/**
- * The turn rate, pinned because the first one was unusable.
- *
- * It moved a dial through its whole range in 0.83s at rest and accelerated to
- * ten times that, so a tap crossed half the range and no value could be set on
- * purpose. These assertions are about feel, which is why they are expressed as
- * seconds end to end rather than as the constants.
- */
-describe("how fast a dial turns", () => {
-    const secondsEndToEnd = (held: number) => 1 / turnRate(held)
-
-    it("takes a couple of seconds end to end from a standing start", () => {
-        expect(secondsEndToEnd(0)).toBeGreaterThan(2)
-        expect(secondsEndToEnd(0)).toBeLessThan(4)
-    })
-
-    it("never gets faster than a second end to end, however long you hold", () => {
-        expect(secondsEndToEnd(RAMP_SECONDS)).toBeGreaterThan(0.8)
-        expect(secondsEndToEnd(999)).toBe(secondsEndToEnd(RAMP_SECONDS))
-    })
-
-    it("moves a short tap by a usable amount rather than half the range", () => {
-        // A 120ms tap at 60fps, integrated the way the frame loop does it.
-        let value = 0.5, held = 0
-        for (let i = 0; i < 7; i++) { held += 1 / 60; value += turnRate(held) * (1 / 60) }
-        const moved = value - 0.5
-        expect(moved).toBeGreaterThan(0.02)
-        expect(moved).toBeLessThan(0.12)
-    })
-
-    it("speeds up while held, but only within the ramp", () => {
-        expect(turnRate(0)).toBe(RATE)
-        expect(turnRate(RAMP_SECONDS)).toBeCloseTo(RATE * RAMP)
-        expect(turnRate(RAMP_SECONDS / 2)).toBeGreaterThan(turnRate(0))
-    })
-
-    it("treats a negative hold as no hold rather than reversing", () => {
-        expect(turnRate(-5)).toBe(RATE)
+    /** The control is a real Slider, which is what makes it draggable. */
+    it("drives each uniform with a slider bound to the same name", () => {
+        const source = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8")
+        expect(source).toContain("<Slider")
+        expect(source).toContain('lowValue={0} highValue={1}')
+        // The frame loop polled the keyboard and was the only way to move a
+        // dial. The control does that itself now, and polling as well would
+        // move a focused slider twice per press.
+        expect(source).not.toContain("input.keyboard")
     })
 })
 
