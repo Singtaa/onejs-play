@@ -95,6 +95,16 @@ export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 // MARK: a game's own files
 
 export { assetUrl, loadTexture, useTexture, useFlipbook, loadSheet } from "./asset"
+/**
+ * Highlighted code, for any game that wants to show its own source.
+ *
+ * In the runtime rather than in a game because every game that shows code
+ * wants this and none of them should write a tokenizer.
+ */
+export { Code } from "./code-view"
+export { tokenize, tokenizeLine, CODE_THEME } from "./code"
+export type { Token, TokenKind, CodeTheme } from "./code"
+export type { CodeProps } from "./code-view"
 export type { UvRect } from "./asset"
 
 /**
