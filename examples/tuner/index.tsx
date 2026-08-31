@@ -63,7 +63,6 @@ const SOURCE = [
 const INK = "#e6edf3"
 const DIM = "#8b95a5"
 const FAINT = "#6b7688"
-const GOLD = "#ffd166"
 
 /**
  * Three layouts, not one layout multiplied by a number.
