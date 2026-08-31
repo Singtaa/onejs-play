@@ -3,9 +3,21 @@
     "runtime": "1.0.0",
     "name": "Tuner",
     "author": "singtaa",
-    "description": "A field of light is drifting out of tune. Match it before the round ends. The picture is a shader you can read, written in the same TypeScript as the rest of the game.",
+    "description": "Three uniforms, the shader that reads them, and the TypeScript that produced it, side by side. Turn a dial and watch the GPU answer.",
     "entry": "index.tsx",
-    "stage": { "size": [960, 600], "fit": "letterbox" },
-    "tags": ["puzzle", "toy"],
-    "controls": ["keyboard", "pointer"]
+    "stage": {
+        "size": [
+            960,
+            600
+        ],
+        "fit": "fluid"
+    },
+    "tags": [
+        "toy",
+        "visual"
+    ],
+    "controls": [
+        "keyboard",
+        "pointer"
+    ]
 }
