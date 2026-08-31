@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { View, Text, mount, useFrame, useStage, input, sl, encode, ShaderProgram, Code } from "oj"
+import { View, Text, mount, useFrame, useStage, input, sl, encode, ShaderProgram } from "oj"
 import { DIALS, DIAL_NAMES, clamp01, turnRate, type DialName, type Dials } from "./tuner"
 
 /**
@@ -218,18 +218,38 @@ function App() {
                     rather than by this game. It is the first thing to go when
                     the stage cannot hold both: a column of clipped code teaches
                     nothing. */}
+                {/* Drawn here rather than with the runtime's `Code`, which is
+                    the right home for this and is already written and tested.
+                    `oj` is baked into the container, so a game cannot use a new
+                    export until a container ships with it: importing Code from
+                    "oj" against runtime 1.0.26 makes it undefined and takes the
+                    whole game down. This comes out the moment the runtime that
+                    has it is live. */}
                 {step.code_
-                    ? <Code
-                        source={SOURCE}
-                        fontSize={step.code}
-                        style={{
-                            marginLeft: step.stacked ? 0 : step.gap,
-                            marginTop: step.stacked ? step.gap : 0,
-                            paddingLeft: 16, paddingRight: 16, paddingTop: 12, paddingBottom: 12,
-                            backgroundColor: "#070a0f", borderRadius: 10,
-                            borderWidth: 1, borderColor: "#1b2130", flexGrow: 1,
-                        }}
-                    />
+                    ? <View style={{
+                        marginLeft: step.stacked ? 0 : step.gap,
+                        marginTop: step.stacked ? step.gap : 0,
+                        paddingLeft: 16, paddingRight: 16, paddingTop: 12, paddingBottom: 12,
+                        backgroundColor: "#070a0f", borderRadius: 10,
+                        borderWidth: 1, borderColor: "#1b2130", flexGrow: 1,
+                    }}>
+                        {SOURCE.map((line, i) => {
+                            // Indent with padding: UI Toolkit collapses leading
+                            // whitespace, so spaces render flush left.
+                            const body = line.trimStart()
+                            const lead = line.length - body.length
+                            return (
+                                <Text key={i} style={{
+                                    color: body.startsWith("const") || body.startsWith("return")
+                                        ? "#9db2d0" : DIM,
+                                    fontSize: step.code, whiteSpace: "nowrap",
+                                    paddingLeft: lead * Math.round(step.code * 0.5),
+                                }}>
+                                    {body === "" ? " " : body}
+                                </Text>
+                            )
+                        })}
+                    </View>
                     : null}
             </View>
 
