@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { DIALS, DIAL_NAMES } from "./tuner"
+import { DIALS, DIAL_NAMES, layoutFor } from "./tuner"
 
 describe("the dials", () => {
     it("names each uniform the shader actually declares", () => {
@@ -66,5 +66,39 @@ describe("the roster", () => {
     it("lists every dial name once", () => {
         expect([...new Set(DIAL_NAMES)]).toHaveLength(DIAL_NAMES.length)
         expect(DIAL_NAMES).toEqual(DIALS.map((d) => d.name))
+    })
+})
+
+/**
+ * The code panel goes when the box is too short for it, whatever the width.
+ * At 600 by 420 the width said "stacked, with code" and the height could not
+ * hold the shader, twelve lines and three dials, so the lines were shrunk into
+ * each other. Height has a say now.
+ */
+describe("the layout", () => {
+    const LINES = 12
+
+    it("shows the code on the stage it was designed for", () => {
+        expect(layoutFor(960, 600, LINES).code).toBe(true)
+    })
+
+    it("shows it side by side on a wide stage, stacked on a narrow one", () => {
+        expect(layoutFor(960, 600, LINES).step.stacked).toBe(false)
+        expect(layoutFor(600, 900, LINES).step.stacked).toBe(true)
+    })
+
+    it("drops it in a short box, which is how an embed or a landscape phone arrives", () => {
+        expect(layoutFor(600, 420, LINES).code).toBe(false)
+        expect(layoutFor(960, 300, LINES).code).toBe(false)
+    })
+
+    it("keeps it on a phone held upright, where there is height to spare", () => {
+        const phone = layoutFor(430, 860, LINES)
+        expect(phone.step.stacked).toBe(true)
+        expect(phone.code).toBe(true)
+    })
+
+    it("never asks for it on the narrowest step, where the type would be too small", () => {
+        expect(layoutFor(390, 844, LINES).code).toBe(false)
     })
 })

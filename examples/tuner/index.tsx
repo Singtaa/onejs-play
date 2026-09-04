@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { View, Text, Slider, mount, useStage, sl, encode, ShaderProgram } from "oj"
-import { DIALS, type DialName, type Dials } from "./tuner"
+import { DIALS, layoutFor, type DialName, type Dials, type Step } from "./tuner"
 
 /**
  * THE SHADER IS THE POINT.
@@ -64,38 +64,6 @@ const INK = "#e6edf3"
 const DIM = "#8b95a5"
 const FAINT = "#6b7688"
 
-/**
- * Three layouts, not one layout multiplied by a number.
- *
- * The first attempt scaled every size by stage.width / 960, which is not
- * responsive design: it is one design shrunk, and it makes 13px type into 9px
- * type on a narrow stage while the proportions stay wrong anyway. Type has
- * sizes that are legible and sizes that are not, and there is no useful value
- * between them. So the sizes are fixed per step, and what changes between
- * steps is what is on screen and how it is arranged.
- */
-interface Step {
-    pad: number; title: number; body: number; small: number; code: number
-    gap: number; stacked: boolean; prose: boolean; strapline: boolean; code_: boolean
-}
-
-function stepFor(width: number): Step {
-    if (width >= 900) {
-        return { pad: 30, title: 22, body: 15, small: 13, code: 12.5,
-            gap: 22, stacked: false, prose: true, strapline: true, code_: true }
-    }
-    if (width >= 640) {
-        return { pad: 24, title: 20, body: 15, small: 13, code: 11.5,
-            gap: 16, stacked: false, prose: false, strapline: true, code_: true }
-    }
-    if (width >= 430) {
-        return { pad: 18, title: 19, body: 14, small: 12, code: 11.5,
-            gap: 12, stacked: true, prose: false, strapline: false, code_: true }
-    }
-    return { pad: 14, title: 18, body: 14, small: 12, code: 11,
-        gap: 10, stacked: true, prose: false, strapline: false, code_: false }
-}
-
 /** One uniform: what it is called, what it does, and a control for it. */
 function Dial({ name, does, value, onChange, step }: {
     name: DialName; does: string; value: number
@@ -142,14 +110,7 @@ function App() {
     const [dials, setDials] = useState<Dials>({ warp: 0.5, hue: 0.5, speed: 0.5 })
 
     const stage = useStage()
-    const step = stepFor(stage.width)
-    const room = stage.width - step.pad * 2
-    // Layout sizes DO follow the space, which is the part that should. A panel
-    // is a shape in a box; type is not.
-    const shader = Math.round(Math.max(130, Math.min(
-        step.stacked ? room : room * 0.42,
-        stage.height * (step.stacked ? 0.34 : 0.58),
-    )))
+    const { step, shader, code } = layoutFor(stage.width, stage.height, SOURCE.length)
 
     return (
         <View style={{
@@ -190,13 +151,18 @@ function App() {
                     "oj" against runtime 1.0.26 makes it undefined and takes the
                     whole game down. This comes out the moment the runtime that
                     has it is live. */}
-                {step.code_
+                {code
                     ? <View style={{
                         marginLeft: step.stacked ? 0 : step.gap,
                         marginTop: step.stacked ? step.gap : 0,
                         paddingLeft: 16, paddingRight: 16, paddingTop: 12, paddingBottom: 12,
                         backgroundColor: "#070a0f", borderRadius: 10,
                         borderWidth: 1, borderColor: "#1b2130", flexGrow: 1,
+                        // If the height estimate in layoutFor is ever short,
+                        // the panel clips its last lines. Without this the
+                        // lines shrink to fit and draw over each other, which
+                        // is how a 600 by 420 embed first looked.
+                        overflow: "hidden",
                     }}>
                         {SOURCE.map((line, i) => {
                             // Indent with padding: UI Toolkit collapses leading
@@ -207,7 +173,7 @@ function App() {
                                 <Text key={i} style={{
                                     color: body.startsWith("const") || body.startsWith("return")
                                         ? "#9db2d0" : DIM,
-                                    fontSize: step.code, whiteSpace: "nowrap",
+                                    fontSize: step.code, whiteSpace: "nowrap", flexShrink: 0,
                                     paddingLeft: lead * Math.round(step.code * 0.5),
                                 }}>
                                     {body === "" ? " " : body}
