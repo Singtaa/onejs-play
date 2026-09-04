@@ -10,9 +10,9 @@ import { View, mount, fx } from "oj"
 
 const T = 512
 
-// Where fire is allowed to be: a soft capsule, dense at the base and fading
-// toward the tip so the top breaks into separate tongues.
-const mask = fx.image.sdf(T, T, "unevenCapsule", { rBottom: 0.2, rTop: 0.01, h: 0.72, y: -0.13 })
+// Where fire is allowed to be: a soft egg, round at the base and drawn to a
+// point, fading toward the tip so the top breaks into separate tongues.
+const mask = fx.image.sdf(T, T, "egg", { h: 0.55, r: 0.22, rTop: 0.02, bulge: 0.7, y: -0.08 })
     .blur(60)
     .multiply(fx.image.gradient(T, T, ["#fff", "#0f0f0f"], 90))
 

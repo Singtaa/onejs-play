@@ -15,7 +15,7 @@ const SECONDS = 6
 const PERIOD = SECONDS * 1.01
 const T = 512
 
-const mask = fx.image.sdf(T, T, "unevenCapsule", { rBottom: 0.2, rTop: 0.01, h: 0.72, y: -0.13 })
+const mask = fx.image.sdf(T, T, "egg", { h: 0.55, r: 0.22, rTop: 0.02, bulge: 0.7, y: -0.08 })
     .blur(60)
     .multiply(fx.image.gradient(T, T, ["#fff", "#0f0f0f"], 90))
 
