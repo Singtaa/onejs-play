@@ -1,4 +1,4 @@
-import { View, Text, mount, fx } from "oj"
+import { View, Text, mount, fx, type Texture } from "oj"
 
 /**
  * The card for this game.
@@ -101,12 +101,12 @@ function buildEnvelope() {
     return shape.multiply(fromBase)
 }
 
-function Thumb({ label, texture }: { label: string; texture: unknown }) {
+function Thumb({ label, texture }: { label: string; texture: Texture | null }) {
     return (
         <View style={{ alignItems: "center", marginBottom: 10 }}>
             <View style={{ width: THUMB, height: THUMB, backgroundColor: "#101014",
                            borderWidth: 1, borderColor: "#26262f", borderRadius: 5,
-                           backgroundImage: texture as any }} />
+                           backgroundImage: texture }} />
             <Text style={{ color: "#6b6b7a", fontSize: 11, marginTop: 5 }}>{label}</Text>
         </View>
     )
@@ -140,7 +140,7 @@ function Cover() {
                        // against the edge of the card.
                        justifyContent: "center", paddingLeft: 40, paddingRight: 48 }}>
             <View style={{ flexGrow: 1, alignItems: "center" }}>
-                <View style={{ width: 430, height: 430, backgroundImage: flame as any }} />
+                <View style={{ width: 430, height: 430, backgroundImage: flame }} />
             </View>
             {/* The inputs, down the side: what the flame is made of, which the
                 flame itself never shows. */}

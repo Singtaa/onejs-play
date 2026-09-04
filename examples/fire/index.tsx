@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { View, Text, Button, Slider, ScrollView, mount, useFrame, useStage, fx, Mathf } from "oj"
+import { View, Text, Button, Slider, ScrollView, mount, useFrame, useStage, fx, Mathf, type Texture, type PointerEventData } from "oj"
 
 /**
  * Fire, drawn from nothing. No art files and no particle system.
@@ -229,12 +229,12 @@ const fieldB = (p: Params): Field => ({
     octaves: p.octavesB, lacunarity: p.lacunarityB, gain: p.gainB,
 })
 
-function Thumb({ label, texture, size }: { label: string; texture: unknown; size: number }) {
+function Thumb({ label, texture, size }: { label: string; texture: Texture | null; size: number }) {
     return (
         <View style={{ alignItems: "center" }}>
             <View style={{ width: size, height: size, backgroundColor: "#101014",
                            borderWidth: 1, borderColor: "#26262f", borderRadius: 4,
-                           backgroundImage: texture as any }} />
+                           backgroundImage: texture }} />
             <Text style={{ color: "#6b6b7a", fontSize: 10, marginTop: 5 }}>{label}</Text>
         </View>
     )
@@ -244,16 +244,15 @@ function Thumb({ label, texture, size }: { label: string; texture: unknown; size
  * A thumbnail that animates its own field, so it shows what that field is doing
  * right now rather than a still.
  *
- * The deps array is empty on purpose. The draw function reads live.current, so
- * moving a slider changes what this shows on the next frame without tearing the
- * loop down and building a new one.
+ * The deps array is empty on purpose: the loop runs once for the life of the
+ * thumbnail, and each frame draws with the latest `field`, because the hook
+ * always calls the build function from the most recent render.
  */
-function FieldThumb({ label, pick, seed, ox, live, size }: {
-    label: string; pick: (p: Params) => Field; seed: number; ox: number
-    live: { current: Params }; size: number
+function FieldThumb({ label, field, seed, ox, size }: {
+    label: string; field: Field; seed: number; ox: number; size: number
 }) {
     const tex = fx.useAnimatedTexture(PREVIEW, PREVIEW,
-        (t) => layer(pick(live.current), seed, ox, t, PREVIEW), [])
+        (t) => layer(field, seed, ox, t, PREVIEW), [])
     return <Thumb label={label} texture={tex} size={size} />
 }
 
@@ -306,44 +305,24 @@ function Tinder() {
     const panelW = Math.round(compact ? stage.width - pad * 2 : Math.min(panelColumn, stage.width - pad * 2))
     const panelH = Math.round(stage.height - pad * 2)
 
-    /**
-     * The same values the sliders show, but readable from inside the frame loop.
-     *
-     * State alone will not do here. The animated chain is built by a callback
-     * that only re-runs when its deps change, so it would keep whichever params
-     * it captured when it was built. A ref is always current, so every knob
-     * outside the envelope takes effect on the very next frame without
-     * restarting the loop.
-     */
-    const live = useRef<Params>(p)
-    const set = (k: keyof Params, v: number) => {
-        live.current = { ...live.current, [k]: v }
-        setP(live.current)
-    }
-    const reset = () => { live.current = DEFAULTS; setP(DEFAULTS) }
+    const set = (k: keyof Params, v: number) => setP((cur) => ({ ...cur, [k]: v }))
+    const reset = () => setP(DEFAULTS)
 
     const [lean, setLean] = useState(0)
     const target = useRef(0)
-
-    /**
-     * The flame's box on screen, used to turn a pointer position into a lean.
-     *
-     * A pointer event reports x and y in panel space, and worldBound is in that
-     * same space, so the two subtract cleanly however the stage is scaled.
-     */
-    const flameBox = useRef<any>(null)
     const drag = useRef({ active: false, nx: 0 })
 
-    const leanFrom = (e: { x: number }): number => {
-        const el = flameBox.current
-        if (el === null) return 0
-        const b = el.worldBound
-        // worldBound is NaN until the first layout pass, and NaN spreads
-        // quietly: it reaches the envelope's rotation and the flame then draws
-        // as nothing at all, with no error anywhere to say why.
-        if (!b || !(b.width > 0)) return 0
-        const nx = ((e.x - b.x) / b.width - 0.5) * 2
-        return Number.isNaN(nx) ? 0 : Mathf.Clamp(nx, -1, 1)
+    /**
+     * Where across the flame the pointer is, from -1 at the left edge to 1 at
+     * the right. `localX` is measured from the element the handler is on, so
+     * this needs no bounds of its own; the flame's width is the one number the
+     * layout above already decided.
+     */
+    const leanFrom = (e: PointerEventData): number => {
+        const nx = (e.localX / flameSize - 0.5) * 2
+        // NaN spreads quietly: it would reach the envelope's rotation and the
+        // flame would then draw as nothing at all, with no error to say why.
+        return Number.isFinite(nx) ? Mathf.Clamp(nx, -1, 1) : 0
     }
 
     // Ease toward the lean the drag is asking for, then round it to every other
@@ -360,18 +339,20 @@ function Tinder() {
         [...ENVELOPE_KEYS.map(k => p[k]), lean])
 
     // Steps 1, 2 and 4, once per frame. Step 3, the envelope, is built above.
+    // The build reads `p` straight from this render: the hook calls the latest
+    // one each frame, so every knob outside the envelope takes effect on the
+    // next frame without restarting the loop. Only a new envelope restarts it.
     const flame = fx.useAnimatedTexture(TEX, TEX, (t) => {
-        const q = live.current
         // Two speeds, so the fine detail outruns the body and the picture never
         // settles into one texture sliding along.
-        const turbulence = layer(fieldA(q), 1, 0, t)
-            .multiply(1 - q.mix)
-            .add(layer(fieldB(q), 2, 3.7, t).multiply(q.mix))
+        const turbulence = layer(fieldA(p), 1, 0, t)
+            .multiply(1 - p.mix)
+            .add(layer(fieldB(p), 2, 3.7, t).multiply(p.mix))
         const heat = envelope ? turbulence.multiply(envelope) : turbulence
         // The threshold is what turns fog into licks. The band starts above the
         // average brightness, so only peaks survive, and the envelope's fade
         // means fewer of them survive the higher up they are.
-        return heat.remap(q.lo, q.hi, 0, 1).clamp(0, 1).ramp(EMBERS)
+        return heat.remap(p.lo, p.hi, 0, 1).clamp(0, 1).ramp(EMBERS)
     }, [envelope])
 
     return (
@@ -379,29 +360,28 @@ function Tinder() {
                        flexDirection: "row", alignItems: "center",
                        justifyContent: "center", padding: pad }}>
 
-            {/* The fire, and the gesture that blows on it. The handlers sit
-                here rather than on the root so that dragging a slider does not
-                also lean the flame. */}
-            <View
-                style={{ alignItems: "center", justifyContent: "center", flexGrow: 1 }}
-                onPointerDown={(e: any) => { drag.current.active = true; drag.current.nx = leanFrom(e) }}
-                onPointerMove={(e: any) => { if (drag.current.active) drag.current.nx = leanFrom(e) }}
-                onPointerUp={() => { drag.current.active = false }}
-                onPointerLeave={() => { drag.current.active = false }}
-            >
-                <View ref={flameBox as any}
-                      style={{ width: flameSize, height: flameSize, backgroundImage: flame as any }} />
+            <View style={{ alignItems: "center", justifyContent: "center", flexGrow: 1 }}>
+                {/* The fire, and the gesture that blows on it. The handlers sit
+                    on the flame itself, so dragging a slider does not also
+                    lean it, and so localX is measured across the flame. */}
+                <View
+                    style={{ width: flameSize, height: flameSize, backgroundImage: flame }}
+                    onPointerDown={(e) => { drag.current.active = true; drag.current.nx = leanFrom(e) }}
+                    onPointerMove={(e) => { if (drag.current.active) drag.current.nx = leanFrom(e) }}
+                    onPointerUp={() => { drag.current.active = false }}
+                    onPointerLeave={() => { drag.current.active = false }}
+                />
 
                 {!compact && (
                 <View style={{ flexDirection: "row", justifyContent: "center",
                                marginTop: 14 }}>
                     <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
-                        <FieldThumb label="field A, the body" pick={fieldA} seed={1} ox={0}
-                                    live={live} size={preview} />
+                        <FieldThumb label="field A, the body" field={fieldA(p)} seed={1} ox={0}
+                                    size={preview} />
                     </View>
                     <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
-                        <FieldThumb label="field B, the detail" pick={fieldB} seed={2} ox={3.7}
-                                    live={live} size={preview} />
+                        <FieldThumb label="field B, the detail" field={fieldB(p)} seed={2} ox={3.7}
+                                    size={preview} />
                     </View>
                     <View style={{ marginLeft: thumbGap, marginRight: thumbGap }}>
                         {/* No animation of its own: the flame above already

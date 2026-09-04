@@ -87,3 +87,16 @@ describe("the theme", () => {
         }
     })
 })
+
+describe("what a token is drawn with", () => {
+    it("turns every space into a no-break space, at both ends and inside", async () => {
+        const { displayText } = await import("../code-view")
+        expect(displayText(" warp = ")).toBe("\u00a0warp\u00a0=\u00a0")
+        expect(displayText("    const")).toBe("\u00a0\u00a0\u00a0\u00a0const")
+    })
+
+    it("leaves everything that is not a space alone", async () => {
+        const { displayText } = await import("../code-view")
+        expect(displayText("sl.vec4(rgb,1)")).toBe("sl.vec4(rgb,1)")
+    })
+})

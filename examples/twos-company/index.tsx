@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { View, Text, mount, useFrame, input, random } from "oj"
+import { View, Text, mount, useFrame, useSwipe, input, random } from "oj"
 import "onejs:tailwind"
 import styles from "./twos-company.module.uss"
 import { newGame, move, spawn, stuck, highest, SIZE, type Direction, type Game } from "./game"
-import { newSwipe, begin, moveTo, end } from "./swipe"
 
 const CELL = 100
 const GAP = 12
@@ -66,9 +65,6 @@ function TwosCompany() {
     const [game, setGame] = useState<Game>(() => newGame(rng))
     const [best, setBest] = useState(readBest)
     const [dismissed, setDismissed] = useState(false)
-    const swipe = useRef(newSwipe()).current
-    /** The finger currently driving the board, so a second one cannot fight it. */
-    const finger = useRef<number | null>(null)
 
     const push = (direction: Direction) => {
         setDismissed(true)
@@ -111,24 +107,10 @@ function TwosCompany() {
         if (keys.wasKeyPressed("UpArrow") || keys.wasKeyPressed("W")) push("up")
         if (keys.wasKeyPressed("DownArrow") || keys.wasKeyPressed("S")) push("down")
         if (keys.wasKeyPressed("R")) restart()
+    })
 
-        for (const touch of input.touches) {
-            if (finger.current === null && touch.phase === "began") {
-                finger.current = touch.fingerId
-                begin(swipe, touch.position.x, touch.position.y)
-            }
-            if (touch.fingerId !== finger.current) continue
-
-            if (touch.phase === "moved" || touch.phase === "stationary") {
-                const direction = moveTo(swipe, touch.position.x, touch.position.y)
-                if (direction !== null) push(direction)
-            }
-            if (touch.phase === "ended" || touch.phase === "canceled") {
-                end(swipe)
-                finger.current = null
-            }
-        }
-    }, [])
+    // A finger on a phone or a mouse drag on a desktop, either way one push.
+    useSwipe(push)
 
     const celebrating = game.won && !dismissed
 

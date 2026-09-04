@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from "react"
 import { loadImageAsync, loadTextAsync } from "onejs-unity/assets"
-import type { SheetConfig } from "onejs-react"
+import type { SheetConfig, Texture } from "onejs-react"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
 // no runtime binding is created.
@@ -106,7 +106,7 @@ export function assetUrl(name: string): string {
  * A bare name, resolved the same way everywhere. SVG works too, and comes back
  * as a VectorImage rather than a texture.
  */
-export async function loadTexture(name: string): Promise<unknown> {
+export async function loadTexture(name: string): Promise<Texture> {
     return loadImageAsync(assetUrl(name))
 }
 
@@ -118,8 +118,8 @@ export async function loadTexture(name: string): Promise<unknown> {
  * the underlying loader caches by URL and a second mount would otherwise pay
  * for the same bytes again; the result is simply dropped.
  */
-export function useTexture(name: string): unknown | null {
-    const [texture, setTexture] = useState<unknown | null>(null)
+export function useTexture(name: string): Texture | null {
+    const [texture, setTexture] = useState<Texture | null>(null)
 
     useEffect(() => {
         let live = true

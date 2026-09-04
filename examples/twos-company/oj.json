@@ -7,5 +7,5 @@
     "entry": "index.tsx",
     "stage": { "size": [520, 700], "fit": "letterbox" },
     "tags": ["puzzle"],
-    "controls": ["keyboard", "touch"]
+    "controls": ["keyboard", "pointer", "touch"]
 }

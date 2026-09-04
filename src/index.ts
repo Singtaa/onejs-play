@@ -90,6 +90,10 @@ export { usePhysics, createPhysicsWorld } from "./physics"
 export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contact } from "./physics"
 export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
+// Gestures over `input`, so a game does not rewrite the same state machine.
+export { useSwipe, SWIPE_THRESHOLD } from "./gesture"
+export type { SwipeDirection, SwipeOptions } from "./gesture"
+
 // MARK: math
 
 // MARK: a game's own files
@@ -249,6 +253,7 @@ export type {
 // MARK: types
 
 export type {
+    Texture,
     ViewStyle,
     PointerEventData,
     MouseEventData,

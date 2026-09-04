@@ -26,7 +26,7 @@
  */
 
 import { createElement, useEffect, useState, type ReactNode } from "react"
-import { render, View } from "onejs-react"
+import { render, ScreenProvider, View } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { startStandalone } from "./standalone"
 import { computeStageLayout, normalizeStage, type StageInput, type StageLayout } from "./stage"
@@ -88,7 +88,14 @@ function StagePresenter({ children }: { children: ReactNode }) {
                 backgroundColor: layout.matte,
             },
         },
-        createElement(View, { style: stageHostStyle(layout) }, children),
+        // Breakpoints describe the stage, not the window around it: a game
+        // laid out at 960 wide is "lg" however small its letterboxed window
+        // is, and under fluid the two are the same number anyway. Provided
+        // here so useBreakpoint and friends work in a game with no setup.
+        createElement(ScreenProvider, {
+            size: { width: layout.width, height: layout.height },
+            children: createElement(View, { style: stageHostStyle(layout) }, children),
+        }),
     )
 }
 

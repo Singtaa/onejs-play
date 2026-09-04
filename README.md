@@ -21,6 +21,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `index.ts` | The game-facing surface, aliased to `oj` |
 | `mount.ts` | `mount()` and `useStage()` |
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
+| `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stage.ts` | Logical coordinate space and how it maps to the viewport |
 | `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`: a game's own files |
 | `scores.ts` | `scores` and `useLeaderboard` |
@@ -112,18 +113,36 @@ two do not report the same numbers, and nothing warns you:
 | | Reports |
 |---|---|
 | `input.mouse.position`, `input.touches[n].position` | logical stage units |
-| `onPointerDown` and friends | **panel** pixels |
+| `onPointerDown` and friends: `x`, `y` | **panel** pixels |
+| `onPointerDown` and friends: `localX`, `localY` | relative to the element the handler is on |
 
 A letterboxed stage offsets one from the other, so hit testing against a layout
-written in stage units silently misses by the size of the bars. React's events
-also carry `x` and `y` rather than the `localX` and `localY` a web habit
-reaches for, and a handler typed as `any` accepts both happily: Patience shipped
-with every card unclickable because of exactly that pair of mistakes. Its
-`ChangeEventData` sibling carries `value`, not `newValue`, which broke every
-slider in Particle Lab the same way.
+written in stage units silently misses by the size of the bars. `localX` and
+`localY` are in neither space and are what a handler hit testing against its
+own box wants; they come off the synthetic event's prototype in the OneJS
+bootstrap and read `worldBound` on first use, so a handler that never asks
+pays nothing. Before they existed, a handler typed as `any` accepted `localX`
+happily and got `undefined`: Patience shipped with every card unclickable
+because of exactly that. Its `ChangeEventData` sibling carries `value`, not
+`newValue`, which broke every slider in Particle Lab the same way.
 
 Reading through `input` also gets touch for free, since the same code sees
-`input.touches`.
+`input.touches`. A swipe is `useSwipe(onSwipe)` from `gesture.ts`: it follows
+one finger or a mouse drag through `input`, fires once per gesture past a
+threshold, and ignores the mouse while a finger is down, because the container
+reports a touch as the mouse too and listening to both fires everything twice.
+Twos Company carried that state machine itself before it moved here.
+
+**Hooks read the latest render.** `useFrame` and `fx.useAnimatedTexture` call
+the callback from the most recent render on every frame, so a callback can
+read state and props directly and the dependency list only says when to
+resubscribe or restart the clock. The first version froze the first render's
+closure for the life of the component, and every game with a slider ended up
+mirroring its state into a ref to get around it.
+
+**Breakpoints describe the stage.** `mount()` wraps the game in a
+`ScreenProvider` sized from the stage layout, so `useBreakpoint` and friends
+answer for the box the game was fitted into rather than the panel around it.
 
 ### A pointer used to be wrong after an eject
 
