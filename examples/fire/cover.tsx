@@ -37,7 +37,7 @@ function Cover() {
             .ramp(["#26000000", "#b30f008c", "#ff4705eb", "#ff9e14", "#ffed9e"]))
     return (
         <View style={{ width: 960, height: 540, backgroundColor: "#07070a", alignItems: "center", justifyContent: "center" }}>
-            <View style={{ width: 480, height: 480, backgroundImage: flame }} />
+            <View style={{ width: 540, height: 540, backgroundImage: flame }} />
         </View>
     )
 }
