@@ -67,13 +67,13 @@ const LEAN_MAX = 14
  * Most of what makes this look like fire is the shape. The ramp is what makes
  * the shape look hot.
  */
-const EMBERS: { color: [number, number, number, number]; at: number }[] = [
-    { color: [0.15, 0, 0, 0], at: 0 },          // transparent: sits on any background
-    { color: [0.7, 0.06, 0, 0.55], at: 0.3 },   // dark red, still see-through
-    { color: [1, 0.28, 0.02, 0.92], at: 0.52 }, // orange body
-    { color: [1, 0.62, 0.08, 1], at: 0.74 },    // yellow
-    { color: [1, 0.93, 0.62, 1], at: 1 },       // near-white, only at the hottest
-]
+const EMBERS = [
+    { color: "#26000000", at: 0 },    // transparent: sits on any background
+    { color: "#b30f008c", at: 0.3 },  // dark red, still see-through
+    { color: "#ff4705eb", at: 0.52 }, // orange body
+    { color: "#ff9e14", at: 0.74 },   // yellow
+    { color: "#ffed9e", at: 1 },      // near-white, only at the hottest
+] as const
 
 /** The settings for one noise layer. There are two, independent all the way down. */
 interface Field {
@@ -190,12 +190,7 @@ function buildEnvelope(p: Params, lean: number) {
         .blur(Math.round(p.blur))
     // The gradient's 0 stop sits at low v, and low v is the bottom of the
     // element, so white at 0 means a bright base.
-    const fromBase = fx.image
-        .gradient(TEX, TEX, [
-            { color: [1, 1, 1, 1], at: 0 },
-            { color: [0.06, 0.06, 0.06, 1], at: 1 },
-        ], 90)
-        .pow(p.falloff)
+    const fromBase = fx.image.gradient(TEX, TEX, ["#fff", "#0f0f0f"], 90).pow(p.falloff)
     return shape.multiply(fromBase)
 }
 
@@ -335,6 +330,8 @@ function Tinder() {
         if (step !== lean) setLean(step)
     })
 
+    // Built once per change of its own knobs, never null, so the frame below
+    // can multiply by it without a guard.
     const envelope = fx.useImage(() => buildEnvelope(p, lean),
         [...ENVELOPE_KEYS.map(k => p[k]), lean])
 
@@ -348,7 +345,7 @@ function Tinder() {
         const turbulence = layer(fieldA(p), 1, 0, t)
             .multiply(1 - p.mix)
             .add(layer(fieldB(p), 2, 3.7, t).multiply(p.mix))
-        const heat = envelope ? turbulence.multiply(envelope) : turbulence
+        const heat = turbulence.multiply(envelope)
         // The threshold is what turns fog into licks. The band starts above the
         // average brightness, so only peaks survive, and the envelope's fade
         // means fewer of them survive the higher up they are.
@@ -387,7 +384,7 @@ function Tinder() {
                         {/* No animation of its own: the flame above already
                             builds this one, so it just shows that texture. */}
                         <Thumb label="envelope, blurred" size={preview}
-                               texture={envelope ? envelope.texture() : null} />
+                               texture={envelope.texture()} />
                     </View>
                 </View>
                 )}

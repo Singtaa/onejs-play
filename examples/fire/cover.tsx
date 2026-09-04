@@ -40,13 +40,13 @@ const STAGE_H = 540
 const TEX = 512
 const THUMB = 132
 
-const EMBERS: { color: [number, number, number, number]; at: number }[] = [
-    { color: [0.15, 0, 0, 0], at: 0 },
-    { color: [0.7, 0.06, 0, 0.55], at: 0.3 },
-    { color: [1, 0.28, 0.02, 0.92], at: 0.52 },
-    { color: [1, 0.62, 0.08, 1], at: 0.74 },
-    { color: [1, 0.93, 0.62, 1], at: 1 },
-]
+const EMBERS = [
+    { color: "#26000000", at: 0 },
+    { color: "#b30f008c", at: 0.3 },
+    { color: "#ff4705eb", at: 0.52 },
+    { color: "#ff9e14", at: 0.74 },
+    { color: "#ffed9e", at: 1 },
+] as const
 
 interface Field {
     scaleX: number; scaleY: number; speed: number
@@ -92,12 +92,7 @@ function buildEnvelope() {
         .sdf(TEX, TEX, "unevenCapsule", { rBottom: 0.206, rTop: 0.012, h: 0.72, y: -0.133 })
         .clamp(0, 1)
         .blur(61)
-    const fromBase = fx.image
-        .gradient(TEX, TEX, [
-            { color: [1, 1, 1, 1], at: 0 },
-            { color: [0.06, 0.06, 0.06, 1], at: 1 },
-        ], 90)
-        .pow(0.94)
+    const fromBase = fx.image.gradient(TEX, TEX, ["#fff", "#0f0f0f"], 90).pow(0.94)
     return shape.multiply(fromBase)
 }
 
@@ -126,7 +121,7 @@ function Cover() {
         const turbulence = looping(BODY, 1, 0, t)
             .multiply(1 - MIX)
             .add(looping(DETAIL, 2, 3.7, t).multiply(MIX))
-        const heat = envelope ? turbulence.multiply(envelope) : turbulence
+        const heat = turbulence.multiply(envelope)
         return heat.remap(0.112, 0.342, 0, 1).clamp(0, 1).ramp(EMBERS)
     }, [envelope])
 
@@ -147,8 +142,7 @@ function Cover() {
             <View style={{ marginLeft: 28 }}>
                 <FieldThumb label="field A, the body" f={BODY} seed={1} ox={0} />
                 <FieldThumb label="field B, the detail" f={DETAIL} seed={2} ox={3.7} />
-                <Thumb label="envelope, blurred"
-                       texture={envelope ? envelope.texture() : null} />
+                <Thumb label="envelope, blurred" texture={envelope.texture()} />
             </View>
         </View>
     )
