@@ -3,23 +3,21 @@
     "runtime": "1.0.0",
     "name": "Tinder",
     "author": "singtaa",
-    "description": "A fire with no art in it. Two scrolling noise fields, a tapered mask and a colour ramp, composed on the GPU every frame. Every number is on a slider, and its three inputs are on show. Blow on it.",
+    "description": "A fire with no art in it. Two scrolling noise fields, a soft mask and a colour ramp, composed on the GPU every frame, in twenty lines.",
     "entry": "index.tsx",
     "stage": {
         "size": [
-            960,
-            700
+            512,
+            512
         ],
-        "fit": "fluid"
+        "fit": "letterbox",
+        "matte": "#07070a"
     },
     "tags": [
         "toy",
         "visual"
     ],
-    "controls": [
-        "pointer",
-        "touch"
-    ],
+    "controls": [],
     "cover": {
         "seconds": 6,
         "stage": [
