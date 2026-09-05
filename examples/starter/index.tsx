@@ -21,8 +21,8 @@ function Pop() {
     }
     return (
         <View ref={stage} className="items-center bg-neutral-900" style={{ width: STAGE, height: STAGE }}
-            onPointerDown={tap} onGenerateVisualContent={batchedVisualContent((p) => p.fillColor(1, .82, .4, 1)
-                .beginPath().arc(dot.current.x, dot.current.y, dot.current.r, 0, Math.PI * 2).fill())}>
+            onPointerDown={tap} onGenerateVisualContent={batchedVisualContent((p) => p.fillColor("#ffd166")
+                .beginPath().circle(dot.current.x, dot.current.y, dot.current.r).fill())}>
             <Text className="mt-6 text-4xl text-white tracking-wide">{score}</Text>
         </View>
     )

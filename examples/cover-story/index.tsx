@@ -41,10 +41,9 @@ function Bounce() {
         <View ref={view} onPointerDown={nudge}
             style={{ width: "100%", height: "100%", backgroundColor: "#0b0b12", alignItems: "center" }}
             onGenerateVisualContent={batchedVisualContent((p) => {
-                p.fillColor(1, 0.72, 0.28, 1)
+                p.fillColor("#ffb847")
                 p.beginPath()
-                p.arc(ball.current.x * stage.width, ball.current.y * stage.height,
-                      R * size, 0, Math.PI * 2)
+                p.circle(ball.current.x * stage.width, ball.current.y * stage.height, R * size)
                 p.fill()
             })}>
             <Text style={{ color: "#5a5a68", fontSize: 13, marginTop: 16 }}>

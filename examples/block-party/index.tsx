@@ -338,7 +338,7 @@ function BlockParty() {
             .sort((a, b) => b.rival.score - a.rival.score || a.id - b.id)
 
     const paint = useMemo(() => batchedVisualContent((p: Painter) => {
-        p.fillColor(0.055, 0.06, 0.075, 1)
+        p.fillColor("#0e0f13")
         p.beginPath()
         box(p, 0, 0, 900, 560)
         p.fill()
@@ -359,7 +359,7 @@ function BlockParty() {
         if (well.pending > 0) {
             const full = ROWS * CELL
             const height = (Math.min(well.pending, MAX_PENDING) / MAX_PENDING) * full
-            p.fillColor(0.95, 0.35, 0.35, 0.85)
+            p.fillColor("#f25959", 0.85)
             p.beginPath()
             box(p, WELL_X - 12, WELL_Y + full - height, 6, height)
             p.fill()
@@ -377,7 +377,7 @@ function BlockParty() {
                 id === target ? [0.98, 0.72, 0.30] : trouble ? [0.85, 0.35, 0.35] : [0.18, 0.21, 0.26],
                 id === target ? 2 : 1)
             if (id === strike.current.to && strike.current.left > 0) {
-                p.fillColor(0.98, 0.72, 0.30, 0.18 * strike.current.left)
+                p.fillColor("#fab84c", 0.18 * strike.current.left)
                 p.beginPath()
                 box(p, at.x, at.y, COLS * MINI_CELL, ROWS * MINI_CELL)
                 p.fill()
@@ -505,7 +505,7 @@ function box(p: Painter, x: number, y: number, w: number, h: number): void {
 }
 
 function drawWell(p: Painter, board: Board, ox: number, oy: number, cell: number): void {
-    p.fillColor(0.085, 0.09, 0.11, 1)
+    p.fillColor("#16171c")
     p.beginPath()
     box(p, ox, oy, COLS * cell, ROWS * cell)
     p.fill()

@@ -8,10 +8,10 @@ import { View, mount, fx } from "oj"
 
 const SECONDS = 6
 const PERIOD = SECONDS * 1.01
-const SIZE = 512
+const canvas = fx.canvas(512)
 
-const shape = fx.image.sdf(SIZE, SIZE, "egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 }).blur(60)
-const fadeToTip = fx.image.gradient(SIZE, SIZE, ["#ffffff", "#0f0f0f"], "up")
+const shape = canvas.sdf("egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 }).blur(60)
+const fadeToTip = canvas.gradient(["#ffffff", "#0f0f0f"], "up")
 const mask = shape.multiply(fadeToTip)
 
 const body: fx.NoiseOptions = { type: "turbulence", seed: 1, scale: [0.36, 0.24] }
@@ -26,13 +26,13 @@ const embers = [
 ]
 
 function looping(field: fx.NoiseOptions, speed: number, t: number) {
-    const rising = (at: number) => fx.image.noise(SIZE, SIZE, { ...field, offset: [0, -at * speed] })
+    const rising = (at: number) => canvas.noise({ ...field, offset: [0, -at * speed] })
     const blend = (t % PERIOD) / PERIOD
     return rising(t).lerp(rising(t - PERIOD), blend)
 }
 
 function Cover() {
-    const flame = fx.useAnimatedTexture(SIZE, SIZE, (t) => {
+    const flame = fx.useAnimatedTexture(canvas, (t) => {
         const turbulence = looping(body, 0.17, t).lerp(looping(detail, 0.26, t), 0.45)
         const heat = turbulence.multiply(mask)
         return heat.threshold(0.08, 0.36).ramp(embers)

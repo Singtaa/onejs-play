@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import {
-    View, Text, mount, useFrame, useStage, useParticles, input, random, audio, assetUrl,
+    View, Text, mount, useFrame, useStage, useParticles, input, random, audio,
     type ParticlesHandle, type EmitterConfig, type Sound,
 } from "oj"
 
@@ -27,7 +27,7 @@ function shellEmitter({ core, body }: { core: string; body: string }): EmitterCo
         size: [5, 9],
         gravity: [0, 130],
         drag: 1.35,
-        additiveness: 1,
+        glow: 1,
         colorOverLife: [core, body, `${body.slice(0, 7)}00`],
         sizeOverLife: [1, 0.9, 0],
     }
@@ -40,7 +40,7 @@ const trailEmitter: EmitterConfig = {
     lifetime: [0.22, 0.5],
     size: [3, 5],
     gravity: [0, 40],
-    additiveness: 1,
+    glow: 1,
     colorOverLife: ["#fff0c0ff", "#ff8a1eff", "#ff6a0000"],
     sizeOverLife: [1, 0],
 }
@@ -53,7 +53,7 @@ const sparkEmitter: EmitterConfig = {
     size: [2, 4],
     gravity: [0, 60],
     drag: 3,
-    additiveness: 1,
+    glow: 1,
     colorOverLife: ["#ffffffff", "#ffe9b0ff", "#ffd08000"],
     sizeOverLife: [1, 0],
 }
@@ -76,7 +76,7 @@ function Fireworks() {
     useEffect(() => {
         let live = true
         const load = async (name: string) => {
-            const sound = await audio.load(assetUrl(name))
+            const sound = await audio.load(name)
             return live ? sound : (sound.unload(), undefined)
         }
         Promise.all([load("launch.wav"), load("pop.wav"), load("crackle.wav")]).then(

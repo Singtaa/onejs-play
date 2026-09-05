@@ -36,10 +36,10 @@ describe("the presets", () => {
         }
     })
 
-    it("stay inside the additiveness range the shader understands", () => {
+    it("stay inside the glow range the shader understands", () => {
         for (const layer of allLayers()) {
-            expect(layer.additiveness).toBeGreaterThanOrEqual(0)
-            expect(layer.additiveness).toBeLessThanOrEqual(1)
+            expect(layer.glow).toBeGreaterThanOrEqual(0)
+            expect(layer.glow).toBeLessThanOrEqual(1)
         }
     })
 
@@ -81,7 +81,7 @@ describe("toEmitter", () => {
     })
 
     it("carries the emitter position", () => {
-        expect(toEmitter({ ...knobs(), originX: 120.4, originY: 300.6 }).pos).toEqual([120, 301])
+        expect(toEmitter({ ...knobs(), originX: 120.4, originY: 300.6 }).position).toEqual([120, 301])
     })
 
     it("passes the ramp through untouched", () => {
@@ -101,9 +101,9 @@ describe("toEmitter", () => {
     })
 
     it("keeps a sensible number of decimals on the ones that are fractional", () => {
-        const emitter = toEmitter({ ...knobs(), drag: 1.23456, additiveness: 0.98765 })
+        const emitter = toEmitter({ ...knobs(), drag: 1.23456, glow: 0.98765 })
         expect(emitter.drag).toBe(1.23)
-        expect(emitter.additiveness).toBe(0.99)
+        expect(emitter.glow).toBe(0.99)
     })
 })
 

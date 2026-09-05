@@ -188,7 +188,7 @@ went.
 import { assetUrl, useTexture, audio } from "oj"
 
 const glow = useTexture("glow.png")            // a Unity texture, or null
-const pop = await audio.load(assetUrl("pop.wav"))
+const pop = await audio.load("pop.wav")
 ```
 
 A bare file name, resolved differently on each side of an eject: on the site to
@@ -202,10 +202,9 @@ Explicit at the call site on purpose. Teaching every loader a hidden base would
 mean a bare `"glow.png"` resolving through machinery a reader cannot see, and
 two loaders that disagreed about it would be a bug with no visible cause.
 
-`loadTexture` and `useTexture` take the bare name, matching onejs-unity's
-`loadImageAsync`. `audio.load` takes a URL, because it is onejs-unity's function
-passed through unchanged rather than a variant of it, so it gets `assetUrl(...)`
-at the call site.
+`loadTexture`, `useTexture` and `audio.load` all take the bare name. oj's
+`audio` (`audio.ts`) is onejs-unity's with `load` resolving a name through
+`assetUrl`; a URL passes through untouched.
 
 **Two things had to be fixed in the runtime before any of this worked**, and
 both were invisible from the outside:

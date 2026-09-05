@@ -109,8 +109,8 @@ function Sumo() {
             const slot = slots.release(id)
             tracks.delete(id)
             if (slot !== null && world !== null) {
-                world.setPosition(slot, OFF_FIELD, OFF_FIELD)
-                world.setBodyEnabled(slot, false)
+                world.bodies[slot]!.moveTo(OFF_FIELD, OFF_FIELD)
+                world.bodies[slot]!.enabled = false
             }
             beat()
         },
@@ -137,7 +137,7 @@ function Sumo() {
                 if (current === null) return
                 round.current = applyFall(current, from, data)
                 const slot = slots.slotOf(from)
-                if (slot !== null && world !== null) world.setBodyEnabled(slot, false)
+                if (slot !== null && world !== null) world.bodies[slot]!.enabled = false
                 return
             }
 
@@ -173,17 +173,19 @@ function Sumo() {
         dashLeft.current = 0
 
         // Switch on before moving. A body that is not simulating drops the position.
-        const place = (body: number, index: number) => {
+        const place = (slot: number, index: number) => {
             const at = spawnAt(index, starters.length)
-            world.setBodyEnabled(body, true)
-            world.setPosition(body, at.x, at.y)
-            world.setVelocity(body, 0, 0)
+            const body = world.bodies[slot]!
+            body.enabled = true
+            body.moveTo(at.x, at.y)
+            body.setVelocity(0, 0)
             return at
         }
 
-        const park = (body: number) => {
-            world.setPosition(body, OFF_FIELD, OFF_FIELD)
-            world.setBodyEnabled(body, false)
+        const park = (slot: number) => {
+            const body = world.bodies[slot]!
+            body.moveTo(OFF_FIELD, OFF_FIELD)
+            body.enabled = false
         }
 
         const seat = starters.indexOf(room.id)
@@ -275,14 +277,14 @@ function Sumo() {
 
             const push = steer(aimX, aimY)
             if (push.x !== 0 || push.y !== 0) {
-                world.impulse(0, push.x * THRUST * step, push.y * THRUST * step)
+                world.bodies[0]!.push(push.x * THRUST * step, push.y * THRUST * step)
             }
 
             dashLeft.current = Math.max(0, dashLeft.current - step)
             let dashing = input.keyboard.wasKeyPressed("Space") || input.mouse.wasLeftPressed
             for (const touch of input.touches) if (touch.phase === "began") dashing = true
             if (dashing && dashLeft.current === 0 && (push.x !== 0 || push.y !== 0)) {
-                world.impulse(0, push.x * DASH_SPEED, push.y * DASH_SPEED)
+                world.bodies[0]!.push(push.x * DASH_SPEED, push.y * DASH_SPEED)
                 dashLeft.current = DASH_COOLDOWN
             }
         }
@@ -315,7 +317,7 @@ function Sumo() {
                     })
                     if (isOff(x, y, ring)) {
                         fallen.current = true
-                        world.setBodyEnabled(0, false)
+                        world.bodies[0]!.enabled = false
                         room.send({ k: "out", n: current.n })
                         round.current = applyFall(current, room.id, { n: current.n })
                         beat()
@@ -329,18 +331,19 @@ function Sumo() {
                     if (track.sinceReport > 8) {
                         tracks.delete(peer)
                         slots.release(peer)
-                        world.setPosition(slot, OFF_FIELD, OFF_FIELD)
-                        world.setBodyEnabled(slot, false)
+                        world.bodies[slot]!.moveTo(OFF_FIELD, OFF_FIELD)
+                        world.bodies[slot]!.enabled = false
                         continue
                     }
                     const x = transforms[slot * 3]!
                     const y = transforms[slot * 3 + 1]!
+                    const blob = world.bodies[slot]!
                     if (leashDelta(x, y, track) > SNAP_DISTANCE) {
-                        world.setPosition(slot, track.x, track.y)
-                        world.setVelocity(slot, track.vx, track.vy)
+                        blob.moveTo(track.x, track.y)
+                        blob.setVelocity(track.vx, track.vy)
                     } else {
                         const v = leashVelocity(x, y, track)
-                        world.setVelocity(slot, v.x, v.y)
+                        blob.setVelocity(v.x, v.y)
                     }
                 }
             }
@@ -382,11 +385,11 @@ function Sumo() {
 
     useEffect(() => {
         if (world === null) return
-        for (let slot = 0; slot < MAX_BLOBS; slot++) {
-            if (blobs[slot]) world.bind(slot, blobs[slot])
-            world.setPosition(slot, OFF_FIELD, OFF_FIELD)
-            world.setBodyEnabled(slot, false)
-        }
+        world.bodies.forEach((body, slot) => {
+            if (blobs[slot]) body.bind(blobs[slot])
+            body.moveTo(OFF_FIELD, OFF_FIELD)
+            body.enabled = false
+        })
     }, [world])
 
     useEffect(() => {
@@ -397,7 +400,7 @@ function Sumo() {
     const paint = useMemo(() => batchedVisualContent((p: Painter) => {
         const ring = platformRadius(elapsed.current)
 
-        p.fillColor(0.035, 0.045, 0.065, 1)
+        p.fillColor("#090b11")
         p.beginPath()
         p.moveTo(0, 0)
         p.lineTo(ARENA_W, 0)
@@ -408,28 +411,28 @@ function Sumo() {
 
         const soon = platformRadius(elapsed.current + 3)
         if (soon < ring - 1) {
-            p.fillColor(0.42, 0.16, 0.20, 0.55)
+            p.fillColor("#6b2933", 0.55)
             p.beginPath()
-            p.arc(CENTER_X, CENTER_Y, ring, 0, Math.PI * 2)
+            p.circle(CENTER_X, CENTER_Y, ring)
             p.fill()
         }
 
-        p.fillColor(0.10, 0.13, 0.18, 1)
+        p.fillColor("#1a212e")
         p.beginPath()
-        p.arc(CENTER_X, CENTER_Y, soon < ring - 1 ? soon : ring, 0, Math.PI * 2)
+        p.circle(CENTER_X, CENTER_Y, soon < ring - 1 ? soon : ring)
         p.fill()
 
-        p.strokeColor(0.36, 0.46, 0.60, 0.9)
+        p.strokeColor("#5c7599", 0.9)
         p.lineWidth(3)
         p.beginPath()
-        p.arc(CENTER_X, CENTER_Y, ring, 0, Math.PI * 2)
+        p.circle(CENTER_X, CENTER_Y, ring)
         p.stroke()
 
-        p.strokeColor(0.30, 0.38, 0.50, 0.22)
+        p.strokeColor("#4c6180", 0.22)
         p.lineWidth(1)
         for (const fraction of [0.66, 0.33]) {
             p.beginPath()
-            p.arc(CENTER_X, CENTER_Y, ring * fraction, 0, Math.PI * 2)
+            p.circle(CENTER_X, CENTER_Y, ring * fraction)
             p.stroke()
         }
     }), [])

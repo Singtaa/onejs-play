@@ -203,8 +203,8 @@ function ParticleLab() {
                         <Pair>
                             <Knob label="Drag" width={HALF} value={layer.drag} min={0} max={4}
                                 onChange={(drag) => set({ drag })} format={(n) => n.toFixed(2)} />
-                            <Knob label="Additiveness" width={HALF} value={layer.additiveness} min={0} max={1}
-                                onChange={(additiveness) => set({ additiveness })} format={(n) => n.toFixed(2)} />
+                            <Knob label="Glow" width={HALF} value={layer.glow} min={0} max={1}
+                                onChange={(glow) => set({ glow })} format={(n) => n.toFixed(2)} />
                         </Pair>
 
                         <Text style={{ fontSize: 11, color: DIM, marginTop: 6, marginBottom: 6 }}>COLOUR</Text>

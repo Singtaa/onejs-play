@@ -250,7 +250,7 @@ function BigFish() {
             x + r > camera.x && x - r < camera.x + stage.width &&
             y + r > camera.y && y - r < camera.y + stage.height
 
-        p.fillColor(0.05, 0.09, 0.14, 1)
+        p.fillColor("#0d1724")
         p.beginPath()
         p.moveTo(0, 0)
         p.lineTo(stage.width, 0)
@@ -259,7 +259,7 @@ function BigFish() {
         p.closePath()
         p.fill()
 
-        p.strokeColor(0.16, 0.26, 0.36, 1)
+        p.strokeColor("#29425c")
         p.lineWidth(2)
         p.beginPath()
         p.moveTo(-camera.x, -camera.y)
@@ -274,7 +274,7 @@ function BigFish() {
             const tone = PELLET_TONES[pellet.tone % PELLET_TONES.length]!
             p.fillColor(tone[0], tone[1], tone[2], 0.9)
             p.beginPath()
-            p.arc(pellet.x - camera.x, pellet.y - camera.y, PELLET_SIZE, 0, Math.PI * 2)
+            p.circle(pellet.x - camera.x, pellet.y - camera.y, PELLET_SIZE)
             p.fill()
         }
 
@@ -361,19 +361,19 @@ function drawFish(
 ): void {
     p.fillColor(tone[0] * 0.45, tone[1] * 0.45, tone[2] * 0.45, 0.92)
     p.beginPath()
-    p.arc(x, y, size, 0, Math.PI * 2)
+    p.circle(x, y, size)
     p.fill()
 
     p.strokeColor(tone[0], tone[1], tone[2], mine ? 1 : 0.75)
     p.lineWidth(mine ? 3 : 2)
     p.beginPath()
-    p.arc(x, y, size - 1, 0, Math.PI * 2)
+    p.circle(x, y, size - 1)
     p.stroke()
 
     const eye = Math.max(2, size * 0.16)
-    p.fillColor(0.95, 0.98, 1, 0.9)
+    p.fillColor("#f2faff", 0.9)
     p.beginPath()
-    p.arc(x + size * 0.32, y - size * 0.22, eye, 0, Math.PI * 2)
+    p.circle(x + size * 0.32, y - size * 0.22, eye)
     p.fill()
 }
 

@@ -12,7 +12,7 @@
  * name and gets back something the loaders can actually fetch:
  *
  *     <Image src={assetUrl("glow.png")} />
- *     const blip = await audio.load(assetUrl("blip.wav"))
+ *     const blip = await audio.load("blip.wav")
  *
  * Explicit at the call site on purpose. The alternative was to teach every
  * loader a hidden base, which would mean a bare "glow.png" resolving through

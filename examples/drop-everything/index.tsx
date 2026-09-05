@@ -57,7 +57,6 @@ const BODIES: BodyConfig[] = [
     })),
 ]
 
-const shapeBody = (slot: number) => SCENERY.length + slot
 
 function DropEverything() {
     const host = useRef<any>(null)
@@ -76,24 +75,26 @@ function DropEverything() {
         bodies: BODIES,
     })
 
+    // Scenery came first in BODIES, so the shapes are the bodies after it.
+    const shapes = world === null ? [] : world.bodies.slice(SCENERY.length)
+
     useEffect(() => {
         if (world === null) return
-        for (let i = 0; i < elements.length; i++) {
-            if (elements[i]) world.bind(i, elements[i])
-        }
-        for (let slot = 0; slot < SHAPES; slot++) world.setBodyEnabled(shapeBody(slot), false)
+        world.bodies.forEach((body, i) => { if (elements[i]) body.bind(elements[i]) })
+        for (const shape of shapes) shape.enabled = false
     }, [world])
 
     const drop = (x: number, y: number) => {
         if (world === null) return
         const { body: slot } = pool.take()
+        const shape = shapes[slot]!
 
         // Enable first, then move. A position written to a body that is not
         // simulating is silently discarded.
-        world.setBodyEnabled(shapeBody(slot), true)
-        world.setPosition(shapeBody(slot), x, y)
-        world.setVelocity(shapeBody(slot), rng.range(-60, 60), 0)
-        const element = elements[shapeBody(slot)]
+        shape.enabled = true
+        shape.moveTo(x, y)
+        shape.setVelocity(rng.range(-60, 60), 0)
+        const element = elements[shape.index]
         if (element) element.style.opacity = 1
         setDropped(pool.inUse)
     }
@@ -101,9 +102,10 @@ function DropEverything() {
     const clear = () => {
         if (world === null) return
         for (const slot of pool.clear()) {
-            world.setBodyEnabled(shapeBody(slot), false)
-            world.setPosition(shapeBody(slot), -400, -400)
-            const element = elements[shapeBody(slot)]
+            const shape = shapes[slot]!
+            shape.enabled = false
+            shape.moveTo(-400, -400)
+            const element = elements[shape.index]
             if (element) element.style.opacity = 0
         }
         setDropped(0)
@@ -147,7 +149,7 @@ function DropEverything() {
                 {SHAPE_CYCLE.map((shape, slot) => (
                     <View
                         key={`shape-${slot}`}
-                        ref={(el: any) => { elements[shapeBody(slot)] = el }}
+                        ref={(el: any) => { elements[SCENERY.length + slot] = el }}
                         pickingMode="Ignore"
                         style={{
                             position: "absolute", width: shape.size, height: shape.size,

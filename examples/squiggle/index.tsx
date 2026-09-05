@@ -355,7 +355,7 @@ function Squiggle() {
     const paint = useMemo(() => batchedVisualContent((p: Painter) => {
         const camera = cameraAt(me, stage.width, stage.height)
 
-        p.fillColor(0.045, 0.055, 0.075, 1)
+        p.fillColor("#0b0e13")
         p.beginPath()
         p.moveTo(0, 0)
         p.lineTo(stage.width, 0)
@@ -364,7 +364,7 @@ function Squiggle() {
         p.closePath()
         p.fill()
 
-        p.strokeColor(0.42, 0.18, 0.24, 1)
+        p.strokeColor("#6b2e3d")
         p.lineWidth(3)
         p.beginPath()
         p.moveTo(-camera.x, -camera.y)
@@ -382,7 +382,7 @@ function Squiggle() {
             const tone = ORB_TONES[orb.tone % ORB_TONES.length]!
             p.fillColor(tone[0], tone[1], tone[2], 0.9)
             p.beginPath()
-            p.arc(x, y, ORB_SIZE, 0, Math.PI * 2)
+            p.circle(x, y, ORB_SIZE)
             p.fill()
         }
 
@@ -487,7 +487,7 @@ function drawSnake(
 
     for (const pass of [0, 1] as const) {
         const width = pass === 0 ? radius * 2 + 3 : radius * 2
-        if (pass === 0) p.strokeColor(0.03, 0.04, 0.06, 0.9)
+        if (pass === 0) p.strokeColor("#080a0f", 0.9)
         else if (boosting) p.strokeColor(Math.min(1, tone[0] + 0.25), Math.min(1, tone[1] + 0.25), Math.min(1, tone[2] + 0.25), 1)
         else p.strokeColor(tone[0] * 0.75, tone[1] * 0.75, tone[2] * 0.75, 1)
         p.lineWidth(width)
@@ -519,20 +519,19 @@ function drawSnake(
 
     p.fillColor(tone[0], tone[1], tone[2], 1)
     p.beginPath()
-    p.arc(hx, hy, radius + (mine ? 1.5 : 0.5), 0, Math.PI * 2)
+    p.circle(hx, hy, radius + (mine ? 1.5 : 0.5))
     p.fill()
 
     const side = Math.max(1.6, radius * 0.34)
     const out = radius * 0.45
     const along = Math.cos(snake.angle)
     const across = Math.sin(snake.angle)
-    p.fillColor(0.96, 0.99, 1, 0.95)
+    p.fillColor("#f5fcff", 0.95)
     // One path each: arc joins to the current point, so two in one path are
     // wired together by a line across the face.
     for (const turn of [1, -1] as const) {
         p.beginPath()
-        p.arc(hx + along * out - across * out * turn, hy + across * out + along * out * turn,
-            side, 0, Math.PI * 2)
+        p.circle(hx + along * out - across * out * turn, hy + across * out + along * out * turn, side)
         p.fill()
     }
 }

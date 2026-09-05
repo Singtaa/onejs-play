@@ -81,7 +81,7 @@ export { input, resolveKeyName, keyNameFromDomCode } from "onejs-unity/input"
 // Sound, over Unity's AudioSource rather than WebAudio. WebAudio exists only in
 // a browser, so a game built on it could never leave the web, which is why the
 // container shadows it. Same API and same behaviour on every platform.
-export { audio } from "onejs-unity/audio"
+export { audio } from "./audio"
 export type { Sound, Voice, PlayOptions } from "onejs-unity/audio"
 
 // 2D physics. The simulation and the writing of positions onto elements both

@@ -125,13 +125,13 @@ function SpaceJunk() {
             // Random on purpose: the flame flickers so held thrust does not look frozen.
             const reach = 8 + rng.next() * 9
             const [fx, fy] = point(6 + reach, Math.PI)
-            p.strokeColor(1, 0.62, 0.2, 0.95)
+            p.strokeColor("#ff9e33", 0.95)
             p.beginPath()
             p.moveTo(bx * 0.35 + cx * 0.65, by * 0.35 + cy * 0.65)
             p.lineTo(fx, fy)
             p.lineTo(dx * 0.35 + cx * 0.65, dy * 0.35 + cy * 0.65)
             p.stroke()
-            p.strokeColor(0.87, 0.93, 1, 1)
+            p.strokeColor("#deedff")
         }
     }
 
@@ -156,30 +156,30 @@ function SpaceJunk() {
         p.lineCap(Painter.LineCap.Round)
         p.lineJoin(Painter.LineJoin.Round)
 
-        p.strokeColor(0.55, 0.62, 0.75, 1)
+        p.strokeColor("#8c9ebf")
         for (const rock of world.rocks) {
             wrapped(rock.x, rock.y, rock.radius, (x, y) => drawRock(p, rock, x, y))
         }
 
-        p.fillColor(1, 0.95, 0.72, 1)
+        p.fillColor("#fff2b8")
         for (const shot of world.shots) {
             wrapped(shot.x, shot.y, 3, (x, y) => {
                 p.beginPath()
-                p.arc(x, y, 2.1, 0, Math.PI * 2)
+                p.circle(x, y, 2.1)
                 p.fill()
             })
         }
 
         for (const bit of world.debris) {
-            p.fillColor(1, 0.85, 0.6, Math.min(1, bit.life * 2.4))
+            p.fillColor("#ffd999", Math.min(1, bit.life * 2.4))
             p.beginPath()
-            p.arc(wrap(bit.x, FIELD.width), wrap(bit.y, FIELD.height), 1.6, 0, Math.PI * 2)
+            p.circle(wrap(bit.x, FIELD.width), wrap(bit.y, FIELD.height), 1.6)
             p.fill()
         }
 
         if (world.respawnIn <= 0 && !world.over) {
             const blink = world.mercy > 0 && Math.floor(world.mercy * 9) % 2 === 0
-            p.strokeColor(0.87, 0.93, 1, blink ? 0.35 : 1)
+            p.strokeColor("#deedff", blink ? 0.35 : 1)
             wrapped(world.ship.x, world.ship.y, 18, (x, y) => drawShip(p, x, y, world.ship.angle))
         }
     }), [])

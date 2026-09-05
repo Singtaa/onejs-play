@@ -44,7 +44,7 @@ function Cover() {
                 const cy = stage.height / 2
                 for (let i = 0; i < DOTS; i++) {
                     const a = turn + i * Math.PI * 2 / DOTS
-                    p.fillColor(1, 0.72, 0.28, 1 - i * 0.14)
+                    p.fillColor("#ffb847", 1 - i * 0.14)
                     p.beginPath()
                     p.arc(cx + Math.cos(a) * size * 0.26,
                           cy + Math.sin(a) * size * 0.26,

@@ -1,9 +1,9 @@
 import { View, mount, fx } from "oj"
 
-const SIZE = 512
+const canvas = fx.canvas(512)
 
-const shape = fx.image.sdf(SIZE, SIZE, "egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 }).blur(60)
-const fadeToTip = fx.image.gradient(SIZE, SIZE, ["#ffffff", "#0f0f0f"], "up")
+const shape = canvas.sdf("egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 }).blur(60)
+const fadeToTip = canvas.gradient(["#ffffff", "#0f0f0f"], "up")
 const mask = shape.multiply(fadeToTip)
 
 const body: fx.NoiseOptions = { type: "turbulence", seed: 1, scale: [0.36, 0.24], scroll: [0, -0.17] }
@@ -18,12 +18,12 @@ const embers = [
 ]
 
 function Fire() {
-    const flame = fx.useAnimatedTexture(SIZE, SIZE, () => {
-        const turbulence = fx.image.noise(SIZE, SIZE, body).lerp(fx.image.noise(SIZE, SIZE, detail), 0.45)
+    const flame = fx.useAnimatedTexture(canvas, () => {
+        const turbulence = canvas.noise(body).lerp(canvas.noise(detail), 0.45)
         const heat = turbulence.multiply(mask)
         return heat.threshold(0.08, 0.36).ramp(embers)
     })
-    return <View style={{ width: SIZE, height: SIZE, backgroundImage: flame }} />
+    return <View style={{ width: canvas.width, height: canvas.height, backgroundImage: flame }} />
 }
 
 mount(<Fire />)

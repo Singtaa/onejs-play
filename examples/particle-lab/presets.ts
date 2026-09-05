@@ -12,7 +12,7 @@ export interface Knobs {
     spreadTo: number
     gravity: number
     drag: number
-    additiveness: number
+    glow: number
     ramp: string[]
     grow: boolean
 }
@@ -33,7 +33,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 60,
                 rate: 300, speedMin: 520, speedMax: 640, lifeMin: 1.1, lifeMax: 1.7,
                 sizeMin: 4, sizeMax: 9, spreadFrom: 252, spreadTo: 288,
-                gravity: 620, drag: 0, additiveness: 0.35,
+                gravity: 620, drag: 0, glow: 0.35,
                 ramp: ["#9fe8ffff", "#3aa0ffff", "#1a4bd800"], grow: false,
             },
             {
@@ -41,7 +41,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 60,
                 rate: 90, speedMin: 560, speedMax: 700, lifeMin: 1.4, lifeMax: 2.0,
                 sizeMin: 2, sizeMax: 4, spreadFrom: 240, spreadTo: 300,
-                gravity: 620, drag: 0.3, additiveness: 0.8,
+                gravity: 620, drag: 0.3, glow: 0.8,
                 ramp: ["#ffffffff", "#bfe6ffff", "#7fb8ff00"], grow: false,
             },
         ],
@@ -53,7 +53,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 70,
                 rate: 260, speedMin: 60, speedMax: 150, lifeMin: 0.7, lifeMax: 1.3,
                 sizeMin: 14, sizeMax: 30, spreadFrom: 250, spreadTo: 290,
-                gravity: -240, drag: 1.1, additiveness: 1,
+                gravity: -240, drag: 1.1, glow: 1,
                 ramp: ["#fff2c0ff", "#ff9020ff", "#c0200000"], grow: false,
             },
             {
@@ -61,7 +61,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 110,
                 rate: 45, speedMin: 25, speedMax: 70, lifeMin: 1.6, lifeMax: 2.8,
                 sizeMin: 26, sizeMax: 60, spreadFrom: 255, spreadTo: 285,
-                gravity: -90, drag: 0.9, additiveness: 0,
+                gravity: -90, drag: 0.9, glow: 0,
                 ramp: ["#3a3a4200", "#5a5a66a0", "#2a2a3200"], grow: true,
             },
             {
@@ -69,7 +69,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 70,
                 rate: 22, speedMin: 120, speedMax: 260, lifeMin: 0.9, lifeMax: 1.8,
                 sizeMin: 2, sizeMax: 4, spreadFrom: 235, spreadTo: 305,
-                gravity: -140, drag: 1.6, additiveness: 1,
+                gravity: -140, drag: 1.6, glow: 1,
                 ramp: ["#fff6d0ff", "#ff9a30ff", "#ff4a0000"], grow: false,
             },
         ],
@@ -81,7 +81,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H - 60,
                 rate: 80, speedMin: 30, speedMax: 80, lifeMin: 2.0, lifeMax: 3.4,
                 sizeMin: 24, sizeMax: 56, spreadFrom: 255, spreadTo: 285,
-                gravity: -90, drag: 0.8, additiveness: 0,
+                gravity: -90, drag: 0.8, glow: 0,
                 ramp: ["#7a7f8c00", "#8d94a4b0", "#5a606c00"], grow: true,
             },
         ],
@@ -93,7 +93,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: 8,
                 rate: 150, speedMin: 30, speedMax: 70, lifeMin: 4, lifeMax: 6,
                 sizeMin: 3, sizeMax: 8, spreadFrom: 60, spreadTo: 120,
-                gravity: 26, drag: 0.4, additiveness: 0,
+                gravity: 26, drag: 0.4, glow: 0,
                 ramp: ["#ffffff00", "#ffffffe0", "#dfe8ff00"], grow: false,
             },
         ],
@@ -105,7 +105,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H * 0.55,
                 rate: 340, speedMin: 220, speedMax: 620, lifeMin: 0.25, lifeMax: 0.7,
                 sizeMin: 2, sizeMax: 5, spreadFrom: 0, spreadTo: 360,
-                gravity: 480, drag: 2.4, additiveness: 1,
+                gravity: 480, drag: 2.4, glow: 1,
                 ramp: ["#ffffffff", "#ffd27aff", "#ff6a0000"], grow: false,
             },
             {
@@ -113,7 +113,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H * 0.55,
                 rate: 90, speedMin: 60, speedMax: 200, lifeMin: 0.6, lifeMax: 1.4,
                 sizeMin: 3, sizeMax: 7, spreadFrom: 0, spreadTo: 360,
-                gravity: 300, drag: 1.4, additiveness: 0.6,
+                gravity: 300, drag: 1.4, glow: 0.6,
                 ramp: ["#ffb45aff", "#a83c1080", "#40140000"], grow: false,
             },
         ],
@@ -125,7 +125,7 @@ export const PRESETS: Preset[] = [
                 originX: PREVIEW_W / 2, originY: PREVIEW_H * 0.5,
                 rate: 110, speedMin: 40, speedMax: 120, lifeMin: 1.6, lifeMax: 2.6,
                 sizeMin: 8, sizeMax: 22, spreadFrom: 0, spreadTo: 360,
-                gravity: 0, drag: 1.1, additiveness: 0.7,
+                gravity: 0, drag: 1.1, glow: 0.7,
                 ramp: ["#ffd0f000", "#c07affff", "#3a2a9000"], grow: true,
             },
         ],
@@ -134,7 +134,7 @@ export const PRESETS: Preset[] = [
 
 export function toEmitter(knobs: Knobs): Record<string, unknown> {
     return {
-        pos: [Math.round(knobs.originX), Math.round(knobs.originY)],
+        position: [Math.round(knobs.originX), Math.round(knobs.originY)],
         rate: Math.round(knobs.rate),
         angle: [knobs.spreadFrom, knobs.spreadTo],
         speed: [knobs.speedMin, knobs.speedMax],
@@ -142,7 +142,7 @@ export function toEmitter(knobs: Knobs): Record<string, unknown> {
         size: [Math.round(knobs.sizeMin), Math.round(knobs.sizeMax)],
         gravity: [0, Math.round(knobs.gravity)],
         drag: round(knobs.drag),
-        additiveness: round(knobs.additiveness),
+        glow: round(knobs.glow),
         colorOverLife: knobs.ramp,
         sizeOverLife: knobs.grow ? [0.35, 1] : [1, 0],
     }
