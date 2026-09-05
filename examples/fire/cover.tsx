@@ -1,40 +1,42 @@
 import { View, mount, fx } from "oj"
 
 /**
- * The card for this game: the same fire, composed at the card's 16 by 9 and
- * made to loop.
- *
- * Scrolling noise never repeats, so no clip of it joins up on its own. Each
- * field is crossfaded with a copy one period behind: at t = 0 the result is
- * f(0) and at t = T it is f(T - T), which is f(0) again. Recording a hair
- * less than one period never reaches the reset. The crossfade is done on the
- * heat field, so everything downstream of it joins up too.
+ * The card: the same fire, framed 16 by 9 and made to loop. Scrolling noise
+ * never repeats, so each field is crossfaded with a copy one period behind;
+ * at the end of the period the picture is back where it started.
  */
 
 const SECONDS = 6
 const PERIOD = SECONDS * 1.01
-const T = 512
+const SIZE = 512
 
-const mask = fx.image.sdf(T, T, "egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 })
-    .blur(60)
-    .multiply(fx.image.gradient(T, T, ["#fff", "#0f0f0f"], 90))
+const shape = fx.image.sdf(SIZE, SIZE, "egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 }).blur(60)
+const fadeToTip = fx.image.gradient(SIZE, SIZE, ["#ffffff", "#0f0f0f"], "up")
+const mask = shape.multiply(fadeToTip)
 
-const rising = (seed: number, scale: [number, number], speed: number, lacunarity: number, gain: number, t: number) =>
-    fx.image.noise(T, T, { type: "simplex", scale, seed, octaves: 3, lacunarity, gain, offset: [seed * 3, -t * speed] })
+const body: fx.NoiseOptions = { type: "turbulence", seed: 1, scale: [0.36, 0.24] }
+const detail: fx.NoiseOptions = { type: "turbulence", seed: 2, scale: [0.5, 0.43] }
 
-const looping = (seed: number, scale: [number, number], speed: number, lacunarity: number, gain: number, t: number) => {
-    const a = (t % PERIOD) / PERIOD
-    return rising(seed, scale, speed, lacunarity, gain, t).multiply(1 - a)
-        .add(rising(seed, scale, speed, lacunarity, gain, t - PERIOD).multiply(a))
+const embers = [
+    { color: "#260000", alpha: 0, at: 0 },
+    { color: "#b30f00", alpha: 0.55, at: 0.3 },
+    { color: "#ff4705", alpha: 0.92, at: 0.52 },
+    { color: "#ff9e14", at: 0.74 },
+    { color: "#ffed9e", at: 1 },
+]
+
+function looping(field: fx.NoiseOptions, speed: number, t: number) {
+    const rising = (at: number) => fx.image.noise(SIZE, SIZE, { ...field, offset: [0, -at * speed] })
+    const blend = (t % PERIOD) / PERIOD
+    return rising(t).lerp(rising(t - PERIOD), blend)
 }
 
 function Cover() {
-    const flame = fx.useAnimatedTexture(T, T, (t) =>
-        looping(1, [0.36, 0.24], 0.17, 2.35, 0.99, t).multiply(0.55)
-            .add(looping(2, [0.5, 0.43], 0.26, 2.7, 0.95, t).multiply(0.45))
-            .multiply(mask)
-            .remap(0.11, 0.42, 0, 1)
-            .ramp(["#26000000", "#b30f008c", "#ff4705eb", "#ff9e14", "#ffed9e"]))
+    const flame = fx.useAnimatedTexture(SIZE, SIZE, (t) => {
+        const turbulence = looping(body, 0.17, t).lerp(looping(detail, 0.26, t), 0.45)
+        const heat = turbulence.multiply(mask)
+        return heat.threshold(0.08, 0.36).ramp(embers)
+    })
     return (
         <View style={{ width: 960, height: 540, backgroundColor: "#07070a", alignItems: "center", justifyContent: "center" }}>
             <View style={{ width: 540, height: 540, backgroundImage: flame }} />
