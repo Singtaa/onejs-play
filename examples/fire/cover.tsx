@@ -10,19 +10,19 @@ const SECONDS = 6
 const PERIOD = SECONDS * 1.01
 const canvas = fx.canvas(512)
 
-const shape = canvas.sdf("egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0.06 }).blur(40)
-const fadeToTip = canvas.gradient(["#ffffff", "#000000"], "up")
+const shape = canvas.sdf("egg", { h: 0.6, r: 0.17, rTop: 0.02, bulge: 0.7, y: 0 }).blur(40)
+const fadeToTip = canvas.gradient(["#ffffff", "#000000"], "up").pow(0.68)
 const mask = shape.multiply(fadeToTip)
 
-const body: fx.NoiseOptions = { type: "turbulence", seed: 1, octaves: 3, scale: [0.8, 0.5] }
-const detail: fx.NoiseOptions = { type: "turbulence", seed: 2, octaves: 3, scale: [1.6, 1] }
+const body: fx.NoiseOptions = { type: "turbulence", seed: 1, octaves: 3, scale: [0.5, 0.3] }
+const detail: fx.NoiseOptions = { type: "turbulence", seed: 2, octaves: 3, scale: [0.9, 0.5] }
 
 const embers = [
-    { color: "#260000", alpha: 0, at: 0 },
-    { color: "#b30f00", alpha: 0.55, at: 0.3 },
-    { color: "#ff4705", alpha: 0.92, at: 0.52 },
-    { color: "#ff9e14", at: 0.74 },
-    { color: "#ffed9e", at: 1 },
+    { color: "#400000", alpha: 0, at: 0 },
+    { color: "#800000", at: 0.2 },
+    { color: "#ffd800", at: 0.24 },
+    { color: "#ffd800", at: 0.7 },
+    { color: "#ffffff", at: 0.75 },
 ]
 
 function looping(field: fx.NoiseOptions, speed: number, t: number) {
@@ -33,8 +33,8 @@ function looping(field: fx.NoiseOptions, speed: number, t: number) {
 
 function Cover() {
     const flame = fx.useAnimatedTexture(canvas, (t) => {
-        const heat = looping(body, 0.35, t).multiply(looping(detail, 0.62, t)).multiply(mask)
-        return heat.threshold(0.005, 0.10).ramp(embers)
+        const heat = looping(body, 0.7, t).multiply(looping(detail, 1.1, t)).multiply(2).multiply(mask)
+        return heat.threshold(0, 0.16).ramp(embers)
     })
     return (
         <View style={{ width: 960, height: 540, backgroundColor: "#07070a", alignItems: "center", justifyContent: "center" }}>
