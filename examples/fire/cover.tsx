@@ -34,7 +34,7 @@ function looping(field: fx.NoiseOptions, speed: number, t: number) {
 function Cover() {
     const flame = fx.useAnimatedTexture(canvas, (t) => {
         const heat = looping(body, 0.35, t).multiply(looping(detail, 0.62, t)).multiply(mask)
-        return heat.threshold(0.03, 0.28).ramp(embers)
+        return heat.threshold(0.015, 0.15).ramp(embers)
     })
     return (
         <View style={{ width: 960, height: 540, backgroundColor: "#07070a", alignItems: "center", justifyContent: "center" }}>

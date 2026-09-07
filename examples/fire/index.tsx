@@ -20,7 +20,7 @@ const embers = [
 function Fire() {
     const flame = fx.useAnimatedTexture(canvas, () => {
         const heat = canvas.noise(body).multiply(canvas.noise(detail)).multiply(mask)
-        return heat.threshold(0.03, 0.35).ramp(embers)
+        return heat.threshold(0.015, 0.18).ramp(embers)
     })
     return <View style={{ width: canvas.width, height: canvas.height, backgroundImage: flame }} />
 }
