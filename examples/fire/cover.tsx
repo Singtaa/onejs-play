@@ -14,8 +14,8 @@ const shape = canvas.sdf("egg", { h: 0.5, r: 0.17, rTop: 0.02, bulge: 0.7, y: -0
 const fadeToTip = canvas.gradient(["#ffffff", "#000000"], "up")
 const mask = shape.multiply(fadeToTip)
 
-const body: fx.NoiseOptions = { type: "turbulence", seed: 1, octaves: 2, scale: [0.8, 0.5] }
-const detail: fx.NoiseOptions = { type: "turbulence", seed: 2, octaves: 2, scale: [1.6, 1] }
+const body: fx.NoiseOptions = { type: "turbulence", seed: 1, octaves: 3, scale: [0.8, 0.5] }
+const detail: fx.NoiseOptions = { type: "turbulence", seed: 2, octaves: 3, scale: [1.6, 1] }
 
 const embers = [
     { color: "#260000", alpha: 0, at: 0 },
@@ -34,7 +34,7 @@ function looping(field: fx.NoiseOptions, speed: number, t: number) {
 function Cover() {
     const flame = fx.useAnimatedTexture(canvas, (t) => {
         const heat = looping(body, 0.35, t).multiply(looping(detail, 0.62, t)).multiply(mask)
-        return heat.threshold(0.015, 0.15).ramp(embers)
+        return heat.threshold(0.005, 0.10).ramp(embers)
     })
     return (
         <View style={{ width: 960, height: 540, backgroundColor: "#07070a", alignItems: "center", justifyContent: "center" }}>
