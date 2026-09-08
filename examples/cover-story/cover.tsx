@@ -4,13 +4,15 @@ import { View, Text, mount, useFrame, useStage, batchedVisualContent } from "oj"
 /**
  * This file is the game's card: the short clip that stands in for it wherever
  * it is shown. Name a file cover.tsx, put it beside your game, and this is
- * what gets recorded when you publish.
+ * what the editor's Cover button films. Press Record there, watch the take,
+ * press Save, and cover.webm (or cover.mp4) lands beside this file; the next
+ * Publish ships it.
  *
  * Delete it and nothing breaks. Your index.tsx gets filmed instead, exactly as
  * a player sees it in a card-shaped window.
  */
 
-/** Six seconds is the default take. Change it with cover.seconds in oj.json. */
+/** Six seconds is the default take. Change it with cover.seconds in oj.json, or in the panel. */
 const PERIOD = 6
 const DOTS = 5
 
