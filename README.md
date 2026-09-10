@@ -47,6 +47,7 @@ Beside `src/`, two folders that are not the runtime:
 |---|---|
 | `build/` | `game.mjs`, the one builder every game is built with (the site on publish and on Run, `oj build`, the shipped-games script), and `externals.json`, the modules the container provides. The esbuild instance is a parameter, wasm in the Worker and native here. |
 | `cli/` | The `oj` command line, the package's `bin`. |
+| `host/` | `boot.mjs`, the script that boots the container and hands it a game, inlined by the site's sandbox document and by the page `oj run` serves. One copy of the contract with `__ojPlay.load`; the two documents differ only in where the runtime is, how the bundle arrives and whom they tell. |
 
 Everything above the `container.ts` line is reachable from a game. Everything
 below it is the host's, and a game bundle cannot see it: `oj` is the package

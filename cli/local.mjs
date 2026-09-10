@@ -12,6 +12,7 @@ import fs from "node:fs"
 import http from "node:http"
 import os from "node:os"
 import path from "node:path"
+import { containerBoot } from "../host/boot.mjs"
 
 /** The four files a container is. Mirrors RUNTIME_FILES in the site's staging script. */
 export const RUNTIME_FILES = [
@@ -77,6 +78,19 @@ const TYPES = {
  * where the command line is listening.
  */
 function hostPage(manifest) {
+    const boot = containerBoot({
+        runtime: "/runtime",
+        manifest,
+        bundle: `function bundle() {
+    return fetch("/bundle.js?v=" + Date.now()).then((r) => {
+        if (!r.ok) throw new Error("bundle " + r.status)
+        return r.text()
+    })
+}`,
+        report: `function report(type, payload) {
+    console.log(type === "ready" ? "[oj-local] ready " + payload.ms : "[oj-local] error " + payload.message)
+}`,
+    })
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -93,58 +107,16 @@ function hostPage(manifest) {
 <body>
 <canvas id="c" tabindex="1"></canvas>
 <div id="s">loading runtime</div>
-<script>
-const status = document.getElementById("s")
-const canvas = document.getElementById("c")
-const say = (m) => { if (status) status.textContent = m }
-const manifest = ${JSON.stringify(manifest)}
-const load = (src) => new Promise((ok, no) => {
-    const s = document.createElement("script")
-    s.src = src; s.onload = ok; s.onerror = () => no(new Error("failed to load " + src))
-    document.head.appendChild(s)
-})
-const bundle = () => fetch("/bundle.js?v=" + Date.now()).then((r) => {
-    if (!r.ok) throw new Error("bundle " + r.status)
-    return r.text()
-})
+<script>${boot}
 // What the command line calls to swap in a new build without reloading the
-// 14 MB behind it. Returns the container's own measure of the swap.
+// 14 MB behind it. Reports the way the boot does.
 globalThis.__ojLocal = {
     async reload() {
-        const source = await bundle()
-        const ms = globalThis.__ojPlay.load(source, manifest)
-        console.log(ms < 0 ? "[oj-local] error the game failed to start" : "[oj-local] ready " + ms)
+        const ms = startGame(await bundle())
+        report(ms < 0 ? "error" : "ready", ms < 0 ? { message: "the game failed to start" } : { ms })
         return ms
     },
 }
-;(async () => {
-    try {
-        const arriving = bundle()
-        await load("/runtime/PlayContainer.loader.js")
-        await createUnityInstance(canvas, {
-            dataUrl: "/runtime/PlayContainer.data",
-            frameworkUrl: "/runtime/PlayContainer.framework.js",
-            codeUrl: "/runtime/PlayContainer.wasm",
-            streamingAssetsUrl: "/runtime/StreamingAssets",
-            companyName: "OneJS", productName: "OneJS Play", productVersion: manifest.runtime,
-        }, (p) => say("loading runtime " + Math.round(p * 100) + "%"))
-        say("starting")
-        const source = await arriving
-        const until = Date.now() + 15000
-        while (typeof globalThis.__ojPlay === "undefined") {
-            if (Date.now() > until) throw new Error("container never became ready")
-            await new Promise((r) => setTimeout(r, 50))
-        }
-        const ms = globalThis.__ojPlay.load(source, manifest)
-        if (ms < 0) throw new Error("the game failed to start")
-        status && status.remove()
-        canvas.focus()
-        console.log("[oj-local] ready " + ms)
-    } catch (e) {
-        say(String(e && e.message ? e.message : e))
-        console.log("[oj-local] error " + String(e && e.message ? e.message : e))
-    }
-})()
 </script>
 </body>
 </html>`

@@ -1,13 +1,14 @@
 {
   "name": "onejs-play",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Container runtime for OneJS Play. Imported as \"oj\".",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "files": [
     "src",
     "build",
-    "cli"
+    "cli",
+    "host"
   ],
   "keywords": [
     "onejs",
@@ -58,7 +59,11 @@
       "types": "./build/game.d.ts",
       "default": "./build/game.mjs"
     },
-    "./build/externals.json": "./build/externals.json"
+    "./build/externals.json": "./build/externals.json",
+    "./host/boot": {
+      "types": "./host/boot.d.ts",
+      "default": "./host/boot.mjs"
+    }
   },
   "bin": {
     "oj": "cli/oj.mjs"

@@ -8,6 +8,7 @@ import { build, entryOf, manifestOf, readTree, stageOf } from "./game.mjs"
 import { sidFromRemote, folderFor } from "./site.mjs"
 import { keyOf } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
+import { containerBoot } from "../host/boot.mjs"
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
 
@@ -104,5 +105,26 @@ describe("the browser", () => {
         expect(runtimeDir("1.0.40")).toBe(path.join("/tmp/ojhome", "runtime", "1.0.40"))
         delete process.env.OJ_HOME
         expect(RUNTIME_FILES).toHaveLength(4)
+    })
+})
+
+describe("the boot both documents inline", () => {
+    it("loads the runtime from the prefix, hands the manifest to the container and reports through the caller's function", () => {
+        const script = containerBoot({
+            runtime: "https://play.example.test/runtime/1.0.0",
+            manifest: { name: "Pop", runtime: "1.0.0", stage: { size: [600, 600], fit: "letterbox" } },
+            bundle: "function bundle() { return Promise.resolve(\"var __exports = {}\") }",
+            report: "function report(type, payload) { globalThis.reported = [type, payload] }",
+        })
+        expect(script).toContain("\"https://play.example.test/runtime/1.0.0/PlayContainer.loader.js\"")
+        expect(script).toContain("__ojPlay.load(source, manifest)")
+        expect(script).toContain("const manifest = {\"name\":\"Pop\"")
+        expect(script).toContain("report(\"ready\", { ms })")
+        expect(script).toContain("function bundle()")
+        // The parts a caller does not supply are declared here, once.
+        expect(script).toContain("function startGame(source)")
+        expect(script).toContain("let loadedSource = null")
+        // Parseable as a script: a syntax error here is every game on the site not starting.
+        expect(() => new Function(script)).not.toThrow()
     })
 })
