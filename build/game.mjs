@@ -44,6 +44,25 @@ const dirname = (path) => {
     return at <= 0 ? "/" : path.slice(0, at)
 }
 
+/**
+ * An absolute path to hand esbuild as its working directory.
+ *
+ * The tree is virtual and every path in it is POSIX and rooted at "/", so this
+ * value is never used to reach a real file: it only has to satisfy esbuild's
+ * insistence that the working directory be absolute. "/" satisfies it under
+ * the wasm build a Worker uses and on POSIX Node, and fails on Windows Node,
+ * where the native binary rejects it with `The working directory "/" is not an
+ * absolute path` and the whole build dies before a plugin runs.
+ *
+ * Deliberately no `node:path`: this module is imported by the Worker, which
+ * has no such builtin, which is also why it carries its own dirname/normalize.
+ */
+function esbuildWorkingDir() {
+    const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "/"
+    const drive = /^([A-Za-z]:)[\\/]/.exec(cwd)
+    return drive ? `${drive[1]}\\` : "/"
+}
+
 /** Resolves "." and ".." inside a POSIX path, so a relative import cannot escape. */
 export function normalize(path) {
     const out = []
@@ -165,7 +184,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         format: "iife",
         globalName: "__exports",
         jsx: "automatic",
-        absWorkingDir: "/",
+        absWorkingDir: esbuildWorkingDir(),
         minify: true,
         target: "es2022",
         // Errors are returned, not printed: each caller reports them in its
