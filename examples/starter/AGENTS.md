@@ -12,6 +12,7 @@ no `CS.*` interop. The site builds it when you publish.
 | `index.tsx` | The entry. `mount(<Game />)` renders it; `useFrame` is the game loop. |
 | `oj.json` | The manifest: name, stage size and fit, controls, tags. Applied when a commit is published. |
 | `cover.html` | The card on the gallery. A whole document, rendered on the game's own origin, drawing only. |
+| `package.json`, `tsconfig.json`, `env.d.ts` | So `npm install && npm run typecheck` passes in a clone. The site's build ignores them. |
 | Anything else with a source extension | Built with the entry. `.tsx .ts .jsx .js .json .uss .css .txt .md .svg .html`. |
 | `.png .jpg .mp3 .ogg .wav .mp4 .webm .woff2 .ttf` | Assets, served at `/assets/<path>` on the game's origin; read them with `assetUrl("name.png")`. |
 
@@ -23,7 +24,9 @@ stored and never shipped, up to 64 KB each. `node_modules` is refused.
 
 ```bash
 git clone https://play.onejs.com/g/<sid>.git
+npm install            # types only; nothing is built here
 # edit
+npm run typecheck      # tsc against the same oj the site builds with
 git commit -am "What changed"
 git push origin main
 ```
@@ -35,9 +38,20 @@ build stays live until the next commit that builds. Other branches and tags
 are stored and never built. `draft` is the browser editor's working branch:
 do not push to it.
 
+`git push` exits 0 whether or not the commit built, so ask afterwards:
+
+```bash
+curl -s https://play.onejs.com/api/games/<sid>
+```
+
+answers `head` (the tip of `main`), `live` (the commit players get) and
+`buildError` (why they differ, or null), with the game's URL and clone URL.
+
 Pushing wants a personal access token from https://play.onejs.com/manage,
 sent as the password (the username is ignored). Cloning a public game needs
-nothing. The same token is a bearer for the API.
+nothing. The same token is a bearer for the API: `POST /api/games` with
+`{ "name": "..." }` creates a game and answers with its `sid` and `clone`
+URL, so a new game needs no browser.
 
 ## Reading the docs
 

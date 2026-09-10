@@ -1,0 +1,18 @@
+{
+  "name": "pop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-reconciler": "~0.31.0",
+    "onejs-play": "^0.4.5",
+    "onejs-react": "^0.1.50",
+    "onejs-unity": "^0.5.10",
+    "react": "^19.0.0",
+    "typescript": "^5.7.0",
+    "unity-types": "^6000.3.9"
+  }
+}
