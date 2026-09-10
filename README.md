@@ -41,6 +41,13 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `adapter.ts` | Container-side: browser events into that backend |
 | `standalone.ts` | Starting a runtime outside a container, which is what eject needs |
 
+Beside `src/`, two folders that are not the runtime:
+
+| Folder | Contents |
+|---|---|
+| `build/` | `game.mjs`, the one builder every game is built with (the site on publish and on Run, `oj build`, the shipped-games script), and `externals.json`, the modules the container provides. The esbuild instance is a parameter, wasm in the Worker and native here. |
+| `cli/` | The `oj` command line, the package's `bin`. |
+
 Everything above the `container.ts` line is reachable from a game. Everything
 below it is the host's, and a game bundle cannot see it: `oj` is the package
 root and `onejs-play/container` is a separate entry point.
@@ -384,6 +391,53 @@ whenever it likes, including between frames. Applying it on arrival stamps it
 with the frame that is already ending, so game logic reads it as last frame's
 press and `wasKeyPressed` is false. `beginFrame` drains the queue first, so a
 frame sees exactly the events that arrived since the previous one.
+
+## The command line
+
+`oj` is this package's `bin`: a game that lists `onejs-play` as a devDependency
+(the starter does) runs it as `npx oj`. It is the loop an agent or a person
+runs from a clone of a game, and none of it needs a browser open or a deploy:
+
+```bash
+oj build            # bundle the game the way the site does; errors as file:line:col
+oj typecheck        # tsc --noEmit
+oj run              # the game in the site's real container, in a local headless Chrome
+oj test playtest.mjs   # run, then drive the game from a script
+oj status           # what the site is running: head, live, buildError
+oj push             # git push with OJ_TOKEN, then exit 1 if the tip did not build
+oj new "Name"       # create a game on the site and clone it
+```
+
+**`oj run` runs what ships.** It fetches the container the site serves at
+`/runtime/<version>/` (the pin from `/api/version`, or `--runtime`) into
+`~/.onejs-play/runtime/<version>/` once, serves it with the game's bundle and
+assets from a local origin, and boots it in Chrome the way the sandbox
+document does: `__ojPlay.load(source, manifest)`. A desktop build of the
+container was considered and rejected: it would be a second runtime, on
+QuickJS rather than V8, and the bugs that matter (the 1.0.12 Task that never
+settled) were WebGL-only. Headless by default; `--headed --watch` opens a
+window and swaps a fresh build in on every save without reloading the
+runtime, which is the container's own hot path and takes about ten
+milliseconds.
+
+**`oj test` hands a script the running game.** The script's default export
+gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
+`drag()`, `move()` in stage units, `press("KeyA")`, `type("crane")`,
+`until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`, and
+`errors`. A thrown error fails the run, and so does a console error; a
+screenshot lands in `.oj/` either way. `examples/wordie/playtest.mjs` and the
+starter's `playtest.mjs` are the two to copy from.
+
+What the harnesses in `Tools/playtest` learned applies here unchanged, and
+their README's section on instruments that report clean answers while
+measuring nothing is the thing to read before writing a check: count letters
+rather than test membership, compare an identity or a movement rather than a
+constant, and open the screenshot.
+
+Chrome is found in the usual places or named by `OJ_CHROME`. One container
+costs several cores under the software rasteriser, so one run at a time on a
+machine. `OJ_SITE` points every command at another origin; `OJ_HOME` moves
+the cache.
 
 ## Testing
 

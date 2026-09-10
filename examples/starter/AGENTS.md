@@ -12,7 +12,8 @@ no `CS.*` interop. The site builds it when you publish.
 | `index.tsx` | The entry. `mount(<Game />)` renders it; `useFrame` is the game loop. |
 | `oj.json` | The manifest: name, stage size and fit, controls, tags. Applied when a commit is published. |
 | `cover.html` | The card on the gallery. A whole document, rendered on the game's own origin, drawing only. |
-| `package.json`, `tsconfig.json`, `env.d.ts` | So `npm install && npm run typecheck` passes in a clone. The site's build ignores them. |
+| `package.json`, `tsconfig.json`, `env.d.ts` | So `npm install`, `npx oj typecheck` and `npx oj build` work in a clone. The site's build ignores them. |
+| `playtest.mjs` | What `npx oj test playtest.mjs` runs against the game. Grow it with the game. |
 | Anything else with a source extension | Built with the entry. `.tsx .ts .jsx .js .json .uss .css .txt .md .svg .html`. |
 | `.png .jpg .mp3 .ogg .wav .mp4 .webm .woff2 .ttf` | Assets, served at `/assets/<path>` on the game's origin; read them with `assetUrl("name.png")`. |
 
@@ -24,12 +25,22 @@ stored and never shipped, up to 64 KB each. `node_modules` is refused.
 
 ```bash
 git clone https://play.onejs.com/g/<sid>.git
-npm install            # types only; nothing is built here
+npm install            # types, esbuild and the oj command; nothing here ships
 # edit
-npm run typecheck      # tsc against the same oj the site builds with
+npx oj typecheck       # tsc against the same oj the site builds with
+npx oj build           # the site's own builder; errors as file:line:column
+npx oj test playtest.mjs   # the game in the real container, driven by the script
 git commit -am "What changed"
-git push origin main
+npx oj push            # git push with OJ_TOKEN, then exit 1 if the tip did not build
 ```
+
+`npx oj run` runs the game in the container the site serves, in a local
+headless Chrome, and writes `.oj/run.png` and the text on screen; `--headed
+--watch` opens a window and swaps every save in. `npx oj test <script>` does
+the same and then calls the script's default export with the game: `read()`,
+`click(x, y)` in stage units, `press("KeyA")`, `type("crane")`, `until()`,
+`shot()`, `eval()`. A thrown error or a console error fails the run. Edit
+`playtest.mjs` as the game grows: it is the check that runs before a push.
 
 Pushing to `main` builds the commit on the server and, if it builds, makes it
 what runs. The build result comes back as `remote:` lines; a compile error

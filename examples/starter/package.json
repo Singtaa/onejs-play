@@ -3,12 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "build": "oj build",
+    "typecheck": "tsc --noEmit",
+    "start": "oj run --headed --watch",
+    "test": "oj test playtest.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "~0.31.0",
-    "onejs-play": "^0.4.5",
+    "esbuild": "^0.25.0",
+    "onejs-play": "^0.5.0",
     "onejs-react": "^0.1.50",
     "onejs-unity": "^0.5.10",
     "react": "^19.0.0",
