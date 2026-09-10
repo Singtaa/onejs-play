@@ -435,6 +435,8 @@ measuring nothing is the thing to read before writing a check: count letters
 rather than test membership, compare an identity or a movement rather than a
 constant, and open the screenshot.
 
+`cli/chrome.mjs` is also what the production harnesses in `Tools/playtest`
+launch and speak to, so the launcher and the protocol client exist once.
 Chrome is found in the usual places or named by `OJ_CHROME`. One container
 costs several cores under the software rasteriser, so one run at a time on a
 machine. `OJ_SITE` points every command at another origin; `OJ_HOME` moves

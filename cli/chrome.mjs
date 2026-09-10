@@ -50,9 +50,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * cannot collide. The profile is fresh and thrown away: nothing a game does
  * survives into the next run.
  */
-export async function launch({ headless = true, window = [960, 540], say = () => {} } = {}) {
+export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
     const binary = findChrome()
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), "oj-chrome-"))
+    // The prefix names this run's browsers and nothing else. A harness that
+    // sweeps orphans with `pkill -f <prefix>` gives its own, so the sweep
+    // cannot reach another session's Chrome.
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), profilePrefix))
     const args = [
         ...(headless ? ["--headless=new"] : []),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`,
@@ -155,19 +158,27 @@ export class Browser {
 
     /**
      * A CDP call that gives up rather than hanging: an unanswered call would
-     * leave node exiting on an empty event loop with nothing cleaned up.
+     * leave node exiting on an empty event loop with nothing cleaned up, and
+     * a browser left running keeps playing whatever it was in.
+     *
+     * Resolves to the raw protocol message, error and all, so a caller that
+     * attaches to other targets (a game in a cross-origin frame is its own
+     * target) can pass a sessionId and read what came back. `send` is the
+     * unwrapped form for the common case.
      */
-    send(method, params = {}) {
+    call(method, params = {}, sessionId) {
         return new Promise((ok, no) => {
             const id = ++this.id
             const timer = setTimeout(() => { this.pending.delete(id); no(new Error(`CDP ${method} did not answer in 30s`)) }, 30000)
-            this.pending.set(id, (m) => {
-                clearTimeout(timer)
-                if (m.error) no(new Error(`${method}: ${m.error.message}`))
-                else ok(m.result)
-            })
-            this.ws.send(JSON.stringify({ id, method, params }))
+            this.pending.set(id, (m) => { clearTimeout(timer); ok(m) })
+            this.ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }))
         })
+    }
+
+    async send(method, params = {}, sessionId) {
+        const m = await this.call(method, params, sessionId)
+        if (m.error) throw new Error(`${method}: ${m.error.message}`)
+        return m.result
     }
 
     /** Evaluates in the page. Resolves to the value, or throws the exception's text. */
