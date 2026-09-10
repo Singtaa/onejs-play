@@ -94,7 +94,14 @@ export async function build(root, options = {}) {
     const log = console.log
     console.log = (...args) => { if (!String(args[0]).startsWith("[tailwind-uss]")) log(...args) }
     try {
-        const result = await buildGame(esbuild, files, entry)
+        // The native binary judges absWorkingDir by the host's rules, so "/"
+        // (which the wasm build and every POSIX host accept, and which is what
+        // buildGame defaults to) is refused on Windows and the build dies
+        // before a plugin runs. The tree is virtual, so any absolute path will
+        // do: the filesystem root is absolute everywhere Node runs.
+        const result = await buildGame(esbuild, files, entry, {
+            workingDir: path.parse(process.cwd()).root || "/",
+        })
         return { ...result, entry, files, manifest }
     } catch (error) {
         const lines = formatBuildErrors(error)

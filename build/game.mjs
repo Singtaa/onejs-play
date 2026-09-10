@@ -44,24 +44,8 @@ const dirname = (path) => {
     return at <= 0 ? "/" : path.slice(0, at)
 }
 
-/**
- * An absolute path to hand esbuild as its working directory.
- *
- * The tree is virtual and every path in it is POSIX and rooted at "/", so this
- * value is never used to reach a real file: it only has to satisfy esbuild's
- * insistence that the working directory be absolute. "/" satisfies it under
- * the wasm build a Worker uses and on POSIX Node, and fails on Windows Node,
- * where the native binary rejects it with `The working directory "/" is not an
- * absolute path` and the whole build dies before a plugin runs.
- *
- * Deliberately no `node:path`: this module is imported by the Worker, which
- * has no such builtin, which is also why it carries its own dirname/normalize.
- */
-function esbuildWorkingDir() {
-    const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "/"
-    const drive = /^([A-Za-z]:)[\\/]/.exec(cwd)
-    return drive ? `${drive[1]}\\` : "/"
-}
+/** The tree is POSIX; a working directory esbuild echoes back may not be. */
+const toPosix = (path) => path.replace(/\\/g, "/")
 
 /** Resolves "." and ".." inside a POSIX path, so a relative import cannot escape. */
 export function normalize(path) {
@@ -85,6 +69,19 @@ export function normalize(path) {
  */
 export async function buildGame(esbuild, files, entry, options = {}) {
     const externals = options.externals ?? EXTERNALS
+    /**
+     * What to hand esbuild as `absWorkingDir`. Never used to reach a real file:
+     * the tree is virtual and rooted at "/", so this only has to satisfy
+     * esbuild's insistence that the value be absolute.
+     *
+     * Which values are absolute depends on the esbuild that was handed in, not
+     * on the host OS. esbuild-wasm is compiled for js/wasm and judges paths as
+     * POSIX, so it takes "/" and REFUSES "C:\" even on Windows; the native
+     * binary on Windows does the exact opposite. Since the caller is the one
+     * that chose the esbuild, the caller states this, and the default suits
+     * every wasm caller (the Worker, the spike) by construction.
+     */
+    const workingDir = options.workingDir ?? "/"
 
     const tree = {}
     for (const file of files) tree["/" + file.name] = file.text
@@ -105,15 +102,19 @@ export async function buildGame(esbuild, files, entry, options = {}) {
      * nothing to read. Found by building one game with a class in the root
      * and one with the same class a directory down.
      */
-    const fromTree = (p) => {
-        const key = normalize(p)
-        if (key in tree) return tree[key]
+    const keyInTree = (p) => {
+        const key = normalize(toPosix(p))
+        if (key in tree) return key
         const parts = key.split("/").filter((part) => part !== "")
         for (let i = 0; i < parts.length; i++) {
             const suffix = "/" + parts.slice(i).join("/")
-            if (suffix in tree) return tree[suffix]
+            if (suffix in tree) return suffix
         }
         return undefined
+    }
+    const fromTree = (p) => {
+        const key = keyInTree(p)
+        return key === undefined ? undefined : tree[key]
     }
     const listing = () => Object.keys(tree).map((name) => ({
         name: name.slice(1), isDirectory: () => false, isFile: () => true,
@@ -149,10 +150,16 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                 if (!args.path.startsWith(".")) {
                     return { errors: [{ text: `"${args.path}" is not available here. A game may import only its own files, plus ${externals.filter((e) => !e.includes("/")).join(", ")}.` }] }
                 }
-                const base = args.resolveDir === "" ? dirname(args.importer) : args.resolveDir
+                // The base arrives however esbuild chose to express it. With a
+                // non-"/" absWorkingDir it rejoins our virtual resolveDir onto
+                // that directory, so on Windows this is "C:\" and the importer
+                // is "C:\index.tsx". keyInTree strips whatever prefix it added,
+                // the same way fromTree already does for Tailwind's cwd join.
+                const base = args.resolveDir === "" ? dirname(toPosix(args.importer)) : toPosix(args.resolveDir)
                 const resolved = normalize(`${base}/${args.path}`)
                 for (const candidate of [resolved, `${resolved}.ts`, `${resolved}.tsx`, `${resolved}.js`, `${resolved}.jsx`]) {
-                    if (candidate in tree) return { path: candidate, namespace: "src" }
+                    const key = keyInTree(candidate)
+                    if (key !== undefined) return { path: key, namespace: "src" }
                 }
                 return { errors: [{ text: `cannot resolve ${args.path}` }] }
             })
@@ -184,7 +191,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         format: "iife",
         globalName: "__exports",
         jsx: "automatic",
-        absWorkingDir: esbuildWorkingDir(),
+        absWorkingDir: workingDir,
         minify: true,
         target: "es2022",
         // Errors are returned, not printed: each caller reports them in its

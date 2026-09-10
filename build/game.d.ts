@@ -24,7 +24,16 @@ export function buildGame(
     esbuild: { build(options: unknown): Promise<{ outputFiles?: Array<{ text: string }>; warnings: Array<{ text: string }> }> },
     files: GameFile[],
     entry: string,
-    options?: { externals?: string[] },
+    options?: {
+        externals?: string[]
+        /**
+         * `absWorkingDir` for esbuild. Defaults to "/", which the wasm build
+         * accepts everywhere; a native binary on Windows refuses it, so a
+         * caller using one passes the filesystem root instead. Never used to
+         * reach a real file: the tree is virtual.
+         */
+        workingDir?: string
+    },
 ): Promise<GameBuild>
 
 /** esbuild's failure as `file:line:column: text` lines. */

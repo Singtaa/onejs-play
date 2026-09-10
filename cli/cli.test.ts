@@ -12,6 +12,11 @@ import { containerBoot } from "../host/boot.mjs"
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
 
+// buildGame defaults absWorkingDir to "/", which the wasm build accepts
+// everywhere and the native binary refuses on Windows. These tests drive the
+// native binary, so they state it the way cli/game.mjs does.
+const NATIVE = { workingDir: path.parse(process.cwd()).root || "/" }
+
 function scratch(files: Record<string, string>): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-test-"))
     for (const [name, text] of Object.entries(files)) {
@@ -66,9 +71,34 @@ describe("building with the site's builder", () => {
     it("refuses a bare import with the site's sentence", async () => {
         const files = [{ name: "index.tsx", text: "import l from \"lodash\"\nconsole.log(l)\n" }]
         let lines: string[] = []
-        try { await buildGame(esbuild, files, "index.tsx") } catch (error) { lines = formatBuildErrors(error) }
+        try { await buildGame(esbuild, files, "index.tsx", NATIVE) } catch (error) { lines = formatBuildErrors(error) }
         expect(lines).toHaveLength(1)
         expect(lines[0]).toMatch(/^index\.tsx:1:15: "lodash" is not available here/)
+    })
+
+    it("bundles a game whose files import each other, at the root and a folder down", async () => {
+        // The single-file starter cannot catch this. With a non-"/" working
+        // directory esbuild rejoins the virtual resolveDir onto it, so the
+        // resolver sees "C:\index.tsx" rather than "/index.tsx"; before the
+        // resolver tolerated that prefix, every multi-file game on Windows
+        // failed with `cannot resolve ./ui/Panel`, blaming the game's own
+        // import for a defect in the builder.
+        const files = [
+            { name: "index.tsx", text: `import { panel } from "./ui/Panel"\nimport { tag } from "./tag"\nconsole.log(panel(), tag())\n` },
+            { name: "ui/Panel.tsx", text: `export const panel = () => "panel"\n` },
+            { name: "tag.ts", text: `export const tag = () => "tag"\n` },
+        ]
+        const built = await buildGame(esbuild, files, "index.tsx", NATIVE)
+        expect(built.code).toContain("panel")
+        expect(built.code).toContain("tag")
+    })
+
+    it("names the importing file when a relative import really is missing", async () => {
+        const files = [{ name: "index.tsx", text: `import { gone } from "./nope"\nconsole.log(gone)\n` }]
+        let lines: string[] = []
+        try { await buildGame(esbuild, files, "index.tsx", NATIVE) } catch (error) { lines = formatBuildErrors(error) }
+        expect(lines).toHaveLength(1)
+        expect(lines[0]).toMatch(/cannot resolve \.\/nope/)
     })
 
     it("resolves relative imports inside the tree only", () => {
