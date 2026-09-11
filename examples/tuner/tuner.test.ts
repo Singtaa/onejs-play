@@ -5,10 +5,10 @@ import { DIALS, DIAL_NAMES, layoutFor } from "./tuner"
 
 describe("the dials", () => {
     it("names each uniform the shader actually declares", () => {
-        const source = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8")
+        const shader = readFileSync(join(import.meta.dirname, "plasma.sl"), "utf8")
         for (const { name } of DIALS) {
-            expect(source, `${name} is declared as a uniform`)
-                .toContain(`sl.uniform.float("${name}"`)
+            expect(shader, `${name} is declared as a uniform`)
+                .toMatch(new RegExp(`^uniform float ${name} = `, "m"))
         }
     })
 
@@ -31,34 +31,37 @@ describe("the dials", () => {
 })
 
 /**
- * The code shown on screen has to be the code that ran.
+ * The code shown on screen IS the code that ran.
  *
- * A snippet beside its own output is the whole demonstration, and one that has
- * drifted from the program is worse than showing nothing: it teaches an API
- * that does not exist.
+ * This used to be a copy of the program typed out as an array of strings, and
+ * a describe block that compared the two line by line, because a snippet
+ * beside its own output is the whole demonstration and one that has drifted
+ * teaches an API that does not exist.
+ *
+ * The panel reads the file now. `import plasma, { source } from "./plasma.sl"`
+ * gives both the encoded program and the text it was encoded from, so there is
+ * one copy and nothing to keep level. What is left worth checking is that the
+ * panel really reads it rather than having quietly grown a second copy again.
  */
 describe("the source panel", () => {
-    const source = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8")
-    const shown = /const SOURCE = \[([\s\S]*?)\n\]/.exec(source)?.[1] ?? ""
-    const lines = [...shown.matchAll(/^\s*"((?:[^"\\]|\\.)*)",$/gm)]
-        .map((m) => m[1]!.replace(/\\"/g, '"').trim())
-        .filter((l) => l.length > 0)
+    const index = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8")
 
-    it("shows something, so an empty panel cannot pass as matching", () => {
-        expect(lines.length).toBeGreaterThan(10)
+    it("shows the shader file itself", () => {
+        expect(index).toContain('import plasma, { source } from "./plasma.sl"')
+        expect(index).toContain("const SOURCE = source")
     })
 
-    it("shows only lines that are really in the program", () => {
-        // Captures from `sl.program(` inclusive, because the panel shows that
-        // opening line too and it has to be checked like any other.
-        const program = /const field = encode\((sl\.program\([\s\S]*?\n\}\))\)/.exec(source)?.[1] ?? ""
-        expect(program.length).toBeGreaterThan(200)
-        // Whitespace differs, since the panel is wrapped for a narrow column.
-        const flat = program.replace(/\s+/g, " ")
-        for (const line of lines) {
-            const needle = line.replace(/\s+/g, " ")
-            expect(flat, `panel line is in the program: ${line}`).toContain(needle)
-        }
+    it("has no copy of the program in it", () => {
+        // The old panel was an array of quoted lines. Anything of that shape
+        // back in this file is a copy waiting to drift.
+        expect(index).not.toMatch(/const SOURCE = \[/)
+        expect(index).not.toContain("sl.program(")
+    })
+
+    it("draws what it read, so an empty file could not pass as matching", () => {
+        const shader = readFileSync(join(import.meta.dirname, "plasma.sl"), "utf8")
+        expect(shader.trimEnd().split("\n").length).toBeGreaterThan(10)
+        expect(shader).toContain("float4 main()")
     })
 })
 

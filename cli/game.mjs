@@ -7,8 +7,15 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { buildGame, formatBuildErrors } from "../build/game.mjs"
 
-/** What the site builds. Mirrors ALLOWED in the site's limits. */
-export const SOURCE = /\.(tsx?|jsx?|json|uss|css|txt|md|svg|html)$/i
+/**
+ * What the site builds. The same set as ALLOWED in the site's limits.
+ *
+ * Two copies, because a published npm package cannot import the Worker's
+ * source. PlaySite's own test imports THIS one and compares, so the drift is
+ * caught where both are reachable rather than by a game that builds from a
+ * clone and is refused on publish.
+ */
+export const SOURCE = /\.(tsx?|jsx?|json|uss|css|sl|txt|md|svg|html)$/i
 
 /** The file a game builds from when its manifest does not say. */
 const INDEX = /^index\.(tsx?|jsx?)$/i

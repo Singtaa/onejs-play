@@ -60,6 +60,10 @@
       "default": "./build/game.mjs"
     },
     "./build/externals.json": "./build/externals.json",
+    "./cli/game": {
+      "types": "./cli/game.d.ts",
+      "default": "./cli/game.mjs"
+    },
     "./host/boot": {
       "types": "./host/boot.d.ts",
       "default": "./host/boot.mjs"

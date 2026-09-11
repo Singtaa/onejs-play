@@ -157,6 +157,8 @@ export * as fx from "onejs-unity/fx"
 // against `any` and fails at the first call.
 export { sl, encode, manifest } from "onejs-unity/sl"
 export type { Program, Encoded, ProgramManifest } from "onejs-unity/sl"
+// What a `.sl` import resolves to, so a game can name the type of one.
+export type { EncodedProgram } from "onejs-react"
 
 // MARK: the site behind the game
 

@@ -1,0 +1,22 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Ember",
+    "author": "singtaa",
+    "description": "A fire written as a shader file: one texture, one unrolled loop, three uniforms. Drag to move the flame. The file that draws it is on screen beside it.",
+    "entry": "index.tsx",
+    "stage": {
+        "size": [
+            960,
+            600
+        ],
+        "fit": "fluid"
+    },
+    "tags": [
+        "toy",
+        "visual"
+    ],
+    "controls": [
+        "pointer"
+    ]
+}

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { View, Text, Slider, Code, mount, useStage, sl, encode, ShaderProgram } from "oj"
+import { View, Text, Slider, Code, mount, useStage, ShaderProgram } from "oj"
 import { DIALS, layoutFor, type DialName, type Dials, type Step } from "./tuner"
 
 /**
@@ -7,58 +7,23 @@ import { DIALS, layoutFor, type DialName, type Dials, type Step } from "./tuner"
  *
  * This is not a game. It is the shortest honest answer to "can the Play
  * container do shader programming, and is it pleasant?" So it shows a program
- * running on the GPU, the three numbers feeding it, and the code that produced
+ * running on the GPU, the three numbers feeding it, and the file that produced
  * it, all at once. Nothing is hidden and there is nothing to win.
  *
- * Recorded at module scope on purpose. `sl.program` runs the function ONCE,
- * here at load, to record a graph; it does not run per pixel or per frame.
- * Building it inside a component would re-record it on every render.
- */
-const field = encode(sl.program(({ uv, time }) => {
-    const warp = sl.uniform.float("warp", 0.5)
-    const hue = sl.uniform.float("hue", 0.5)
-    const speed = sl.uniform.float("speed", 0.5)
-
-    const t = time.mul(speed.mul(1.6).add(0.1))
-    const p = uv.sub(0.5).mul(warp.mul(14).add(2))
-
-    const v = sl.sin(p.x.add(t))
-        .add(sl.sin(p.y.sub(t.mul(0.8))))
-        .add(sl.sin(p.x.add(p.y).mul(0.7).add(t.mul(1.3))))
-
-    const n = v.mul(0.22).add(0.5).saturate()
-
-    const rgb = sl.hsv2rgb(sl.vec3(hue.add(n.mul(0.18)).fract(), 0.75, n.mul(0.7).add(0.25)))
-    return sl.vec4(rgb, 1)
-}))
-
-/**
- * The same program, as text, because seeing it is the demonstration.
+ * `plasma.sl` is parsed and encoded BY THE BUILD, so what this import resolves
+ * to is a small object of numbers: no parser and no shader text ride along in
+ * the bundle a player downloads.
  *
- * Kept beside the real thing and pinned by a test: code shown next to its own
- * output is only worth anything if it is actually the code that ran, and a
- * snippet that drifts is worse than none.
+ * `source` is the file's own text, and it is why the panel beside the picture
+ * cannot be wrong. It used to be a copy of the program typed out as an array of
+ * strings, kept honest by a test that compared the two line by line, because a
+ * snippet that drifts from the code it claims to show teaches an API that does
+ * not exist. Now there is one copy of the program and the panel reads it. The
+ * named export is dropped from any bundle that does not ask for it.
  */
-const SOURCE = [
-    "sl.program(({ uv, time }) => {",
-    "  const warp  = sl.uniform.float(\"warp\", 0.5)",
-    "  const hue   = sl.uniform.float(\"hue\", 0.5)",
-    "  const speed = sl.uniform.float(\"speed\", 0.5)",
-    "",
-    "  const t = time.mul(speed.mul(1.6).add(0.1))",
-    "  const p = uv.sub(0.5).mul(warp.mul(14).add(2))",
-    "",
-    "  const v = sl.sin(p.x.add(t))",
-    "    .add(sl.sin(p.y.sub(t.mul(0.8))))",
-    "    .add(sl.sin(p.x.add(p.y).mul(0.7).add(t.mul(1.3))))",
-    "",
-    "  const n = v.mul(0.22).add(0.5).saturate()",
-    "  const rgb = sl.hsv2rgb(",
-    "    sl.vec3(hue.add(n.mul(0.18)).fract(), 0.75,",
-    "            n.mul(0.7).add(0.25)))",
-    "  return sl.vec4(rgb, 1)",
-    "})",
-]
+import plasma, { source } from "./plasma.sl"
+
+const SOURCE = source.trimEnd().split("\n")
 
 const INK = "#e6edf3"
 const DIM = "#8b95a5"
@@ -132,7 +97,7 @@ function App() {
                 marginTop: 8,
             }}>
                 <ShaderProgram
-                    program={field}
+                    program={plasma}
                     uniforms={{ warp: dials.warp, hue: dials.hue, speed: dials.speed }}
                     style={{
                         width: step.stacked ? "100%" : shader, height: shader,

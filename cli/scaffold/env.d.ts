@@ -14,3 +14,14 @@ declare module "*.uss" {
     const text: string
     export default text
 }
+
+// A .sl shader program, parsed and encoded by the build. The default export is
+// the program; `source` is the file's own text, dropped from the bundle unless
+// something imports it. The Play editor supplies a tighter declaration per file,
+// carrying the uniform names the file declares, so a misspelled one is an error
+// where it is written.
+declare module "*.sl" {
+    const program: import("oj").EncodedProgram
+    export default program
+    export const source: string
+}
