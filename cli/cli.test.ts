@@ -5,7 +5,7 @@ import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree, stageOf } from "./game.mjs"
-import { sidFromRemote, folderFor } from "./site.mjs"
+import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
 import { keyOf } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
@@ -114,6 +114,12 @@ describe("the site from a terminal", () => {
         expect(sidFromRemote("https://x:tok@play.onejs.com/g/a5x3a2uwh5gb.git/")).toBe("a5x3a2uwh5gb")
         expect(sidFromRemote("git@github.com:Singtaa/onejs-play.git")).toBeNull()
         expect(sidFromRemote("")).toBeNull()
+    })
+
+    it("resets the credential helpers before adding its own, so a stored one cannot run first", () => {
+        const args = credentialArgs("tok")
+        expect(args.slice(0, 2)).toEqual(["-c", "credential.helper="])
+        expect(args[3]).toMatch(/^credential\.helper=!f\(\) \{ echo username=oj; echo password=tok; \}; f$/)
     })
 
     it("names a folder after the game without punctuation", () => {

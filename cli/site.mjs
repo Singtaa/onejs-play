@@ -71,12 +71,27 @@ export async function create(name, bearer) {
 }
 
 /**
+ * The git options that supply the token through a one-shot credential helper.
+ *
+ * `-c credential.helper=...` APPENDS to the helpers git already has, and the
+ * ones it already has run first: Git for Windows ships Git Credential Manager
+ * in the system config, macOS ships osxkeychain. Found on Windows, where a
+ * push printed "fatal: Cannot prompt because user interactivity has been
+ * disabled" twice before ours was reached. An empty helper resets the list,
+ * so it goes first. Measured with GIT_TRACE on `git credential fill`: without
+ * the reset osxkeychain ran, with it only ours did.
+ */
+export function credentialArgs(bearer) {
+    return ["-c", "credential.helper=", "-c", `credential.helper=!f() { echo username=oj; echo password=${bearer}; }; f`]
+}
+
+/**
  * Runs git with the token supplied through a one-shot credential helper, so
  * nothing is stored on disk and nothing prompts. Output passes through:
  * the `remote:` lines are where a push's build result arrives.
  */
 export function git(args, { cwd, bearer } = {}) {
-    const helper = bearer ? ["-c", `credential.helper=!f() { echo username=oj; echo password=${bearer}; }; f`] : []
+    const helper = bearer ? credentialArgs(bearer) : []
     const result = spawnSync("git", [...helper, ...args], { cwd, stdio: "inherit" })
     return result.status ?? 1
 }
