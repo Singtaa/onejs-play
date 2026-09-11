@@ -25,6 +25,7 @@
 import { setFsProvider } from "onejs-unity/fs-provider"
 import { ussModulesPlugin } from "onejs-unity/esbuild/uss-modules"
 import { tailwindPlugin } from "onejs-unity/esbuild/tailwind"
+import { slPlugin } from "onejs-unity/esbuild/sl"
 import DEFAULT_EXTERNALS from "./externals.json" with { type: "json" }
 
 /**
@@ -183,6 +184,15 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         },
     }
 
+    /**
+     * The shader manifest, if the game has any `.sl` files.
+     *
+     * Handed back rather than written: there is no disk here, and what it is
+     * for is the eject, which happens somewhere else entirely. A game with no
+     * `.sl` file gets an empty one, and the eject leaves it out.
+     */
+    let slManifest = null
+
     const result = await esbuild.build({
         stdin: { contents: tree["/" + entry], resolveDir: "/", sourcefile: entry, loader: "tsx" },
         bundle: true,
@@ -204,12 +214,21 @@ export async function buildGame(esbuild, files, entry, options = {}) {
             // the className and the stylesheet had no such rule.
             tailwindPlugin({ content: files.map((f) => "/" + f.name) }),
             ussModulesPlugin({ generateTypes: false }),
+            // Before the resolver, whose filter matches everything: esbuild
+            // takes the first plugin that claims a path, and a `.sl` file has
+            // to reach the loader rather than the tree.
+            slPlugin({
+                generateTypes: false,
+                compiler: options.slCompiler ?? null,
+                onManifest: (m) => { slManifest = m },
+            }),
             resolver,
         ],
     })
 
     return {
         code: result.outputFiles[0].text,
+        slManifest,
         warnings: result.warnings.map((w) => w.text),
     }
 }

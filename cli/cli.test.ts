@@ -94,6 +94,40 @@ describe("building with the site's builder", () => {
         expect(built.code).toContain("tag")
     })
 
+    it("builds a .sl file into the bundle and hands back its manifest", async () => {
+        // The plugin compiles the parser itself here, because Node can. In the
+        // Worker, PlaySite hands one in; that path is covered on the site.
+        const files = [
+            { name: "plasma.sl", text: "uniform float warp = 0.5;\nfloat4 main() { return float4(uv * warp, 0, 1); }\n" },
+            { name: "index.tsx", text: `import plasma from "./plasma.sl"\nconsole.log(plasma.hash)\n` },
+        ]
+        const built = await buildGame(esbuild, files, "index.tsx", NATIVE)
+        // Numbers, not a parser and not the source: a game is downloaded before
+        // it is played, and the shader text would be dead weight in it.
+        expect(built.code).not.toContain("uniform float warp")
+        expect(built.code).toContain("resultRegister")
+        expect(built.slManifest?.programs).toHaveLength(1)
+        expect(built.slManifest?.programs[0]?.uniforms).toEqual(["warp"])
+        expect(built.slManifest?.programs[0]?.hlsl).toContain("CGPROGRAM")
+    })
+
+    it("reports a .sl parse error with its own file, line and column", async () => {
+        const files = [
+            { name: "bad.sl", text: "float4 main() {\n    return float4(uv.z, 0, 0, 1);\n}\n" },
+            { name: "index.tsx", text: `import bad from "./bad.sl"\nconsole.log(bad)\n` },
+        ]
+        let lines: string[] = []
+        try { await buildGame(esbuild, files, "index.tsx", NATIVE) } catch (error) { lines = formatBuildErrors(error) }
+        expect(lines).toHaveLength(1)
+        expect(lines[0]).toMatch(/^bad\.sl:2:22: .*is component 3 of a vec2/)
+    })
+
+    it("hands back an empty manifest for a game with no shader at all", async () => {
+        const files = [{ name: "index.tsx", text: "console.log(1)\n" }]
+        const built = await buildGame(esbuild, files, "index.tsx", NATIVE)
+        expect(built.slManifest).toEqual({ version: 1, programs: [] })
+    })
+
     it("names the importing file when a relative import really is missing", async () => {
         const files = [{ name: "index.tsx", text: `import { gone } from "./nope"\nconsole.log(gone)\n` }]
         let lines: string[] = []
