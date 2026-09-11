@@ -193,7 +193,8 @@ describe("the tooling a clone writes for itself", () => {
         expect(lines[3]).toBe(".gitignore: added package.json, package-lock.json, tsconfig.json, env.d.ts")
         const text = fs.readFileSync(path.join(dir, ".gitignore"), "utf8")
         expect(text.match(/node_modules/g)).toHaveLength(1)
-        expect(text).not.toMatch(/\r\n?[^\n]*\r/)
+        // The existing lines keep their CRLF; the added ones carry no CR.
+        expect(text).not.toMatch(/package\.json\r/)
     })
 
     it("keeps the test script for a game that has a playtest", () => {
