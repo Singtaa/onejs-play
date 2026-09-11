@@ -395,11 +395,13 @@ frame sees exactly the events that arrived since the previous one.
 
 ## The command line
 
-`oj` is this package's `bin`: a game that lists `onejs-play` as a devDependency
-(the starter does) runs it as `npx oj`. It is the loop an agent or a person
-runs from a clone of a game, and none of it needs a browser open or a deploy:
+`oj` is this package's `bin`. A game's repository is two files, `index.tsx`
+and `oj.json`, because the site builds it and the editor's tree should be the
+game and nothing else; what a terminal needs is written by `init` and
+gitignored like `node_modules`:
 
 ```bash
+npx onejs-play init   # package.json, tsconfig.json, env.d.ts, .gitignore; then npm install
 oj build            # bundle the game the way the site does; errors as file:line:col
 oj typecheck        # tsc --noEmit
 oj run              # the game in the site's real container, in a local headless Chrome
@@ -426,8 +428,8 @@ gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
 `drag()`, `move()` in stage units, `press("KeyA")`, `type("crane")`,
 `until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`, and
 `errors`. A thrown error fails the run, and so does a console error; a
-screenshot lands in `.oj/` either way. `examples/wordie/playtest.mjs` and the
-starter's `playtest.mjs` are the two to copy from.
+screenshot lands in `.oj/` either way. `examples/wordie/playtest.mjs` is the one to
+copy from.
 
 What the harnesses in `Tools/playtest` learned applies here unchanged, and
 their README's section on instruments that report clean answers while

@@ -1,3 +1,6 @@
+// A OneJS Play game: runs on play.onejs.com, built by the site when published.
+// To work on it here: npx onejs-play init && npm install, then npx oj run.
+// Docs: https://play.onejs.com/docs/publishing.md#from-your-own-machine
 import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, input, random, batchedVisualContent } from "oj"
 import "onejs:tailwind"

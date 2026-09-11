@@ -8,6 +8,7 @@ import { build, entryOf, manifestOf, readTree, stageOf } from "./game.mjs"
 import { sidFromRemote, folderFor } from "./site.mjs"
 import { keyOf } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
+import { init } from "./init.mjs"
 import { containerBoot } from "../host/boot.mjs"
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
@@ -156,5 +157,43 @@ describe("the boot both documents inline", () => {
         expect(script).toContain("let loadedSource = null")
         // Parseable as a script: a syntax error here is every game on the site not starting.
         expect(() => new Function(script)).not.toThrow()
+    })
+})
+
+describe("the tooling a clone writes for itself", () => {
+    it("writes the files once, names the package after the game, and never overwrites", () => {
+        const dir = scratch({ "index.tsx": "", "oj.json": "{\"name\":\"Big Fish!\"}", ".gitignore": "node_modules\n" })
+        const first = init(dir)
+        expect(first).toEqual([
+            "package.json: written", "tsconfig.json: written", "env.d.ts: written",
+            ".gitignore: added .oj, package.json, package-lock.json, tsconfig.json, env.d.ts",
+        ])
+        const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))
+        expect(pkg.name).toBe("big-fish")
+        expect(pkg.scripts.test).toBeUndefined()
+        expect(pkg.devDependencies["onejs-play"]).toMatch(/^\^0\./)
+        fs.writeFileSync(path.join(dir, "tsconfig.json"), "{ \"mine\": true }")
+        const second = init(dir)
+        expect(second[1]).toBe("tsconfig.json: already there, left alone")
+        expect(second[3]).toBe(".gitignore: already covers the tooling")
+        expect(fs.readFileSync(path.join(dir, "tsconfig.json"), "utf8")).toBe("{ \"mine\": true }")
+    })
+
+    it("keeps the ignore rules out of the repository when there is one", () => {
+        const dir = scratch({ "index.tsx": "", ".git/HEAD": "ref: refs/heads/main\n" })
+        const lines = init(dir)
+        expect(lines[3]).toBe(".git/info/exclude: written")
+        expect(fs.existsSync(path.join(dir, ".gitignore"))).toBe(false)
+        expect(fs.readFileSync(path.join(dir, ".git/info/exclude"), "utf8")).toContain("package.json")
+    })
+
+    it("keeps the test script for a game that has a playtest", () => {
+        const dir = scratch({ "index.tsx": "", "playtest.mjs": "export default async () => {}" })
+        init(dir)
+        expect(JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")).scripts.test).toBe("oj test playtest.mjs")
+    })
+
+    it("leaves the starter at two files", () => {
+        expect(fs.readdirSync(STARTER).sort()).toEqual(["index.tsx", "oj.json"])
     })
 })

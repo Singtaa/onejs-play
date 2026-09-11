@@ -2,6 +2,7 @@
 /**
  * oj: a OneJS Play game from the terminal.
  *
+ *   oj init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
  *   oj build            bundle the game the way the site does; errors as file:line:col
  *   oj typecheck        tsc --noEmit against the same oj the site builds with
  *   oj run              build, then run the game in the real container in a local Chrome
@@ -19,9 +20,11 @@ import { build, typecheck } from "./game.mjs"
 import { create, folderFor, git, sidOf, siteOrigin, status, token, version } from "./site.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
+import { init } from "./init.mjs"
 
 const HELP = `usage: oj <command> [options]
 
+  init                  write package.json, tsconfig.json, env.d.ts and .gitignore, then npm install
   build                 bundle the game as the site does, to .oj/bundle.js (--out <file>)
   typecheck             tsc --noEmit
   run                   run the game in the site's container in a local Chrome
@@ -68,6 +71,11 @@ async function main() {
     const size = flags.window ? String(flags.window).split(",").map(Number) : undefined
 
     switch (command) {
+        case "init": {
+            for (const line of init(root)) say(line)
+            say("now: npm install, then npx oj run")
+            return 0
+        }
         case "build": {
             const built = await build(root)
             const out = path.resolve(root, flags.out ? String(flags.out) : ".oj/bundle.js")

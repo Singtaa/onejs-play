@@ -1,10 +1,10 @@
 {
-  "name": "pop",
+  "name": "game",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "oj build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "oj typecheck",
     "start": "oj run --headed --watch",
     "test": "oj test playtest.mjs"
   },
@@ -12,7 +12,7 @@
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "~0.31.0",
     "esbuild": "^0.25.0",
-    "onejs-play": "^0.5.0",
+    "onejs-play": "^0.5.2",
     "onejs-react": "^0.1.50",
     "onejs-unity": "^0.5.10",
     "react": "^19.0.0",

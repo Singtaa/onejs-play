@@ -1,0 +1,7 @@
+# The site builds the game; these only serve the oj command on this machine.
+node_modules
+.oj
+package.json
+package-lock.json
+tsconfig.json
+env.d.ts
