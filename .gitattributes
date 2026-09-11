@@ -1,0 +1,2 @@
+# The scaffold is copied byte for byte into a clone; keep it as npm ships it.
+cli/scaffold/* text eol=lf

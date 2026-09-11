@@ -187,6 +187,15 @@ describe("the tooling a clone writes for itself", () => {
         expect(fs.readFileSync(path.join(dir, ".git/info/exclude"), "utf8")).toContain("package.json")
     })
 
+    it("recognises entries a Windows .gitignore already carries, CRLF and all", () => {
+        const dir = scratch({ "index.tsx": "", ".gitignore": "node_modules\r\n.oj\r\n" })
+        const lines = init(dir)
+        expect(lines[3]).toBe(".gitignore: added package.json, package-lock.json, tsconfig.json, env.d.ts")
+        const text = fs.readFileSync(path.join(dir, ".gitignore"), "utf8")
+        expect(text.match(/node_modules/g)).toHaveLength(1)
+        expect(text).not.toMatch(/\r\n?[^\n]*\r/)
+    })
+
     it("keeps the test script for a game that has a playtest", () => {
         const dir = scratch({ "index.tsx": "", "playtest.mjs": "export default async () => {}" })
         init(dir)

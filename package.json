@@ -1,6 +1,6 @@
 {
   "name": "onejs-play",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Container runtime for OneJS Play. Imported as \"oj\".",
   "main": "src/index.ts",
   "types": "src/index.ts",

@@ -45,9 +45,14 @@ export function init(root) {
     const inRepo = fs.existsSync(path.join(root, ".git"))
     const ignore = inRepo ? excludes : path.join(root, ".gitignore")
     const shown = inRepo ? ".git/info/exclude" : ".gitignore"
+    // Lines are compared with their line endings stripped: a Windows checkout
+    // or a Windows-authored .gitignore is CRLF, and comparing raw lines there
+    // matched nothing and appended every entry twice.
+    const linesOf = (text) => text.split(/\r?\n/).map((l) => l.trim())
     const wanted = fs.readFileSync(path.join(SCAFFOLD, "gitignore"), "utf8")
     const have = fs.existsSync(ignore) ? fs.readFileSync(ignore, "utf8") : ""
-    const missing = wanted.split("\n").filter((l) => l.trim() !== "" && !l.startsWith("#") && !have.split("\n").includes(l))
+    const present = new Set(linesOf(have))
+    const missing = linesOf(wanted).filter((l) => l !== "" && !l.startsWith("#") && !present.has(l))
     if (missing.length === 0) lines.push(`${shown}: already covers the tooling`)
     else {
         if (inRepo) fs.mkdirSync(path.dirname(excludes), { recursive: true })
