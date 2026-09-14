@@ -4,13 +4,30 @@
  * WHY THIS EXISTS
  * Filtering oj's export surface does nothing about the global scope. After the
  * OneJS bootstrap runs on WebGL it has put roughly 35 names on the embedding
- * page's globalThis, CS and useExtensions among them, plus a filesystem surface
- * (readTextFile, writeTextFile, deleteFile, listFiles). A game never has to
- * import anything: it types CS.UnityEngine.Application and it works. Measured on
- * a real build, see Tools/container-spike.
+ * page's globalThis, plus a filesystem surface (readTextFile, writeTextFile,
+ * deleteFile, listFiles) and the container's own internals. A game never has to
+ * import anything: it types the name and it works. Measured on a real build,
+ * see Tools/container-spike.
  *
  * So the container evaluates a bundle inside a function whose parameters shadow
- * every one of those names, rather than in global scope.
+ * those names, rather than in global scope.
+ *
+ * NAMING C# FROM A GAME IS ALLOWED, AND THAT IS A DECISION WITH A PRICE
+ * `CS`, `useExtensions` and `$typeof` are not shadowed. Play is for Unity
+ * developers, and oj can only wrap so much: the long tail of UnityEngine and
+ * the BCL is not reachable any other way, and every wrapper written instead is
+ * a wrapper somebody has to maintain.
+ *
+ * What that costs is not bytes, it is a promise. A published game is pinned to
+ * its runtime version, served immutable for a year, so whatever link.xml
+ * preserves becomes that version's permanent public API. Hence the rule
+ * recorded in PlayRuntime/README.md: a runtime version may only ever ADD to the
+ * preserved set, never remove from it. Removing a type strands games that named
+ * it, silently, in a browser nobody is watching.
+ *
+ * The corollary is why the preserved set is a namespace list rather than whole
+ * assemblies: adding is always available later, removing never is, so the
+ * smallest defensible surface is the right place to start.
  *
  * THIS ONLY WORKS IF THE RUNTIME IS NOT IN THE GAME'S BUNDLE
  * onejs-react's reconciler calls CS at runtime. If it is bundled together with
@@ -22,14 +39,13 @@
  * mean something: the reconciler stops being baked into each game.
  *
  * WHAT THIS IS AND IS NOT
- * A strong default, not a jail. Parameter shadowing hides a bare `CS`, which
- * covers every accidental use and all ordinary code, but `globalThis.CS` walks
- * straight past it. Closing that needs the properties actually deleted, which
- * needs onejs-react to capture its CS reference at module scope first (see the
- * follow-up in the README). That is fine: the boundary that keeps the platform
- * safe is the iframe origin and the CSP. This one keeps the platform
- * changeable, and a game that deliberately tunnels to globalThis.CS is out of
- * contract and free to break.
+ * A strong default, not a jail. Parameter shadowing hides a bare name, which
+ * covers every accidental use and all ordinary code, but `globalThis.X` walks
+ * straight past it, and always did. That is fine, and it is why none of this is
+ * a security argument: the boundary that keeps the platform safe is the iframe
+ * origin and the CSP on the game subdomain. What is left here keeps the
+ * platform changeable, and a game that deliberately tunnels to a shadowed
+ * internal is out of contract and free to break.
  */
 
 /**
@@ -94,10 +110,17 @@ export const BROWSER_ONLY_GLOBALS: readonly string[] = [
 ]
 
 export const SHADOWED_GLOBALS: readonly string[] = [
-    // C# access
-    "CS", "useExtensions", "__cs", "__cs_invoke", "__csHelpers",
+    // C# access.
+    //
+    // `CS`, `useExtensions` and `$typeof` are deliberately NOT here: a game may
+    // name C# directly. See "Naming C# from a game" below for what that commits
+    // the platform to. The rest stay shadowed because they are the bridge's own
+    // plumbing rather than an API: handles are refcounted, and a game calling
+    // __releaseHandle or __unregisterCallback corrupts state the reconciler owns
+    // for elements the game never created.
+    "__cs", "__cs_invoke", "__csHelpers",
     "__registerCallback", "__unregisterCallback", "__releaseHandle",
-    "releaseObject", "$typeof",
+    "releaseObject",
 
     // filesystem
     "readTextFile", "writeTextFile", "fileExists", "directoryExists",

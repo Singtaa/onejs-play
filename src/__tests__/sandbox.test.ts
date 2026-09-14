@@ -28,10 +28,28 @@ describe("evaluateBundle", () => {
     })
 
     describe("shadowing", () => {
-        it("hides CS even though the real global exists", () => {
+        // A game may name C# directly: Play is for Unity developers and oj
+        // cannot wrap the long tail. Pinned as a positive assertion rather than
+        // deleted, so re-shadowing CS fails here instead of quietly breaking
+        // every published game that named a type.
+        it("lets a bundle reach CS, useExtensions and $typeof", () => {
             expect((globalThis as Record<string, unknown>).CS).toBeDefined()
-            const out = evaluateBundle(bundle("return { cs: typeof CS }"), { oj: {} }) as { cs: string }
-            expect(out.cs).toBe("undefined")
+            const out = evaluateBundle(
+                bundle("return { c: typeof CS, u: typeof useExtensions, t: typeof $typeof }"),
+                { oj: {} },
+            ) as Record<string, string>
+            expect(Object.values(out)).not.toContain("undefined")
+        })
+
+        // The bridge's own plumbing stays hidden. These are not an API: handles
+        // are refcounted, and a game releasing one corrupts state the reconciler
+        // owns for elements the game never created.
+        it("still hides the handle and callback plumbing", () => {
+            const out = evaluateBundle(
+                bundle("return { a: typeof __cs, b: typeof __releaseHandle, c: typeof __registerCallback, d: typeof releaseObject }"),
+                { oj: {} },
+            ) as Record<string, string>
+            expect(Object.values(out)).toEqual(["undefined", "undefined", "undefined", "undefined"])
         })
 
         it("hides the filesystem surface", () => {
@@ -42,12 +60,12 @@ describe("evaluateBundle", () => {
             expect(out).toEqual({ r: "undefined", w: "undefined", d: "undefined" })
         })
 
-        it("hides useExtensions and the runtime internals", () => {
+        it("hides the runtime internals", () => {
             const out = evaluateBundle(
-                bundle("return { u: typeof useExtensions, r: typeof __root, b: typeof __bridge, t: typeof __runTeardown }"),
+                bundle("return { r: typeof __root, b: typeof __bridge, t: typeof __runTeardown }"),
                 { oj: {} },
             ) as Record<string, string>
-            expect(Object.values(out)).toEqual(["undefined", "undefined", "undefined", "undefined"])
+            expect(Object.values(out)).toEqual(["undefined", "undefined", "undefined"])
         })
 
         it("accepts extra names for a newer bootstrap", () => {
@@ -58,12 +76,23 @@ describe("evaluateBundle", () => {
             expect(out.x).toBe("undefined")
         })
 
-        // The honest limit, pinned so nobody mistakes this for a jail. Closing
-        // it means deleting the properties, which needs onejs-react to capture
-        // CS at module scope first.
-        it("does NOT stop a bundle reaching globalThis.CS", () => {
-            const out = evaluateBundle(bundle("return { cs: typeof globalThis.CS }"), { oj: {} }) as { cs: string }
-            expect(out.cs).not.toBe("undefined")
+        // The honest limit of parameter shadowing, pinned so nobody mistakes
+        // any of this for a jail. It applies to what is still shadowed: a
+        // bundle reaches globalThis.__bridge however hard the parameter list
+        // tries. The security boundary is the iframe origin and the CSP.
+        it("does NOT stop a bundle reaching a shadowed name through globalThis", () => {
+            const g = globalThis as Record<string, unknown>
+            g.__bridge = {}
+            try {
+                const out = evaluateBundle(
+                    bundle("return { shadowed: typeof __bridge, through: typeof globalThis.__bridge }"),
+                    { oj: {} },
+                ) as Record<string, string>
+                expect(out.shadowed).toBe("undefined")
+                expect(out.through).not.toBe("undefined")
+            } finally {
+                delete g.__bridge
+            }
         })
     })
 

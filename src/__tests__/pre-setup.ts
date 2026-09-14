@@ -27,3 +27,5 @@ function stub(): any {
 
 ;(globalThis as any).useExtensions = () => {}
 ;(globalThis as any).CS = stub()
+// The other C# global the bootstrap installs and the container leaves reachable.
+;(globalThis as any).$typeof = () => ""
