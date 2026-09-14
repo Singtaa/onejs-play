@@ -57,7 +57,7 @@ export class Game {
             }
             await sleep(100)
         }
-        throw new Error(`the game did not start within ${timeoutMs / 1000}s`)
+        throw new Error(`the sketch did not start within ${timeoutMs / 1000}s`)
     }
 
     /** Rebuilds the folder and swaps the new bundle in, leaving the container up. Resolves to the swap time in ms. */

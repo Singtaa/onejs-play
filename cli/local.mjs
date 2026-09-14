@@ -113,7 +113,7 @@ function hostPage(manifest) {
 globalThis.__ojLocal = {
     async reload() {
         const ms = startGame(await bundle())
-        report(ms < 0 ? "error" : "ready", ms < 0 ? { message: "the game failed to start" } : { ms })
+        report(ms < 0 ? "error" : "ready", ms < 0 ? { message: "the sketch failed to start" } : { ms })
         return ms
     },
 }

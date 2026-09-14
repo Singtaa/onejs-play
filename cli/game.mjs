@@ -62,7 +62,7 @@ export function entryOf(files, manifest) {
         return declared
     }
     const index = files.find((f) => INDEX.test(f.name))
-    if (index === undefined) throw new Error("A game needs an index.tsx (or index.ts / index.js) to start from, or an entry in oj.json.")
+    if (index === undefined) throw new Error("A sketch needs an index.tsx (or index.ts / index.js) to start from, or an entry in oj.json.")
     return index.name
 }
 

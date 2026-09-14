@@ -25,26 +25,26 @@ import { init } from "./init.mjs"
 const HELP = `usage: oj <command> [options]
 
   init                  write package.json, tsconfig.json, env.d.ts and .gitignore, then npm install
-  build                 bundle the game as the site does, to .oj/bundle.js (--out <file>)
+  build                 bundle the sketch as the site does, to .oj/bundle.js (--out <file>)
   typecheck             tsc --noEmit
-  run                   run the game in the site's container in a local Chrome
+  run                   run the sketch in the site's container in a local Chrome
                           --headed        a window you can watch, kept open until Ctrl-C
-                          --watch         rebuild and swap the game in on every change
+                          --watch         rebuild and swap the sketch in on every change
                           --for <s>       headless: seconds to run before the screenshot (default 5)
                           --shot <file>   where the screenshot goes (default .oj/run.png)
                           --window <w,h>  browser size in CSS pixels (default: the stage)
-  test <script.mjs>     run, then call the script's default export with the game
+  test <script.mjs>     run, then call the script's default export with the sketch
                           --headed, --window as above
-  status                head, live and buildError for this game (--sid <id>)
+  status                head, live and buildError for this sketch (--sid <id>)
   push                  git push origin main with OJ_TOKEN; exits 1 if the tip failed to build
-  new <name>            create a game on the site with OJ_TOKEN and clone it into ./<name>
+  new <name>            create a sketch on the site with OJ_TOKEN and clone it into ./<name>
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
-  --root <dir>          the game folder (default: the current folder)
+  --root <dir>          the sketch folder (default: the current folder)
   --runtime <version>   run against a specific container version
   --site <origin>       the site (default ${siteOrigin()}; also OJ_SITE)
 
-OJ_TOKEN  a personal access token from ${siteOrigin()}/manage, for push, new and private games
+OJ_TOKEN  a personal access token from ${siteOrigin()}/manage, for push, new and private sketches
 OJ_CHROME the browser binary, when it is not in the usual place
 `
 
@@ -103,7 +103,7 @@ async function main() {
             game.browser.listeners.add(print)
             try {
                 const ms = await game.ready()
-                say(`game started in ${ms} ms`)
+                say(`sketch started in ${ms} ms`)
                 const unwatch = flags.watch ? watch(root, game, say) : () => {}
                 if (headed || flags.watch) {
                     say("running; Ctrl-C to stop")
@@ -133,7 +133,7 @@ async function main() {
             const game = await start(root, { headless: flags.headed !== true, window: size, runtime: flags.runtime && String(flags.runtime), say })
             try {
                 const ms = await game.ready()
-                say(`game started in ${ms} ms`)
+                say(`sketch started in ${ms} ms`)
                 await runScript(script, game)
                 if (game.errors.length > 0) {
                     say(`${game.errors.length} console error(s):`)

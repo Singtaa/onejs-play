@@ -29,7 +29,7 @@ export function sidOf(root) {
     const result = spawnSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" })
     const sid = sidFromRemote((result.stdout ?? "").trim())
     if (sid === null) {
-        throw new Error("This folder is not a clone of a game on " + siteOrigin() + ". Pass --sid, or clone one first.")
+        throw new Error("This folder is not a clone of a sketch on " + siteOrigin() + ". Pass --sid, or clone one first.")
     }
     return sid
 }
