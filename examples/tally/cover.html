@@ -1,0 +1,112 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this sketch: three rows scoring, and every so often the last
+  point walking back off the board. Undo is the thing worth showing, because it
+  is what the reducer buys you.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #171717; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0, unit = 0
+
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    unit = Math.min(W, H)
+}
+
+const NAMES = ["Ash", "Bo", "Cass"]
+let seed = 9
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+
+/* The same shape the sketch keeps: counts, and the log that undo reads. */
+let scores = [0, 0, 0]
+let log = []
+let flash = -1
+let flashFor = 0
+let undone = 0
+let wait = 0.7
+
+function act(dt) {
+    flashFor = Math.max(0, flashFor - dt)
+    undone = Math.max(0, undone - dt)
+    wait -= dt
+    if (wait > 0) return
+    wait = 0.55 + rand() * 0.5
+
+    /* Mostly score, sometimes undo, and start over once the board is full
+       enough to have said what it is. */
+    if (log.length > 9) { scores = [0, 0, 0]; log = []; flash = -1; return }
+    if (log.length > 2 && rand() < 0.3) {
+        const who = log.pop()
+        scores[who]--
+        undone = 0.6
+        flash = who
+        flashFor = 0.35
+        return
+    }
+    const who = (rand() * 3) | 0
+    scores[who]++
+    log.push(who)
+    flash = who
+    flashFor = 0.35
+}
+
+function draw() {
+    ctx.fillStyle = "#171717"
+    ctx.fillRect(0, 0, W, H)
+
+    const left = W * 0.12
+    const top = H * 0.3
+    const row = H * 0.17
+
+    ctx.font = `600 ${unit * 0.075}px system-ui, sans-serif`
+    ctx.textBaseline = "middle"
+    ctx.fillStyle = "#fafafa"
+    ctx.fillText("Tally", left, H * 0.15)
+
+    ctx.font = `400 ${unit * 0.05}px system-ui, sans-serif`
+    ctx.fillStyle = undone > 0 ? "#fbbf24" : "#737373"
+    ctx.fillText(undone > 0 ? "undo" : `${log.length} points`, left, H * 0.22)
+
+    for (let i = 0; i < NAMES.length; i++) {
+        const y = top + row * i + row * 0.5
+        ctx.font = `400 ${unit * 0.06}px system-ui, sans-serif`
+        ctx.fillStyle = "#e5e5e5"
+        ctx.fillText(NAMES[i], left, y)
+
+        const hot = flash === i && flashFor > 0
+        ctx.font = `600 ${unit * 0.085}px system-ui, sans-serif`
+        ctx.fillStyle = hot ? "#fde68a" : "#fcd34d"
+        ctx.fillText(String(scores[i]), left + W * 0.42, y)
+    }
+}
+
+fit(); addEventListener("resize", fit)
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    act(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 240; i++) act(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

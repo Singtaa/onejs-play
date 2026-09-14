@@ -1,0 +1,77 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this sketch: the same ripple, evaluated per pixel the slow way
+  on a small canvas. A card cannot run the GPU, so it runs the maths.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c")
+const ctx = canvas.getContext("2d")
+
+/* A coarse buffer scaled up rather than one pixel per screen pixel: this is
+   arithmetic on the CPU, and the card has to stay cheap enough to sit in a
+   grid of twenty. */
+const N = 96
+const field = ctx.createImageData(N, N)
+let W = 0, H = 0
+
+function fit() {
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = W; canvas.height = H
+    ctx.imageSmoothingEnabled = true
+}
+
+const smoothstep = (a, b, x) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
+}
+const lerp = (a, b, t) => a + (b - a) * t
+
+function render(time, spread) {
+    const data = field.data
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+            const u = (x + 0.5) / N - 0.5
+            const v = (y + 0.5) / N - 0.5
+            const d = Math.hypot(u, v)
+            const wave = Math.sin(d * 44 - time * 3) * 0.5 + 0.5
+            const ring = wave * smoothstep(0.55, 0, d) * (spread * 0.9 + 0.1)
+            const i = (y * N + x) * 4
+            data[i] = lerp(0.05, 0.42, ring) * 255
+            data[i + 1] = lerp(0.06, 0.78, ring) * 255
+            data[i + 2] = lerp(0.09, 1.0, ring) * 255
+            data[i + 3] = 255
+        }
+    }
+    const side = Math.min(W, H) * 0.82
+    ctx.fillStyle = "#0d0f14"
+    ctx.fillRect(0, 0, W, H)
+    const tmp = document.createElement("canvas")
+    tmp.width = N; tmp.height = N
+    tmp.getContext("2d").putImageData(field, 0, 0)
+    ctx.drawImage(tmp, (W - side) / 2, (H - side) / 2, side, side)
+}
+
+fit(); addEventListener("resize", fit)
+
+const start = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const t = (now - start) / 1000
+    /* The slider, moving on its own, because the uniform is the point. */
+    render(t, 0.5 + Math.sin(t * 0.5) * 0.45)
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    render(1.4, 0.8)
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

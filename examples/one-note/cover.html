@@ -1,0 +1,121 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this sketch: five pads, one lighting at a time, with a ring
+  spreading off the one that was struck. A card cannot make a sound, so the
+  ring is how it says one happened.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #171717; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0, unit = 0
+
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    unit = Math.min(W, H)
+}
+
+const PADS = ["A", "B", "D", "E", "A'"]
+/* A little run rather than a random walk, so it reads as somebody playing
+   rather than as a screensaver. */
+const RUN = [0, 2, 4, 3, 2, 1, 0, 2, 3, 4]
+let at = 0
+let held = 0
+let wait = 0
+const rings = []
+
+function act(dt) {
+    for (let i = rings.length - 1; i >= 0; i--) {
+        rings[i].age += dt
+        if (rings[i].age > 1.1) rings.splice(i, 1)
+    }
+    held = Math.max(0, held - dt)
+    wait -= dt
+    if (wait > 0) return
+    wait = 0.42
+    at = (at + 1) % RUN.length
+    held = 0.34
+    rings.push({ pad: RUN[at], age: 0 })
+}
+
+function draw() {
+    ctx.fillStyle = "#171717"
+    ctx.fillRect(0, 0, W, H)
+
+    ctx.font = `600 ${unit * 0.085}px system-ui, sans-serif`
+    ctx.textBaseline = "middle"
+    ctx.fillStyle = "#fafafa"
+    ctx.fillText("One note", W * 0.08, H * 0.16)
+
+    const top = H * 0.32
+    const bottom = H * 0.88
+    const gap = W * 0.025
+    const width = (W * 0.84 - gap * (PADS.length - 1)) / PADS.length
+
+    for (let i = 0; i < PADS.length; i++) {
+        const x = W * 0.08 + (width + gap) * i
+        const lit = RUN[at] === i && held > 0
+
+        ctx.fillStyle = lit ? "#fcd34d" : "#404040"
+        roundRect(x, top, width, bottom - top, unit * 0.02)
+        ctx.fill()
+
+        ctx.font = `500 ${unit * 0.06}px system-ui, sans-serif`
+        ctx.fillStyle = lit ? "#171717" : "#d4d4d4"
+        ctx.textAlign = "center"
+        ctx.fillText(PADS[i], x + width / 2, bottom - unit * 0.07)
+        ctx.textAlign = "left"
+    }
+
+    /* The sound, as the only thing a still image can show of one. */
+    for (const ring of rings) {
+        const x = W * 0.08 + (width + gap) * ring.pad + width / 2
+        const y = top + (bottom - top) * 0.4
+        ctx.strokeStyle = "#fcd34d"
+        ctx.globalAlpha = Math.max(0, 0.5 - ring.age * 0.45)
+        ctx.lineWidth = Math.max(1.5, unit * 0.006)
+        ctx.beginPath()
+        ctx.arc(x, y, unit * 0.06 + ring.age * unit * 0.34, 0, Math.PI * 2)
+        ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+}
+
+function roundRect(x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+    ctx.closePath()
+}
+
+fit(); addEventListener("resize", fit)
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    act(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 40; i++) act(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

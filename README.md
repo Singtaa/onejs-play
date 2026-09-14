@@ -358,6 +358,10 @@ way, and they typecheck against `oj` exactly as a published game does:
 | Example | Bundled | Exercises |
 |---|---:|---|
 | `starter` | 1.9 KB | What `/new` scaffolds: one screen, one loop, nothing else |
+| `pendulum` | 1.4 KB | A frame loop, and dt as the whole reason it runs the same everywhere |
+| `tally` | 3.0 KB | One reducer: every change is a named action, so undo is the log walked back |
+| `one-note` | 2.8 KB | One clip, loaded once, played at five pitches |
+| `first-shader` | 3.1 KB | Twelve lines of HLSL and one uniform a slider writes |
 | `wordie` | 82.9 KB | Turn-based input, CSS Modules, a seeded daily word |
 | `falling-blocks` | 9.2 KB | Real-time gravity and key repeat off the frame delta |
 | `twos-company` | 10.6 KB | USS transitions animating a board, stable ids across a move |
@@ -377,6 +381,11 @@ way, and they typecheck against `oj` exactly as a published game does:
 Every one typechecks against `oj` exactly as a published game does, and the
 logic in each is tested without a screen: `npm test` covers the rules of the
 games, not their pixels.
+
+The four after `starter` are deliberately the smallest thing that teaches one
+idea, and nothing else: a frame loop, a reducer, a sound, a shader. They are
+where to send somebody who has not written one of these before, and each is
+short enough to read in full before the page finishes loading.
 
 Four of them are worth reading for a decision rather than a mechanic.
 `wayfinder` uses elements where the arcade games use a painter, because a search

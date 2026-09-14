@@ -1,0 +1,12 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Pendulum",
+    "author": "singtaa",
+    "description": "A frame loop and nothing else. useFrame hands you dt, the seconds since the last frame, and every change is multiplied by it: that is the whole sketch, and it is why the swing takes the same time on a slow machine as on a fast one.",
+    "entry": "index.tsx",
+    "stage": { "size": [600, 600], "fit": "letterbox" },
+    "tags": ["teaching", "toy"],
+    "controls": [],
+    "cover": { "seconds": 6 }
+}

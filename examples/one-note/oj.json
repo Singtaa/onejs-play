@@ -1,0 +1,12 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "One Note",
+    "author": "singtaa",
+    "description": "One sound, played on one event. The sketch ships a single plucked A and the other four pads are that same clip at a different pitch, which is the cheapest instrument you can build and the whole of what audio.load gives you.",
+    "entry": "index.tsx",
+    "stage": { "size": [700, 460], "fit": "fluid" },
+    "tags": ["teaching", "audio", "toy"],
+    "controls": ["pointer", "touch"],
+    "cover": { "seconds": 6 }
+}

@@ -1,0 +1,97 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  The card for this sketch: the same pendulum, and a faint trace of where the
+  weight has been, so a still frame still says "this moves" to somebody
+  scrolling past.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #11141b; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+</style>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c")
+const ctx = canvas.getContext("2d")
+let W = 0, H = 0, unit = 0
+
+function fit() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = canvas.clientWidth; H = canvas.clientHeight
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    unit = Math.min(W, H)
+    trail.length = 0
+}
+
+/* The same integration the sketch runs, so the card is not a drawing of the
+   idea but the idea itself at card size. */
+let angle = 2.1
+let rate = 0
+const GRAVITY = 14
+const trail = []
+
+function step(dt) {
+    rate += -GRAVITY * Math.sin(angle) * dt
+    angle += rate * dt
+    const arm = unit * 0.55
+    trail.push({ x: W / 2 + Math.sin(angle) * arm, y: H * 0.18 + Math.cos(angle) * arm })
+    if (trail.length > 90) trail.shift()
+}
+
+function draw() {
+    const arm = unit * 0.55
+    const pivot = { x: W / 2, y: H * 0.18 }
+    const x = pivot.x + Math.sin(angle) * arm
+    const y = pivot.y + Math.cos(angle) * arm
+
+    ctx.fillStyle = "#11141b"
+    ctx.fillRect(0, 0, W, H)
+
+    for (let i = 0; i < trail.length; i++) {
+        ctx.globalAlpha = (i / trail.length) * 0.22
+        ctx.fillStyle = "#ffd166"
+        ctx.beginPath()
+        ctx.arc(trail[i].x, trail[i].y, unit * 0.012, 0, Math.PI * 2)
+        ctx.fill()
+    }
+    ctx.globalAlpha = 1
+
+    ctx.strokeStyle = "#39445c"
+    ctx.lineWidth = Math.max(2, unit * 0.006)
+    ctx.beginPath()
+    ctx.moveTo(pivot.x, pivot.y)
+    ctx.lineTo(x, y)
+    ctx.stroke()
+
+    ctx.fillStyle = "#8892a8"
+    ctx.beginPath()
+    ctx.arc(pivot.x, pivot.y, unit * 0.013, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = "#ffd166"
+    ctx.beginPath()
+    ctx.arc(x, y, unit * 0.058, 0, Math.PI * 2)
+    ctx.fill()
+}
+
+fit(); addEventListener("resize", fit)
+
+let last = performance.now()
+function frame(now) {
+    requestAnimationFrame(frame)
+    const dt = Math.min(0.04, (now - last) / 1000)
+    last = now
+    step(dt)
+    draw()
+}
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (let i = 0; i < 70; i++) step(1 / 60)
+    draw()
+} else {
+    requestAnimationFrame(frame)
+}
+</script>
+</body>

@@ -1,0 +1,12 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Tally",
+    "author": "singtaa",
+    "description": "One reducer and nothing else. Every change to the score is a named action, so the rules live in one pure function, tally.test.ts checks them without a screen, and undo is a walk back through the log that was already there.",
+    "entry": "index.tsx",
+    "stage": { "size": [600, 520], "fit": "fluid" },
+    "tags": ["teaching", "toy"],
+    "controls": ["pointer", "touch"],
+    "cover": { "seconds": 6 }
+}
