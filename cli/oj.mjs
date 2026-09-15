@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * oj: a OneJS Play game from the terminal.
+ * oj: an OJPlay game from the terminal.
  *
  *   oj init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
  *   oj build            bundle the game the way the site does; errors as file:line:col

@@ -1,5 +1,5 @@
 /**
- * oj: the container runtime for OneJS Play.
+ * oj: the container runtime for OJPlay.
  *
  * Published to npm as "onejs-play" and imported as "oj" through an esbuild
  * alias, the same mechanism OneJS already uses to dedupe React. The alias ships

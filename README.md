@@ -1,6 +1,6 @@
 # onejs-play
 
-The container runtime for OneJS Play. Published to npm as `onejs-play`, imported
+The container runtime for OJPlay. Published to npm as `onejs-play`, imported
 by games as `oj` through an esbuild alias. The npm name `oj` was already taken,
 and the alias is the same mechanism OneJS already uses to dedupe React, so it
 ships in the scaffolded esbuild config and survives eject.
