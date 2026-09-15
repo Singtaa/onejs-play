@@ -1,7 +1,7 @@
 /**
  * Running a game outside the container.
  *
- * A game written for OneJS Play imports from "oj" and calls mount(). Inside the
+ * A game written for OJPlay imports from "oj" and calls mount(). Inside the
  * container that works because the container built a runtime first. Ejected into
  * an ordinary OneJS project there is no container, and without this mount()
  * would throw: the promise on the site is "same source, no rewrite", and a
