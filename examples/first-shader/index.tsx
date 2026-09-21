@@ -24,7 +24,11 @@ function FirstShader() {
             <ShaderProgram program={ripple} uniforms={{ spread }}
                 style={{ width: side, height: side, borderRadius: 16 }} />
 
-            <View className="flex-row items-center w-full max-w-md mt-6">
+            {/* maxWidth as a style, not max-w-md: OneJS's Tailwind generates
+                max-w-{spacing} and max-w-{percentage} and not the named size
+                scale, so max-w-md compiles to nothing and the row spans the
+                whole window on a monitor. */}
+            <View className="flex-row items-center mt-6" style={{ width: "100%", maxWidth: 420 }}>
                 <Text className="w-20 text-sm text-neutral-400">spread</Text>
                 <Slider value={spread} lowValue={0} highValue={1}
                     onChange={(e: { value: number }) => setSpread(e.value)}
