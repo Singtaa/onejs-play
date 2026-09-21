@@ -47,6 +47,66 @@ function load(src) {
     })
 }
 
+/*
+ * Keep Unity from asking for audio before anyone has touched the page.
+ *
+ * The container's framework does this, and it is Unity's code rather than
+ * ours:
+ *
+ *     tryToResumeAudioContext = function () {
+ *         if (WEBAudio.audioContext.state === "suspended")
+ *             WEBAudio.audioContext.resume().catch(...)
+ *         else Module.clearInterval(resumeInterval)
+ *     }
+ *     resumeInterval = Module.setInterval(tryToResumeAudioContext, 400)
+ *
+ * So it polls every 400ms until it succeeds. Chrome's autoplay policy refuses
+ * every attempt made before the page has user activation, and prints a line
+ * for each one. Measured on the live site: 47 identical warnings in a 20
+ * second load of one sketch, 60 in 25 seconds, which was almost everything in
+ * the console once the physics warnings went. Nothing is audible either way;
+ * the browser was never going to allow it.
+ *
+ * RESOLVED RATHER THAN REJECTED, which is the part worth being careful about.
+ * Unity attaches a .catch that logs "Could not resume audio context", so
+ * rejecting would trade a browser warning for one of ours and change nothing.
+ * Resolving without calling the real resume leaves the context suspended, so
+ * Unity's poll keeps running and costs nothing, and the first gesture resumes
+ * for real: the state flips, Unity's next tick clears its own interval, and
+ * the patch takes itself off the prototype.
+ *
+ * On the page rather than in the container because this is about the document
+ * Unity boots into, and it has to be in place before the loader runs.
+ */
+;(function deferAudioUntilGesture() {
+    const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext
+    if (!Ctx || !Ctx.prototype || typeof Ctx.prototype.resume !== "function") return
+    const EVENTS = ["pointerdown", "mousedown", "touchstart", "keydown"]
+    const realResume = Ctx.prototype.resume
+    const waiting = new Set()
+    let activated = false
+
+    Ctx.prototype.resume = function () {
+        if (activated) return realResume.call(this)
+        waiting.add(this)
+        return Promise.resolve()
+    }
+
+    function wake() {
+        if (activated) return
+        activated = true
+        Ctx.prototype.resume = realResume
+        for (const ctx of waiting) {
+            try { realResume.call(ctx) } catch (e) { /* closed, or never started */ }
+        }
+        waiting.clear()
+        for (const type of EVENTS) removeEventListener(type, wake, true)
+    }
+
+    // Capture, so a handler that stops propagation cannot hide the gesture.
+    for (const type of EVENTS) addEventListener(type, wake, true)
+})()
+
 ${bundle}
 ${report}
 
