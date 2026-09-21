@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState } from "react"
-import { View, Text, Button, mount, useFrame, usePhysics, input, random, type BodyConfig } from "oj"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { View, Text, Button, mount, useFrame, useStage, usePhysics, input, random, type BodyConfig } from "oj"
 import { Pool } from "./pool"
-
-const WIDTH = 900
-const HEIGHT = 600
 
 const SHAPES = 90
 
@@ -30,35 +27,76 @@ for (let i = 0; i < SHAPES; i++) {
     SHAPE_CYCLE.push({ kind, size, tone: TONES[i % TONES.length]! })
 }
 
-const SCENERY: { x: number; y: number; w: number; h: number; rotation: number }[] = [
-    { x: 210, y: 300, w: 300, h: 16, rotation: 14 },
-    { x: 660, y: 250, w: 260, h: 16, rotation: -18 },
-    { x: 440, y: 452, w: 220, h: 16, rotation: 0 },
-    { x: 120, y: 500, w: 150, h: 16, rotation: -26 },
-    { x: 780, y: 470, w: 170, h: 16, rotation: 22 },
+/**
+ * The ramps, as FRACTIONS of the stage rather than in pixels.
+ *
+ * This was written as five absolute positions inside a 900 by 600 stage. The
+ * stage is the window now, so pixels would put a ramp a third of the way
+ * across on a phone and off the edge of nothing on a monitor. The thickness
+ * stays 16: a ramp is a physical object, not a share of the screen.
+ */
+const SCENERY: { u: number; v: number; w: number; rotation: number }[] = [
+    { u: 0.233, v: 0.500, w: 0.333, rotation: 14 },
+    { u: 0.733, v: 0.417, w: 0.289, rotation: -18 },
+    { u: 0.489, v: 0.753, w: 0.244, rotation: 0 },
+    { u: 0.133, v: 0.833, w: 0.167, rotation: -26 },
+    { u: 0.867, v: 0.783, w: 0.189, rotation: 22 },
 ]
 
-// Scenery first, so a scenery index is also a body index.
-const BODIES: BodyConfig[] = [
-    ...SCENERY.map((piece): BodyConfig => ({
-        type: "static", shape: "box",
-        size: [piece.w, piece.h], x: piece.x, y: piece.y, rotation: piece.rotation,
-        friction: 0.4,
-    })),
-    ...SHAPE_CYCLE.map((shape): BodyConfig => ({
-        type: "dynamic",
-        shape: shape.kind,
-        radius: shape.size / 2,
-        size: [shape.size, shape.size],
-        // Parked off screen: a disabled body still has a position, and one left
-        // in the field would flash into view for a frame when it is switched on.
-        x: -400, y: -400,
-        density: 1, friction: 0.35, restitution: 0.28,
-    })),
-]
+const RAMP_THICKNESS = 16
+
+/** The ramps in pixels, for a stage of this size. */
+function sceneryFor(width: number, height: number) {
+    return SCENERY.map((piece) => ({
+        x: piece.u * width, y: piece.v * height,
+        w: Math.round(piece.w * width), h: RAMP_THICKNESS,
+        rotation: piece.rotation,
+    }))
+}
+
+/** Scenery first, so a scenery index is also a body index. */
+function bodiesFor(width: number, height: number): BodyConfig[] {
+    return [
+        ...sceneryFor(width, height).map((piece): BodyConfig => ({
+            type: "static", shape: "box",
+            size: [piece.w, piece.h], x: piece.x, y: piece.y, rotation: piece.rotation,
+            friction: 0.4,
+        })),
+        ...SHAPE_CYCLE.map((shape): BodyConfig => ({
+            type: "dynamic",
+            shape: shape.kind,
+            radius: shape.size / 2,
+            size: [shape.size, shape.size],
+            // Parked off screen: a disabled body still has a position, and one left
+            // in the field would flash into view for a frame when it is switched on.
+            x: -400, y: -400,
+            density: 1, friction: 0.35, restitution: 0.28,
+        })),
+    ]
+}
 
 
+/**
+ * The stage, and the one thing about a world that is not obvious.
+ *
+ * usePhysics builds its walls from the host element ONCE, on mount, and never
+ * rebuilds them: physics state lives in C# and a re-render must not throw it
+ * away. So a fluid sketch that only resized its host would reflow visually
+ * while the simulation kept the walls it was born with, and shapes would pile
+ * against an edge nobody can see. Keying on the size is what makes a resize
+ * reach the simulation, at the honest cost of restarting the box. See
+ * /docs/stage.
+ */
 function DropEverything() {
+    const stage = useStage()
+    const width = Math.max(320, Math.round(stage.width))
+    const height = Math.max(320, Math.round(stage.height))
+    return <World key={`${width}x${height}`} width={width} height={height} />
+}
+
+function World({ width, height }: { width: number; height: number }) {
+    const scenery = useMemo(() => sceneryFor(width, height), [width, height])
+    const bodies = useMemo(() => bodiesFor(width, height), [width, height])
     const host = useRef<any>(null)
     const rng = useRef(random()).current
     const pool = useRef(new Pool(SHAPES)).current
@@ -72,11 +110,11 @@ function DropEverything() {
         bounds: true,
         boundsRestitution: 0.15,
         boundsFriction: 0.5,
-        bodies: BODIES,
+        bodies: bodies,
     })
 
-    // Scenery came first in BODIES, so the shapes are the bodies after it.
-    const shapes = world === null ? [] : world.bodies.slice(SCENERY.length)
+    // Scenery came first in the body list, so the shapes are the ones after it.
+    const shapes = world === null ? [] : world.bodies.slice(scenery.length)
 
     useEffect(() => {
         if (world === null) return
@@ -133,9 +171,9 @@ function DropEverything() {
     }, [world])
 
     return (
-        <View style={{ width: WIDTH, height: HEIGHT, backgroundColor: "rgb(16, 19, 26)" }}>
+        <View style={{ width: "100%", height: "100%", backgroundColor: "rgb(16, 19, 26)" }}>
             <View ref={host} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }}>
-                {SCENERY.map((piece, i) => (
+                {scenery.map((piece, i) => (
                     <View
                         key={`scenery-${i}`}
                         ref={(el: any) => { elements[i] = el }}
@@ -149,7 +187,7 @@ function DropEverything() {
                 {SHAPE_CYCLE.map((shape, slot) => (
                     <View
                         key={`shape-${slot}`}
-                        ref={(el: any) => { elements[SCENERY.length + slot] = el }}
+                        ref={(el: any) => { elements[scenery.length + slot] = el }}
                         pickingMode="Ignore"
                         style={{
                             position: "absolute", width: shape.size, height: shape.size,
