@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { normalizeStage, computeStageLayout, toStage, fromStage, DEFAULT_STAGE_WIDTH, DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_MATTE, type StageConfig, screenToStage, screenDeltaToStage } from "../stage"
+import { normalizeStage, computeStageLayout, toStage, fromStage, DEFAULT_STAGE_WIDTH, DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_MATTE, DEFAULT_STAGE_FIT, type StageConfig, screenToStage, screenDeltaToStage } from "../stage"
 
 const stage = (over: Partial<StageConfig> = {}): StageConfig => ({
     width: 960,
@@ -11,14 +11,28 @@ const stage = (over: Partial<StageConfig> = {}): StageConfig => ({
 })
 
 describe("normalizeStage", () => {
-    it("defaults to 960x540 letterbox", () => {
+    /**
+     * A game that says nothing gets the window, not a designed screen.
+     *
+     * The width and height are still 960x540 and are still carried: they are
+     * what the stage becomes the moment somebody names a fixed fit without a
+     * size. Under fluid nothing reads them, which is why the fit is the part
+     * of this assertion that matters.
+     */
+    it("defaults to fluid, at a size nothing reads", () => {
         expect(normalizeStage(undefined)).toEqual({
             width: DEFAULT_STAGE_WIDTH,
             height: DEFAULT_STAGE_HEIGHT,
-            fit: "letterbox",
+            fit: DEFAULT_STAGE_FIT,
             pixelPerfect: false,
             matte: DEFAULT_STAGE_MATTE,
         })
+        expect(DEFAULT_STAGE_FIT).toBe("fluid")
+    })
+
+    /** A size on its own is not a request for a fixed screen. */
+    it("stays fluid when only a size is declared", () => {
+        expect(normalizeStage({ size: [600, 760] }).fit).toBe("fluid")
     })
 
     it("accepts size sugar", () => {

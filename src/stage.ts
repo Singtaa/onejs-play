@@ -2,18 +2,26 @@
  * The stage: how a game's logical coordinate space maps onto whatever pixels
  * the player's window happens to give it.
  *
- * A fixed logical space is what lets an author lay a game out once instead of
- * solving responsive design, so 960x540 is the default. It is only a default.
- * A game picks its own size, and picks how that size is fitted:
+ * THE DEFAULT IS fluid: a game that says nothing about its stage gets the
+ * viewport, in logical pixels, and re-renders when it changes. UI Toolkit is
+ * the renderer, so a good share of games in this lane are responsive apps
+ * (cards, incrementals, builders) rather than fixed arcade screens, and those
+ * want to reflow, not scale. It used to default to letterbox at 960x540,
+ * which made every one of them a fixed screen unless its author knew to say
+ * otherwise.
  *
- *     letterbox   preserve aspect, bars fill the remainder (default)
+ * A fixed logical space is still what lets an author lay a game out once
+ * instead of solving responsive design, and it is one line away. A game picks
+ * its own size, and picks how that size is fitted:
+ *
+ *     fluid       no fixed stage; the stage is the viewport in logical pixels (default)
+ *     letterbox   preserve aspect, bars fill the remainder
  *     cover       preserve aspect, crop the overflow
  *     stretch     ignore aspect, fill exactly
- *     fluid       no fixed stage; the stage is the viewport in logical pixels
  *
- * fluid matters more than it looks. UI Toolkit is the renderer, so a good share
- * of games in this lane are responsive apps (cards, incrementals, builders)
- * rather than fixed arcade screens, and those want to reflow, not scale.
+ * DEFAULT_STAGE_WIDTH and DEFAULT_STAGE_HEIGHT are still 960x540 and are still
+ * what an undeclared size becomes. Under fluid nothing reads them; they are
+ * what the stage is the moment somebody sets a fixed fit without a size.
  *
  * Fullscreen is orthogonal to all of it. It changes how many pixels are
  * available; the fit still applies. The host page owns the Fullscreen API call
@@ -31,6 +39,8 @@ const FITS: readonly StageFit[] = ["letterbox", "cover", "stretch", "fluid"]
 
 export const DEFAULT_STAGE_WIDTH = 960
 export const DEFAULT_STAGE_HEIGHT = 540
+/** What a game that says nothing about its stage gets: the viewport. */
+export const DEFAULT_STAGE_FIT: StageFit = "fluid"
 /** Dark enough to sit behind anything without competing with it. */
 export const DEFAULT_STAGE_MATTE = "#14181d"
 
@@ -158,7 +168,7 @@ export function normalizeStage(input: StageInput | undefined | null): StageConfi
         throw new Error(`[oj] stage size must be positive and finite, got ${width}x${height}`)
     }
 
-    const fit = raw.fit ?? "letterbox"
+    const fit = raw.fit ?? DEFAULT_STAGE_FIT
     if (!FITS.includes(fit)) {
         throw new Error(`[oj] invalid stage fit "${fit}", expected one of ${FITS.join(", ")}`)
     }

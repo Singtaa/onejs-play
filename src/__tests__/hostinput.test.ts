@@ -140,7 +140,7 @@ describe("createHostInputBackend", () => {
 
         // Twice as tall, so the same stage is letterboxed with bars above and
         // below and the same screen point lands somewhere else on it.
-        current = computeStageLayout(normalizeStage({ size: [400, 300] }), 800, 1200)
+        current = computeStageLayout(normalizeStage({ size: [400, 300], fit: "letterbox" }), 800, 1200)
         expect(backend.GetMousePositionY()).toBeCloseTo(300, 4)
     })
 

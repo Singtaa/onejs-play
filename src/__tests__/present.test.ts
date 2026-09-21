@@ -20,7 +20,7 @@ const pointSize = (scale: number, dpr: number) => scale * dpr
 
 describe("stageHostStyle", () => {
     it("gives the game exactly its declared stage, in points", () => {
-        const style = stageHostStyle(layoutFor({ size: [600, 760] }, 1288, 805))
+        const style = stageHostStyle(layoutFor({ size: [600, 760], fit: "letterbox" }, 1288, 805))
         expect(style.width).toBe(600)
         expect(style.height).toBe(760)
     })
@@ -28,7 +28,7 @@ describe("stageHostStyle", () => {
     it("centres the stage in the leftover space", () => {
         // 600x760 letterboxed into 1288x805: scale 805/760, so the stage is
         // 631.6 wide and the bars take (1288 - 631.6)/2 each.
-        const layout = layoutFor({ size: [600, 760] }, 1288, 805)
+        const layout = layoutFor({ size: [600, 760], fit: "letterbox" }, 1288, 805)
         const style = stageHostStyle(layout)
         expect(style.top).toBeCloseTo(0, 6)
         expect(style.left as number).toBeCloseTo(layout.offsetX / layout.scaleX, 6)
@@ -41,7 +41,7 @@ describe("stageHostStyle", () => {
         // The whole point of the fix. A stage is the same physical size on a
         // retina display as on a normal one; what changes is how many pixels
         // are used to draw it.
-        const layout = layoutFor({ size: [600, 760] }, 1288, 805)
+        const layout = layoutFor({ size: [600, 760], fit: "letterbox" }, 1288, 805)
         const style = stageHostStyle(layout)
         for (const dpr of [1, 2, 3]) {
             const physicalWidth = (style.width as number) * pointSize(layout.scale, dpr)
@@ -77,11 +77,11 @@ describe("stageHostStyle", () => {
     })
 
     it("is positioned absolutely, or the clipper would lay it out in flow", () => {
-        expect(stageHostStyle(layoutFor({ size: [600, 760] }, 1288, 805)).position).toBe("absolute")
+        expect(stageHostStyle(layoutFor({ size: [600, 760], fit: "letterbox" }, 1288, 805)).position).toBe("absolute")
     })
 
     it("survives a viewport that has not been measured yet", () => {
-        const style = stageHostStyle(layoutFor({ size: [600, 760] }, 0, 0))
+        const style = stageHostStyle(layoutFor({ size: [600, 760], fit: "letterbox" }, 0, 0))
         for (const value of Object.values(style)) {
             if (typeof value === "number") expect(Number.isFinite(value)).toBe(true)
         }

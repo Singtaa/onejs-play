@@ -6,7 +6,7 @@ import * as api from "../index"
 
 /** A container, which is the only kind of host that passes the api. */
 const make = (over = {}) =>
-    createRuntime({ api, root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540] }), ...over })
+    createRuntime({ api, root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540], fit: "letterbox" }), ...over })
 
 afterEach(() => { setInputBackend(null); vi.restoreAllMocks() })
 
@@ -26,7 +26,7 @@ describe("the oj object", () => {
      */
     it("carries none of it when the host did not ask for it", () => {
         const { oj } = createRuntime({
-            root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540] }),
+            root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540], fit: "letterbox" }),
         })
         for (const name of ["View", "Text", "render", "Mathf", "input", "Painter"]) {
             expect(oj).not.toHaveProperty(name)

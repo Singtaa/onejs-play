@@ -6,19 +6,25 @@
 // frame. Misspell it and the .sl.d.ts beside the file makes that a type error
 // here rather than a console warning nobody is watching.
 import { useState } from "react"
-import { View, Text, Slider, ShaderProgram, mount } from "oj"
+import { View, Text, Slider, ShaderProgram, mount, useStage } from "oj"
 import ripple from "./ripple.sl"
 import "onejs:tailwind"
 
 function FirstShader() {
+    const stage = useStage()
     const [spread, setSpread] = useState(0.4)
 
-    return (
-        <View className="w-full h-full p-8 items-center bg-neutral-900">
-            <ShaderProgram program={ripple} uniforms={{ spread }}
-                style={{ width: 420, height: 420, borderRadius: 16 }} />
+    // The shader is square, so it takes whichever side leaves room for the
+    // controls: the full width on a phone, the height on a wide monitor. No
+    // stage in oj.json means these two numbers are the window.
+    const side = Math.max(160, Math.min(stage.width - 64, stage.height - 220))
 
-            <View className="flex-row items-center w-96 mt-6">
+    return (
+        <View className="w-full h-full py-8 px-4 items-center justify-center bg-neutral-900">
+            <ShaderProgram program={ripple} uniforms={{ spread }}
+                style={{ width: side, height: side, borderRadius: 16 }} />
+
+            <View className="flex-row items-center w-full max-w-md mt-6">
                 <Text className="w-20 text-sm text-neutral-400">spread</Text>
                 <Slider value={spread} lowValue={0} highValue={1}
                     onChange={(e: { value: number }) => setSpread(e.value)}

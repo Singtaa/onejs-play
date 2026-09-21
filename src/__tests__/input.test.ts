@@ -344,7 +344,7 @@ describe("mouse buttons", () => {
 })
 
 describe("mouse position, delta and scroll", () => {
-    const layout = () => computeStageLayout(normalizeStage({ size: [960, 540] }), 1920, 540)
+    const layout = () => computeStageLayout(normalizeStage({ size: [960, 540], fit: "letterbox" }), 1920, 540)
 
     it("passes viewport coordinates through with no stage", () => {
         const c = tick(make())
@@ -371,7 +371,7 @@ describe("mouse position, delta and scroll", () => {
         c.setStageLayout(layout())
         tick(c)
         c.sink.pointerMove(960, 270)
-        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540] }), 960, 540))
+        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540], fit: "letterbox" }), 960, 540))
         deliver(c)
         expect(b(c).GetMousePositionX()).toBeCloseTo(960, 6)
     })
@@ -463,7 +463,7 @@ describe("through onejs-unity's public input API", () => {
 
     it("answers mouse queries in stage units", () => {
         const c = make()
-        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540] }), 1920, 540))
+        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540], fit: "letterbox" }), 1920, 540))
         setInputBackend(c.backend)
         tick(c)
         c.sink.pointerMove(960, 270)

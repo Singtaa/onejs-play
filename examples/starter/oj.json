@@ -3,6 +3,5 @@
     "runtime": "1.0.0",
     "name": "Pop",
     "entry": "index.tsx",
-    "stage": { "size": [600, 600], "fit": "letterbox" },
     "controls": ["pointer", "touch"]
 }

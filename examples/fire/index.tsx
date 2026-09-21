@@ -1,5 +1,8 @@
-import { View, mount, fx } from "oj"
+import { View, mount, useStage, fx } from "oj"
 
+// The texture is a fixed 512 because that is a GPU resolution, not a layout:
+// the flame is generated once at this size and scaled by the element drawing
+// it. What reflows is the element, below.
 const canvas = fx.canvas(512)
 
 const shape = canvas.sdf("egg", { h: 0.6, r: 0.17, rTop: 0.02, bulge: 0.7, y: 0 }).blur(40)
@@ -18,11 +21,25 @@ const embers = [
 ]
 
 function Fire() {
+    const stage = useStage()
     const flame = fx.useAnimatedTexture(canvas, () => {
         const heat = canvas.noise(body).multiply(canvas.noise(detail)).multiply(2).multiply(mask)
         return heat.threshold(0, 0.2).ramp(embers)
     })
-    return <View style={{ width: canvas.width, height: canvas.height, backgroundImage: flame }} />
+    // The flame is square and must stay square, so it takes the smaller side of
+    // whatever window it is given and sits in the middle of it. The dark fill
+    // around it is what the manifest used to declare as a letterbox matte: the
+    // same colour, now painted by the sketch because there are no bars.
+    const side = Math.min(stage.width, stage.height)
+    return (
+        <View style={{
+            width: "100%", height: "100%",
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: "#07070a",
+        }}>
+            <View style={{ width: side, height: side, backgroundImage: flame }} />
+        </View>
+    )
 }
 
 mount(<Fire />)

@@ -5,24 +5,9 @@
     "author": "singtaa",
     "description": "A fire with no art in it. Two scrolling noise fields, a soft mask and a colour ramp, composed on the GPU every frame, in twenty lines.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            512,
-            512
-        ],
-        "fit": "letterbox",
-        "matte": "#07070a"
-    },
     "tags": [
         "toy",
         "visual"
     ],
-    "controls": [],
-    "cover": {
-        "seconds": 6,
-        "stage": [
-            960,
-            540
-        ]
-    }
+    "controls": []
 }
