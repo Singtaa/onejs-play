@@ -40,7 +40,10 @@ export function usePhysics(
     handler.current = onCollision
 
     useEffect(() => {
-        if (host.current === null || host.current === undefined) return
+        if (host.current === null || host.current === undefined) {
+            console.warn("[oj] usePhysics: the host ref was empty on mount, so no world was created. Put the ref on an element this component renders.")
+            return
+        }
         const created = createPhysicsWorld(host.current, config)
         created.onCollision((contact) => handler.current?.(contact))
         setWorld(created)
@@ -52,9 +55,22 @@ export function usePhysics(
             stop?.()
             created.dispose()
         }
-        // Deliberately mount-only: see above.
+        // Mount-only, and the empty list is load-bearing rather than lazy.
+        //
+        // This read `[host.current]`, which is evaluated during RENDER, when a
+        // ref for an element this component is about to mount is still null.
+        // The effect then ran with the ref populated, built the world, and
+        // setWorld re-rendered; on that pass the dep was the element, so React
+        // saw the list change, disposed the world and built a second one.
+        // Every world was built twice, and on a stage of 85 bodies that was 170
+        // GameObjects created and thrown away, and every per-body warning the
+        // engine had to say printed twice.
+        //
+        // Refs are attached before effects run, so reading host.current in the
+        // body is enough. A host that is not mounted by then cannot be waited
+        // for here either, because populating a ref does not re-render.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [host.current])
+    }, [])
 
     return world
 }
