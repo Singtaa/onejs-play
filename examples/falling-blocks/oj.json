@@ -5,13 +5,6 @@
     "author": "singtaa",
     "description": "Shapes drop, filled rows go, mistakes pile up. Gravity and key repeat run off the frame clock, not a timer.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            520,
-            560
-        ],
-        "fit": "letterbox"
-    },
     "tags": [
         "arcade",
         "puzzle"

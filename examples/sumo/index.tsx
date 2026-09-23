@@ -1,9 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import {
-    View, Text, mount, useFrame, useRoom, usePhysics, input, isOnline,
-    Painter, batchedVisualContent, type BodyConfig,
-} from "oj"
+import { View, Text, mount, useStage, useFrame, useRoom, usePhysics, input, isOnline, Painter, batchedVisualContent, type BodyConfig } from "oj"
 import {
     platformRadius, isOff, spawnAt, steer, advance, leashVelocity, leashDelta,
     beginRound, applyFall, standing, isOver, winnerOf, credit,
@@ -12,6 +9,30 @@ import {
     THRUST, DRAG, DASH_SPEED, DASH_COOLDOWN, BOUNCE, SYNC_HZ, SNAP_DISTANCE,
     MAX_BLOBS, REST, SETTLE, type Round, type Track,
 } from "./arena"
+
+const W = 960, H = 640   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 const TONES: [number, number, number][] = [
     [0.36, 0.72, 1.0], [1.0, 0.55, 0.30], [0.45, 0.86, 0.52],
@@ -220,6 +241,8 @@ function Sumo() {
         beat()
     }
 
+    // Pointers arrive in window pixels; the arena is the board, in board units.
+    const boardView = useBoard()
     useFrame((dt) => {
         if (world === null) return
         const step = Math.min(dt, 1 / 20)
@@ -265,10 +288,10 @@ function Sumo() {
             let aimY = -keys.y
 
             let pointing: { x: number; y: number } | null = null
-            if (input.mouse.leftButton) pointing = { x: input.mouse.position.x, y: input.mouse.position.y }
+            if (input.mouse.leftButton) pointing = boardView.toBoard(input.mouse.position)
             for (const touch of input.touches) {
                 if (touch.phase === "ended" || touch.phase === "canceled") continue
-                pointing = { x: touch.position.x, y: touch.position.y }
+                pointing = boardView.toBoard(touch.position)
             }
             if (aimX === 0 && aimY === 0 && pointing !== null) {
                 aimX = pointing.x - mine.current.x
@@ -547,4 +570,4 @@ function Sumo() {
     )
 }
 
-mount(<Sumo />)
+mount(<Board><Sumo /></Board>)

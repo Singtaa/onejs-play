@@ -1,12 +1,33 @@
 import { useMemo, useRef, useState } from "react"
-import {
-    View, Text, mount, useFrame, input, random, Painter, batchedVisualContent,
-    useLeaderboard, scores,
-} from "oj"
+import { View, Text, mount, useStage, useFrame, input, random, Painter, batchedVisualContent, useLeaderboard, scores } from "oj"
 import {
     wrap, shortest, touching, shatter, outlineFor, edgeSpawn, SIZES, VALUES, sizeOf,
     type Rock, type Field,
 } from "./space"
+
+const W = 900, H = 600   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 const FIELD: Field = { width: 900, height: 600 }
 
@@ -205,6 +226,8 @@ function SpaceJunk() {
         setHud({ score: 0, lives: 3, wave: 1, over: false })
     }
 
+    // Touches arrive in window pixels; the field is the board, in board units.
+    const boardView = useBoard()
     useFrame((dt) => {
         const keys = input.keyboard
         const { ship } = world
@@ -224,9 +247,10 @@ function SpaceJunk() {
         for (const touch of input.touches) {
             if (touch.phase === "began") fire()
             if (touch.phase === "ended" || touch.phase === "canceled") continue
+            const at = boardView.toBoard(touch.position)
             const want = Math.atan2(
-                shortest(ship.y, touch.position.y, FIELD.height),
-                shortest(ship.x, touch.position.x, FIELD.width),
+                shortest(ship.y, at.y, FIELD.height),
+                shortest(ship.x, at.x, FIELD.width),
             )
             // The short way round the circle, or the ship spins most of a turn
             // to reach a heading just behind it.
@@ -409,4 +433,4 @@ function SpaceJunk() {
     )
 }
 
-mount(<SpaceJunk />)
+mount(<Board><SpaceJunk /></Board>)

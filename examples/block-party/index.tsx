@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import {
-    View, Text, mount, useFrame, useRoom, useLeaderboard, scores,
-    input, random, Painter, batchedVisualContent,
-} from "oj"
+import { View, Text, mount, useStage, useFrame, useRoom, useLeaderboard, scores, input, random, Painter, batchedVisualContent } from "oj"
 import {
     beginGesture, advanceGesture, releaseGesture, isSoftDropping, spendDrop, type Gesture,
 } from "./gestures"
@@ -15,6 +12,30 @@ import {
     attackFor, offset, takeGarbage, queue, nextHole, buries, addGarbage,
     chooseTarget, encodeWell, decodeWell, stackHeight, MAX_PENDING,
 } from "./versus"
+
+const W = 900, H = 560   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 const CELL = 25
 const WELL_X = 186
@@ -87,6 +108,8 @@ function BlockParty() {
 
     const timers = useRef({ drop: 0, left: 0, right: 0, well: 0 }).current
     const drag = useRef<{ id: number; g: Gesture } | null>(null)
+    // Touches arrive in window pixels; the gesture thresholds are board pixels.
+    const boardView = useBoard()
     const lastHit = useRef({ from: 0, at: 0 })
     const flash = useRef(0)
     const strike = useRef({ to: 0, left: 0 })
@@ -269,9 +292,11 @@ function BlockParty() {
 
             let flicked = false
             if (began) {
-                drag.current = { id: touch!.fingerId, g: beginGesture(touch!.position.x, touch!.position.y) }
+                const at = boardView.toBoard(touch!.position)
+                drag.current = { id: touch!.fingerId, g: beginGesture(at.x, at.y) }
             } else if (touch !== null && drag.current !== null && touch.fingerId === drag.current.id) {
-                const columns = advanceGesture(drag.current.g, touch.position.x, touch.position.y, step)
+                const at = boardView.toBoard(touch.position)
+                const columns = advanceGesture(drag.current.g, at.x, at.y, step)
                 for (let i = 0; i < Math.abs(columns); i++) {
                     const next = moved(piece, Math.sign(columns), 0)
                     if (!fits(well.board, next)) break
@@ -566,4 +591,4 @@ function drawFrame(
     p.stroke()
 }
 
-mount(<BlockParty />)
+mount(<Board><BlockParty /></Board>)

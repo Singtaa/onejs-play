@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { View, Text, mount, useFrame, input, random } from "oj"
+import { View, Text, mount, useStage, useFrame, input, random } from "oj"
 import "onejs:tailwind"
 import styles from "./falling-blocks.module.uss"
 import {
@@ -10,6 +10,30 @@ import {
     scoreFor, levelFor, dropInterval, cellsOf, shapeOf, KINDS,
     COLS, ROWS, type Board, type Piece, type PieceKind,
 } from "./game"
+
+const W = 520, H = 560   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 const COLOURS = ["", styles.i, styles.o, styles.t, styles.s, styles.z, styles.j, styles.l]
 
@@ -85,6 +109,8 @@ function FallingBlocks() {
     const [game, setGame] = useState<Game>(() => start(pick))
     const timers = useRef({ drop: 0, left: 0, right: 0, down: 0 }).current
     const drag = useRef<{ id: number; g: Gesture } | null>(null)
+    // Touches arrive in window pixels; the gesture thresholds are board pixels.
+    const boardView = useBoard()
 
     useFrame((dt) => {
         const touch = input.touchCount > 0 ? input.touches[0] : null
@@ -115,9 +141,11 @@ function FallingBlocks() {
 
         let flicked = false
         if (began) {
-            drag.current = { id: touch!.fingerId, g: beginGesture(touch!.position.x, touch!.position.y) }
+            const at = boardView.toBoard(touch!.position)
+            drag.current = { id: touch!.fingerId, g: beginGesture(at.x, at.y) }
         } else if (touch !== null && drag.current !== null && touch.fingerId === drag.current.id) {
-            const columns = advanceGesture(drag.current.g, touch.position.x, touch.position.y, dt)
+            const at = boardView.toBoard(touch.position)
+            const columns = advanceGesture(drag.current.g, at.x, at.y, dt)
             for (let i = 0; i < Math.abs(columns); i++) {
                 const next = moved(piece, Math.sign(columns), 0)
                 if (!fits(board, next)) break
@@ -204,4 +232,4 @@ function FallingBlocks() {
     )
 }
 
-mount(<FallingBlocks />)
+mount(<Board><FallingBlocks /></Board>)

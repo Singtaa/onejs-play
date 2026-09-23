@@ -1,10 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { View, Text, Button, mount, useFrame, random } from "oj"
+import { View, Text, Button, mount, useStage, useFrame, random } from "oj"
 import styles from "./wayfinder.module.uss"
 import {
     createSearch, generate, clearAround, routeCost,
     type Maze, type Kind, type Search,
 } from "./search"
+
+const W = 900, H = 540   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 const COLS = 18
 const ROWS = 22
@@ -196,4 +220,4 @@ function Wayfinder() {
     )
 }
 
-mount(<Wayfinder />)
+mount(<Board><Wayfinder /></Board>)

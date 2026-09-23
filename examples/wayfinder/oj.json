@@ -5,7 +5,6 @@
     "author": "singtaa",
     "description": "Breadth first, Dijkstra and A star crossing the same map at the same time. The shapes they make are the explanation.",
     "entry": "index.tsx",
-    "stage": { "size": [900, 540], "fit": "letterbox" },
     "tags": ["tool", "visual"],
     "controls": ["pointer"]
 }

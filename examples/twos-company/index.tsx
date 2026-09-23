@@ -1,8 +1,32 @@
 import { useEffect, useRef, useState } from "react"
-import { View, Text, mount, useFrame, useSwipe, input, random } from "oj"
+import { View, Text, mount, useStage, useFrame, useSwipe, SWIPE_THRESHOLD, input, random } from "oj"
 import "onejs:tailwind"
 import styles from "./twos-company.module.uss"
 import { newGame, move, spawn, stuck, highest, SIZE, type Direction, type Game } from "./game"
+
+const W = 520, H = 700   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 const CELL = 100
 const GAP = 12
@@ -110,7 +134,10 @@ function TwosCompany() {
     })
 
     // A finger on a phone or a mouse drag on a desktop, either way one push.
-    useSwipe(push)
+    // The threshold is window pixels, so it scales with the board to stay the
+    // same distance on the board it always was.
+    const boardView = useBoard()
+    useSwipe(push, { threshold: SWIPE_THRESHOLD * boardView.scale })
 
     const celebrating = game.won && !dismissed
 
@@ -173,4 +200,4 @@ function TwosCompany() {
     )
 }
 
-mount(<TwosCompany />)
+mount(<Board><TwosCompany /></Board>)

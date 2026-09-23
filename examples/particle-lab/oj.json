@@ -5,13 +5,6 @@
     "author": "singtaa",
     "description": "Stack emitters until it looks right, then copy the config. Fire is a flame, a plume of smoke and a few embers, which is three emitters that have to agree.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            980,
-            700
-        ],
-        "fit": "letterbox"
-    },
     "tags": [
         "tool",
         "visual"

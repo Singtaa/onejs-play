@@ -1,6 +1,30 @@
 import { useState } from "react"
-import { View, Text, mount, useFrame } from "oj"
+import { View, Text, mount, useStage, useFrame } from "oj"
 import "onejs:tailwind"
+
+const W = 600, H = 600   // the board, in board units
+
+// A fixed W x H board, scaled to fit the window and centred.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+
+// The board on a full-window matte, the colour the bars around it have always been.
+function Board({ children }: { children: React.ReactNode }) {
+    const board = useBoard()
+    return (
+        <View style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", backgroundColor: "#14181d" }}>
+            <View style={board.style}>{children}</View>
+        </View>
+    )
+}
 
 /*
  * Foobar: a test bed for the first real asset upload.
@@ -23,8 +47,6 @@ import "onejs:tailwind"
  * path in a single step.
  */
 
-const STAGE = 600
-
 function Foobar() {
     const [t, setT] = useState(0)
     useFrame((dt) => setT((n) => n + dt), [])
@@ -41,7 +63,7 @@ function Foobar() {
 
     return (
         <View className="items-center justify-center bg-neutral-900"
-              style={{ width: STAGE, height: STAGE }}>
+              style={{ width: W, height: H }}>
 
             {/* --- UNCOMMENT THIS BLOCK too, and delete the placeholder below ---
             <Image src={logo} style={{ width: size, height: size }} />
@@ -57,4 +79,4 @@ function Foobar() {
     )
 }
 
-mount(<Foobar />)
+mount(<Board><Foobar /></Board>)

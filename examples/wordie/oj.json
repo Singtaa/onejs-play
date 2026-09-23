@@ -5,13 +5,6 @@
     "author": "singtaa",
     "description": "Six guesses at a five letter word, a new one every day. The rule about repeated letters is where most versions of this go wrong.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            600,
-            760
-        ],
-        "fit": "letterbox"
-    },
     "tags": [
         "puzzle",
         "word"

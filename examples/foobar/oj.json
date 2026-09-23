@@ -5,13 +5,6 @@
     "author": "singtaa",
     "description": "A test bed for the asset path. It runs as it stands; upload an image called logo.png, uncomment the two marked blocks, and the pulsing square becomes your picture.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            600,
-            600
-        ],
-        "fit": "letterbox"
-    },
     "tags": [
         "toy"
     ],

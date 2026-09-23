@@ -5,13 +5,6 @@
     "author": "singtaa",
     "description": "Turn, thrust, shoot. The field has no edges, which turns out to be the hard part, and the board keeps the best runs.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            900,
-            600
-        ],
-        "fit": "letterbox"
-    },
     "tags": [
         "arcade"
     ],
