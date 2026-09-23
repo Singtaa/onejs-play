@@ -32,7 +32,7 @@ const HELP = `usage: oj <command> [options]
                           --watch         rebuild and swap the sketch in on every change
                           --for <s>       headless: seconds to run before the screenshot (default 5)
                           --shot <file>   where the screenshot goes (default .oj/run.png)
-                          --window <w,h>  browser size in CSS pixels (default: the stage)
+                          --window <w,h>  browser size in CSS pixels (default 960,540)
   test <script.mjs>     run, then call the script's default export with the sketch
                           --headed, --window as above
   status                head, live and buildError for this sketch (--sid <id>)

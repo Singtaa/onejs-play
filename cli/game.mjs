@@ -66,13 +66,6 @@ export function entryOf(files, manifest) {
     return index.name
 }
 
-/** The stage the container is told about, in the shape the sandbox document sends. */
-export function stageOf(manifest) {
-    const stage = manifest.stage ?? {}
-    const size = Array.isArray(stage.size) && stage.size.length === 2 ? stage.size : [600, 600]
-    return { size, fit: typeof stage.fit === "string" ? stage.fit : "letterbox" }
-}
-
 /**
  * esbuild, resolved from the game's own node_modules (it is a peer of this
  * package, so a game that runs `oj build` has it beside onejs-play), and

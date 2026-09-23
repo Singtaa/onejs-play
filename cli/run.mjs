@@ -8,7 +8,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { build, stageOf } from "./game.mjs"
+import { build } from "./game.mjs"
 import { ensureRuntime, serve } from "./local.mjs"
 import { launch } from "./chrome.mjs"
 import { siteOrigin, version } from "./site.mjs"
@@ -19,12 +19,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // normal traffic, and every harness on the site filters it.
 const NOISE = /Property not found/
 
+/** The browser window a game runs in when the command does not say. */
+const DEFAULT_WINDOW = [960, 540]
+
 /**
  * The running game.
  *
- * Positions are stage units, the coordinates the game lays itself out in,
- * unless a method says otherwise: a script written against a 600x600 stage
- * should not know or care how the window letterboxed it.
+ * Positions are stage pixels, which are CSS pixels of the page: the stage is
+ * the window, so a point a game lays something out at is the point to click.
  */
 export class Game {
     constructor({ root, browser, server, manifest, say }) {
@@ -96,23 +98,13 @@ export class Game {
         return JSON.parse(out)
     }
 
-    /** The stage layout the container is presenting: size, fit, scale and offset in the viewport. */
-    async layout() {
-        const text = await this.eval("JSON.stringify(__ojPlay.runtime.oj.stage)")
-        const layout = JSON.parse(text)
-        // The container lays out in CSS pixels of the canvas, which fills the
-        // window, so a viewport point is a page point.
-        return layout
-    }
-
-    /** A stage point as a page point. */
-    async at(x, y) {
-        const l = await this.layout()
-        return { x: x * l.scaleX + l.offsetX, y: y * l.scaleY + l.offsetY }
+    /** The stage the game sees: `{ width, height }`, the window in CSS pixels. */
+    async stage() {
+        return JSON.parse(await this.eval("JSON.stringify(__ojPlay.runtime.oj.stage)"))
     }
 
     async move(x, y, steps = 6) {
-        const to = await this.at(x, y)
+        const to = { x, y }
         const from = this.pointer ?? to
         for (let i = 1; i <= steps; i++) {
             await this.browser.mouse("mouseMoved", from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps)
@@ -123,7 +115,7 @@ export class Game {
 
     /** Presses and releases at a stage point. */
     async click(x, y) {
-        const p = await this.at(x, y)
+        const p = { x, y }
         await this.browser.mouse("mouseMoved", p.x, p.y)
         await this.browser.mouse("mousePressed", p.x, p.y)
         await sleep(70)
@@ -133,8 +125,8 @@ export class Game {
 
     /** Presses a stage point, drags to another over `steps` moves, releases. */
     async drag(x1, y1, x2, y2, steps = 8) {
-        const a = await this.at(x1, y1)
-        const b = await this.at(x2, y2)
+        const a = { x: x1, y: y1 }
+        const b = { x: x2, y: y2 }
         await this.browser.mouse("mouseMoved", a.x, a.y)
         await this.browser.mouse("mousePressed", a.x, a.y)
         this.browser.down = true
@@ -205,15 +197,14 @@ export async function start(root, { headless = true, window: size, runtime: pinn
     const runtime = await ensureRuntime(site, runtimeVersion, say)
     say(`runtime ${runtimeVersion}`)
 
-    const stage = stageOf(built.manifest)
-    const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion, stage }
+    const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion }
     const server = await serve({ runtime, root, manifest, bundle: () => server.bundle })
     server.bundle = built.code
     say(`serving ${server.url}`)
 
     let browser
     try {
-        browser = await launch({ headless, window: size ?? (stage.fit === "fluid" ? [960, 540] : stage.size), say })
+        browser = await launch({ headless, window: size ?? DEFAULT_WINDOW, say })
     } catch (error) {
         server.close()
         throw error

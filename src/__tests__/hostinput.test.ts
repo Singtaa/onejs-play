@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { createHostInputBackend } from "../hostinput"
-import { computeStageLayout, normalizeStage } from "../stage"
+import { stageOf } from "../stage"
 
 /**
  * The backend an ejected game gets.
@@ -11,8 +11,8 @@ import { computeStageLayout, normalizeStage } from "../stage"
  * at all, and that is the one thing these cannot prove.
  */
 
-/** 800x600 logical viewport, a 400x300 stage letterboxed into the middle. */
-const layout = computeStageLayout(normalizeStage({ size: [400, 300], fit: "letterbox" }), 800, 600)
+/** An 800x600 logical window. */
+const stage = stageOf(800, 600)
 
 /** A stand-in for InputBridge, recording what was asked of it. */
 function fakeBridge(overrides: Record<string, unknown> = {}) {
@@ -38,11 +38,11 @@ function fakeBridge(overrides: Record<string, unknown> = {}) {
 }
 
 const make = (bridge: unknown, pixelRatio = 1) =>
-    createHostInputBackend({ layout: () => layout, pixelRatio: () => pixelRatio, bridge })!
+    createHostInputBackend({ stage: () => stage, pixelRatio: () => pixelRatio, bridge })!
 
 describe("createHostInputBackend", () => {
     it("returns null when there is no bridge to wrap", () => {
-        expect(createHostInputBackend({ layout: () => layout, pixelRatio: () => 1, bridge: null })).toBeNull()
+        expect(createHostInputBackend({ stage: () => stage, pixelRatio: () => 1, bridge: null })).toBeNull()
     })
 
     it("passes a keyboard call straight through, arguments and all", () => {
@@ -75,7 +75,7 @@ describe("createHostInputBackend", () => {
      */
     it("flips the vertical axis of the mouse", () => {
         const backend = make(fakeBridge({ GetMousePositionY: () => 0 })) as any
-        expect(backend.GetMousePositionY()).toBeCloseTo(layout.height, 4)
+        expect(backend.GetMousePositionY()).toBeCloseTo(stage.height, 4)
 
         const top = make(fakeBridge({ GetMousePositionY: () => 600 })) as any
         expect(top.GetMousePositionY()).toBeCloseTo(0, 4)
@@ -83,7 +83,7 @@ describe("createHostInputBackend", () => {
 
     it("converts the horizontal axis without flipping it", () => {
         const backend = make(fakeBridge({ GetMousePositionX: () => 400 })) as any
-        expect(backend.GetMousePositionX()).toBeCloseTo(layout.width / 2, 4)
+        expect(backend.GetMousePositionX()).toBeCloseTo(400, 4)
     })
 
     it("divides physical pixels down to logical ones", () => {
@@ -101,7 +101,7 @@ describe("createHostInputBackend", () => {
 
     it("flips a touch the same way it flips the mouse", () => {
         const backend = make(fakeBridge({ GetTouchPositionY: () => 0 })) as any
-        expect(backend.GetTouchPositionY(0)).toBeCloseTo(layout.height, 4)
+        expect(backend.GetTouchPositionY(0)).toBeCloseTo(stage.height, 4)
     })
 
     /**
@@ -121,27 +121,24 @@ describe("createHostInputBackend", () => {
         expect(backend.GetMouseDeltaY()).toBeLessThan(0)
     })
 
-    it("scales a movement by the stage rather than the viewport", () => {
-        const backend = make(fakeBridge({ GetMouseDeltaX: () => layout.scaleX })) as any
-        expect(backend.GetMouseDeltaX()).toBeCloseTo(1, 5)
+    it("divides a movement down to logical pixels", () => {
+        const backend = make(fakeBridge({ GetMouseDeltaX: () => 10 }), 2) as any
+        expect(backend.GetMouseDeltaX()).toBeCloseTo(5, 5)
     })
 
-    it("reads the layout fresh, so a resize needs no reinstall", () => {
-        let current = layout
+    it("reads the stage fresh, so a resize needs no reinstall", () => {
+        let current = stage
         const backend = createHostInputBackend({
-            layout: () => current,
+            stage: () => current,
             pixelRatio: () => 1,
-            // A point halfway up the screen, because the bottom edge maps to
-            // the bottom of the stage whatever the viewport is and so cannot
-            // tell one layout from another.
+            // Unity counts up from the bottom, so the same screen point sits
+            // further down a taller window.
             bridge: fakeBridge({ GetMousePositionY: () => 300 }),
         })! as any
-        expect(backend.GetMousePositionY()).toBeCloseTo(150, 4)
-
-        // Twice as tall, so the same stage is letterboxed with bars above and
-        // below and the same screen point lands somewhere else on it.
-        current = computeStageLayout(normalizeStage({ size: [400, 300], fit: "letterbox" }), 800, 1200)
         expect(backend.GetMousePositionY()).toBeCloseTo(300, 4)
+
+        current = stageOf(800, 1200)
+        expect(backend.GetMousePositionY()).toBeCloseTo(900, 4)
     })
 
     it("leaves counts and other plain numbers alone", () => {

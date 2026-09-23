@@ -19,9 +19,10 @@
  * keys because a div took focus is indistinguishable from a broken game.
  *
  * Pointer positions are measured against the target's rect and reported in CSS
- * pixels, which is the unit the container passes to setViewport. Keeping both
- * in CSS pixels is what makes toStage correct at any devicePixelRatio; mixing
- * physical pixels into one side is the classic retina offset bug.
+ * pixels, which is the unit the container passes to setViewport and the unit a
+ * pointer event carries. Keeping all of them in CSS pixels is what makes input
+ * agree with layout at any devicePixelRatio; mixing physical pixels into one
+ * side is the classic retina offset bug.
  *
  * blur and visibilitychange both release everything held. Without them,
  * alt-tabbing while holding a key leaves it held forever, because the matching

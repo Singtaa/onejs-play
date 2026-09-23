@@ -7,17 +7,17 @@
  * reconciler lives out here rather than inside the game's bundle.
  *
  * So this object has to carry everything index.ts exports, plus the four things
- * only the host knows: the root element, the current stage layout, the frame
- * clock, and the runtime version.
+ * only the host knows: the root element, the current stage, the frame clock,
+ * and the runtime version.
  *
- *     const runtime = createRuntime({ root: __root, version: "1.0.0", stage })
+ *     const runtime = createRuntime({ root: __root, version: "1.0.0", viewport })
  *     evaluateBundle(code, { oj: runtime.oj })
  *     // each frame: runtime.beginFrame(dt)
  *     // on resize:  runtime.setViewport(w, h)
  */
 
 import type * as api from "./index"
-import { computeStageLayout, type StageConfig, type StageLayout } from "./stage"
+import { stageOf, type Stage } from "./stage"
 import { createContainerInput, type ContainerInput } from "./input"
 import { setAssetBase } from "./asset"
 import { setPlayContext, type PlayContext } from "./play"
@@ -47,8 +47,8 @@ export interface HostRuntime {
     readonly version: string
     /** The root VisualElement a game renders into. */
     readonly root: unknown
-    /** The current stage layout. Recomputed when the viewport changes. */
-    readonly stage: StageLayout
+    /** The window, in logical pixels. Replaced when the viewport changes. */
+    readonly stage: Stage
     /** The frame clock. Reused: read it, do not retain it. */
     readonly time: Readonly<TimeState>
     /**
@@ -83,8 +83,6 @@ export interface RuntimeOptions {
     root: unknown
     /** The pinned runtime version, as resolved from the manifest. */
     version: string
-    /** The game's stage configuration, already normalized. */
-    stage: StageConfig
     /** Initial viewport in CSS pixels. */
     viewport?: { width: number; height: number }
     /**
@@ -108,25 +106,13 @@ export interface RuntimeOptions {
      * something is pushing DOM events into it and useless when nothing is.
      * "host" leaves the real InputBridge in place, which is what a game running
      * in an ordinary Unity project needs; standalone.ts then wraps it so the
-     * coordinates match the stage.
+     * coordinates are stage pixels rather than Unity screen space.
      *
      * Defaulting to "container" keeps the container's call unchanged. It was
      * also the bug: startStandalone calls createRuntime, so an ejected game got
      * a backend with nothing feeding it and read no input at all.
      */
     inputSource?: "container" | "host"
-    /**
-     * Applies a freshly computed layout to whatever presents the stage.
-     *
-     * The stage math lives here, but nothing in this package can act on it:
-     * scaling the panel and sizing the host element need CS access, which only
-     * the container has. Without this seam the layout was computed correctly
-     * and then thrown away, so every game rendered unscaled at 1:1 whatever
-     * stage it declared.
-     *
-     * Called once at creation and again on every viewport change.
-     */
-    onLayout?: (layout: StageLayout) => void
 }
 
 /** What the container holds. Games only ever see `oj`. */
@@ -137,7 +123,7 @@ export interface ContainerRuntime {
     readonly input: ContainerInput
     /** Advance one frame. Drives the clock, input edges and frame callbacks. */
     beginFrame(dtSeconds: number): void
-    /** Recompute the stage, and with it the pointer's logical coordinates. */
+    /** Replace the stage with a newly measured viewport. */
     setViewport(width: number, height: number): void
     /** Detach from the input module and drop frame callbacks. */
     dispose(): void
@@ -164,23 +150,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     setPlayContext(options.play ?? null)
 
     const time: TimeState = { now: 0, dt: 0, frame: 0 }
-    let layout = computeStageLayout(
-        options.stage,
-        options.viewport?.width ?? options.stage.width,
-        options.viewport?.height ?? options.stage.height,
-    )
-    input.setStageLayout(layout)
-
-    /** Reports a layout without letting a throwing presenter kill the load. */
-    const present = () => {
-        if (options.onLayout === undefined) return
-        try {
-            options.onLayout(layout)
-        } catch (error) {
-            console.error("[oj] stage presenter failed:", error)
-        }
-    }
-    present()
+    let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0)
 
     const callbacks = new Set<(dt: number) => void>()
 
@@ -189,7 +159,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         version: options.version,
         root: options.root,
         get stage() {
-            return layout
+            return stage
         },
         get time() {
             return time
@@ -225,9 +195,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         },
 
         setViewport(width: number, height: number) {
-            layout = computeStageLayout(options.stage, width, height)
-            input.setStageLayout(layout)
-            present()
+            stage = stageOf(width, height)
         },
 
         dispose() {

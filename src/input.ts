@@ -25,8 +25,9 @@
  *    KeyboardEvent.code and MouseEvent.button; queries arrive as Unity key
  *    names and Unity button bits. Translation happens once, on ingestion.
  *
- * 3. Mouse position is reported in logical stage units, not viewport pixels,
- *    so a game laid out in its own coordinate space hits its own hitboxes.
+ * 3. Positions are reported as the adapter delivers them: CSS pixels of the
+ *    canvas, which are the stage's logical pixels, the same numbers a pointer
+ *    event carries.
  *
  * 4. Events are queued and applied at the frame boundary, not when they arrive.
  *    A browser delivers a keydown whenever it likes, including between frames.
@@ -37,7 +38,6 @@
  */
 
 import { keyNameFromDomCode, resolveKeyName, type InputBackend } from "onejs-unity/input"
-import { toStage, type StageLayout } from "./stage"
 
 /** Modifier bits, matching InputBridge.GetModifiers. */
 const MOD_SHIFT = 1
@@ -131,8 +131,6 @@ export interface ContainerInput {
     readonly backend: InputBackend
     /** Call once per frame, before game logic. */
     beginFrame(): void
-    /** Keeps mouse coordinates in logical units as the viewport changes. */
-    setStageLayout(layout: StageLayout | null): void
     /** Clears everything. For hot reload and game restart. */
     reset(): void
 }
@@ -151,11 +149,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     /** Events waiting for the next frame boundary. See note 4 above. */
     private _queue: Array<() => void> = []
 
-    private _stage: StageLayout | null = null
-    private _viewportX = 0
-    private _viewportY = 0
-    private _stageX = 0
-    private _stageY = 0
+    private _pointerX = 0
+    private _pointerY = 0
 
     // Movement and scroll accumulate between frames, then read as one delta.
     private _accumDeltaX = 0
@@ -246,11 +241,10 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     }
 
     private _applyPointerMove(viewportX: number, viewportY: number): void {
-        this._accumDeltaX += viewportX - this._viewportX
-        this._accumDeltaY += viewportY - this._viewportY
-        this._viewportX = viewportX
-        this._viewportY = viewportY
-        this._syncPointer()
+        this._accumDeltaX += viewportX - this._pointerX
+        this._accumDeltaY += viewportY - this._pointerY
+        this._pointerX = viewportX
+        this._pointerY = viewportY
     }
 
     private _applyPointerButton(button: number, down: boolean, viewportX?: number, viewportY?: number): void {
@@ -272,7 +266,6 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     private _applyTouchDown(pointerId: number, viewportX: number, viewportY: number): void {
         if (this._findTouch(pointerId) !== undefined) return
-        const p = this._toStage(viewportX, viewportY)
         // Smallest free index, so lifting one finger and putting it back down
         // reuses the id a game may already have keyed state to, which is what
         // Unity does.
@@ -280,7 +273,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         while (this._touches.some((t) => t.fingerId === fingerId)) fingerId++
         this._touches.push({
             fingerId, pointerId,
-            x: p.x, y: p.y, prevX: p.x, prevY: p.y, deltaX: 0, deltaY: 0,
+            x: viewportX, y: viewportY, prevX: viewportX, prevY: viewportY, deltaX: 0, deltaY: 0,
             phase: PHASE_BEGAN, beganFrame: this._frame, endedFrame: -1, canceled: false,
         })
     }
@@ -288,17 +281,15 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _applyTouchMove(pointerId: number, viewportX: number, viewportY: number): void {
         const touch = this._findTouch(pointerId)
         if (touch === undefined || touch.endedFrame !== -1) return
-        const p = this._toStage(viewportX, viewportY)
-        touch.x = p.x
-        touch.y = p.y
+        touch.x = viewportX
+        touch.y = viewportY
     }
 
     private _applyTouchUp(pointerId: number, viewportX: number, viewportY: number, canceled: boolean): void {
         const touch = this._findTouch(pointerId)
         if (touch === undefined || touch.endedFrame !== -1) return
-        const p = this._toStage(viewportX, viewportY)
-        touch.x = p.x
-        touch.y = p.y
+        touch.x = viewportX
+        touch.y = viewportY
         touch.canceled = canceled
         // A tap shorter than a frame arrives with its down and its up in the
         // same drain. Reporting it as ended straight away would mean a game
@@ -349,11 +340,6 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._advanceTouches()
     }
 
-    setStageLayout(layout: StageLayout | null): void {
-        this._stage = layout
-        this._syncPointer()
-    }
-
     reset(): void {
         this._queue = []
         this._touches = []
@@ -364,10 +350,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._buttons = 0
         this._buttonDownFrame.fill(-1)
         this._buttonUpFrame.fill(-1)
-        this._viewportX = 0
-        this._viewportY = 0
-        this._stageX = 0
-        this._stageY = 0
+        this._pointerX = 0
+        this._pointerY = 0
         this._accumDeltaX = 0
         this._accumDeltaY = 0
         this._deltaX = 0
@@ -389,8 +373,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             GetAnyKeyPressed: () => this._lastPressFrame === this._frame,
             GetModifiers: () => this._modifiers,
 
-            GetMousePositionX: () => this._stageX,
-            GetMousePositionY: () => this._stageY,
+            GetMousePositionX: () => this._pointerX,
+            GetMousePositionY: () => this._pointerY,
             GetMouseDeltaX: () => this._deltaX,
             GetMouseDeltaY: () => this._deltaY,
             GetScrollX: () => this._scrollX,
@@ -449,17 +433,6 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             if (frames[bit] === this._frame) mask |= 1 << bit
         }
         return mask
-    }
-
-    private _toStage(viewportX: number, viewportY: number): { x: number; y: number } {
-        if (this._stage === null) return { x: viewportX, y: viewportY }
-        return toStage(this._stage, viewportX, viewportY)
-    }
-
-    private _syncPointer(): void {
-        const p = this._toStage(this._viewportX, this._viewportY)
-        this._stageX = p.x
-        this._stageY = p.y
     }
 
     /**

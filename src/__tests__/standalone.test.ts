@@ -49,22 +49,21 @@ afterEach(() => {
 describe("startStandalone", () => {
     it("installs a runtime, so a game written for the container runs unchanged", () => {
         expect(getCurrentRuntime()).toBeNull()
-        const runtime = startStandalone({ size: [600, 760], fit: "letterbox" })
+        const runtime = startStandalone()
         expect(getCurrentRuntime()).toBe(runtime.oj)
-        expect(runtime.oj.stage.width).toBe(600)
-        expect(runtime.oj.stage.height).toBe(760)
+        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800 })
     })
 
-    it("scales the panel so the declared stage fills the window", () => {
-        startStandalone({ size: [600, 760], fit: "letterbox" })
-        // 600x760 letterboxed into 1280x800: scale is 800/760.
-        expect(host.panelSettings.scale).toBeCloseTo(800 / 760, 6)
+    it("scales the panel by the pixel ratio, so one logical pixel is one CSS pixel", () => {
+        startStandalone()
+        expect(host.panelSettings.scale).toBe(1)
     })
 
     it("accounts for device pixel ratio, so a retina window is not half size", () => {
         host = fakeHost({ width: 1280, height: 800, dpr: 2 })
-        startStandalone({ size: [600, 760], fit: "letterbox" })
-        expect(host.panelSettings.scale).toBeCloseTo((800 / 760) * 2, 6)
+        const runtime = startStandalone()
+        expect(host.panelSettings.scale).toBe(2)
+        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800 })
     })
 
     it("advances the frame clock", () => {
@@ -76,29 +75,27 @@ describe("startStandalone", () => {
         expect(runtime.oj.time.dt).toBeCloseTo(0.016, 3)
     })
 
-    it("re-fits when the window changes, without being told", () => {
-        const runtime = startStandalone({ size: [600, 760], fit: "letterbox" })
+    it("follows the window when it changes, without being told", () => {
+        const runtime = startStandalone()
         host.step(0)
-        const before = runtime.oj.stage.scale
         host.resize(2000, 1400)
         host.step(16)
-        expect(runtime.oj.stage.scale).not.toBeCloseTo(before, 6)
-        expect(runtime.oj.stage.scale).toBeCloseTo(1400 / 760, 6)
+        expect(runtime.oj.stage).toEqual({ width: 2000, height: 1400 })
     })
 
-    it("re-fits when the window moves to a display of a different density", () => {
-        startStandalone({ size: [600, 760], fit: "letterbox" })
+    it("rescales the panel when the window moves to a display of a different density", () => {
+        const runtime = startStandalone()
         host.step(0)
-        const before = host.panelSettings.scale
         host.resize(1280, 800, 2)
         host.step(16)
-        expect(host.panelSettings.scale).toBeCloseTo(before * 2, 6)
+        expect(host.panelSettings.scale).toBe(2)
+        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800 })
     })
 
     it("never hands the panel a scale it treats as blank", () => {
         // ResolveScale returns 0 for a non-positive scale, which blanks the panel.
-        host = fakeHost({ width: 0, height: 0 })
-        startStandalone({ size: [600, 760], fit: "letterbox" })
+        host = fakeHost({ width: 0, height: 0, dpr: 0 })
+        startStandalone()
         expect(host.panelSettings.scale).toBeGreaterThan(0)
     })
 

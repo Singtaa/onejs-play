@@ -50,15 +50,7 @@
 
 // MARK: stage
 
-export {
-    normalizeStage,
-    computeStageLayout,
-    toStage,
-    fromStage,
-    DEFAULT_STAGE_WIDTH,
-    DEFAULT_STAGE_HEIGHT,
-} from "./stage"
-export type { StageFit, StageInput, StageConfig, StageLayout, StageRect } from "./stage"
+export type { Stage } from "./stage"
 
 // MARK: entry point and frame clock
 

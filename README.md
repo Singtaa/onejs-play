@@ -22,7 +22,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `mount.ts` | `mount()` and `useStage()` |
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
-| `stage.ts` | Logical coordinate space and how it maps to the viewport |
+| `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
 | `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`: a game's own files |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
@@ -75,26 +75,40 @@ Re-verify with the same tool when bumping Unity versions.
 
 ## The stage
 
-960x540 letterboxed is the default, not a constraint. A game picks its own
-logical size and its own fit:
+The stage is the window, in logical pixels, and `useStage()` returns its
+`{ width, height }`, re-rendering when it changes. There is no fixed logical
+size and no fit: UI Toolkit is the renderer, so a game lays itself out against
+the window and reflows, the way a page does. An `oj.json` `stage` block is no
+longer read.
 
-| `fit` | Behaviour |
-|---|---|
-| `letterbox` | Preserve aspect, bars fill the remainder. Default. |
-| `cover` | Preserve aspect, crop the overflow. |
-| `stretch` | Ignore aspect, fill exactly. |
-| `fluid` | No fixed stage. `oj.stage` tracks the viewport in logical pixels. |
+A game that wants a fixed board builds one in its own code: a fixed-size View
+with `scale` set to fit the window, centred.
 
-`fluid` matters more than it looks. UI Toolkit is the renderer, so many games in
-this lane are responsive apps (cards, incrementals, builders) that want to
-reflow rather than scale.
+```tsx
+const W = 960, H = 540
 
-Fullscreen is orthogonal. It changes how many pixels are available; the fit
-still applies. The host page owns the Fullscreen API call so the user gesture
-and the Permissions Policy stay on its side of the iframe boundary.
+function useBoard() {
+    const { width, height } = useStage()
+    const scale = Math.min(width / W, height / H)
+    const left = (width - W * scale) / 2, top = (height - H * scale) / 2
+    return {
+        scale,
+        style: { position: "absolute", left: (width - W) / 2, top: (height - H) / 2, width: W, height: H, scale } as const,
+        toBoard: (p: { x: number; y: number }) => ({ x: (p.x - left) / scale, y: (p.y - top) / scale }),
+    }
+}
+```
 
-Pointer positions are always reported in logical units. `toStage` is that
-conversion, and `input` applies it.
+UI Toolkit picks through the scale, so handlers on elements inside the board
+need nothing. Anything reported in window pixels (`e.x`, `input.mouse.position`,
+touch positions) goes through `toBoard`; `localX` and deltas divide by `scale`.
+Measured in the real container at four window sizes, scales 0.41 to 1.33, with
+every click landing in the right cell.
+
+Logical pixels are CSS pixels: the container scales the panel by
+devicePixelRatio, and nothing else. Fullscreen changes how many pixels there
+are. The host page owns the Fullscreen API call so the user gesture and the
+Permissions Policy stay on its side of the iframe boundary.
 
 ## Input
 
@@ -105,7 +119,7 @@ normal OneJS project uses, so game code reads identically here and after eject.
 import { input } from "oj"
 
 if (input.keyboard.wasKeyPressed("Space")) jump()
-const p = input.mouse.position     // logical stage units
+const p = input.mouse.position     // stage pixels, as a pointer event reports them
 ```
 
 That module normally reads UnityEngine's InputBridge through `CS`, which the
@@ -115,24 +129,21 @@ onejs-unity's `setInputBackend`. One API, one implementation, a swappable
 source. Writing a second input API here would have been the maintenance
 nightmare in miniature.
 
-**Read the pointer through `input`, not through React's pointer events.** The
-two do not report the same numbers, and nothing warns you:
+**Pointer events and `input` report the same numbers.**
 
 | | Reports |
 |---|---|
-| `input.mouse.position`, `input.touches[n].position` | logical stage units |
-| `onPointerDown` and friends: `x`, `y` | **panel** pixels |
+| `input.mouse.position`, `input.touches[n].position` | stage pixels |
+| `onPointerDown` and friends: `x`, `y` | stage pixels |
 | `onPointerDown` and friends: `localX`, `localY` | relative to the element the handler is on |
 
-A letterboxed stage offsets one from the other, so hit testing against a layout
-written in stage units silently misses by the size of the bars. `localX` and
-`localY` are in neither space and are what a handler hit testing against its
-own box wants; they come off the synthetic event's prototype in the OneJS
-bootstrap and read `worldBound` on first use, so a handler that never asks
-pays nothing. Before they existed, a handler typed as `any` accepted `localX`
-happily and got `undefined`: Patience shipped with every card unclickable
-because of exactly that. Its `ChangeEventData` sibling carries `value`, not
-`newValue`, which broke every slider in Particle Lab the same way.
+`localX` and `localY` are what a handler hit testing against its own box
+wants; they come off the synthetic event's prototype in the OneJS bootstrap and
+read `worldBound` on first use, so a handler that never asks pays nothing.
+Before they existed, a handler typed as `any` accepted `localX` happily and got
+`undefined`: Patience shipped with every card unclickable because of exactly
+that. Its `ChangeEventData` sibling carries `value`, not `newValue`, which
+broke every slider in Particle Lab the same way.
 
 Reading through `input` also gets touch for free, since the same code sees
 `input.touches`. A swipe is `useSwipe(onSwipe)` from `gesture.ts`: it follows
@@ -149,8 +160,8 @@ closure for the life of the component, and every game with a slider ended up
 mirroring its state into a ref to get around it.
 
 **Breakpoints describe the stage.** `mount()` wraps the game in a
-`ScreenProvider` sized from the stage layout, so `useBreakpoint` and friends
-answer for the box the game was fitted into rather than the panel around it.
+`ScreenProvider` sized from the stage, so `useBreakpoint` and friends work in a
+game with no setup.
 
 ### A pointer used to be wrong after an eject
 
@@ -167,7 +178,7 @@ its intent and not its behaviour.
 Installing nothing would have been half a fix. onejs-unity then falls through to
 the real `InputBridge`, so input works, and reports Unity screen space:
 **physical pixels, origin at the bottom left, y counting up**, against a game
-laid out in stage units from the top left with y counting down. Three
+laid out in logical pixels from the top left with y counting down. Two
 differences at once, and the flipped axis reads as a haunting rather than a bug.
 
 So `hostinput.ts` wraps the real bridge rather than replacing it. Keyboard,
@@ -434,7 +445,7 @@ milliseconds.
 
 **`oj test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
-`drag()`, `move()` in stage units, `press("KeyA")`, `type("crane")`,
+`drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`, `type("crane")`,
 `until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`, and
 `errors`. A thrown error fails the run, and so does a console error; a
 screenshot lands in `.oj/` either way. `examples/wordie/playtest.mjs` is the one to
@@ -486,11 +497,6 @@ pressed.
 
 **Key names are DOM `KeyboardEvent.code` values**, not Unity `KeyCode`. They are
 layout-independent, so WASD stays the same physical three-key row on AZERTY.
-
-**Cropping is decided in pixel space against a tolerance.** Float error in
-`(viewport - size * scale)` makes an exactly-fitting letterbox look a hair
-cropped, which would make `visible.x > 0` true for every game. See
-`visibleAxis` in `stage.ts`.
 
 **`random` ranges are max-exclusive for both ints and floats**, unlike
 `UnityEngine.Random`, which is exclusive for ints and inclusive for floats.

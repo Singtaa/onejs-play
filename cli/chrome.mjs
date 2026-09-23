@@ -95,7 +95,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     const browser = new Browser(child, profile, page)
     await browser.open()
     // --window-size is the window; headless Chrome keeps a toolbar's worth of
-    // it for itself, and a 600x600 stage came back as a 600x457 viewport. The
+    // it for itself, and a 600x600 window came back as a 600x457 viewport. The
     // viewport is what the game measures, so it is set here, exactly.
     if (headless) {
         await browser.send("Emulation.setDeviceMetricsOverride", { width: window[0], height: window[1], deviceScaleFactor: 1, mobile: false })

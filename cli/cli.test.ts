@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
-import { build, entryOf, manifestOf, readTree, stageOf } from "./game.mjs"
+import { build, entryOf, manifestOf, readTree } from "./game.mjs"
 import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
 import { keyOf } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
@@ -47,11 +47,6 @@ describe("the tree the site would build", () => {
 
     it("refuses a manifest that is not JSON rather than treating it as empty", () => {
         expect(() => manifestOf([{ name: "oj.json", text: "{" }])).toThrow(/oj\.json/)
-    })
-
-    it("shapes the stage the way the sandbox document sends it", () => {
-        expect(stageOf({})).toEqual({ size: [600, 600], fit: "letterbox" })
-        expect(stageOf({ stage: { size: [960, 540], fit: "fluid" } })).toEqual({ size: [960, 540], fit: "fluid" })
     })
 })
 
@@ -183,7 +178,7 @@ describe("the boot both documents inline", () => {
     it("loads the runtime from the prefix, hands the manifest to the container and reports through the caller's function", () => {
         const script = containerBoot({
             runtime: "https://play.example.test/runtime/1.0.0",
-            manifest: { name: "Pop", runtime: "1.0.0", stage: { size: [600, 600], fit: "letterbox" } },
+            manifest: { name: "Pop", runtime: "1.0.0" },
             bundle: "function bundle() { return Promise.resolve(\"var __exports = {}\") }",
             report: "function report(type, payload) { globalThis.reported = [type, payload] }",
         })

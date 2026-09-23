@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { setInputBackend, input } from "onejs-unity/input"
 import { createContainerInput, type ContainerInput } from "../input"
-import { computeStageLayout, normalizeStage } from "../stage"
 
 const make = () => createContainerInput()
 const tick = (c: ContainerInput) => { c.beginFrame(); return c }
@@ -109,17 +108,12 @@ describe("touches", () => {
         expect(b(c).GetTouchCount()).toBe(0)
     })
 
-    it("reports touches in stage units, as it does the pointer", () => {
-        const c = make()
-        const stage = normalizeStage({ size: [600, 300], fit: "letterbox" })
-        c.setStageLayout(computeStageLayout(stage, 1200, 600))
-        tick(c)
+    it("reports touches in the pixels they arrived in, as it does the pointer", () => {
+        const c = tick(make())
         c.sink.touchDown(2, 600, 300)
         deliver(c)
-        // Halfway across a viewport twice the stage's size is halfway across
-        // the stage, whatever the letterboxing did.
-        expect(b(c).GetTouchPositionX(0)).toBeCloseTo(300, 0)
-        expect(b(c).GetTouchPositionY(0)).toBeCloseTo(150, 0)
+        expect(b(c).GetTouchPositionX(0)).toBe(600)
+        expect(b(c).GetTouchPositionY(0)).toBe(300)
     })
 
     it("answers none when nothing is touching", () => {
@@ -344,36 +338,15 @@ describe("mouse buttons", () => {
 })
 
 describe("mouse position, delta and scroll", () => {
-    const layout = () => computeStageLayout(normalizeStage({ size: [960, 540], fit: "letterbox" }), 1920, 540)
 
-    it("passes viewport coordinates through with no stage", () => {
+    // The same numbers a pointer event carries: a game lays itself out in
+    // those, so anything else would miss every hitbox.
+    it("passes viewport coordinates through unchanged", () => {
         const c = tick(make())
         c.sink.pointerMove(100, 50)
         deliver(c)
         expect(b(c).GetMousePositionX()).toBe(100)
         expect(b(c).GetMousePositionY()).toBe(50)
-    })
-
-    // A game lays itself out in logical units, so a pointer in device pixels
-    // would miss every hitbox.
-    it("reports logical stage units once a layout is set", () => {
-        const c = make()
-        c.setStageLayout(layout())
-        tick(c)
-        c.sink.pointerMove(960, 270)
-        deliver(c)
-        expect(b(c).GetMousePositionX()).toBeCloseTo(480, 6)
-        expect(b(c).GetMousePositionY()).toBeCloseTo(270, 6)
-    })
-
-    it("re-converts the last position when the layout changes", () => {
-        const c = make()
-        c.setStageLayout(layout())
-        tick(c)
-        c.sink.pointerMove(960, 270)
-        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540], fit: "letterbox" }), 960, 540))
-        deliver(c)
-        expect(b(c).GetMousePositionX()).toBeCloseTo(960, 6)
     })
 
     it("accumulates delta between frames and clears it at the boundary", () => {
@@ -461,14 +434,13 @@ describe("through onejs-unity's public input API", () => {
         expect(input.keyboard.ctrl).toBe(false)
     })
 
-    it("answers mouse queries in stage units", () => {
+    it("answers mouse queries through the backend", () => {
         const c = make()
-        c.setStageLayout(computeStageLayout(normalizeStage({ size: [960, 540], fit: "letterbox" }), 1920, 540))
         setInputBackend(c.backend)
         tick(c)
         c.sink.pointerMove(960, 270)
         deliver(c)
-        expect(input.mouse.position.x).toBeCloseTo(480, 6)
+        expect(input.mouse.position.x).toBe(960)
     })
 
     it("reads no gamepad as absent rather than as an error", () => {

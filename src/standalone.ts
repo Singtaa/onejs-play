@@ -14,16 +14,15 @@
  *     own project, and taking CS away from them there would be pure obstruction.
  *   - Input comes from the real InputBridge rather than the browser adapter,
  *     which is the better source here: it sees gamepads and touches no browser
- *     event could supply. Its pointer coordinates are converted to stage units
+ *     event could supply. Its pointer coordinates are converted to stage pixels
  *     on the way through, because Unity reports screen space from the bottom
  *     left and a game lays itself out from the top left. See hostinput.ts.
  *
  * What it keeps is the part a game depends on: the frame clock, the stage, and
- * the panel scaling that makes a declared stage fill the window.
+ * the panel scaling that makes one logical pixel one CSS pixel.
  */
 
 import { createRuntime, getCurrentRuntime, type ContainerRuntime } from "./runtime"
-import { normalizeStage, type StageInput, type StageLayout } from "./stage"
 import { createHostInputBackend } from "./hostinput"
 import { setInputBackend } from "onejs-unity/input"
 
@@ -89,12 +88,12 @@ function viewport(): { width: number; height: number } | undefined {
     return undefined
 }
 
-/** Applies a layout by scaling the panel. See mount() for the contract. */
-function present(layout: StageLayout) {
+/** Scales the panel so one logical pixel is one CSS pixel. See mount() for the contract. */
+function applyPixelRatio() {
     const settings = panelSettings()
     if (settings === null) return
-    const scale = layout.scale * pixelRatio()
     // ResolveScale returns 0 for a non-positive scale, which blanks the panel.
+    const scale = pixelRatio()
     settings.scale = Number.isFinite(scale) && scale > 0 ? scale : 1
 }
 
@@ -104,7 +103,7 @@ function present(layout: StageLayout) {
  * Idempotent: a second mount() in the same project joins the first rather than
  * replacing it, which is what a hot reload looks like from here.
  */
-export function startStandalone(stage?: StageInput): ContainerRuntime {
+export function startStandalone(): ContainerRuntime {
     const existing = getCurrentRuntime()
     if (existing !== null && standalone !== null) return standalone
 
@@ -112,18 +111,17 @@ export function startStandalone(stage?: StageInput): ContainerRuntime {
     standalone = createRuntime({
         root: hostRoot(),
         version: "standalone",
-        stage: normalizeStage(stage),
         viewport: size,
-        onLayout: present,
         inputSource: "host",
     })
+    applyPixelRatio()
 
     /**
      * The real bridge, with its pointer coordinates converted.
      *
      * Installed after createRuntime rather than inside it, because the wrapper
-     * needs a layout to convert against and the layout is what createRuntime
-     * produces. The layout is read fresh on every call, so a window resize is
+     * needs a stage to convert against and the stage is what createRuntime
+     * produces. The stage is read fresh on every call, so a window resize is
      * picked up without reinstalling anything.
      *
      * Nothing is installed when there is no bridge to wrap: onejs-unity then
@@ -131,7 +129,7 @@ export function startStandalone(stage?: StageInput): ContainerRuntime {
      * than anything this file could invent.
      */
     const hostInput = createHostInputBackend({
-        layout: () => standalone!.oj.stage,
+        stage: () => standalone!.oj.stage,
         pixelRatio,
     })
     if (hostInput !== null) setInputBackend(hostInput)
@@ -149,11 +147,12 @@ export function startStandalone(stage?: StageInput): ContainerRuntime {
 
         // Polled rather than driven by an event: nothing here can see a Unity
         // window resize or a window moving between displays of different
-        // density, and a stage that only re-fits on request is usually wrong.
+        // density, and a stage that only updates on request is usually wrong.
         const current = viewport()
         const dpr = pixelRatio()
         if (current !== undefined &&
             (current.width !== last.width || current.height !== last.height || dpr !== last.dpr)) {
+            if (dpr !== last.dpr) applyPixelRatio()
             last = { width: current.width, height: current.height, dpr }
             standalone.setViewport(current.width, current.height)
         }

@@ -92,10 +92,13 @@ describe("container surface", () => {
         expect("useVectorContent" in oj).toBe(false)
     })
 
-    it("exposes the stage helpers", () => {
-        expect(oj.DEFAULT_STAGE_WIDTH).toBe(960)
-        expect(oj.DEFAULT_STAGE_HEIGHT).toBe(540)
-        expect(typeof oj.computeStageLayout).toBe("function")
+    // The stage is the window. A fixed board is a scaled View in the game's
+    // own code, so none of the fit machinery is reachable any more.
+    it("exposes useStage and none of the removed fit machinery", () => {
+        expect(typeof oj.useStage).toBe("function")
+        for (const name of ["normalizeStage", "computeStageLayout", "toStage", "fromStage", "DEFAULT_STAGE_WIDTH", "DEFAULT_STAGE_HEIGHT"]) {
+            expect(name in oj).toBe(false)
+        }
     })
 
     it("exposes the components a game renders with", () => {

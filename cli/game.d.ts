@@ -23,8 +23,6 @@ export function manifestOf(files: GameFile[]): Record<string, unknown>
 /** The file a game builds from: the manifest's entry, or index.tsx. */
 export function entryOf(files: GameFile[], manifest?: Record<string, unknown>): string
 
-/** The stage a game declares, with the defaults filled in. */
-export function stageOf(manifest: Record<string, unknown>): { size: [number, number]; fit: string }
 
 /** Builds a game folder with the same builder the site runs on publish. */
 export function build(root: string, options?: { entry?: string }): Promise<{

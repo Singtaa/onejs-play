@@ -1,319 +1,79 @@
 /**
- * The stage: how a game's logical coordinate space maps onto whatever pixels
- * the player's window happens to give it.
+ * The stage: the window a game draws into, in logical pixels.
  *
- * THE DEFAULT IS fluid: a game that says nothing about its stage gets the
- * viewport, in logical pixels, and re-renders when it changes. UI Toolkit is
- * the renderer, so a good share of games in this lane are responsive apps
- * (cards, incrementals, builders) rather than fixed arcade screens, and those
- * want to reflow, not scale. It used to default to letterbox at 960x540,
- * which made every one of them a fixed screen unless its author knew to say
- * otherwise.
+ * There is no fixed logical space and no fit. UI Toolkit is the renderer, so
+ * a game lays itself out against the window and reflows when it changes, the
+ * way a page does. A game that wants a fixed board (an arcade screen, a card
+ * table) builds one in its own code: a fixed-size View with `scale` set to fit
+ * the window, which UI Toolkit picks through, so its handlers need nothing.
  *
- * A fixed logical space is still what lets an author lay a game out once
- * instead of solving responsive design, and it is one line away. A game picks
- * its own size, and picks how that size is fitted:
+ * Logical pixels are CSS pixels. The container scales the panel by
+ * devicePixelRatio, so one logical pixel is exactly one CSS pixel, and pointer
+ * positions, input positions and layout all share that one space.
  *
- *     fluid       no fixed stage; the stage is the viewport in logical pixels (default)
- *     letterbox   preserve aspect, bars fill the remainder
- *     cover       preserve aspect, crop the overflow
- *     stretch     ignore aspect, fill exactly
- *
- * DEFAULT_STAGE_WIDTH and DEFAULT_STAGE_HEIGHT are still 960x540 and are still
- * what an undeclared size becomes. Under fluid nothing reads them; they are
- * what the stage is the moment somebody sets a fixed fit without a size.
- *
- * Fullscreen is orthogonal to all of it. It changes how many pixels are
- * available; the fit still applies. The host page owns the Fullscreen API call
- * so the user gesture and the Permissions Policy stay on its side of the iframe
- * boundary, and the game asks for it over postMessage.
- *
- * Pointer positions are always reported to games in logical units. toStage is
- * that conversion and it is the reason every layout here also carries scaleX,
- * scaleY and the offsets.
+ * Fullscreen changes how many pixels there are and nothing else. The host page
+ * owns the Fullscreen API call so the user gesture and the Permissions Policy
+ * stay on its side of the iframe boundary, and the game asks for it over
+ * postMessage.
  */
 
-export type StageFit = "letterbox" | "cover" | "stretch" | "fluid"
-
-const FITS: readonly StageFit[] = ["letterbox", "cover", "stretch", "fluid"]
-
-export const DEFAULT_STAGE_WIDTH = 960
-export const DEFAULT_STAGE_HEIGHT = 540
-/** What a game that says nothing about its stage gets: the viewport. */
-export const DEFAULT_STAGE_FIT: StageFit = "fluid"
-/** Dark enough to sit behind anything without competing with it. */
-export const DEFAULT_STAGE_MATTE = "#14181d"
-
-/** Loose stage input, as it appears in oj.json. */
-export interface StageInput {
-    /** Sugar for width and height together. */
-    size?: readonly [number, number]
-    width?: number
-    height?: number
-    fit?: StageFit
-    /**
-     * Snap the scale to a whole number so texel grids stay aligned. Floors for
-     * letterbox (never below 1) and ceils for cover, so coverage is preserved.
-     * Ignored for stretch and fluid, which have no single uniform scale.
-     */
-    pixelPerfect?: boolean
-    /**
-     * What fills the space around a letterboxed stage.
-     *
-     * Painted by the UI, deliberately. The engine offers two lower-level ways
-     * to clear a background, a camera and PanelSettings.colorClearValue, and
-     * both write the value straight into the framebuffer without the sRGB
-     * conversion the UI colour pipeline applies. In a linear-colour project
-     * that turns #14181d into #4f565f, measured, which is the kind of bug that
-     * looks like a design choice. A colour on an element cannot drift that way.
-     */
-    matte?: string
-}
-
-/** A validated stage configuration. Every field is resolved. */
-export interface StageConfig {
-    width: number
-    height: number
-    fit: StageFit
-    pixelPerfect: boolean
-    matte: string
-}
-
-/** A rectangle in logical stage units. */
-export interface StageRect {
-    x: number
-    y: number
+/** The window, in logical pixels. */
+export interface Stage {
     width: number
     height: number
 }
 
-/** The resolved mapping from logical units to viewport pixels. */
-export interface StageLayout {
-    /**
-     * The fit this layout came from.
-     *
-     * Carried rather than re-derived: a presenter has to treat stretch
-     * differently from letterbox, and inferring it from scaleX !== scaleY is
-     * wrong the moment a stretched stage happens to match the viewport aspect.
-     */
-    fit: StageFit
-    /** What fills the space around the stage. See StageInput.matte. */
-    matte: string
-    /** Logical width the game should draw into. Tracks the viewport when fluid. */
-    width: number
-    /** Logical height. */
-    height: number
-    /**
-     * Conservative uniform scale in pixels per logical unit, useful for picking
-     * crisp font sizes. Under stretch this is the smaller of the two axes, so
-     * prefer scaleX and scaleY there.
-     */
-    scale: number
-    scaleX: number
-    scaleY: number
-    /** Where the stage origin sits in viewport pixels. Negative when cropped. */
-    offsetX: number
-    offsetY: number
-    /** The part of the logical stage actually on screen. The whole stage unless cropped. */
-    visible: StageRect
-    viewportWidth: number
-    viewportHeight: number
-}
+/**
+ * What the stage is before anything has been measured.
+ *
+ * UI Toolkit reports nothing on the frames before its first layout, and a zero
+ * size divided through by a game seeds NaN into every coordinate downstream.
+ */
+const UNMEASURED: Stage = { width: 960, height: 540 }
 
 function positiveFinite(value: number): boolean {
     return Number.isFinite(value) && value > 0
 }
 
-/** Sub-pixel slack, below which a layout counts as fitting exactly. */
-const FIT_TOLERANCE_PX = 1e-6
+/** The stage for a measured viewport, or the unmeasured default when it is not usable yet. */
+export function stageOf(width: number, height: number): Stage {
+    return positiveFinite(width) && positiveFinite(height) ? { width, height } : { ...UNMEASURED }
+}
 
 /**
- * How much of one stage axis survives the crop, in logical units.
+ * Converts a Unity screen position into stage pixels.
  *
- * Cropping is decided in pixel space against a tolerance rather than read back
- * out of the offsets, because float error in (viewport - size * scale) makes an
- * exactly-fitting layout look a hair cropped. Without the tolerance a plain
- * letterbox reports visible.x of about 5e-14, and the obvious test for whether
- * a game is cropped (visible.x > 0) is then true for every game.
- */
-function visibleAxis(size: number, scale: number, offset: number, viewport: number): { start: number; size: number } {
-    if (size * scale <= viewport + FIT_TOLERANCE_PX) {
-        return { start: 0, size }
-    }
-    const start = Math.max(0, -offset) / scale
-    return { start, size: Math.min(size - start, viewport / scale) }
-}
-
-/**
- * Resolves loose stage input into a complete config, applying defaults and
- * rejecting nonsense at publish time rather than at play time.
- */
-export function normalizeStage(input: StageInput | undefined | null): StageConfig {
-    const raw = input ?? {}
-
-    let width = raw.width
-    let height = raw.height
-    if (raw.size !== undefined) {
-        if (!Array.isArray(raw.size) || raw.size.length !== 2) {
-            throw new Error(`[oj] stage size must be [width, height]`)
-        }
-        width = width ?? raw.size[0]
-        height = height ?? raw.size[1]
-    }
-
-    width = width ?? DEFAULT_STAGE_WIDTH
-    height = height ?? DEFAULT_STAGE_HEIGHT
-
-    if (!positiveFinite(width) || !positiveFinite(height)) {
-        throw new Error(`[oj] stage size must be positive and finite, got ${width}x${height}`)
-    }
-
-    const fit = raw.fit ?? DEFAULT_STAGE_FIT
-    if (!FITS.includes(fit)) {
-        throw new Error(`[oj] invalid stage fit "${fit}", expected one of ${FITS.join(", ")}`)
-    }
-
-    const matte = raw.matte ?? DEFAULT_STAGE_MATTE
-    if (typeof matte !== "string" || matte.trim() === "") {
-        throw new Error(`[oj] stage matte must be a colour string, got ${JSON.stringify(raw.matte)}`)
-    }
-
-    return { width, height, fit, pixelPerfect: raw.pixelPerfect ?? false, matte }
-}
-
-/**
- * Maps a stage config onto a viewport.
- *
- * A viewport that is zero or not finite (which happens on the frames before UI
- * Toolkit has measured anything) falls back to an unscaled layout rather than
- * dividing through and seeding NaN into every downstream coordinate.
- */
-export function computeStageLayout(
-    config: StageConfig,
-    viewportWidth: number,
-    viewportHeight: number,
-): StageLayout {
-    const measured = positiveFinite(viewportWidth) && positiveFinite(viewportHeight)
-    const vw = measured ? viewportWidth : config.width
-    const vh = measured ? viewportHeight : config.height
-
-    if (config.fit === "fluid") {
-        return {
-            fit: config.fit,
-            matte: config.matte,
-            width: vw,
-            height: vh,
-            scale: 1,
-            scaleX: 1,
-            scaleY: 1,
-            offsetX: 0,
-            offsetY: 0,
-            visible: { x: 0, y: 0, width: vw, height: vh },
-            viewportWidth: vw,
-            viewportHeight: vh,
-        }
-    }
-
-    const { width, height } = config
-    let scaleX: number
-    let scaleY: number
-
-    if (config.fit === "stretch") {
-        scaleX = vw / width
-        scaleY = vh / height
-    } else {
-        const raw = config.fit === "cover"
-            ? Math.max(vw / width, vh / height)
-            : Math.min(vw / width, vh / height)
-        let uniform = raw
-        if (config.pixelPerfect) {
-            uniform = config.fit === "cover" ? Math.ceil(raw) : Math.floor(raw)
-            if (uniform < 1) uniform = 1
-        }
-        scaleX = uniform
-        scaleY = uniform
-    }
-
-    const offsetX = (vw - width * scaleX) / 2
-    const offsetY = (vh - height * scaleY) / 2
-
-    const h = visibleAxis(width, scaleX, offsetX, vw)
-    const v = visibleAxis(height, scaleY, offsetY, vh)
-    const visible: StageRect = { x: h.start, y: v.start, width: h.size, height: v.size }
-
-    return {
-        fit: config.fit,
-        matte: config.matte,
-        width,
-        height,
-        scale: Math.min(scaleX, scaleY),
-        scaleX,
-        scaleY,
-        offsetX,
-        offsetY,
-        visible,
-        viewportWidth: vw,
-        viewportHeight: vh,
-    }
-}
-
-/** Converts a viewport pixel position into logical stage units. */
-export function toStage(layout: StageLayout, viewportX: number, viewportY: number): { x: number; y: number } {
-    return {
-        x: (viewportX - layout.offsetX) / layout.scaleX,
-        y: (viewportY - layout.offsetY) / layout.scaleY,
-    }
-}
-
-/**
- * Converts a Unity screen position into logical stage units.
- *
- * Three things differ at once between what Unity's input reports and what a
- * game here lays itself out in, which is why this exists rather than a
- * subtraction at each call site:
+ * Two things differ between what Unity's input reports and what a game lays
+ * itself out in, which is why this exists rather than arithmetic at each call
+ * site:
  *
  *   Unity screen space counts from the BOTTOM left with y going up. Everything
  *   in UI Toolkit, and therefore everything a game positions, counts from the
  *   top left with y going down.
- *   Unity reports PHYSICAL pixels. A layout is computed in logical ones.
- *   A letterboxed stage is offset and scaled inside the viewport.
+ *   Unity reports PHYSICAL pixels. A stage is in logical ones.
  *
- * Get any one of them wrong and a pointer lands somewhere plausible but not
- * where the finger is; get the flip wrong and the game reads as haunted.
+ * Get the flip wrong and the game reads as haunted.
  *
- * The viewport height comes from the layout rather than from Screen, so a stale
- * Screen reading cannot disagree with the layout the game is actually drawn
- * against. They are the same number when both are fresh.
+ * The height comes from the stage rather than from Screen, so a stale Screen
+ * reading cannot disagree with the stage the game is actually drawn against.
+ * They are the same number when both are fresh.
  */
 export function screenToStage(
-    layout: StageLayout, screenX: number, screenY: number, pixelRatio: number,
+    stage: Stage, screenX: number, screenY: number, pixelRatio: number,
 ): { x: number; y: number } {
     const dpr = pixelRatio > 0 ? pixelRatio : 1
-    return toStage(layout, screenX / dpr, layout.viewportHeight - screenY / dpr)
+    return { x: screenX / dpr, y: stage.height - screenY / dpr }
 }
 
 /**
  * The same for a movement rather than a position.
  *
  * A delta has no origin, so only the scale and the flipped axis apply. Passing
- * one through screenToStage instead would add the viewport height to every
+ * one through screenToStage instead would add the stage height to every
  * vertical movement, which is the kind of mistake that still looks like it is
  * working until something crosses the middle of the screen.
  */
-export function screenDeltaToStage(
-    layout: StageLayout, deltaX: number, deltaY: number, pixelRatio: number,
-): { x: number; y: number } {
+export function screenDeltaToStage(deltaX: number, deltaY: number, pixelRatio: number): { x: number; y: number } {
     const dpr = pixelRatio > 0 ? pixelRatio : 1
-    return {
-        x: deltaX / (dpr * layout.scaleX),
-        y: -deltaY / (dpr * layout.scaleY),
-    }
-}
-
-/** Converts a logical stage position into viewport pixels. */
-export function fromStage(layout: StageLayout, stageX: number, stageY: number): { x: number; y: number } {
-    return {
-        x: stageX * layout.scaleX + layout.offsetX,
-        y: stageY * layout.scaleY + layout.offsetY,
-    }
+    return { x: deltaX / dpr, y: -deltaY / dpr }
 }

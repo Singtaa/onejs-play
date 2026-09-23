@@ -19,8 +19,8 @@
  * That was the first idea and it is half a fix. With no backend, onejs-unity
  * falls through to the real InputBridge, so input starts working, but it
  * reports Unity screen space: physical pixels, origin at the BOTTOM left, y
- * counting up. A game lays itself out in stage units from the TOP left with y
- * counting down. So a pointer game would run, and be wrong in three ways at
+ * counting up. A game lays itself out in logical pixels from the TOP left with
+ * y counting down. So a pointer game would run, and be wrong in two ways at
  * once, with the flipped axis reading as a haunting rather than a bug.
  *
  * So this wraps the real bridge instead of replacing it. Keyboard, gamepad and
@@ -35,7 +35,7 @@
  * and it is written down rather than papered over.
  */
 
-import { screenToStage, screenDeltaToStage, type StageLayout } from "./stage"
+import { screenToStage, screenDeltaToStage, type Stage } from "./stage"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
 // no runtime binding is created.
@@ -59,8 +59,8 @@ function realBridge(): any | null {
 }
 
 export interface HostInputOptions {
-    /** The layout to convert against, read fresh on every call. */
-    layout(): StageLayout
+    /** The stage to convert against, read fresh on every call. */
+    stage(): Stage
     /** Physical pixels per logical one. */
     pixelRatio(): number
     /** For tests. Defaults to the real InputBridge. */
@@ -92,13 +92,13 @@ export function createHostInputBackend(options: HostInputOptions): Record<string
     const positionOf = (index?: number) => {
         const x = index === undefined ? source.GetMousePositionX() : source.GetTouchPositionX(index)
         const y = index === undefined ? source.GetMousePositionY() : source.GetTouchPositionY(index)
-        return screenToStage(options.layout(), x, y, options.pixelRatio())
+        return screenToStage(options.stage(), x, y, options.pixelRatio())
     }
 
     const deltaOf = (index?: number) => {
         const x = index === undefined ? source.GetMouseDeltaX() : source.GetTouchDeltaX(index)
         const y = index === undefined ? source.GetMouseDeltaY() : source.GetTouchDeltaY(index)
-        return screenDeltaToStage(options.layout(), x, y, options.pixelRatio())
+        return screenDeltaToStage(x, y, options.pixelRatio())
     }
 
     const touchIndex = (name: string, args: unknown[]) =>

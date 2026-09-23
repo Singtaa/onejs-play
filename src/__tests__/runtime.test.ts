@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { setInputBackend } from "onejs-unity/input"
 import { createRuntime, getCurrentRuntime } from "../runtime"
-import { normalizeStage } from "../stage"
 import * as api from "../index"
 
 /** A container, which is the only kind of host that passes the api. */
 const make = (over = {}) =>
-    createRuntime({ api, root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540], fit: "letterbox" }), ...over })
+    createRuntime({ api, root: { fake: "root" }, version: "1.4.2", ...over })
 
 afterEach(() => { setInputBackend(null); vi.restoreAllMocks() })
 
@@ -26,14 +25,14 @@ describe("the oj object", () => {
      */
     it("carries none of it when the host did not ask for it", () => {
         const { oj } = createRuntime({
-            root: { fake: "root" }, version: "1.4.2", stage: normalizeStage({ size: [960, 540], fit: "letterbox" }),
+            root: { fake: "root" }, version: "1.4.2",
         })
         for (const name of ["View", "Text", "render", "Mathf", "input", "Painter"]) {
             expect(oj).not.toHaveProperty(name)
         }
         // What every host provides is still there.
         expect(oj.version).toBe("1.4.2")
-        expect(oj.stage.width).toBe(960)
+        expect(oj.stage).toEqual({ width: 960, height: 540 })
         expect(typeof oj.onFrame).toBe("function")
     })
 
@@ -41,8 +40,7 @@ describe("the oj object", () => {
         const { oj } = make({ viewport: { width: 1920, height: 540 } })
         expect(oj.version).toBe("1.4.2")
         expect(oj.root).toEqual({ fake: "root" })
-        expect(oj.stage.width).toBe(960)
-        expect(oj.stage.scale).toBe(1)
+        expect(oj.stage).toEqual({ width: 1920, height: 540 })
         expect(oj.time.frame).toBe(0)
     })
 
@@ -114,20 +112,34 @@ describe("the frame clock", () => {
 })
 
 describe("viewport changes", () => {
-    it("recomputes the stage", () => {
+    it("make the stage the new viewport", () => {
         const r = make({ viewport: { width: 960, height: 540 } })
-        expect(r.oj.stage.scale).toBe(1)
         r.setViewport(1920, 1080)
-        expect(r.oj.stage.scale).toBe(2)
+        expect(r.oj.stage).toEqual({ width: 1920, height: 1080 })
     })
 
-    it("keeps pointer coordinates in logical units across the change", () => {
+    // useStage compares identity to decide whether to re-render.
+    it("replace the stage object rather than mutating it", () => {
+        const r = make({ viewport: { width: 960, height: 540 } })
+        const before = r.oj.stage
+        r.setViewport(1920, 1080)
+        expect(r.oj.stage).not.toBe(before)
+        expect(before).toEqual({ width: 960, height: 540 })
+    })
+
+    it("leave pointer coordinates alone: they were never scaled", () => {
         const r = make({ viewport: { width: 960, height: 540 } })
         r.input.sink.pointerMove(480, 270)
         r.beginFrame(0.016)
-        expect(r.oj.input.mouse.position.x).toBeCloseTo(480, 6)
         r.setViewport(1920, 1080)
-        expect(r.oj.input.mouse.position.x).toBeCloseTo(240, 6)
+        expect(r.oj.input.mouse.position.x).toBe(480)
+    })
+
+    it("keep a usable stage when the viewport is not measured yet", () => {
+        const r = make({ viewport: { width: 1280, height: 720 } })
+        r.setViewport(0, 0)
+        expect(r.oj.stage.width).toBeGreaterThan(0)
+        expect(r.oj.stage.height).toBeGreaterThan(0)
     })
 })
 
