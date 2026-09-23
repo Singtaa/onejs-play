@@ -5,7 +5,6 @@
     "author": "singtaa",
     "description": "Everybody waits, the word comes, and the fastest hand takes the round. Measured on your own machine, so a slow connection costs you nothing.",
     "entry": "index.tsx",
-    "stage": { "size": [900, 600], "fit": "fluid" },
     "tags": ["multiplayer", "arcade"],
     "controls": ["keyboard", "pointer", "touch"]
 }

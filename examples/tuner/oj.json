@@ -5,13 +5,6 @@
     "author": "singtaa",
     "description": "Three uniforms, the shader that reads them, and the TypeScript that produced it, side by side. Turn a dial and watch the GPU answer.",
     "entry": "index.tsx",
-    "stage": {
-        "size": [
-            960,
-            600
-        ],
-        "fit": "fluid"
-    },
     "tags": [
         "toy",
         "visual"

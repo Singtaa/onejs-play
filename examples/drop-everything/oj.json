@@ -5,7 +5,6 @@
     "author": "singtaa",
     "description": "A box of shapes, some ramps, and real rigid body physics running in C# while JavaScript watches.",
     "entry": "index.tsx",
-    "stage": { "fit": "fluid" },
     "tags": ["toy", "physics"],
     "controls": ["pointer", "touch"]
 }
