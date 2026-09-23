@@ -1,6 +1,6 @@
 {
   "name": "onejs-play",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Container runtime for OJPlay. Imported as \"oj\".",
   "main": "src/index.ts",
   "types": "src/index.ts",
