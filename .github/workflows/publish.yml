@@ -57,6 +57,14 @@ jobs:
           ref: main
           path: onejs-unity
 
+      # onejs-unity's shader language is the onejs-sl package, which it links
+      # with "file:../onejs-sl" in the same layout.
+      - uses: actions/checkout@v4
+        with:
+          repository: Singtaa/onejs-sl
+          ref: main
+          path: onejs-sl
+
       - uses: actions/checkout@v4
         with:
           repository: Singtaa/unity-types
