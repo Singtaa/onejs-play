@@ -414,6 +414,16 @@ with the frame that is already ending, so game logic reads it as last frame's
 press and `wasKeyPressed` is false. `beginFrame` drains the queue first, so a
 frame sees exactly the events that arrived since the previous one.
 
+**Before an example ships:**
+
+1. `oj typecheck` passes.
+2. A `playtest.mjs` drives every control and checks what it changes, not the
+   text beside it (`examples/arcane-portal/playtest.mjs`).
+3. `oj test playtest.mjs` passes. That also fails on a console error and on a
+   centred row whose controls do not line up with their labels.
+4. Once it is live, `node Tools/playtest/rows.mjs <sid>` runs the same row check
+   on the published page.
+
 ## The command line
 
 `oj` is this package's `bin`. A game's repository is two files, `index.tsx`
@@ -447,9 +457,12 @@ milliseconds.
 **`oj test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
 `drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`, `type("crane")`,
-`until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`, and
-`errors`. A thrown error fails the run, and so does a console error; a
-screenshot lands in `.oj/` either way. `examples/wordie/playtest.mjs` is the one to
+`until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`,
+`misalignedRows()`, and `errors`. A thrown error fails the run, and so does a
+console error or a centred row whose controls do not line up: a slider's track,
+a toggle's box or a text field's input off the row's centre line
+(`cli/rows.mjs`, measured from resolved layout). A screenshot lands in `.oj/`
+either way. `examples/wordie/playtest.mjs` is the one to
 copy from.
 
 What the harnesses in `Tools/playtest` learned applies here unchanged, and

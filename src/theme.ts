@@ -68,7 +68,6 @@ export const THEME_USS = `
     border-width: 0;
     border-radius: 3px;
     height: 4px;
-    margin-top: 6px;
 }
 
 .unity-base-slider__dragger {
@@ -77,7 +76,6 @@ export const THEME_USS = `
     border-radius: 3px;
     width: 10px;
     height: 18px;
-    margin-top: -1px;
     transition-property: background-color;
     transition-duration: 0.08s;
 }
@@ -88,6 +86,23 @@ export const THEME_USS = `
 
 .unity-base-slider__dragger-border {
     border-width: 0;
+}
+
+/* The default theme starts both at top: 50%, so each is centred on the
+   slider's centre line, which an align-items: center row lines up on, only
+   when pulled back up by half its own height. The tracker does that with a
+   translate, which holds at any height. The dragger cannot: BaseSlider moves
+   it along the track with an inline translate that replaces this one, so its
+   margin is half its height and the two change together. 6px and -1px here
+   once put both 8px low. */
+.unity-base-slider--horizontal .unity-base-slider__tracker {
+    margin-top: 0;
+    translate: 0 -50%;
+}
+
+.unity-base-slider--horizontal .unity-base-slider__dragger {
+    height: 18px;
+    margin-top: -9px;
 }
 
 /* Toggles and text fields, so a game using one does not stand out. */
@@ -129,6 +144,7 @@ export const THEME_USS = `
 .unity-scroller .unity-base-slider__tracker {
     background-color: transparent;
     margin-top: 0;
+    translate: 0 0;
 }
 
 .unity-scroller .unity-base-slider__dragger {
@@ -136,6 +152,7 @@ export const THEME_USS = `
     border-radius: 4px;
     width: 6px;
     margin-left: 1px;
+    margin-top: 0;
 }
 
 .unity-scroller:hover .unity-base-slider__dragger {
