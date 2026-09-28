@@ -1,0 +1,10 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Arcane Portal",
+    "author": "singtaa",
+    "description": "A shader written in Magerie, running unchanged. arcane-portal.sl declares a colour and a speed; pick a swatch and drag the slider to drive them.",
+    "entry": "index.tsx",
+    "tags": ["shader", "visual"],
+    "controls": ["pointer", "touch"]
+}
