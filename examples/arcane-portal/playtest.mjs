@@ -2,7 +2,7 @@
 //
 // A swatch has to become the selected one, and a drag on the slider has to move
 // the speed. `oj test` then checks, as it does for every game, that each row's
-// controls line up with the labels beside them.
+// controls line up with the labels beside them and leave room between them.
 
 // Each swatch's position and whether it wears the white ring that marks it.
 const SWATCHES = `(() => {

@@ -419,10 +419,14 @@ frame sees exactly the events that arrived since the previous one.
 1. `oj typecheck` passes.
 2. A `playtest.mjs` drives every control and checks what it changes, not the
    text beside it (`examples/arcane-portal/playtest.mjs`).
-3. `oj test playtest.mjs` passes. That also fails on a console error and on a
-   centred row whose controls do not line up with their labels.
-4. Once it is live, `node Tools/playtest/rows.mjs <sid>` runs the same row check
-   on the published page.
+3. `oj test playtest.mjs` passes. That also fails on a console error, on a
+   centred row whose controls do not line up with their labels, and on a
+   control within 8px of its neighbour.
+4. A value that changes (a slider's readout, a score) sits in a fixed-width
+   box, right-aligned with tabular digits, 12px from the control it reports,
+   so it neither jitters nor touches the control (`examples/arcane-portal`).
+5. Once it is live, `node Tools/playtest/rows.mjs <sid>` runs the same row
+   checks on the published page.
 
 ## The command line
 
@@ -458,10 +462,11 @@ milliseconds.
 gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
 `drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`, `type("crane")`,
 `until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`,
-`misalignedRows()`, and `errors`. A thrown error fails the run, and so does a
-console error or a centred row whose controls do not line up: a slider's track,
-a toggle's box or a text field's input off the row's centre line
-(`cli/rows.mjs`, measured from resolved layout). A screenshot lands in `.oj/`
+`rowProblems()`, and `errors`. A thrown error fails the run, and so does a
+console error or a row that looks wrong (`cli/rows.mjs`, measured from resolved
+layout): in a centred row, a slider's track, a toggle's box or a text field's
+input off the row's centre line; in any row, a control within 8px of its
+neighbour, measured from a text's ink rather than its box. A screenshot lands in `.oj/`
 either way. `examples/wordie/playtest.mjs` is the one to
 copy from.
 

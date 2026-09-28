@@ -12,7 +12,7 @@ import { build } from "./game.mjs"
 import { ensureRuntime, serve } from "./local.mjs"
 import { launch } from "./chrome.mjs"
 import { siteOrigin, version } from "./site.mjs"
-import { misalignedRowsExpression } from "./rows.mjs"
+import { rowProblemsExpression } from "./rows.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -100,11 +100,12 @@ export class Game {
     }
 
     /**
-     * Rows centred on the cross axis whose children's visible parts do not
-     * line up within `tolerance` pixels (see rows.mjs). Empty when they all do.
+     * Rows whose children's visible parts do not line up within `tolerance`
+     * pixels, or sit closer than `minGap` pixels (see rows.mjs). Empty when
+     * every row is fine.
      */
-    async misalignedRows(tolerance = 1) {
-        return JSON.parse(await this.eval(misalignedRowsExpression(tolerance)))
+    async rowProblems(options = {}) {
+        return JSON.parse(await this.eval(rowProblemsExpression(options)))
     }
 
     /** The stage the game sees: `{ width, height }`, the window in CSS pixels. */

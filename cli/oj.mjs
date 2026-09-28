@@ -20,7 +20,7 @@ import { build, typecheck } from "./game.mjs"
 import { create, folderFor, git, sidOf, siteOrigin, status, token, version } from "./site.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
-import { describeMisalignedRows } from "./rows.mjs"
+import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
 
 const HELP = `usage: oj <command> [options]
@@ -35,7 +35,7 @@ const HELP = `usage: oj <command> [options]
                           --shot <file>   where the screenshot goes (default .oj/run.png)
                           --window <w,h>  browser size in CSS pixels (default 960,540)
   test <script.mjs>     run, then call the script's default export with the sketch;
-                          fails on a console error or a centred row whose controls do not line up
+                          fails on a console error or a row whose controls are out of line or crowded
                           --headed, --window as above
   status                head, live and buildError for this sketch (--sid <id>)
   push                  git push origin main with OJ_TOKEN; exits 1 if the tip failed to build
@@ -143,12 +143,13 @@ async function main() {
                     return 1
                 }
                 // Checked for every game, as console errors are: a control out
-                // of line with its row reads as a bug, and no script of a
-                // game's own would think to look.
-                const rows = await game.misalignedRows()
+                // of line with its row, or a value pressed against a track,
+                // reads as a bug, and no script of a game's own would think to
+                // look.
+                const rows = await game.rowProblems()
                 if (rows.length > 0) {
-                    say(`${rows.length} row(s) out of line:`)
-                    for (const line of describeMisalignedRows(rows)) console.error("  " + line)
+                    say(`${rows.length} row problem(s):`)
+                    for (const line of describeRowProblems(rows)) console.error("  " + line)
                     return 1
                 }
                 say("passed")

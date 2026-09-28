@@ -43,7 +43,10 @@ function ArcanePortal() {
                 <Slider value={speed} lowValue={0} highValue={3}
                     onChange={(e: { value: number }) => setSpeed(e.value)}
                     style={{ flexGrow: 1 }} />
-                <Text className="w-12 text-sm text-neutral-300">{speed.toFixed(2)}</Text>
+                {/* The readout is as wide as its widest value and right-aligned,
+                    so its right edge never moves as the digits change, and
+                    ml-3 keeps it the swatches' 12px from the track. */}
+                <Text className="w-7 ml-3 text-sm text-right text-neutral-300">{speed.toFixed(2)}</Text>
             </View>
         </View>
     )
