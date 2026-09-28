@@ -56,7 +56,7 @@ export function buildGame(
          */
         workingDir?: string
         /**
-         * `{ parse, encode, manifest }` from `onejs-unity/sl`, for a host that
+         * `{ parse, compile, manifest }` from `onejs-unity/sl`, for a host that
          * cannot evaluate the JavaScript it builds. A Cloudflare Worker is one.
          * Omit it in Node and the plugin compiles the parser itself.
          */

@@ -121,9 +121,9 @@ export * as fx from "onejs-unity/fx"
 /**
  * Write your own per pixel program, in TypeScript.
  *
- *     import { sl, encode, ShaderProgram } from "oj"
+ *     import { sl, compile, ShaderProgram } from "oj"
  *
- *     const plasma = encode(sl.program(({ uv, time }) => {
+ *     const plasma = compile(sl.program(({ uv, time }) => {
  *         const q = uv.mul(8).add(time.mul(0.4))
  *         const v = sl.sin(q.x).add(sl.sin(q.y))
  *         return sl.ramp(v.mul(0.25).add(0.5), ["#000018", "#0080ff", "#ffffff"])
@@ -137,20 +137,21 @@ export * as fx from "onejs-unity/fx"
  * A namespace for the same reason `fx` is one: `sl.program`, `sl.sin` and
  * `sl.texture` are all names that would be far too general loose in `oj`.
  *
- * WHY THIS WORKS IN A BROWSER AT ALL. Unity cannot compile a shader at runtime
- * in a player build, so on this site a program is interpreted rather than
- * compiled. Eject the game and the same program becomes real HLSL that Unity
- * compiles, with no edit to your source. You will not be able to tell which one
- * ran, except that the ejected one is faster.
+ * Compiled wherever it runs. On this site the browser compiles the program on
+ * Unity's own device, as WGSL or GLSL; eject the game and the same program
+ * becomes HLSL that Unity compiles, with no edit to your source.
+ *
+ * `encode` is `compile` under the name it had before, so a game written
+ * against it still builds.
  */
 // `sl` is already a namespace inside onejs-unity/sl, so re-export the binding
 // rather than star-exporting the module. `export * as sl` would have nested it
 // one level deeper and given every author `sl.sl.program`, which type checks
 // against `any` and fails at the first call.
-export { sl, encode, manifest } from "onejs-unity/sl"
-export type { Program, Encoded, ProgramManifest } from "onejs-unity/sl"
+export { sl, compile, encode, manifest } from "onejs-unity/sl"
+export type { Program, Compiled, Encoded, ProgramManifest } from "onejs-unity/sl"
 // What a `.sl` import resolves to, so a game can name the type of one.
-export type { EncodedProgram } from "onejs-react"
+export type { CompiledProgram, EncodedProgram } from "onejs-react"
 
 // MARK: the site behind the game
 

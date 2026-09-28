@@ -97,10 +97,13 @@ describe("building with the site's builder", () => {
             { name: "index.tsx", text: `import plasma from "./plasma.sl"\nconsole.log(plasma.hash)\n` },
         ]
         const built = await buildGame(esbuild, files, "index.tsx", NATIVE)
-        // Numbers, not a parser and not the source: a game is downloaded before
-        // it is played, and the shader text would be dead weight in it.
+        // The compiled program, not a parser and not the source: a game is
+        // downloaded before it is played, and the .sl text would be dead weight
+        // in it. Nor the VM's buffer, which OneJS never reads now.
         expect(built.code).not.toContain("uniform float warp")
-        expect(built.code).toContain("resultRegister")
+        expect(built.code).toContain(`hash:"`)
+        expect(built.code).toContain("sl_fs")
+        expect(built.code).not.toContain("resultRegister")
         expect(built.slManifest?.programs).toHaveLength(1)
         expect(built.slManifest?.programs[0]?.uniforms).toEqual(["warp"])
         expect(built.slManifest?.programs[0]?.hlsl).toContain("CGPROGRAM")

@@ -1,6 +1,6 @@
 {
   "name": "onejs-play",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Container runtime for OJPlay. Imported as \"oj\".",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -31,8 +31,8 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "onejs-react": ">=0.1.50",
-    "onejs-unity": ">=0.5.12",
+    "onejs-react": ">=0.1.60",
+    "onejs-unity": ">=0.6.0",
     "react": "^18.0.0 || ^19.0.0",
     "esbuild": ">=0.25.0"
   },

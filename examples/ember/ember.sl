@@ -5,11 +5,9 @@
 // _Time.y. `uniform` declares the slot AND the name React binds against, and
 // `texture2D` does the same for a sampler.
 //
-// This program sits at exactly 8 of the VM's 8 registers, which is the real
-// ceiling and not a soft one: adding another live value here is refused when
-// the game is built rather than rendered wrong. That is the trade for a
-// program that runs interpreted in a browser and compiled after an eject from
-// the same file, with no edit in between.
+// Compiled wherever it runs: the browser compiles it on Unity's own device,
+// and an ejected project generates a Unity shader from the same file, with no
+// edit in between.
 texture2D smoke;
 
 uniform float heat = 0.55;

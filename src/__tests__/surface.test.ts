@@ -113,27 +113,30 @@ describe("container surface", () => {
 })
 
 describe("the shader language is reachable from oj", () => {
-    it("exposes sl, encode and ShaderProgram", () => {
+    it("exposes sl, compile, encode and ShaderProgram", () => {
         // Every phase of this could be finished and a Play author still unable
         // to reach any of it. That gap is invisible from inside the packages
         // that built it, which is why it is a test rather than a note.
         expect(typeof (oj as any).sl).toBe("object")
         expect(typeof (oj as any).sl.program).toBe("function")
-        expect(typeof (oj as any).encode).toBe("function")
+        expect(typeof (oj as any).compile).toBe("function")
+        // The name games were written against, kept for them.
+        expect((oj as any).encode).toBe((oj as any).compile)
         expect((oj as any).ShaderProgram).toBeDefined()
     })
 
-    it("records and encodes a program end to end", () => {
+    it("records and compiles a program end to end", () => {
         const sl = (oj as any).sl
         const p = sl.program(({ uv, time }: any) => {
             const q = uv.mul(8).add(time.mul(0.4))
             const v = sl.sin(q.x).add(sl.sin(q.y))
             return sl.ramp(v.mul(0.25).add(0.5), ["#000018", "#0080ff", "#ffffff"])
         })
-        const e = (oj as any).encode(p)
-        expect(e.hash).toMatch(/^[0-9a-f]{8}$/)
-        expect(e.instructions).toBeGreaterThan(0)
-        expect(e.registersUsed).toBeLessThanOrEqual(8)
+        const c = (oj as any).compile(p)
+        expect(c.hash).toMatch(/^[0-9a-f]{8}$/)
+        expect(c.glsl).toContain("sin(")
+        // No VM buffer: OneJS draws every program compiled.
+        expect(c.data).toBeUndefined()
     })
 
     it("can build the manifest an ejected project compiles from", () => {
