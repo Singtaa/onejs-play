@@ -114,7 +114,7 @@ describe("building with the site's builder", () => {
         let lines: string[] = []
         try { await buildGame(esbuild, files, "index.tsx", NATIVE) } catch (error) { lines = formatBuildErrors(error) }
         expect(lines).toHaveLength(1)
-        expect(lines[0]).toMatch(/^bad\.sl:2:22: .*is component 3 of a vec2/)
+        expect(lines[0]).toMatch(/^bad\.sl:2:22: .*is component 3 of a float2/)
     })
 
     it("hands back an empty manifest for a game with no shader at all", async () => {
