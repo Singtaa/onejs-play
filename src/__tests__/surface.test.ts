@@ -135,7 +135,7 @@ describe("the shader language is reachable from oj", () => {
         const c = (oj as any).compile(p)
         expect(c.hash).toMatch(/^[0-9a-f]{8}$/)
         expect(c.glsl).toContain("sin(")
-        // No VM buffer: OneJS draws every program compiled.
+        // No instruction buffer: OneJS draws every program compiled.
         expect(c.data).toBeUndefined()
     })
 

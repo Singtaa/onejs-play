@@ -1,7 +1,7 @@
 // One idea: a uniform is the wire between JavaScript and every pixel.
 //
-// ripple.sl is parsed and encoded by the build, so this import is a small
-// object of numbers rather than a compiler. The slider sets `spread`, the one
+// ripple.sl is parsed and compiled by the build, so this import is a
+// compiled program rather than a compiler. The slider sets `spread`, the one
 // uniform the file declares, and the GPU reads it on every pixel of the next
 // frame. Misspell it and the .sl.d.ts beside the file makes that a type error
 // here rather than a console warning nobody is watching.

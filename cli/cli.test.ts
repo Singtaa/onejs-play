@@ -99,7 +99,7 @@ describe("building with the site's builder", () => {
         const built = await buildGame(esbuild, files, "index.tsx", NATIVE)
         // The compiled program, not a parser and not the source: a game is
         // downloaded before it is played, and the .sl text would be dead weight
-        // in it. Nor the VM's buffer, which OneJS never reads now.
+        // in it. Nor an instruction buffer: the program is compiled.
         expect(built.code).not.toContain("uniform float warp")
         expect(built.code).toContain(`hash:"`)
         expect(built.code).toContain("sl_fs")
@@ -244,4 +244,25 @@ describe("the tooling a clone writes for itself", () => {
     it("leaves the starter at two files", () => {
         expect(fs.readdirSync(STARTER).sort()).toEqual(["index.tsx", "oj.json"])
     })
+})
+
+describe("the scaffold's pins", () => {
+    // `oj init` writes this package.json into every new game. A pin a minor
+    // behind the package it names installs the release before it, which in
+    // 0.x is a different API; one the installed version does not satisfy
+    // cannot install at all.
+    const scaffold = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "scaffold/package.json"), "utf8"))
+    const versionOf = (name: string) => name === "onejs-play"
+        ? JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
+        : JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, `../node_modules/${name}/package.json`), "utf8")).version
+    for (const name of ["onejs-play", "onejs-unity", "onejs-react"]) {
+        it(`pins ${name} on the minor it is`, () => {
+            const pin = scaffold.devDependencies[name] as string
+            const [major, minor, patch] = versionOf(name).split(".").map(Number)
+            const floor = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(pin)
+            expect(floor, `${name} ${pin}`).not.toBeNull()
+            expect([Number(floor![1]), Number(floor![2])], `${name} ${pin} against ${major}.${minor}.${patch}`).toEqual([major, minor])
+            expect(Number(floor![3]), `${name} ${pin}`).toBeLessThanOrEqual(patch!)
+        })
+    }
 })

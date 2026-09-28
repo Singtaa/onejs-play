@@ -10,9 +10,9 @@ import { DIALS, layoutFor, type DialName, type Dials, type Step } from "./tuner"
  * running on the GPU, the three numbers feeding it, and the file that produced
  * it, all at once. Nothing is hidden and there is nothing to win.
  *
- * `plasma.sl` is parsed and encoded BY THE BUILD, so what this import resolves
- * to is a small object of numbers: no parser and no shader text ride along in
- * the bundle a player downloads.
+ * `plasma.sl` is parsed and compiled BY THE BUILD, so what this import resolves
+ * to is a compiled program: no parser and no `.sl` text ride along in the
+ * bundle a player downloads.
  *
  * `source` is the file's own text, and it is why the panel beside the picture
  * cannot be wrong. It used to be a copy of the program typed out as an array of

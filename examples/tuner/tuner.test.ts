@@ -39,7 +39,7 @@ describe("the dials", () => {
  * teaches an API that does not exist.
  *
  * The panel reads the file now. `import plasma, { source } from "./plasma.sl"`
- * gives both the encoded program and the text it was encoded from, so there is
+ * gives both the compiled program and the text it was compiled from, so there is
  * one copy and nothing to keep level. What is left worth checking is that the
  * panel really reads it rather than having quietly grown a second copy again.
  */

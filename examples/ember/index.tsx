@@ -5,8 +5,8 @@ import ember, { source } from "./ember.sl"
 /**
  * A fire, and the file that draws it.
  *
- * `ember.sl` is parsed, checked and encoded BY THE BUILD, so this import is a
- * small object of numbers: the bundle a player downloads carries no parser and,
+ * `ember.sl` is parsed, checked and compiled BY THE BUILD, so this import is a
+ * compiled program: the bundle a player downloads carries no parser and,
  * unless something asks for it, no shader text either. The panel asks, which is
  * why what it shows cannot drift from what runs. There is one copy.
  *
@@ -18,11 +18,8 @@ import ember, { source } from "./ember.sl"
  *   uniform float2 source   a vector uniform, driven by the pointer
  *   ramp(t, #..., #...)     colours as written, mixed in sRGB
  *
- * It sits at 8 of the VM's 8 registers, so it is also a fair picture of what
- * fits. A ninth live value is refused when the game is built.
- *
- * Interpreted here and compiled after an eject, from the same file, with no
- * edit in between.
+ * Compiled by the browser here and by Unity after an eject, from the same
+ * file, with no edit in between.
  */
 
 const INK = "#f2e8dc"

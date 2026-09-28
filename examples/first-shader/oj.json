@@ -3,7 +3,7 @@
     "runtime": "1.0.0",
     "name": "First Shader",
     "author": "singtaa",
-    "description": "Twelve lines of HLSL and one slider. ripple.sl declares a uniform, the build encodes the file into a handful of numbers, and the slider writes that uniform on every pixel of the next frame. The shortest honest answer to what a .sl file is.",
+    "description": "Twelve lines of HLSL and one slider. ripple.sl declares a uniform, the build compiles the file, and the slider writes that uniform on every pixel of the next frame. The shortest honest answer to what a .sl file is.",
     "entry": "index.tsx",
     "tags": ["teaching", "shader", "visual"],
     "controls": ["pointer", "touch"]
