@@ -373,6 +373,7 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `tally` | 3.0 KB | One reducer: every change is a named action, so undo is the log walked back |
 | `one-note` | 2.8 KB | One clip, loaded once, played at five pitches |
 | `first-shader` | 3.1 KB | Twelve lines of HLSL and one uniform a slider writes |
+| `arcane-portal` | 11.7 KB | A shader written in Magerie, unchanged, with a colour and a speed the player drives |
 | `wordie` | 82.9 KB | Turn-based input, CSS Modules, a seeded daily word |
 | `falling-blocks` | 9.2 KB | Real-time gravity and key repeat off the frame delta |
 | `twos-company` | 10.6 KB | USS transitions animating a board, stable ids across a move |
