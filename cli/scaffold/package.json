@@ -14,7 +14,7 @@
     "esbuild": "^0.25.0",
     "onejs-play": "^0.8.0",
     "onejs-react": "^0.2.0",
-    "onejs-unity": "^0.7.0",
+    "onejs-unity": "^0.8.1",
     "react": "^19.0.0",
     "typescript": "^5.7.0",
     "unity-types": "^6000.3.9"
