@@ -470,6 +470,7 @@ gitignored like `node_modules`:
 
 ```bash
 npx onejs-play init   # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
+npx onejs-play init --unity   # in Assets/<Name>/~ of a Unity project: a JSRunner project and prefab, installed and built
 oj build            # bundle the game the way the site does; errors as file:line:col
 oj typecheck        # tsc --noEmit
 oj run              # the game in the site's real container, in a local headless Chrome
@@ -479,6 +480,21 @@ oj push             # git push with OJ_TOKEN, then exit 1 if the tip did not bui
 oj new "Name"       # create a game on the site and clone it
 oj runtime          # fetch the container into ~/.onejs-play (--runtime <version>)
 ```
+
+**`init --unity` makes a clone a JSRunner project in place.** Clone the game
+to `Assets/<Name>/~` in a Unity project that has OneJS (Unity ignores a folder
+named `~`, which keeps the source and `node_modules` out of the import), then
+run `npx onejs-play init --unity` there. It writes JSRunner's own default files
+into the clone, read from the OneJS the project installed rather than copied
+into this package, points the build at the entry `oj.json` names, and puts a
+PanelSettings and `<Name>.prefab` beside the clone. Every file it writes into
+the clone goes in the repository's info/exclude, so `git status` still shows
+the game and nothing else. Then it installs and builds. Dragging the prefab
+into a scene runs the game, and JSRunner rebuilds on save from then on. A clone
+added with `git submodule add` works the same way: its exclude file is asked
+of git rather than assumed to be `.git/info/exclude`. The template table in
+`cli/unity.mjs` mirrors `templateMapping` in OneJS's `JSRunner.cs`, and the
+container's test holds the two together.
 
 **`oj run` runs what ships.** It fetches the container the site serves at
 `/runtime/<version>/` (the pin from `/api/version`, or `--runtime`) into

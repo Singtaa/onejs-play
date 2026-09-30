@@ -16,6 +16,7 @@
  */
 import fs from "node:fs"
 import path from "node:path"
+import { spawnSync } from "node:child_process"
 
 const SCAFFOLD = path.join(import.meta.dirname, "scaffold")
 
@@ -36,34 +37,61 @@ export function init(root) {
     put("tsconfig.json", fs.readFileSync(path.join(SCAFFOLD, "tsconfig.json"), "utf8"))
     put("env.d.ts", fs.readFileSync(path.join(SCAFFOLD, "env.d.ts"), "utf8"))
 
-    // The ignore rules go in .git/info/exclude, which git reads like a
-    // .gitignore and never commits: the repository stays index.tsx and
-    // oj.json, with no third file saying what this machine keeps beside them.
-    // A folder that is not a repository yet gets a .gitignore instead, and
-    // either file is appended rather than replaced.
-    const excludes = path.join(root, ".git", "info", "exclude")
-    const inRepo = fs.existsSync(path.join(root, ".git"))
-    const ignore = inRepo ? excludes : path.join(root, ".gitignore")
-    const shown = inRepo ? ".git/info/exclude" : ".gitignore"
+    lines.push(ignoreLocally(root, fs.readFileSync(path.join(SCAFFOLD, "gitignore"), "utf8")))
+    return lines
+}
+
+/**
+ * Adds `wanted`'s rules to what git ignores in `root` without committing them.
+ *
+ * The rules go in the repository's info/exclude, which git reads like a
+ * .gitignore and never commits: the repository stays index.tsx and oj.json,
+ * with no third file saying what this machine keeps beside them. A folder
+ * that is not a repository yet gets a .gitignore instead, and either file is
+ * appended rather than replaced. Returns the line init reports.
+ */
+export function ignoreLocally(root, wanted) {
+    const excludes = excludeFile(root)
+    const ignore = excludes ?? path.join(root, ".gitignore")
+    const shown = path.relative(root, ignore).split(path.sep).join("/")
     // Lines are compared with their line endings stripped: a Windows checkout
     // or a Windows-authored .gitignore is CRLF, and comparing raw lines there
     // matched nothing and appended every entry twice.
     const linesOf = (text) => text.split(/\r?\n/).map((l) => l.trim())
-    const wanted = fs.readFileSync(path.join(SCAFFOLD, "gitignore"), "utf8")
     const have = fs.existsSync(ignore) ? fs.readFileSync(ignore, "utf8") : ""
     const present = new Set(linesOf(have))
     const missing = linesOf(wanted).filter((l) => l !== "" && !l.startsWith("#") && !present.has(l))
-    if (missing.length === 0) lines.push(`${shown}: already covers the tooling`)
-    else {
-        if (inRepo) fs.mkdirSync(path.dirname(excludes), { recursive: true })
-        fs.writeFileSync(ignore, (have === "" ? wanted : have.replace(/\n?$/, "\n") + missing.join("\n") + "\n"))
-        lines.push(`${shown}: ${have === "" ? "written" : "added " + missing.join(", ")}`)
+    if (missing.length === 0) return `${shown}: already covers the tooling`
+    if (excludes !== null) fs.mkdirSync(path.dirname(excludes), { recursive: true })
+    fs.writeFileSync(ignore, (have === "" ? wanted : have.replace(/\n?$/, "\n") + missing.join("\n") + "\n"))
+    return `${shown}: ${have === "" ? "written" : "added " + missing.join(", ")}`
+}
+
+/**
+ * The info/exclude of the repository `root` is the top of, or null when it is
+ * not the top of one.
+ *
+ * Asked of git rather than assumed to be .git/info/exclude, because a clone
+ * added as a submodule has a .git FILE pointing into the parent's
+ * .git/modules, and writing under it failed outright. And only for a
+ * repository rooted here: a plain folder inside somebody's Unity project
+ * repository would otherwise have its rules written into that project's
+ * exclude, far from the folder they are about.
+ */
+function excludeFile(root) {
+    const git = spawnSync("git", ["rev-parse", "--show-toplevel", "--git-path", "info/exclude"], { cwd: root, encoding: "utf8" })
+    if (git.status === 0) {
+        const [top, exclude] = git.stdout.split(/\r?\n/)
+        if (top && exclude && fs.realpathSync(top) === fs.realpathSync(root)) return path.resolve(root, exclude)
+        return null
     }
-    return lines
+    // No git on this machine, or a .git folder git does not recognise yet.
+    const dotGit = path.join(root, ".git")
+    return fs.existsSync(dotGit) && fs.statSync(dotGit).isDirectory() ? path.join(dotGit, "info", "exclude") : null
 }
 
 /** The game's name from oj.json, as npm allows it, else the folder's. */
-function packageName(root) {
+export function packageName(root) {
     let name = path.basename(root)
     try {
         const manifest = JSON.parse(fs.readFileSync(path.join(root, "oj.json"), "utf8"))

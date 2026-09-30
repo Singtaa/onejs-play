@@ -9,6 +9,8 @@ import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
 import { keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
+import { initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING } from "./unity.mjs"
+import { spawnSync } from "node:child_process"
 import { Game } from "./run.mjs"
 import { containerBoot } from "../host/boot.mjs"
 
@@ -307,6 +309,27 @@ describe("the tooling a clone writes for itself", () => {
         expect(text).not.toMatch(/package\.json\r/)
     })
 
+    it("finds the exclude file of a clone added as a submodule, whose .git is a file", () => {
+        const dir = scratch({ "index.tsx": "" })
+        const store = fs.mkdtempSync(path.join(os.tmpdir(), "oj-gitdir-"))
+        expect(spawnSync("git", ["init", "-q", `--separate-git-dir=${store}`, dir]).status).toBe(0)
+        expect(fs.statSync(path.join(dir, ".git")).isFile()).toBe(true)
+        init(dir)
+        expect(fs.readFileSync(path.join(store, "info", "exclude"), "utf8")).toContain("package.json")
+        expect(fs.existsSync(path.join(dir, ".gitignore"))).toBe(false)
+    })
+
+    it("writes a .gitignore, not the enclosing repository's exclude, for a folder that is not its own repository", () => {
+        const outer = scratch({})
+        expect(spawnSync("git", ["init", "-q", outer]).status).toBe(0)
+        const dir = path.join(outer, "Assets", "Game")
+        fs.mkdirSync(dir, { recursive: true })
+        fs.writeFileSync(path.join(dir, "index.tsx"), "")
+        init(dir)
+        expect(fs.readFileSync(path.join(dir, ".gitignore"), "utf8")).toContain("package.json")
+        expect(fs.readFileSync(path.join(outer, ".git", "info", "exclude"), "utf8")).not.toContain("package.json")
+    })
+
     it("keeps the test script for a game that has a playtest", () => {
         const dir = scratch({ "index.tsx": "", "playtest.mjs": "export default async () => {}" })
         init(dir)
@@ -315,6 +338,93 @@ describe("the tooling a clone writes for itself", () => {
 
     it("leaves the starter at two files", () => {
         expect(fs.readdirSync(STARTER).sort()).toEqual(["index.tsx", "oj.json"])
+    })
+})
+
+describe("a clone made into a JSRunner project", () => {
+    /** A Unity project with OneJS in the package cache, its templates reduced to what the checks read. */
+    function unityProject(): string {
+        const project = scratch({ "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n", "Assets/.keep": "" })
+        const onejs = path.join(project, "Library", "PackageCache", "com.singtaa.onejs@abc123")
+        fs.mkdirSync(path.join(onejs, "Editor", "Templates"), { recursive: true })
+        fs.writeFileSync(path.join(onejs, "package.json"), JSON.stringify({ name: "com.singtaa.onejs" }))
+        for (const [template] of TEMPLATE_MAPPING) {
+            const text = template === "package.json.txt"
+                ? JSON.stringify({ name: "onejs-app", "//note": "for the editor", dependencies: { "onejs-play": "^0.8.3" } })
+                : template === "esbuild.config.mjs.txt" ? "const config = {\n    entryPoints: [\"index.tsx\"],\n}\n"
+                : `template ${template}`
+            fs.writeFileSync(path.join(onejs, "Editor", "Templates", template), text)
+        }
+        return project
+    }
+
+    function clone(project: string, folder: string, files: Record<string, string>): string {
+        const root = path.join(project, "Assets", folder, "~")
+        for (const [name, text] of Object.entries(files)) {
+            fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true })
+            fs.writeFileSync(path.join(root, name), text)
+        }
+        expect(spawnSync("git", ["init", "-q", root]).status).toBe(0)
+        return root
+    }
+
+    it("finds OneJS wherever the project installed it, by its name", () => {
+        const project = unityProject()
+        expect(oneJSOf(project)).toMatch(/com\.singtaa\.onejs@abc123$/)
+        const store = scratch({ "ProjectSettings/ProjectVersion.txt": "", "Assets/Singtaa/OneJS/package.json": JSON.stringify({ name: "com.singtaa.onejs" }),
+            "Assets/Singtaa/OneJS/Editor/Templates/package.json.txt": "{}", "Assets/Other/package.json": JSON.stringify({ name: "other" }) })
+        expect(oneJSOf(store)).toBe(path.join(store, "Assets", "Singtaa", "OneJS"))
+        expect(oneJSOf(scratch({ "ProjectSettings/ProjectVersion.txt": "", "Assets/.keep": "" }))).toBeNull()
+    })
+
+    it("writes JSRunner's files into the clone, builds the sketch's entry, and keeps them all out of git", () => {
+        const project = unityProject()
+        const root = clone(project, "Big Fish", { "game.tsx": "", "oj.json": "{\"name\":\"Big Fish!\",\"entry\":\"game.tsx\"}" })
+        const made = initUnity(root)
+        expect(made.prefab).toBe("Assets/Big Fish/BigFish.prefab")
+        // The sketch keeps its own entry: JSRunner's index.tsx is never written beside it.
+        expect(fs.existsSync(path.join(root, "index.tsx"))).toBe(false)
+        expect(fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")).toContain("entryPoints: [\"game.tsx\"]")
+        const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+        expect(pkg.name).toBe("big-fish")
+        expect(pkg["//note"]).toBeUndefined()
+        expect(fs.readFileSync(path.join(root, "types", "global.d.ts"), "utf8")).toBe("template global.d.ts.txt")
+        const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).stdout
+        expect(status.split("\n").filter(Boolean).sort()).toEqual(["?? game.tsx", "?? oj.json"])
+    })
+
+    it("puts a prefab beside the clone whose JSRunner points at the PanelSettings next to it", () => {
+        const project = unityProject()
+        const root = clone(project, "Tinder", { "index.tsx": "" })
+        initUnity(root)
+        const folder = path.join(project, "Assets", "Tinder")
+        const panelGuid = /guid: ([0-9a-f]{32})/.exec(fs.readFileSync(path.join(folder, "PanelSettings.asset.meta"), "utf8"))![1]
+        expect(panelGuid).toBe(stableGuid("Assets/Tinder/PanelSettings.asset"))
+        const prefab = fs.readFileSync(path.join(folder, "Tinder.prefab"), "utf8")
+        expect(prefab).toContain(`_panelSettings: {fileID: 11400000, guid: ${panelGuid}, type: 2}`)
+        expect(prefab).toContain("m_Script: {fileID: 11500000, guid: 35e89416e424048d08fdc44af24ad1b8, type: 3}")
+        expect(fs.readFileSync(path.join(folder, "Tinder.prefab.meta"), "utf8")).toContain("PrefabImporter:")
+    })
+
+    it("leaves everything alone the second time", () => {
+        const project = unityProject()
+        const root = clone(project, "Tinder", { "index.tsx": "" })
+        initUnity(root)
+        fs.writeFileSync(path.join(root, "tsconfig.json"), "{ \"mine\": true }")
+        const again = initUnity(root)
+        expect(again.lines.filter((l) => l.endsWith(": written"))).toEqual([])
+        expect(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8")).toBe("{ \"mine\": true }")
+    })
+
+    it("says where the clone should go when it is somewhere a JSRunner project cannot be", () => {
+        const project = unityProject()
+        const wrongName = path.join(project, "Assets", "Tinder")
+        fs.mkdirSync(wrongName, { recursive: true })
+        expect(() => initUnity(wrongName)).toThrow(/folder named ~ inside Assets, such as Assets\/Tinder\/~/)
+        const outside = scratch({ "Game/~/index.tsx": "" })
+        expect(() => initUnity(path.join(outside, "Game", "~"))).toThrow(/not inside a Unity project's Assets folder/)
+        const bare = scratch({ "ProjectSettings/ProjectVersion.txt": "", "Assets/Game/~/index.tsx": "" })
+        expect(() => initUnity(path.join(bare, "Assets", "Game", "~"))).toThrow(/does not have OneJS installed/)
     })
 })
 

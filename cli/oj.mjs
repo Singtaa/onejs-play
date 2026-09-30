@@ -22,10 +22,13 @@ import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
+import { initUnity, npm } from "./unity.mjs"
 
 const HELP = `usage: oj <command> [options]
 
   init                  write package.json, tsconfig.json, env.d.ts and .gitignore, then npm install
+                          --unity         in a clone at Assets/<Name>/~ of a Unity project with OneJS:
+                                          make it a JSRunner project, install and build it
   build                 bundle the sketch as the site does, to .oj/bundle.js (--out <file>)
   typecheck             tsc --noEmit
   run                   run the sketch in the site's container in a local Chrome
@@ -76,6 +79,15 @@ async function main() {
 
     switch (command) {
         case "init": {
+            if (flags.unity) {
+                const made = initUnity(root)
+                say(`OneJS templates from ${made.onejs}`)
+                for (const line of made.lines) say(line)
+                const code = npm(root, ["install", "--no-audit", "--no-fund"]) || npm(root, ["run", "build"])
+                if (code !== 0) return code
+                say(`now drag ${made.prefab} into a scene`)
+                return 0
+            }
             for (const line of init(root)) say(line)
             say("now: npm install, then npx oj run")
             return 0
