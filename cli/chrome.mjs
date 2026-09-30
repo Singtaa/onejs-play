@@ -75,6 +75,8 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         `--window-size=${window[0]},${window[1]}`,
         "about:blank",
     ]
+    const began = Date.now()
+    const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" })
     let stderr = ""
     child.stderr.on("data", (d) => { stderr += d })
@@ -94,17 +96,28 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         kill(child)
         throw new Error(`Chrome did not start (${binary}):\n${stderr.slice(-600)}`)
     }
+    const portMs = Date.now() - began
     let page = null
+    let last = "nothing yet"
     while (page === null && Date.now() < deadline) {
         try {
             const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())
             page = list.find((t) => t.type === "page") ?? null
-        } catch { /* not listening yet */ }
+            last = `targets [${list.map((t) => t.type).join(", ")}]`
+        } catch (error) {
+            last = `list failed: ${error.message}`
+        }
         if (page === null) await sleep(100)
     }
-    if (page === null) { kill(child); throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s`) }
+    if (page === null) {
+        kill(child)
+        throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
+    }
+    const pageMs = Date.now() - began
 
-    say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)})`)
+    // The start time, in a form a harness can read back: how close a run
+    // under load comes to STARTUP_MS is the number that says whether it holds.
+    say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)}), port after ${seconds(portMs)}, page after ${seconds(pageMs)}`)
     const browser = new Browser(child, profile, page)
     // From here the browser is ours to close: a step that fails must not
     // leave it running with nobody holding its handle.

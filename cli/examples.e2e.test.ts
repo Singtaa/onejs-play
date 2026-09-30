@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
@@ -88,7 +88,7 @@ function ojTest(dir: string, runtime: string, script = playtestOf(dir), onOutput
  * point that a build took two minutes and the runner stopped answering, while
  * one at a time took ten seconds a sketch.
  */
-const LIMIT = process.platform === "win32" ? 1 : Math.min(4, Math.max(1, Math.floor(os.availableParallelism() / 2)))
+const LIMIT = Number(process.env.OJ_SWEEP_LIMIT) || (process.platform === "win32" ? 1 : Math.min(4, Math.max(1, Math.floor(os.availableParallelism() / 2))))
 let running = 0
 const waiting: Array<() => void> = []
 async function slot<T>(work: () => Promise<T>): Promise<T> {
@@ -126,7 +126,35 @@ async function answersOn(port: string): Promise<boolean> {
     return alive()
 }
 
+/** One run's browser start, as `oj test` printed it, and the run's own length. */
+type Start = { name: string, portS: number | null, pageS: number | null, runS: number }
+const starts: Start[] = []
+
+/**
+ * The browser start times of the sweep, printed after it: the number that
+ * says whether STARTUP_MS holds under this concurrency on this machine.
+ */
+function startSummary(): string {
+    const pages = starts.map((s) => s.pageS).filter((s): s is number => s !== null).sort((a, b) => a - b)
+    const at = (q: number) => pages[Math.min(pages.length - 1, Math.floor(q * pages.length))]
+    const worst = starts.filter((s) => s.pageS !== null).sort((a, b) => b.pageS! - a.pageS!)[0]
+    const failed = starts.filter((s) => s.pageS === null).map((s) => s.name)
+    const runs = starts.map((s) => s.runS).sort((a, b) => a - b)
+    return [
+        `[sweep] ${process.platform}, ${os.availableParallelism()} cores, ${LIMIT} at a time, ${starts.length} runs`,
+        `[sweep] chrome page after: median ${at(0.5)?.toFixed(1)} s, p90 ${at(0.9)?.toFixed(1)} s, worst ${worst?.pageS?.toFixed(1)} s (${worst?.name}); limit ${STARTUP_S} s`,
+        `[sweep] no page: ${failed.length === 0 ? "none" : failed.join(", ")}`,
+        `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${runs[runs.length - 1]?.toFixed(1)} s`,
+    ].join("\n")
+}
+
+/** STARTUP_MS in cli/chrome.mjs, in seconds, as its failure message states it. */
+const STARTUP_S = 30
+
 describe("oj test over every example", () => {
+    afterAll(() => {
+        if (starts.length > 0) console.log(startSummary())
+    })
 
     it("finds the examples and the fixtures, so an empty sweep cannot pass", () => {
         expect(SKETCHES.filter((d) => d.includes(`${path.sep}examples${path.sep}`)).length).toBeGreaterThan(20)
@@ -136,7 +164,13 @@ describe("oj test over every example", () => {
     for (const dir of SKETCHES) {
         const name = path.relative(ROOT, dir)
         it.concurrent(`${name}${playtestOf(dir) ? ` (${playtestOf(dir)})` : ""}`, async () => {
-            const { code, output } = await slot(() => ojTest(dir, runtime))
+            const { code, output, runS } = await slot(async () => {
+                const began = Date.now()
+                return { ...(await ojTest(dir, runtime)), runS: (Date.now() - began) / 1000 }
+            })
+            const port = /port after ([\d.]+) s/.exec(output)
+            const page = /page after ([\d.]+) s/.exec(output)
+            starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, runS })
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
         // The deadline that matters is RUN_MS, per run; this one also counts
         // the wait for a slot, so it allows for every run ahead in the queue.
