@@ -10,6 +10,8 @@
  *   oj status           what the site is running: head, live, and why they differ
  *   oj push             git push origin main with OJ_TOKEN, then fail if the tip did not build
  *   oj new <name>       create a game on the site and clone it here
+ *   oj login            print a link; once the person presses Allow, this machine can push
+ *   oj logout           forget that login, here and on the site
  *   oj runtime          fetch the container the site serves into the local cache
  *
  * Every command reads the game in the current folder, or --root <dir>.
@@ -17,7 +19,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, folderFor, git, sidOf, siteOrigin, status, token, version } from "./site.mjs"
+import { create, folderFor, git, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
+import { login, logout } from "./login.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
@@ -43,15 +46,19 @@ const HELP = `usage: oj <command> [options]
                           line or crowded
                           --headed, --window, --for as above
   status                head, live and buildError for this sketch (--sid <id>)
-  push                  git push origin main with OJ_TOKEN; exits 1 if the tip failed to build
-  new <name>            create a sketch on the site with OJ_TOKEN and clone it into ./<name>
+  login                 print a ${siteOrigin()} link; once the person presses Allow there,
+                          this machine can create, edit and push (--no-wait prints and exits,
+                          then login --wait collects; --name names the device)
+  logout                forget the login, here and on the site
+  push                  git push origin main; exits 1 if the tip failed to build
+  new <name>            create a sketch on the site and clone it into ./<name>
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
   --root <dir>          the sketch folder (default: the current folder)
   --runtime <version>   run against a specific container version
   --site <origin>       the site (default ${siteOrigin()}; also OJ_SITE)
 
-OJ_TOKEN  a personal access token from ${siteOrigin()}/manage, for push, new and private sketches
+OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, used instead of oj login's
 OJ_CHROME the browser binary, when it is not in the usual place
 `
 
@@ -201,13 +208,13 @@ async function main() {
         }
         case "status": {
             const sid = flags.sid ? String(flags.sid) : sidOf(root)
-            const s = await status(sid, { bearer: process.env.OJ_TOKEN })
+            const s = await status(sid, { bearer: tokenOf(root) })
             console.log(JSON.stringify(s, null, 2))
             return 0
         }
         case "push": {
             const sid = flags.sid ? String(flags.sid) : sidOf(root)
-            const bearer = token()
+            const bearer = token(root)
             const code = git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
             const s = await status(sid, { bearer })
@@ -222,7 +229,7 @@ async function main() {
         case "new": {
             const name = args.join(" ").trim()
             if (!name) throw new Error("oj new <name>")
-            const bearer = token()
+            const bearer = token(root)
             const made = await create(name, bearer)
             const dir = folderFor(name)
             say(`created ${made.sid} at ${siteOrigin()}${made.url}`)
@@ -231,6 +238,14 @@ async function main() {
             say(`cloned into ${dir}`)
             return 0
         }
+        case "login":
+            return login(root, {
+                name: typeof flags.name === "string" ? flags.name : undefined,
+                wait: flags["no-wait"] !== true,
+                resume: flags.wait === true,
+            })
+        case "logout":
+            return logout(root)
         case "runtime": {
             const v = flags.runtime ? String(flags.runtime) : (await version()).runtime
             await ensureRuntime(siteOrigin(), v, say)

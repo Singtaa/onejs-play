@@ -3,7 +3,9 @@
  * about it, creating one, and pushing with a token and no prompt.
  */
 import { spawnSync } from "node:child_process"
+import fs from "node:fs"
 import path from "node:path"
+import { home } from "./local.mjs"
 
 export const DEFAULT_SITE = "https://play.onejs.com"
 
@@ -11,10 +13,31 @@ export function siteOrigin() {
     return (process.env.OJ_SITE ?? DEFAULT_SITE).replace(/\/$/, "")
 }
 
-/** The token, from OJ_TOKEN. Throws with the fix when absent. */
-export function token() {
-    const value = process.env.OJ_TOKEN
-    if (!value) throw new Error("Set OJ_TOKEN to a personal access token from " + siteOrigin() + "/manage.")
+/** Where `oj login` keeps its token: home first, the sketch's .oj/ when home cannot be written. */
+export function tokenPaths(root) {
+    return [path.join(home(), "token"), path.join(root, ".oj", "token")]
+}
+
+/** The token `oj login` stored, or null. */
+export function storedToken(root = process.cwd()) {
+    for (const file of tokenPaths(root)) {
+        try {
+            const text = fs.readFileSync(file, "utf8").trim()
+            if (text !== "") return text
+        } catch { /* not there */ }
+    }
+    return null
+}
+
+/** OJ_TOKEN when set, else what `oj login` stored, else null. */
+export function tokenOf(root = process.cwd()) {
+    return process.env.OJ_TOKEN || storedToken(root)
+}
+
+/** tokenOf, or a throw with the fix. */
+export function token(root = process.cwd()) {
+    const value = tokenOf(root)
+    if (!value) throw new Error("Not logged in. Run: npx onejs-play login")
     return value
 }
 
