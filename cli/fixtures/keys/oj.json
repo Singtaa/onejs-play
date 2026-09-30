@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Keys",
+    "entry": "index.tsx",
+    "controls": ["keyboard"]
+}

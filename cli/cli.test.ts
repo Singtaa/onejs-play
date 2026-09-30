@@ -6,7 +6,7 @@ import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree } from "./game.mjs"
 import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
-import { keyOf } from "./chrome.mjs"
+import { keyOf, keyEvent } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
 import { Game } from "./run.mjs"
@@ -163,11 +163,23 @@ describe("the site from a terminal", () => {
 
 describe("the browser", () => {
     it("turns DOM key codes into what Chrome wants beside them", () => {
-        expect(keyOf("KeyA")).toEqual({ key: "a", vk: 65 })
-        expect(keyOf("Digit3")).toEqual({ key: "3", vk: 51 })
-        expect(keyOf("Space")).toEqual({ key: " ", vk: 32 })
+        expect(keyOf("KeyA")).toEqual({ key: "a", vk: 65, text: "a" })
+        expect(keyOf("Digit3")).toEqual({ key: "3", vk: 51, text: "3" })
+        expect(keyOf("Space")).toEqual({ key: " ", vk: 32, text: " " })
+        expect(keyOf("Enter")).toEqual({ key: "Enter", vk: 13, text: "\r" })
         expect(keyOf("ArrowLeft")).toEqual({ key: "ArrowLeft", vk: 37 })
         expect(() => keyOf("a")).toThrow(/DOM codes/)
+    })
+
+    // Chrome's model of a keystroke: a key that types goes down as keyDown
+    // with its text, one that types nothing as rawKeyDown. Enter used to go
+    // down with no text, which a real keyboard never sends (#3).
+    it("sends a key down the way a real keystroke arrives", () => {
+        expect(keyEvent("keyDown", "Enter")).toMatchObject({ type: "keyDown", key: "Enter", text: "\r", windowsVirtualKeyCode: 13 })
+        expect(keyEvent("keyDown", "KeyC")).toMatchObject({ type: "keyDown", key: "c", text: "c" })
+        expect(keyEvent("keyDown", "Escape")).toEqual({ type: "rawKeyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+        expect(keyEvent("keyDown", "ArrowUp").type).toBe("rawKeyDown")
+        expect(keyEvent("keyUp", "Enter")).toEqual({ type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
     })
 
     it("caches a container per version under the oj home", () => {

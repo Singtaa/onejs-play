@@ -10,6 +10,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { build } from "./game.mjs"
 import { ensureRuntime, serve } from "./local.mjs"
+import { unservableAssets } from "./assets.mjs"
 import { launch } from "./chrome.mjs"
 import { siteOrigin, version } from "./site.mjs"
 import { rowProblemsExpression } from "./rows.mjs"
@@ -151,17 +152,56 @@ export class Game {
         this.pointer = b
     }
 
-    /** Presses a key by DOM code (KeyA, Space, ArrowLeft, Enter) and releases it after `holdMs`. */
-    async press(code, holdMs = 90) {
-        await this.browser.key("keyDown", code)
-        await sleep(holdMs)
-        await this.browser.key("keyUp", code)
+    /** The container's frame counter: how many frames the game has run. */
+    async frame() {
+        return Number(await this.eval("__ojPlay.runtime.oj.time.frame"))
     }
 
-    /** Holds a key down until `release` is called. */
+    /**
+     * Waits until the container has begun a frame after `frame`, which is when
+     * input sent before now has reached the game: the container applies input
+     * at frame boundaries, and a frame's callbacks see exactly what arrived
+     * since the previous one.
+     */
+    async frameAfter(frame, timeoutMs = 15000) {
+        return this.until(async () => (await this.frame()) > frame, {
+            timeoutMs, every: 5, what: `the sketch to run a frame after frame ${frame}`,
+        })
+    }
+
+    /**
+     * Sends one key edge and waits for a frame to take it.
+     *
+     * A frame only knows which keys went down since the last one, not in what
+     * order, so a game reading keys in a frame loop sees two presses that
+     * share a frame in the order its loop happens to check them. A player at
+     * any usable frame rate never lands two keystrokes in one frame, but a
+     * script can, easily: right after start the container runs one frame
+     * that lasts seconds, and Wordie's playtest typed CRANE into it and
+     * submitted ACENR (#3). Waiting here makes every press its own, whatever
+     * the frame rate.
+     */
+    async keyEdge(type, code) {
+        const before = await this.frame()
+        await this.browser.key(type, code)
+        await this.frameAfter(before)
+    }
+
+    /**
+     * Presses a key by DOM code (KeyA, Space, ArrowLeft, Enter), holds it at
+     * least `holdMs`, and releases it. Resolves once the game has seen both
+     * edges, each in a frame of its own.
+     */
+    async press(code, holdMs = 90) {
+        await this.keyEdge("keyDown", code)
+        await sleep(holdMs)
+        await this.keyEdge("keyUp", code)
+    }
+
+    /** Holds a key down until `release` is called. Both edges wait for a frame, as `press` does. */
     async hold(code) {
-        await this.browser.key("keyDown", code)
-        return () => this.browser.key("keyUp", code)
+        await this.keyEdge("keyDown", code)
+        return () => this.keyEdge("keyUp", code)
     }
 
     /** Types a string, one key per character; letters, digits and space only. */
@@ -203,6 +243,10 @@ export async function start(root, { headless = true, window: size, runtime: pinn
     const built = await build(root)
     say(`built ${built.entry}: ${(built.code.length / 1024).toFixed(1)} KB`)
     for (const w of built.warnings) say(`warning: ${w}`)
+    // Files that would sit on the site unreachable. A warning, not a failure:
+    // one nothing asks for costs nothing live, and one something does ask for
+    // fails the run as a 404, with the same reason printed beside it.
+    for (const problem of unservableAssets(root)) say(`warning: ${problem}`)
 
     const site = siteOrigin()
     const runtimeVersion = pinned ?? (await version()).runtime
@@ -210,7 +254,7 @@ export async function start(root, { headless = true, window: size, runtime: pinn
     say(`runtime ${runtimeVersion}`)
 
     const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion }
-    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle })
+    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, refused: (reason) => say(`404 ${reason}`) })
     server.bundle = built.code
     say(`serving ${server.url}`)
 

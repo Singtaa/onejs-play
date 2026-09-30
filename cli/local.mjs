@@ -13,6 +13,7 @@ import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { containerBoot } from "../host/boot.mjs"
+import { contentTypeOf, resolveAsset } from "./assets.mjs"
 
 /** The four files a container is. Mirrors RUNTIME_FILES in the site's staging script. */
 export const RUNTIME_FILES = [
@@ -62,12 +63,10 @@ export async function ensureRuntime(site, version, say = () => {}) {
 }
 
 // Unity refuses a wasm served as octet-stream, and node ships no mime table.
+// The container's own files only: assets take theirs from the site's table.
 const TYPES = {
     ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".wasm": "application/wasm",
     ".data": "application/octet-stream", ".json": "application/json",
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml",
-    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
-    ".mp4": "video/mp4", ".webm": "video/webm", ".woff2": "font/woff2", ".ttf": "font/ttf",
 }
 
 /**
@@ -126,11 +125,13 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
 
 /**
  * Serves the game the way its origin does: the host page at /, the container
- * under /runtime/, the current bundle at /bundle.js, and the game's own files
- * under /assets/, which is where `assetUrl()` looks. Resolves to `{ url,
- * close }`; `bundle` is read on every request so a rebuild is one refetch.
+ * under /runtime/, the current bundle at /bundle.js, and the game's assets
+ * under /assets/, which is where `assetUrl()` looks, by the site's rule
+ * (assets.mjs). Resolves to `{ url, close }`; `bundle` is read on every
+ * request so a rebuild is one refetch. `refused` hears why each asset
+ * request the site would 404 was refused.
  */
-export function serve({ runtime, root, manifest, bundle, port = 0 }) {
+export function serve({ runtime, root, manifest, bundle, port = 0, refused = () => {} }) {
     const server = http.createServer((req, res) => {
         const url = decodeURIComponent((req.url ?? "/").split("?")[0])
         const send = (code, body, type) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store" }); res.end(body) }
@@ -139,9 +140,17 @@ export function serve({ runtime, root, manifest, bundle, port = 0 }) {
         // Chrome asks for one unprompted, and a 404 is logged as a network
         // error that a run would then be failed for.
         if (url === "/favicon.ico") return send(204, "", "image/x-icon")
-        let file = null
-        if (url.startsWith("/runtime/")) file = path.join(runtime, url.slice("/runtime/".length))
-        else if (url.startsWith("/assets/")) file = path.join(root, url.slice("/assets/".length))
+        if (url.startsWith("/assets/")) {
+            const name = url.slice("/assets/".length)
+            const asset = resolveAsset(root, name)
+            if (asset.reason !== undefined) {
+                refused(asset.reason)
+                return send(404, asset.reason, "text/plain")
+            }
+            res.writeHead(200, { "content-type": contentTypeOf(name), "cache-control": "no-store" })
+            return fs.createReadStream(asset.file).pipe(res)
+        }
+        const file = url.startsWith("/runtime/") ? path.join(runtime, url.slice("/runtime/".length)) : null
         if (file === null || url.includes("..") || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(404, "not found", "text/plain")
         res.writeHead(200, { "content-type": TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream", "cache-control": "no-store" })
         fs.createReadStream(file).pipe(res)

@@ -34,9 +34,11 @@ const HELP = `usage: oj <command> [options]
                           --for <s>       headless: seconds to run before the screenshot (default 5)
                           --shot <file>   where the screenshot goes (default .oj/run.png)
                           --window <w,h>  browser size in CSS pixels (default 960,540)
-  test <script.mjs>     run, then call the script's default export with the sketch;
-                          fails on a console error or a row whose controls are out of line or crowded
-                          --headed, --window as above
+  test [script.mjs]     run, then call the script's default export with the sketch (with no
+                          script, let it run --for seconds, default 2); fails on a console error,
+                          an asset the site would not serve, or a row whose controls are out of
+                          line or crowded
+                          --headed, --window, --for as above
   status                head, live and buildError for this sketch (--sid <id>)
   push                  git push origin main with OJ_TOKEN; exits 1 if the tip failed to build
   new <name>            create a sketch on the site with OJ_TOKEN and clone it into ./<name>
@@ -130,13 +132,16 @@ async function main() {
             }
         }
         case "test": {
+            // No script is a smoke test: the sketch starts, runs a moment, and
+            // passes the same checks. It is what every example gets that has
+            // no playtest of its own.
             const script = args[0]
-            if (!script) throw new Error("oj test <script.mjs>")
             const game = await start(root, { headless: flags.headed !== true, window: size, runtime: flags.runtime && String(flags.runtime), say })
             try {
                 const ms = await game.ready()
                 say(`sketch started in ${ms} ms`)
-                await runScript(script, game)
+                if (script) await runScript(script, game)
+                else await game.wait(Number(flags.for ?? 2) * 1000)
                 if (game.errors.length > 0) {
                     say(`${game.errors.length} console error(s):`)
                     for (const e of game.errors.slice(0, 10)) console.error("  " + e)

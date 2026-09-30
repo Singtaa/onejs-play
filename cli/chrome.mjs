@@ -94,6 +94,16 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)})`)
     const browser = new Browser(child, profile, page)
     await browser.open()
+    // The page a person types into is the focused, visible tab. Headless
+    // Chrome opens it visible but unfocused, and the first key event that
+    // reaches it then flips document.visibilityState to "hidden": a hidden
+    // page gets no requestAnimationFrame, so the container's frame loop stops
+    // dead and everything after that key is lost. Found as Wordie's Enter
+    // "never submitting" (#3); Escape, and letters or Enter sent without
+    // text, did the same on a blank page. Activating the tab and emulating
+    // focus keeps it the page a player would be on.
+    await browser.send("Page.bringToFront")
+    await browser.send("Emulation.setFocusEmulationEnabled", { enabled: true })
     // --window-size is the window; headless Chrome keeps a toolbar's worth of
     // it for itself, and a 600x600 window came back as a 600x457 viewport. The
     // viewport is what the game measures, so it is set here, exactly.
@@ -207,11 +217,7 @@ export class Browser {
     }
 
     async key(type, code) {
-        const k = keyOf(code)
-        await this.send("Input.dispatchKeyEvent", {
-            type, key: k.key, code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
-            ...(type === "keyDown" && k.key.length === 1 ? { text: k.key } : {}),
-        })
+        await this.send("Input.dispatchKeyEvent", keyEvent(type, code))
     }
 
     close() {
@@ -222,20 +228,40 @@ export class Browser {
 }
 
 const NAMED = {
-    Space: [" ", 32], Enter: ["Enter", 13], Escape: ["Escape", 27], Backspace: ["Backspace", 8], Tab: ["Tab", 9],
+    Space: [" ", 32, " "], Enter: ["Enter", 13, "\r"], NumpadEnter: ["Enter", 13, "\r"], Escape: ["Escape", 27], Backspace: ["Backspace", 8], Tab: ["Tab", 9],
     ArrowLeft: ["ArrowLeft", 37], ArrowUp: ["ArrowUp", 38], ArrowRight: ["ArrowRight", 39], ArrowDown: ["ArrowDown", 40],
     ShiftLeft: ["Shift", 16], ShiftRight: ["Shift", 16], ControlLeft: ["Control", 17], AltLeft: ["Alt", 18],
     Delete: ["Delete", 46], Home: ["Home", 36], End: ["End", 35], PageUp: ["PageUp", 33], PageDown: ["PageDown", 34],
 }
 
-/** A DOM `code` (KeyA, Digit1, Space, ArrowLeft) as the key and virtual key code Chrome wants beside it. */
+/**
+ * A DOM `code` (KeyA, Digit1, Space, ArrowLeft) as the key and virtual key
+ * code Chrome wants beside it, plus the text the key types when it types
+ * any: Enter types a carriage return, the way a real keyboard's does.
+ */
 export function keyOf(code) {
-    if (NAMED[code]) return { key: NAMED[code][0], vk: NAMED[code][1] }
+    if (NAMED[code]) return NAMED[code][2] === undefined
+        ? { key: NAMED[code][0], vk: NAMED[code][1] }
+        : { key: NAMED[code][0], vk: NAMED[code][1], text: NAMED[code][2] }
     let m = /^Key([A-Z])$/.exec(code)
-    if (m) return { key: m[1].toLowerCase(), vk: m[1].charCodeAt(0) }
+    if (m) return { key: m[1].toLowerCase(), vk: m[1].charCodeAt(0), text: m[1].toLowerCase() }
     m = /^Digit(\d)$/.exec(code)
-    if (m) return { key: m[1], vk: m[1].charCodeAt(0) }
+    if (m) return { key: m[1], vk: m[1].charCodeAt(0), text: m[1] }
     m = /^F(\d{1,2})$/.exec(code)
     if (m) return { key: code, vk: 111 + Number(m[1]) }
     throw new Error(`Unknown key code ${code}. Use DOM codes: KeyA, Digit1, Space, ArrowLeft, Enter.`)
+}
+
+/**
+ * The CDP event for one key edge, shaped the way Chrome describes a real
+ * keystroke: a key that types something goes down as `keyDown` carrying its
+ * text, one that types nothing as `rawKeyDown` (Puppeteer's rule too).
+ */
+export function keyEvent(type, code) {
+    const k = keyOf(code)
+    const base = { key: k.key, code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk }
+    if (type !== "keyDown") return { type, ...base }
+    return k.text === undefined
+        ? { type: "rawKeyDown", ...base }
+        : { type: "keyDown", ...base, text: k.text, unmodifiedText: k.text }
 }
