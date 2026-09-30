@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -6,7 +6,7 @@ import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree } from "./game.mjs"
 import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
-import { keyOf, keyEvent } from "./chrome.mjs"
+import { keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
 import { Game } from "./run.mjs"
@@ -180,6 +180,17 @@ describe("the browser", () => {
         expect(keyEvent("keyDown", "Escape")).toEqual({ type: "rawKeyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
         expect(keyEvent("keyDown", "ArrowUp").type).toBe("rawKeyDown")
         expect(keyEvent("keyUp", "Enter")).toEqual({ type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
+    })
+
+    // CI ran Node 20 for months, where every oj run died on "WebSocket is
+    // not defined"; nothing noticed until npm test started running oj test.
+    it("refuses a Node without the global WebSocket before starting Chrome", async () => {
+        vi.stubGlobal("WebSocket", undefined)
+        try {
+            await expect(launch()).rejects.toThrow(/needs Node 22 or newer; this is Node /)
+        } finally {
+            vi.unstubAllGlobals()
+        }
     })
 
     it("caches a container per version under the oj home", () => {

@@ -527,11 +527,12 @@ constant, and open the screenshot.
 
 `cli/chrome.mjs` is also what the production harnesses in `Tools/playtest`
 launch and speak to, so the launcher and the protocol client exist once.
-Chrome is found in the usual places or named by `OJ_CHROME`. One container
-costs several cores under the software rasteriser, so keep to a few runs at a
-time on a machine (the `npm test` sweep runs four; key presses wait for frames,
-so a slow one only makes a run longer). `OJ_SITE` points every command at another origin; `OJ_HOME` moves
-the cache.
+Chrome is found in the usual places or named by `OJ_CHROME`, and is driven
+over Node's built-in WebSocket, so `oj run` and `oj test` need Node 22 or
+newer. One container costs several cores under the software rasteriser, so
+keep to a few runs at a time on a machine (the `npm test` sweep runs four;
+key presses wait for frames, so a slow one only makes a run longer). `OJ_SITE`
+points every command at another origin; `OJ_HOME` moves the cache.
 
 ## Testing
 

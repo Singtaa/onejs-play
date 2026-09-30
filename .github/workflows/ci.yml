@@ -65,7 +65,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # The oldest Node the package supports (package.json engines): oj drives
+          # Chrome over the global WebSocket, which Node 20 does not have.
+          node-version: 22
           cache: npm
           cache-dependency-path: onejs-play/package-lock.json
 

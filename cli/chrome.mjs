@@ -54,6 +54,11 @@ const STARTUP_MS = 30000
  * survives into the next run.
  */
 export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
+    // Checked before Chrome starts, so an old Node fails with the fix in hand
+    // rather than "WebSocket is not defined" after starting a browser for nothing.
+    if (typeof WebSocket !== "function") {
+        throw new Error(`oj drives Chrome over Node's built-in WebSocket, which needs Node 22 or newer; this is Node ${process.versions.node}.`)
+    }
     const binary = findChrome()
     // The prefix names this run's browsers and nothing else. A harness that
     // sweeps orphans with `pkill -f <prefix>` gives its own, so the sweep
