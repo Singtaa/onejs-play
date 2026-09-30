@@ -136,12 +136,32 @@ async function main() {
             // passes the same checks. It is what every example gets that has
             // no playtest of its own.
             const script = args[0]
+            // A signal (Ctrl-C, or a harness giving up on a run) ends the run
+            // through the same cleanup as a finish. The browser sits in its
+            // own process group on Mac and Linux, so an oj that simply died
+            // would leave it running.
+            let signalled = null
+            const interrupted = new Promise((resolve) => {
+                const on = (signal) => { signalled = signal; resolve() }
+                process.once("SIGINT", on)
+                process.once("SIGTERM", on)
+            })
             const game = await start(root, { headless: flags.headed !== true, window: size, runtime: flags.runtime && String(flags.runtime), say })
             try {
-                const ms = await game.ready()
-                say(`sketch started in ${ms} ms`)
-                if (script) await runScript(script, game)
-                else await game.wait(Number(flags.for ?? 2) * 1000)
+                const play = (async () => {
+                    const ms = await game.ready()
+                    say(`sketch started in ${ms} ms`)
+                    if (script) await runScript(script, game)
+                    else await game.wait(Number(flags.for ?? 2) * 1000)
+                })()
+                // Once the browser is closed under it, the script fails; that
+                // failure is not the news.
+                play.catch(() => {})
+                if (signalled === null) await Promise.race([play, interrupted])
+                if (signalled !== null) {
+                    say(`interrupted by ${signalled}`)
+                    return 1
+                }
                 if (game.errors.length > 0) {
                     say(`${game.errors.length} console error(s):`)
                     for (const e of game.errors.slice(0, 10)) console.error("  " + e)
