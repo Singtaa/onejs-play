@@ -17,11 +17,17 @@ const TOKEN = "oja_" + "a".repeat(32)
 let server: Server
 let dir = ""
 let decision: "pending" | "allow" | "deny" = "allow"
+/** A decision for one login, by its poll secret, over the default above. */
+const decisions = new Map<string, "pending" | "allow" | "deny">()
+const CODES = ["WDJB-MJHT", "BCDF-GHJK", "LMNP-QRST"]
+let started = 0
 const seen: Array<{ path: string, body: any, auth?: string }> = []
 
 beforeEach(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-login-"))
     decision = "allow"
+    decisions.clear()
+    started = 0
     seen.length = 0
     server = createServer(async (req, res) => {
         let text = ""
@@ -29,10 +35,14 @@ beforeEach(async () => {
         const body = text ? JSON.parse(text) : {}
         seen.push({ path: req.url!, body, auth: req.headers.authorization })
         const send = (status: number, value: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
-        if (req.url === "/api/login") return send(200, { code: "WDJB-MJHT", url: "http://site/device?code=WDJB-MJHT", poll: "p".repeat(32), interval: 0, expiresIn: 5 })
+        if (req.url === "/api/login") {
+            const code = CODES[started++ % CODES.length]
+            return send(200, { code, url: `http://site/device?code=${code}`, poll: code.toLowerCase().replace("-", "").padEnd(32, "p"), interval: 0, expiresIn: 5 })
+        }
         if (req.url === "/api/login/poll") {
-            if (decision === "pending") return send(202, { status: "pending" })
-            if (decision === "deny") return send(403, { error: "Cancelled on the site." })
+            const decided = decisions.get(body.poll) ?? decision
+            if (decided === "pending") return send(202, { status: "pending" })
+            if (decided === "deny") return send(403, { error: "Cancelled on the site." })
             return send(200, { token: TOKEN, handle: "owner", expiresAt: 1 })
         }
         if (req.url === "/api/logout") return send(200, { ok: true })
@@ -94,6 +104,35 @@ describe("oj login", () => {
         expect(storedToken(dir)).toBe(TOKEN)
         // The pending login is used up.
         expect(await login(dir, { resume: true, ...quiet })).toBe(1)
+    })
+
+    it("keeps two logins started at once apart, and collects the one named by its code", async () => {
+        decision = "pending"
+        const printed: string[] = []
+        const said: string[] = []
+        const log = { say: (l: string) => said.push(l), print: (l: string) => printed.push(l) }
+        expect(await login(dir, { wait: false, ...log })).toBe(0)
+        expect(await login(dir, { wait: false, ...log })).toBe(0)
+        expect(printed.map((l) => /code (\S+)\)/.exec(l)?.[1])).toEqual(["WDJB-MJHT", "BCDF-GHJK"])
+        expect(said).toContain("then: oj login --wait BCDF-GHJK")
+
+        // Two are waiting, so --wait alone does not guess which.
+        said.length = 0
+        expect(await login(dir, { resume: true, ...log })).toBe(1)
+        expect(said).toEqual(["2 logins are waiting (WDJB-MJHT, BCDF-GHJK); say which: oj login --wait <code>"])
+
+        // The first one's person presses Allow; the second's has not yet.
+        decisions.set("wdjbmjhtpppppppppppppppppppppppp", "allow")
+        expect(await login(dir, { resume: true, code: "wdjb-mjht", ...quiet })).toBe(0)
+        expect(storedToken(dir)).toBe(TOKEN)
+
+        // The second is still waiting, and now it is the only one.
+        decisions.set("bcdfghjkpppppppppppppppppppppppp", "deny")
+        said.length = 0
+        expect(await login(dir, { resume: true, ...log })).toBe(1)
+        expect(said).toEqual(["Cancelled on the site."])
+        expect(await login(dir, { resume: true, code: "BCDF-GHJK", ...log })).toBe(1)
+        expect(said.at(-1)).toBe("no login with code BCDF-GHJK is waiting; run oj login first")
     })
 
     it("fails when the person cancels, and stores nothing", async () => {

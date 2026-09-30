@@ -91,34 +91,72 @@ async function post(pathname, body, headers = {}) {
     return { status: response.status, body: parsed }
 }
 
-/** Where a started login waits between `--no-wait` and `--wait`. */
-const pendingFile = () => path.join(home(), "login.json")
+/**
+ * Where a started login waits between `--no-wait` and `--wait`: one file per
+ * code, so two logins started at once on one machine (two agents, or one
+ * agent running two) cannot overwrite each other's, and finishing one does
+ * not remove the other's.
+ */
+const pendingDir = () => path.join(home(), "logins")
+const pendingFile = (code) => path.join(pendingDir(), `${code}.json`)
+
+/** The logins waiting here for this site, oldest first. Expired ones are removed on the way. */
+function waitingLogins() {
+    let names = []
+    try { names = fs.readdirSync(pendingDir()) } catch { return [] }
+    const out = []
+    for (const name of names.filter((n) => n.endsWith(".json"))) {
+        const file = path.join(pendingDir(), name)
+        let pending = null
+        try { pending = JSON.parse(fs.readFileSync(file, "utf8")) } catch { continue }
+        if (!(pending.until > Date.now())) { fs.rmSync(file, { force: true }); continue }
+        if (pending.site === siteOrigin()) out.push(pending)
+    }
+    return out.sort((a, b) => a.until - b.until)
+}
+
+/**
+ * The waiting login `--wait` means: the one with this code, or the only one.
+ * With several and no code it refuses rather than guess, because collecting
+ * another agent's login would leave that agent's person pressing Allow on a
+ * link nothing is waiting for.
+ */
+function pick(code, say) {
+    const waiting = waitingLogins()
+    if (code !== undefined) {
+        const want = String(code).toUpperCase()
+        const found = waiting.find((p) => p.code === want)
+        if (found === undefined) say(`no login with code ${want} is waiting; run oj login first`)
+        return found ?? null
+    }
+    if (waiting.length === 1) return waiting[0]
+    if (waiting.length === 0) say("no login is waiting; run oj login first")
+    else say(`${waiting.length} logins are waiting (${waiting.map((p) => p.code).join(", ")}); say which: oj login --wait <code>`)
+    return null
+}
 
 /**
  * `oj login`. Prints the link, then waits for Allow unless `noWait`, in which
  * case `oj login --wait` collects it later. Returns an exit code.
  */
-export async function login(root, { name, wait = true, resume = false, say = console.error, print = console.log } = {}) {
+export async function login(root, { name, wait = true, resume = false, code, say = console.error, print = console.log } = {}) {
     let pending
     if (resume) {
-        try { pending = JSON.parse(fs.readFileSync(pendingFile(), "utf8")) } catch { pending = null }
-        if (pending === null || pending.site !== siteOrigin()) {
-            say("no login is waiting; run oj login first")
-            return 1
-        }
+        pending = pick(code, say)
+        if (pending === null) return 1
     } else {
         const started = await post("/api/login", { device: name ?? deviceName() })
         if (started.status !== 200) {
             say(started.body.error ?? `${started.status} from the site`)
             return 1
         }
-        pending = { site: siteOrigin(), poll: started.body.poll, interval: started.body.interval, until: Date.now() + started.body.expiresIn * 1000 }
+        pending = { site: siteOrigin(), code: started.body.code, poll: started.body.poll, interval: started.body.interval, until: Date.now() + started.body.expiresIn * 1000 }
         // stdout, one line: what an agent relays to the person.
         print(`Open ${started.body.url} and press Allow (code ${started.body.code}).`)
         if (!wait) {
-            fs.mkdirSync(home(), { recursive: true })
-            fs.writeFileSync(pendingFile(), JSON.stringify(pending), { mode: 0o600 })
-            say("then: oj login --wait")
+            fs.mkdirSync(pendingDir(), { recursive: true })
+            fs.writeFileSync(pendingFile(pending.code), JSON.stringify(pending), { mode: 0o600 })
+            say(`then: oj login --wait ${pending.code}`)
             return 0
         }
     }
@@ -128,7 +166,7 @@ export async function login(root, { name, wait = true, resume = false, say = con
             await sleep(pending.interval * 1000)
             continue
         }
-        fs.rmSync(pendingFile(), { force: true })
+        fs.rmSync(pendingFile(pending.code), { force: true })
         if (polled.status !== 200) {
             say(polled.body.error ?? `${polled.status} from the site`)
             return 1
@@ -138,7 +176,7 @@ export async function login(root, { name, wait = true, resume = false, say = con
         say(configureGit(root, file))
         return 0
     }
-    fs.rmSync(pendingFile(), { force: true })
+    fs.rmSync(pendingFile(pending.code), { force: true })
     say("the link expired; run oj login again")
     return 1
 }
