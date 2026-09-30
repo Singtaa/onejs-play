@@ -1,7 +1,8 @@
-import { beforeAll, describe, expect, it } from "vitest"
+import { beforeAll, describe, expect, it, vi } from "vitest"
 import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
+import { launch } from "./chrome.mjs"
 import { ensureRuntime } from "./local.mjs"
 import { siteOrigin, version } from "./site.mjs"
 
@@ -93,4 +94,36 @@ describe("oj test over every example", () => {
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
         }, 240_000)
     }
+})
+
+describe("the CLI's own browser", () => {
+    // A start that fails after Chrome is up used to leave it running, found
+    // when a failed attach left a headless browser behind.
+    it("closes the browser it started when attaching to it fails", async () => {
+        const urls: string[] = []
+        vi.stubGlobal("WebSocket", class {
+            constructor(url: string) {
+                urls.push(url)
+                throw new Error("no socket")
+            }
+        })
+        try {
+            await expect(launch()).rejects.toThrow("no socket")
+        } finally {
+            vi.unstubAllGlobals()
+        }
+        expect(urls).toHaveLength(1)
+        const port = new URL(urls[0]).port
+        const alive = async () => {
+            try {
+                await fetch(`http://127.0.0.1:${port}/json/version`)
+                return true
+            } catch {
+                return false
+            }
+        }
+        const deadline = Date.now() + 5000
+        while (await alive() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100))
+        expect(await alive(), `Chrome still answers on port ${port}`).toBe(false)
+    }, 60_000)
 })

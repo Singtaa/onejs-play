@@ -106,22 +106,29 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
 
     say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)})`)
     const browser = new Browser(child, profile, page)
-    await browser.open()
-    // The page a person types into is the focused, visible tab. Headless
-    // Chrome opens it visible but unfocused, and the first key event that
-    // reaches it then flips document.visibilityState to "hidden": a hidden
-    // page gets no requestAnimationFrame, so the container's frame loop stops
-    // dead and everything after that key is lost. Found as Wordie's Enter
-    // "never submitting" (#3); Escape, and letters or Enter sent without
-    // text, did the same on a blank page. Activating the tab and emulating
-    // focus keeps it the page a player would be on.
-    await browser.send("Page.bringToFront")
-    await browser.send("Emulation.setFocusEmulationEnabled", { enabled: true })
-    // --window-size is the window; headless Chrome keeps a toolbar's worth of
-    // it for itself, and a 600x600 window came back as a 600x457 viewport. The
-    // viewport is what the game measures, so it is set here, exactly.
-    if (headless) {
-        await browser.send("Emulation.setDeviceMetricsOverride", { width: window[0], height: window[1], deviceScaleFactor: 1, mobile: false })
+    // From here the browser is ours to close: a step that fails must not
+    // leave it running with nobody holding its handle.
+    try {
+        await browser.open()
+        // The page a person types into is the focused, visible tab. Headless
+        // Chrome opens it visible but unfocused, and the first key event that
+        // reaches it then flips document.visibilityState to "hidden": a hidden
+        // page gets no requestAnimationFrame, so the container's frame loop stops
+        // dead and everything after that key is lost. Found as Wordie's Enter
+        // "never submitting" (#3); Escape, and letters or Enter sent without
+        // text, did the same on a blank page. Activating the tab and emulating
+        // focus keeps it the page a player would be on.
+        await browser.send("Page.bringToFront")
+        await browser.send("Emulation.setFocusEmulationEnabled", { enabled: true })
+        // --window-size is the window; headless Chrome keeps a toolbar's worth of
+        // it for itself, and a 600x600 window came back as a 600x457 viewport. The
+        // viewport is what the game measures, so it is set here, exactly.
+        if (headless) {
+            await browser.send("Emulation.setDeviceMetricsOverride", { width: window[0], height: window[1], deviceScaleFactor: 1, mobile: false })
+        }
+    } catch (e) {
+        browser.close()
+        throw e
     }
     return browser
 }
