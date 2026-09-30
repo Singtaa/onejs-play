@@ -67,6 +67,7 @@
       "types": "./cli/game.d.ts",
       "default": "./cli/game.mjs"
     },
+    "./unity": "./cli/unity-assets.mjs",
     "./host/boot": {
       "types": "./host/boot.d.ts",
       "default": "./host/boot.mjs"

@@ -505,6 +505,14 @@ of git rather than assumed to be `.git/info/exclude`. The template table in
 `cli/unity.mjs` mirrors `templateMapping` in OneJS's `JSRunner.cs`, and the
 container's test holds the two together.
 
+The game's files sit at their own names in the repository, and OneJS reads a
+JSRunner project's files from `~/assets/`. So the build `init --unity` writes
+carries `assetsPlugin()` (`onejs-play/unity`), which copies every file the
+site would serve into `assets/` before each build, keeping its folders. The
+copies are excluded from git, the site refuses a top-level `assets` folder so
+none of the game's files can be in the way, and a copy is removed once its file
+leaves the game (only a copy the plugin wrote, never a file put there by hand).
+
 **`oj run` runs what ships.** It fetches the container the site serves at
 `/runtime/<version>/` (the pin from `/api/version`, or `--runtime`) into
 `~/.onejs-play/runtime/<version>/` once, serves it with the game's bundle and

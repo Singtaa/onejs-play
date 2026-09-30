@@ -48,10 +48,10 @@ export const TEMPLATE_MAPPING = [
 /**
  * What else a JSRunner project grows in its working directory, for info/exclude:
  * the install, JSRunner's record of the defaults it gave (`.onejs/`), the
- * declarations the build writes beside `.sl` and `.module.uss` files, and oj's
- * own output folder.
+ * declarations the build writes beside `.sl` and `.module.uss` files, oj's
+ * own output folder, and the copies of the sketch's files in `assets/`.
  */
-const GROWN = ["node_modules", "package-lock.json", ".onejs", ".oj", "*.sl.d.ts", "*.module.uss.d.ts"]
+const GROWN = ["node_modules", "package-lock.json", ".onejs", ".oj", "*.sl.d.ts", "*.module.uss.d.ts", "/assets/"]
 
 /** The OneJS package's name, which is how an installed copy is recognised wherever it lives. */
 const ONEJS = "com.singtaa.onejs"
@@ -114,16 +114,30 @@ export function oneJSOf(project) {
 }
 
 /**
- * The template's build, pointed at the sketch's entry.
+ * The template's build, pointed at the sketch's entry, with the plugin that
+ * copies the sketch's files into assets/ (cli/unity-assets.mjs).
  *
  * The template names index.tsx, which is every sketch's entry unless its
- * oj.json says otherwise. A template that no longer matches the pattern is
- * left as it is: the build then names index.tsx, which is right for nearly
- * every sketch, rather than a mangled file that is right for none.
+ * oj.json says otherwise. A template whose entry no longer matches the
+ * pattern is left naming index.tsx, which is right for nearly every sketch.
+ * One with no plugins list is refused instead: the sketch would build and run
+ * without its files, and nothing would say why. The container's scaffold gate
+ * runs this against OneJS's real template, so a reshaped one fails there first.
  */
 export function buildConfig(template, entry) {
-    if (entry === "index.tsx") return template
-    return template.replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
+    let text = entry === "index.tsx" ? template
+        : template.replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
+    const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
+    if (plugins === null) {
+        throw new Error("OneJS's esbuild.config.mjs template has no plugins list for the step that copies the sketch's files into assets/. "
+            + "Update onejs-play (npx onejs-play@latest init --unity), or report it if this is the latest.")
+    }
+    const indent = plugins[1] + "    "
+    const at = plugins.index + plugins[0].length
+    text = text.slice(0, at)
+        + `${indent}// The sketch's files, copied into assets/ where OneJS looks for them\n${indent}assetsPlugin(),\n`
+        + text.slice(at)
+    return `import { assetsPlugin } from "onejs-play/unity"\n${text}`
 }
 
 /** This package's own version: the oj a clone set up by this command should build with. */

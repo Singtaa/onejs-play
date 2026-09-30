@@ -9,7 +9,8 @@ import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
 import { keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
-import { initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING } from "./unity.mjs"
+import { buildConfig, initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING } from "./unity.mjs"
+import { assetsPlugin, syncAssets } from "./unity-assets.mjs"
 import { spawnSync } from "node:child_process"
 import { Game } from "./run.mjs"
 import { containerBoot } from "../host/boot.mjs"
@@ -341,6 +342,9 @@ describe("the tooling a clone writes for itself", () => {
     })
 })
 
+/** OneJS's esbuild.config.mjs template, cut to the two places buildConfig edits. */
+const ESBUILD_TEMPLATE = "const config = {\n    entryPoints: [\"index.tsx\"],\n    plugins: [\n        importTransformPlugin(),\n    ],\n}\n"
+
 describe("a clone made into a JSRunner project", () => {
     /** A Unity project with OneJS in the package cache, its templates reduced to what the checks read. */
     function unityProject(): string {
@@ -351,7 +355,7 @@ describe("a clone made into a JSRunner project", () => {
         for (const [template] of TEMPLATE_MAPPING) {
             const text = template === "package.json.txt"
                 ? JSON.stringify({ name: "onejs-app", "//note": "for the editor", dependencies: { "onejs-play": "^0.8.3" } })
-                : template === "esbuild.config.mjs.txt" ? "const config = {\n    entryPoints: [\"index.tsx\"],\n}\n"
+                : template === "esbuild.config.mjs.txt" ? ESBUILD_TEMPLATE
                 : `template ${template}`
             fs.writeFileSync(path.join(onejs, "Editor", "Templates", template), text)
         }
@@ -384,15 +388,25 @@ describe("a clone made into a JSRunner project", () => {
         expect(made.prefab).toBe("Assets/Big Fish/BigFish.prefab")
         // The sketch keeps its own entry: JSRunner's index.tsx is never written beside it.
         expect(fs.existsSync(path.join(root, "index.tsx"))).toBe(false)
-        expect(fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")).toContain("entryPoints: [\"game.tsx\"]")
+        const config = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")
+        expect(config).toContain("entryPoints: [\"game.tsx\"]")
+        expect(config.startsWith("import { assetsPlugin } from \"onejs-play/unity\"\n")).toBe(true)
+        expect(config).toContain("    plugins: [\n        // The sketch's files, copied into assets/ where OneJS looks for them\n        assetsPlugin(),\n        importTransformPlugin(),")
         const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
         expect(pkg.name).toBe("big-fish")
         expect(pkg["//note"]).toBeUndefined()
         const own = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
         expect(pkg.dependencies["onejs-play"]).toBe(`^${own}`)
         expect(fs.readFileSync(path.join(root, "types", "global.d.ts"), "utf8")).toBe("template global.d.ts.txt")
+        // The build's copies of the sketch's files stay out of git too.
+        fs.writeFileSync(path.join(root, "glow.png"), "png")
+        expect(syncAssets(root).copied).toEqual(["glow.png"])
         const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).stdout
-        expect(status.split("\n").filter(Boolean).sort()).toEqual(["?? game.tsx", "?? oj.json"])
+        expect(status.split("\n").filter(Boolean).sort()).toEqual(["?? game.tsx", "?? glow.png", "?? oj.json"])
+    })
+
+    it("refuses a build template it cannot add the file copy to", () => {
+        expect(() => buildConfig("const config = {\n    entryPoints: [\"index.tsx\"],\n}\n", "index.tsx")).toThrow(/no plugins list/)
     })
 
     it("puts a prefab beside the clone whose JSRunner points at the PanelSettings next to it", () => {
@@ -427,6 +441,53 @@ describe("a clone made into a JSRunner project", () => {
         expect(() => initUnity(path.join(outside, "Game", "~"))).toThrow(/not inside a Unity project's Assets folder/)
         const bare = scratch({ "ProjectSettings/ProjectVersion.txt": "", "Assets/Game/~/index.tsx": "" })
         expect(() => initUnity(path.join(bare, "Assets", "Game", "~"))).toThrow(/does not have OneJS installed/)
+    })
+})
+
+describe("a clone's files in a Unity project", () => {
+    const read = (root: string, name: string) => fs.readFileSync(path.join(root, "assets", ...name.split("/")), "utf8")
+    const has = (root: string, name: string) => fs.existsSync(path.join(root, "assets", ...name.split("/")))
+
+    it("copies what the site would serve into assets/, keeping its folders", () => {
+        const root = scratch({
+            "index.tsx": "", "oj.json": "{}", "glow.png": "a", "art/bg.jpg": "b", "sfx/pop.wav": "c",
+            "old.webp": "not stored", "notes.txt": "not an asset", ".oj/cover.png": "card art",
+            "node_modules/x/y.png": "installed", ".git/z.png": "git",
+        })
+        expect(syncAssets(root)).toEqual({ copied: ["art/bg.jpg", "glow.png", "sfx/pop.wav"], removed: [] })
+        expect(read(root, "glow.png")).toBe("a")
+        expect(read(root, "art/bg.jpg")).toBe("b")
+        for (const name of ["old.webp", "notes.txt", "index.tsx", "cover.png", ".oj/cover.png", "x/y.png", "z.png"]) {
+            expect(has(root, name), name).toBe(false)
+        }
+    })
+
+    it("copies only what changed, and again when a file does", () => {
+        const root = scratch({ "glow.png": "a", "pop.wav": "b" })
+        syncAssets(root)
+        expect(syncAssets(root)).toEqual({ copied: [], removed: [] })
+        // The same size, so only the time can tell it changed.
+        fs.writeFileSync(path.join(root, "glow.png"), "z")
+        const later = new Date(Date.now() + 10_000)
+        fs.utimesSync(path.join(root, "glow.png"), later, later)
+        expect(syncAssets(root).copied).toEqual(["glow.png"])
+        expect(read(root, "glow.png")).toBe("z")
+    })
+
+    it("removes a copy once its file leaves the sketch, and nothing it did not write", () => {
+        const root = scratch({ "art/bg.png": "a", "glow.png": "b", "assets/mine.png": "put there by hand" })
+        syncAssets(root)
+        fs.rmSync(path.join(root, "art"), { recursive: true })
+        expect(syncAssets(root)).toEqual({ copied: [], removed: ["art/bg.png"] })
+        expect(has(root, "art")).toBe(false)
+        expect(read(root, "glow.png")).toBe("b")
+        expect(read(root, "mine.png")).toBe("put there by hand")
+    })
+
+    it("copies at the start of every build the plugin is in", async () => {
+        const root = scratch({ "index.ts": "export const a = 1\n", "glow.png": "a" })
+        await esbuild.build({ entryPoints: ["index.ts"], absWorkingDir: root, write: false, logLevel: "silent", plugins: [assetsPlugin()] })
+        expect(read(root, "glow.png")).toBe("a")
     })
 })
 
