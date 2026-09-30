@@ -15,6 +15,7 @@
  * `pull` and `push` of any of the account's sketches need nothing more, and
  * the helper does not depend on where npx happened to unpack this package.
  */
+import { randomBytes } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -32,6 +33,32 @@ export function deviceName(env = process.env, host = os.hostname()) {
         : env.CURSOR_AGENT ? "cursor"
         : "oj"
     return `${agent} on ${host.replace(/\.local$/, "")}`
+}
+
+/**
+ * This install's id, made once and kept beside the token: home, or the
+ * sketch's .oj/ where home cannot be written, the same rule as the token.
+ * Sent with each login, so logging in again replaces this install's previous
+ * login on the site and never another agent's on the same machine, which
+ * shares its name ("claude on mac"). Null when neither place can be written;
+ * the site then replaces nothing.
+ */
+export function installId(root) {
+    for (const tokenFile of tokenPaths(root)) {
+        const file = path.join(path.dirname(tokenFile), "install")
+        try {
+            const had = fs.readFileSync(file, "utf8").trim()
+            if (/^[a-z0-9]{32}$/.test(had)) return had
+        } catch { /* not made yet */ }
+        try {
+            fs.mkdirSync(path.dirname(file), { recursive: true })
+            const made = [...randomBytes(32)].map((b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("")
+            fs.writeFileSync(file, made + "\n", { mode: 0o600 })
+            if (tokenFile !== tokenPaths(root)[0]) ignoreLocally(root, ".oj/\n")
+            return made
+        } catch { /* try the next place */ }
+    }
+    return null
 }
 
 /** Writes the token where it can, 0600, and returns the file. */
@@ -77,6 +104,22 @@ function configureGit(root, file) {
         if (add.status === 0) return scope[0] === "--global" ? "git: every clone from " + siteOrigin() : "git: this clone"
     }
     return `git: could not be configured; run  git config --global credential.${siteOrigin()}.helper "${helperFor(file)}"`
+}
+
+/**
+ * Undoes configureGit in one scope: the helper lines login added, and the
+ * section they sat in when nothing else is left in it, since git leaves an
+ * empty section header behind. Anything else in that section is the
+ * person's, and stays.
+ */
+function forgetHelper(root, scope) {
+    const cwd = scope === "--local" ? root : undefined
+    const section = `credential.${siteOrigin()}`
+    spawnSync("git", ["config", scope, "--unset-all", `${section}.helper`], { cwd, encoding: "utf8" })
+    const listed = spawnSync("git", ["config", scope, "--list"], { cwd, encoding: "utf8" })
+    if (listed.status !== 0) return
+    const rest = listed.stdout.split("\n").filter((line) => line.startsWith(`${section}.`))
+    if (rest.length === 0) spawnSync("git", ["config", scope, "--remove-section", section], { cwd, encoding: "utf8" })
 }
 
 async function post(pathname, body, headers = {}) {
@@ -145,7 +188,7 @@ export async function login(root, { name, wait = true, resume = false, code, say
         pending = pick(code, say)
         if (pending === null) return 1
     } else {
-        const started = await post("/api/login", { device: name ?? deviceName() })
+        const started = await post("/api/login", { device: name ?? deviceName(), install: installId(root) })
         if (started.status !== 200) {
             say(started.body.error ?? `${started.status} from the site`)
             return 1
@@ -189,9 +232,7 @@ export async function logout(root, { say = console.error } = {}) {
         if (out.status !== 200) say(`the site said: ${out.body.error ?? out.status}`)
     }
     for (const file of tokenPaths(root)) fs.rmSync(file, { force: true })
-    const key = `credential.${siteOrigin()}.helper`
-    spawnSync("git", ["config", "--global", "--unset-all", key], { encoding: "utf8" })
-    spawnSync("git", ["config", "--local", "--unset-all", key], { cwd: root, encoding: "utf8" })
+    for (const scope of ["--global", "--local"]) forgetHelper(root, scope)
     say(token === null ? "was not logged in" : "logged out")
     return 0
 }
