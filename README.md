@@ -23,9 +23,11 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
-| `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`: a game's own files |
+| `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
+| `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
+| `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
 | `physics.ts` | `usePhysics`, with the per-frame pumping done |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: the container is 2D only |
@@ -33,6 +35,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
 | `theme.ts` | The default look of the controls the runtime provides |
+| `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
 | `container.ts` | The host-facing surface, `onejs-play/container` |
 | `runtime.ts` | Container-side: builds the `oj` object a game receives |
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
@@ -40,6 +43,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `input.ts` | Container-side: the input backend onejs-unity reads through |
 | `adapter.ts` | Container-side: browser events into that backend |
 | `standalone.ts` | Starting a runtime outside a container, which is what eject needs |
+| `hostinput.ts` | Outside a container: the real InputBridge with pointer reads converted to stage pixels |
 
 Beside `src/`, two folders that are not the runtime:
 
@@ -254,7 +258,8 @@ const room = useRoom("lobby", {
     onMessage: (from, data) => {},
 })
 room.send({ x, y })       // to everyone else
-room.id, room.peers, room.connected
+room.send({ x, y }, id)   // to one peer
+room.id, room.peers, room.connected, room.isHost, room.hostId
 ```
 
 **The site is a relay and runs no game logic**, because a game here is a
@@ -270,8 +275,10 @@ kill instead and you have handed every client the ability to eat anyone at any
 distance.
 
 Shared state that needs one owner (a food field, a round timer) goes to the
-lowest peer id present. Everyone evaluates that from `room.peers` alone, with no
-election and no message, and it re-elects on the frame the host leaves.
+host, and the room decides who that is: `room.isHost`, `room.hostId`, and
+`onHost` when it changes. It used to be "the lowest peer id present", evaluated
+by each game, and that elected sockets whose browser had already gone: only the
+relay knows who is still connected. The header of `room.ts` has the story.
 
 Budgets: 24 peers a room, 8 KB a message, 60 messages a second a socket. Send
 position at about 15 Hz and interpolate between updates rather than sending
@@ -283,7 +290,7 @@ version of the argument above.
 ## Leaderboards
 
 ```tsx
-const board = useLeaderboard({ limit: 6 })   // {name, score, at}[]
+const board = useLeaderboard({ limit: 6 })   // board.entries: {name, score, at}[]
 if (scores.available) board.submit(points)   // never throws
 ```
 
@@ -311,10 +318,11 @@ because a circle under those is an ellipse that Painter2D's `Arc` cannot
 express. `arcTo` is deliberately absent rather than approximated: calling it is
 a compile error, which beats a runtime surprise.
 
-## Keeping games off `CS.*`, which takes two mechanisms
+## What a game can reach, which takes two mechanisms
 
-**Filtering the export surface.** Anything whose public API requires building or
-receiving a C# object is left out rather than shipped as a runtime landmine.
+**Filtering the export surface.** Anything in onejs-react whose public API requires building or
+receiving a C# object is left out of `oj` rather than shipped as a landmine.
+(A game may still name C# itself; see below.)
 onejs-react's `Transform2D` is the sharp one: its `point()` returns
 `new CS.UnityEngine.Vector2` and would throw here, so oj exports its own JS
 version under the same name. The full list with reasons is the header comment in
@@ -322,15 +330,22 @@ version under the same name. The full list with reasons is the header comment in
 `export * from "onejs-react"` fails the suite instead of silently reintroducing
 the landmines.
 
-**Shadowing the globals**, which is the half that is easy to forget and was
-missing from an earlier version of this README. Filtering exports does nothing
-about global scope: after the bootstrap runs, `CS`, `useExtensions`,
-`readTextFile`, `writeTextFile`, `deleteFile` and about 30 more are sitting on
-the embedding page's `globalThis`. A game imports nothing, types
-`CS.UnityEngine.Application`, and it works. So the container evaluates a bundle
-through `evaluateBundle` in `sandbox.ts`, which runs it inside a function whose
-parameters shadow all of them. Verified against a real WebGL build: 55 of the 56
-listed names are actually present on the page, and none leak through.
+**Shadowing the globals**, which is the half that is easy to forget. Filtering
+exports does nothing about global scope: after the bootstrap runs, the bridge's
+plumbing (`__cs`, `__releaseHandle`, `__registerCallback`), the filesystem
+(`readTextFile`, `writeTextFile`, `deleteFile`) and the runtime's internals are
+sitting on the embedding page's `globalThis`. So the container evaluates a
+bundle through `evaluateBundle` in `sandbox.ts`, which runs it inside a function
+whose parameters shadow them (`SHADOWED_GLOBALS`), plus every browser-only
+global (`document`, `window`, `AudioContext`, `XMLHttpRequest`, ...), because a
+game that reaches for one can never leave the web (`BROWSER_ONLY_GLOBALS`).
+
+**`CS`, `useExtensions` and `$typeof` are deliberately not shadowed**: a game
+may name C# directly, since oj cannot wrap the long tail of UnityEngine and the
+BCL. The price is a promise: a published game is pinned to its runtime version,
+so whatever `link.xml` preserves is that version's permanent API, and a runtime
+version may only ever add to it (PlayRuntime/README.md,
+`Tools/link-surface-check.mjs`).
 
 That shadowing only works because **`oj` is an esbuild external the container
 preloads**, not a dependency bundled into each game. The reconciler calls `CS`
@@ -362,33 +377,38 @@ function Game() {
 mount(<Game />)
 ```
 
-No `CS.*`, no build config, and no root plumbing: `mount()` knows where to
+No build config and no root plumbing: `mount()` knows where to
 render because the container told the runtime. `examples/` holds complete games written this
 way, and they typecheck against `oj` exactly as a published game does:
 
 | Example | Bundled | Exercises |
 |---|---:|---|
-| `starter` | 1.9 KB | What `/new` scaffolds: one screen, one loop, nothing else |
-| `pendulum` | 1.4 KB | A frame loop, and dt as the whole reason it runs the same everywhere |
+| `starter` | 2.1 KB | What `/new` scaffolds: one screen, one loop, nothing else |
+| `pendulum` | 1.8 KB | A frame loop, and dt as the whole reason it runs the same everywhere |
 | `tally` | 3.0 KB | One reducer: every change is a named action, so undo is the log walked back |
 | `one-note` | 2.8 KB | One clip, loaded once, played at five pitches |
-| `first-shader` | 3.1 KB | Twelve lines of HLSL and one uniform a slider writes |
-| `arcane-portal` | 11.7 KB | A shader written in Magerie, unchanged, with a colour and a speed the player drives |
-| `wordie` | 82.9 KB | Turn-based input, CSS Modules, a seeded daily word |
-| `falling-blocks` | 9.2 KB | Real-time gravity and key repeat off the frame delta |
-| `twos-company` | 10.6 KB | USS transitions animating a board, stable ids across a move |
-| `fireworks` | 3.8 KB | Particles, and the only game that ships assets |
-| `space-junk` | 7.7 KB | The batched painter drawing a whole arcade game in one path |
+| `first-shader` | 5.7 KB | A shader file (`ripple.sl`) and the one uniform a slider writes |
+| `arcane-portal` | 11.9 KB | A shader written in Magerie, unchanged, with a colour and a speed the player drives |
+| `wordie` | 82.6 KB | Turn-based input, CSS Modules, a seeded daily word |
+| `falling-blocks` | 9.8 KB | Real-time gravity and key repeat off the frame delta |
+| `twos-company` | 9.2 KB | USS transitions animating a board, stable ids across a move |
+| `fireworks` | 3.7 KB | Particles, and sounds shipped as the game's own files |
+| `space-junk` | 8.9 KB | The batched painter drawing a whole arcade game in one path |
 | `murmuration` | 5.1 KB | A spatial grid, and a simulation that has to stay order-independent |
-| `wayfinder` | 6.7 KB | Retained-mode elements where almost nothing changes per frame |
-| `drop-everything` | 4.2 KB | The physics world, and a pool because bodies cannot be added |
-| `particle-lab` | 7.6 KB | Sliders driving a real config, printed back out to paste |
-| `solitaire` | 11.1 KB | Drag and drop, suits drawn as paths, no pointer handlers at all |
-| `big-fish` | 8.5 KB | A room, a leaderboard, and a relay you cannot trust |
-| `block-party` | 13.7 KB | The same well as falling-blocks, drawn as one path because a room holds 24 of them |
-| `squiggle` | 11.8 KB | A field every client lays from one seed, so a join needs no handshake |
-| `sumo` | 11.3 KB | A physics world and a room at once, and a shove nobody can be told they took |
-| `quickdraw` | 9.5 KB | A reaction measured with no clock to share, and a board that sorts the wrong way |
+| `wayfinder` | 8.0 KB | Retained-mode elements where almost nothing changes per frame |
+| `drop-everything` | 4.5 KB | The physics world, and a pool because bodies cannot be added |
+| `particle-lab` | 11.4 KB | Sliders driving a real config, printed back out to paste |
+| `solitaire` | 11.6 KB | Drag and drop, suits drawn as paths, no pointer handlers at all |
+| `big-fish` | 8.3 KB | A room, a leaderboard, and a relay you cannot trust |
+| `block-party` | 14.5 KB | The same well as falling-blocks, drawn as one path because a room holds 24 of them |
+| `squiggle` | 12.2 KB | A field every client lays from one seed, so a join needs no handshake |
+| `sumo` | 12.2 KB | A physics world and a room at once, and a shove nobody can be told they took |
+| `quickdraw` | 10.0 KB | A reaction measured with no clock to share, and a board that sorts the wrong way |
+| `fire` | 1.5 KB | Tinder: a fire from two noise fields, a mask and a ramp, in `fx` |
+| `ember` | 10.8 KB | A fire written as a shader file, with the file on screen beside it |
+| `tuner` | 9.0 KB | Three uniforms, the shader that reads them, and its TypeScript source side by side |
+| `cover-story` | 1.6 KB | How to give a game a card: `cover.tsx` is the lesson |
+| `foobar` | 2.1 KB | A test bed for the asset path |
 
 Every one typechecks against `oj` exactly as a published game does, and the
 logic in each is tested without a screen: `npm test` covers the rules of the
@@ -436,7 +456,7 @@ game and nothing else; what a terminal needs is written by `init` and
 gitignored like `node_modules`:
 
 ```bash
-npx onejs-play init   # package.json, tsconfig.json, env.d.ts, .gitignore; then npm install
+npx onejs-play init   # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
 oj build            # bundle the game the way the site does; errors as file:line:col
 oj typecheck        # tsc --noEmit
 oj run              # the game in the site's real container, in a local headless Chrome
@@ -444,6 +464,7 @@ oj test playtest.mjs   # run, then drive the game from a script
 oj status           # what the site is running: head, live, buildError
 oj push             # git push with OJ_TOKEN, then exit 1 if the tip did not build
 oj new "Name"       # create a game on the site and clone it
+oj runtime          # fetch the container into ~/.onejs-play (--runtime <version>)
 ```
 
 **`oj run` runs what ships.** It fetches the container the site serves at
@@ -460,9 +481,10 @@ milliseconds.
 
 **`oj test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
-`drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`, `type("crane")`,
-`until(predicate)`, `eval(js)` in the page, `shot(file)`, `reload()`,
-`rowProblems()`, and `errors`. A thrown error fails the run, and so does a
+`drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`,
+`hold("KeyA")` (returns a release function), `type("crane")`, `wait(ms)`,
+`until(predicate)`, `stage()`, `eval(js)` in the page, `shot(file)`, `reload()`,
+`rowProblems()`, `errors` and `console`. A thrown error fails the run, and so does a
 console error or a row that looks wrong (`cli/rows.mjs`, measured from resolved
 layout): in a centred row, a slider's track, a toggle's box or a text field's
 input off the row's centre line; in any row, a control within 8px of its
@@ -530,11 +552,6 @@ layout-independent, so WASD stays the same physical three-key row on AZERTY.
 - Axis smoothing, as an option on the axis binding rather than a second method.
 - `oj.storage`. `oj.audio`, `assetUrl`, `useFrame` and the `oj` namespace object
   were on this list and are all shipped.
-- Unicast in a room. Everything is a broadcast today, so anything private (a
-  hand of cards, a secret word) is filtered client-side, which is to say not
-  private at all.
-- `isHost` in oj. The lowest-peer-id rule is now copied into four games, which
-  is three times too many.
 - Names on peers. A room reports numbers, and a game that wants "Sam" has to
   invent its own naming. Held back because a name people choose is a moderation
   surface, not because it is hard.
