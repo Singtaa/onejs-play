@@ -1,6 +1,6 @@
 // An OJPlay game: runs on play.onejs.com, built by the site when published.
 // To work on it here: npx onejs-play init && npm install, then npx oj run.
-// Docs: https://play.onejs.com/docs/unity.md#from-your-own-machine
+// For AI agents: https://play.onejs.com/agents.md
 import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, useStage, input, random, batchedVisualContent } from "oj"
 import "onejs:tailwind"
