@@ -94,10 +94,10 @@ async function main() {
             const headed = flags.headed === true
             const game = await start(root, { headless: !headed, window: size, runtime: flags.runtime && String(flags.runtime), say })
             // Each distinct line once: Unity repeats its AudioContext warning
-            // on every frame until a gesture, and the proxy's probing is noise.
+            // on every frame until a gesture.
             const seen = new Set()
             const print = (line) => {
-                if (seen.has(line.text) || /Property not found/.test(line.text)) return
+                if (seen.has(line.text)) return
                 seen.add(line.text)
                 console.log(`[browser:${line.level}] ${line.text}`)
             }

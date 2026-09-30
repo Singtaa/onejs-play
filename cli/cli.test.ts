@@ -9,6 +9,7 @@ import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
 import { keyOf } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
+import { Game } from "./run.mjs"
 import { containerBoot } from "../host/boot.mjs"
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
@@ -174,6 +175,33 @@ describe("the browser", () => {
         expect(runtimeDir("1.0.40")).toBe(path.join("/tmp/ojhome", "runtime", "1.0.40"))
         delete process.env.OJ_HOME
         expect(RUNTIME_FILES).toHaveLength(4)
+    })
+})
+
+describe("a running game's console", () => {
+    // What the container prints for a typo on a C# member, in the order it
+    // prints it: the proxy's miss, then the frame loop dropping the callback.
+    const TYPO = [
+        { level: "error", text: "[QuickJS] Property not found: UnityEngine.Time.realtimeSinceStartupp" },
+        { level: "error", text: "[oj] frame callback removed after throwing: Error: [QuickJS] Property not found: UnityEngine.Time.realtimeSinceStartupp" },
+        { level: "error", text: "[OneJS React] Uncaught error: Error: [QuickJS] Property not found: UnityEngine.Application.platfrom" },
+    ]
+
+    it("counts a missing C# member as an error, since that is how a typo reaches the console", () => {
+        const browser = { listeners: new Set<(line: { level: string, text: string }) => void>(), console: [] }
+        const game = new Game({ root: ".", browser, server: null, manifest: null, say: () => {} })
+        for (const line of TYPO) for (const listener of browser.listeners) listener(line)
+        expect(game.errors).toEqual(TYPO.map((l) => l.text))
+    })
+
+    it("leaves warnings and logs out of the errors", () => {
+        const browser = { listeners: new Set<(line: { level: string, text: string }) => void>(), console: [] }
+        const game = new Game({ root: ".", browser, server: null, manifest: null, say: () => {} })
+        for (const listener of browser.listeners) {
+            listener({ level: "warning", text: "The AudioContext was not allowed to start." })
+            listener({ level: "log", text: "[oj-local] ready 12" })
+        }
+        expect(game.errors).toEqual([])
     })
 })
 

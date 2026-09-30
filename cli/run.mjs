@@ -16,10 +16,6 @@ import { rowProblemsExpression } from "./rows.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// The CS proxy probing for optional members logs this on the way past; it is
-// normal traffic, and every harness on the site filters it.
-const NOISE = /Property not found/
-
 /** The browser window a game runs in when the command does not say. */
 const DEFAULT_WINDOW = [960, 540]
 
@@ -36,10 +32,16 @@ export class Game {
         this.server = server
         this.manifest = manifest
         this.say = say
-        /** Console lines that are errors, minus the proxy's probing noise. */
+        /**
+         * Console lines that are errors, every one. A typo on a C# member
+         * reaches the console only as `Property not found`, so nothing here
+         * filters that text: `read()`, `rowProblems()` and `stage()` probe no
+         * optional members, and a probe that ever does must scope its
+         * suppression to itself, as Tools/playtest does.
+         */
         this.errors = []
         browser.listeners.add((line) => {
-            if (line.level === "error" && !NOISE.test(line.text)) this.errors.push(line.text)
+            if (line.level === "error") this.errors.push(line.text)
         })
     }
 
