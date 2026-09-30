@@ -226,6 +226,27 @@ describe("a running game's console", () => {
         }
         expect(game.errors).toEqual([])
     })
+
+    // The container says ready the moment the sketch is mounted; UI Toolkit
+    // lays the tree out on a later frame. A playtest that read positions
+    // straight away found nothing laid out on a loaded machine: Arcane
+    // Portal's "expected 5 swatches, found 0" in CI.
+    it("is ready once the sketch has run two frames past mounting, not the moment it mounted", async () => {
+        let frame = 7
+        const seen: number[] = []
+        const browser = {
+            listeners: new Set<(line: { level: string, text: string }) => void>(),
+            console: [{ level: "log", text: "[oj-local] ready 12" }],
+            eval: async () => {
+                seen.push(frame)
+                return String(frame++)
+            },
+        }
+        const game = new Game({ root: ".", browser, server: null, manifest: null, say: () => {} })
+        expect(await game.ready()).toBe(12)
+        expect(seen[0]).toBe(7)
+        expect(seen.at(-1)).toBe(9)
+    })
 })
 
 describe("the boot both documents inline", () => {

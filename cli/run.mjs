@@ -51,14 +51,21 @@ export class Game {
         return this.browser.console
     }
 
-    /** Waits for the container to report the game started, or throws what went wrong. */
+    /** Waits for the container to report the game started and for its first frames to run, or throws what went wrong. */
     async ready(timeoutMs = 60000) {
         const until = Date.now() + timeoutMs
         while (Date.now() < until) {
             const line = this.browser.console.find((l) => l.text.startsWith("[oj-local] "))
             if (line) {
                 this.browser.console.splice(this.browser.console.indexOf(line), 1)
-                if (line.text.startsWith("[oj-local] ready")) return Number(line.text.split(" ")[2])
+                if (line.text.startsWith("[oj-local] ready")) {
+                    // Ready means mounted; the tree is laid out and drawn on
+                    // the frames after. Two of them, so a script's first look
+                    // at a position or a label sees what a player would, even
+                    // on a machine slow enough to stretch the first frame.
+                    await this.frameAfter((await this.frame()) + 1)
+                    return Number(line.text.split(" ")[2])
+                }
                 throw new Error(line.text.slice("[oj-local] error ".length))
             }
             await sleep(100)
