@@ -428,7 +428,6 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `fire` | 1.5 KB | Tinder: a fire from two noise fields, a mask and a ramp, in `fx` |
 | `ember` | 10.8 KB | A fire written as a shader file, with the file on screen beside it |
 | `tuner` | 9.0 KB | Three uniforms, the shader that reads them, and its TypeScript source side by side |
-| `cover-story` | 1.6 KB | How to give a game a card: `cover.tsx` is the lesson |
 | `foobar` | 2.1 KB | A test bed for the asset path |
 
 Every one typechecks against `oj` exactly as a published game does, the
