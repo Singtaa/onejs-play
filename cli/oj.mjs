@@ -50,7 +50,7 @@ const HELP = `usage: oj <command> [options]
   status                head, live and buildError for this sketch (--sid <id>)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
-                          then login --wait collects; --name names the device)
+                          then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
   push                  git push origin main; exits 1 if the tip failed to build
   new <name>            create a sketch on the site and clone it into ./<name>
@@ -244,7 +244,8 @@ async function main() {
             return login(root, {
                 name: typeof flags.name === "string" ? flags.name : undefined,
                 wait: flags["no-wait"] !== true,
-                resume: flags.wait === true,
+                resume: flags.wait !== undefined,
+                code: typeof flags.wait === "string" ? flags.wait : undefined,
             })
         case "logout":
             return logout(root)

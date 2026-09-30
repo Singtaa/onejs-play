@@ -572,7 +572,7 @@ so run one per four cores, and one at a time on Windows, where two at once
 ran past a 12 minute cap and four starved a four-core machine outright (key
 presses wait for frames, so a slow machine only makes a run longer). The
 first Chrome after a reboot can take half a minute to start; `oj` allows it
-90 s. Ctrl-C during `oj test` closes its browser before it exits. `oj login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the sketch where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `oj login --wait` collects. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
+90 s. Ctrl-C during `oj test` closes its browser before it exits. `oj login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the sketch where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `oj login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
 points every command at another origin; `OJ_HOME` moves the cache.
 
 ## Testing
