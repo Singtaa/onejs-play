@@ -42,6 +42,9 @@ export function findChrome() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/** How long a browser may take to start and offer a page. */
+const STARTUP_MS = 30000
+
 /**
  * Launches a browser and attaches to its first page.
  *
@@ -71,9 +74,14 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     let stderr = ""
     child.stderr.on("data", (d) => { stderr += d })
 
+    // One deadline for the whole start, generous on purpose. A browser
+    // starting beside three others and a test suite took more than the old
+    // five seconds to list its first page, and a run that fails there fails
+    // for a reason that has nothing to do with the sketch.
+    const deadline = Date.now() + STARTUP_MS
     const portFile = path.join(profile, "DevToolsActivePort")
     let port = null
-    for (let i = 0; i < 100 && port === null; i++) {
+    while (port === null && Date.now() < deadline) {
         if (child.exitCode !== null) break
         try { port = Number(fs.readFileSync(portFile, "utf8").split("\n")[0]) } catch { await sleep(100) }
     }
@@ -82,14 +90,14 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         throw new Error(`Chrome did not start (${binary}):\n${stderr.slice(-600)}`)
     }
     let page = null
-    for (let i = 0; i < 50 && page === null; i++) {
+    while (page === null && Date.now() < deadline) {
         try {
             const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())
             page = list.find((t) => t.type === "page") ?? null
         } catch { /* not listening yet */ }
         if (page === null) await sleep(100)
     }
-    if (page === null) { kill(child); throw new Error("Chrome started but offered no page to attach to") }
+    if (page === null) { kill(child); throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s`) }
 
     say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)})`)
     const browser = new Browser(child, profile, page)
