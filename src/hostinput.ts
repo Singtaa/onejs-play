@@ -35,6 +35,7 @@
  * and it is written down rather than papered over.
  */
 
+import type { InputBackend, InputBackendMethods } from "onejs-unity/input"
 import { screenToStage, screenDeltaToStage, type Stage } from "./stage"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
@@ -49,14 +50,59 @@ const POSITION_Y = new Set(["GetMousePositionY", "GetTouchPositionY"])
 const DELTA_X = new Set(["GetMouseDeltaX", "GetTouchDeltaX"])
 const DELTA_Y = new Set(["GetMouseDeltaY", "GetTouchDeltaY"])
 
-/** The real thing, or null where it cannot be reached. */
-function realBridge(): any | null {
+/**
+ * InputBridge's assembly-qualified name. OneJS compiles it only into a project
+ * that has the Input System package with its backend on, as its own assembly.
+ */
+const BRIDGE_TYPE = "OneJS.Input.InputBridge, OneJS.Runtime.InputSystem"
+
+/**
+ * The real bridge from `cs`, or null where the project did not compile one.
+ *
+ * Asked of System.Type rather than read off the path, because the CS proxy
+ * answers any path it is given: `CS.OneJS.Input.InputBridge` is a proxy whether
+ * or not the type exists, and the first method called on a missing one fails
+ * with "Type not found" and an error in the console, every frame. Type.GetType
+ * answers null for a missing type and logs nothing.
+ */
+export function bridgeFrom(cs: any): any | null {
     try {
-        return globalThis.CS?.OneJS?.Input?.InputBridge ?? null
+        if (!cs || cs.System.Type.GetType(BRIDGE_TYPE) == null) return null
+        return cs.OneJS.Input.InputBridge
     } catch {
         return null
     }
 }
+
+/** The real thing, or null where it cannot be reached. */
+function realBridge(): any | null {
+    return bridgeFrom(globalThis.CS)
+}
+
+/**
+ * Input that reports nothing: no key down, the pointer at the origin, no
+ * touches and no gamepads. What a game gets in a project with no InputBridge,
+ * so it runs with its input idle rather than failing on every frame that asks.
+ */
+export const IDLE_INPUT: InputBackend = {
+    GetKeyDown: () => false, GetKeyPressed: () => false, GetKeyReleased: () => false,
+    GetAnyKeyDown: () => false, GetAnyKeyPressed: () => false, GetModifiers: () => 0,
+    GetMousePositionX: () => 0, GetMousePositionY: () => 0, GetMouseDeltaX: () => 0, GetMouseDeltaY: () => 0,
+    GetScrollX: () => 0, GetScrollY: () => 0,
+    GetMouseButtons: () => 0, GetMouseButtonsPressed: () => 0, GetMouseButtonsReleased: () => 0,
+    GetGamepadCount: () => 0, IsGamepadConnected: () => false,
+    GetGamepadButtons: () => 0, GetGamepadButtonsPressed: () => 0, GetGamepadButtonsReleased: () => 0,
+    GetLeftStickX: () => 0, GetLeftStickY: () => 0, GetRightStickX: () => 0, GetRightStickY: () => 0,
+    GetLeftTrigger: () => 0, GetRightTrigger: () => 0,
+    SetRumble: () => {}, StopRumble: () => {}, PauseHaptics: () => {}, ResumeHaptics: () => {},
+    GetTouchCount: () => 0, GetTouchFingerId: () => 0, GetTouchPhase: () => 0,
+    GetTouchPositionX: () => 0, GetTouchPositionY: () => 0, GetTouchDeltaX: () => 0, GetTouchDeltaY: () => 0,
+} satisfies InputBackendMethods
+
+/** Said once, when a game starts in a project with no InputBridge. */
+export const NO_INPUT_WARNING = "[oj] Input is off: this Unity project has no Input System. "
+    + "Install com.unity.inputsystem and set Active Input Handling to \"Input System Package (New)\" or \"Both\" "
+    + "in Player settings. Until then the game runs and reads no keys, pointer, touches or gamepads."
 
 export interface HostInputOptions {
     /** The stage to convert against, read fresh on every call. */
@@ -70,9 +116,8 @@ export interface HostInputOptions {
 /**
  * A backend that is the real bridge with its pointer coordinates converted.
  *
- * Returns null when there is no bridge to wrap, so the caller can install
- * nothing and let onejs-unity produce its own error rather than this file
- * inventing a worse one.
+ * Returns null when there is no bridge to wrap; the caller then installs
+ * IDLE_INPUT and says so once.
  *
  * A Proxy rather than forty forwarding methods, because the interface is not
  * frozen: a method added to InputBridge tomorrow should reach an ejected game

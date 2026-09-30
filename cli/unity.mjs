@@ -126,10 +126,20 @@ export function buildConfig(template, entry) {
     return template.replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
 }
 
-/** The template's package.json, named after the sketch. */
-function packageJson(template, name) {
+/** This package's own version: the oj a clone set up by this command should build with. */
+const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
+
+/**
+ * The template's package.json, named after the sketch, with onejs-play at
+ * least the version writing it. The installed OneJS's template may pin an
+ * older onejs-play, one without the oj this sketch was written against.
+ */
+export function packageJson(template, name) {
     const pkg = JSON.parse(template)
     pkg.name = name
+    for (const deps of [pkg.dependencies, pkg.devDependencies]) {
+        if (deps && "onejs-play" in deps) deps["onejs-play"] = `^${OWN_VERSION}`
+    }
     // The template carries "//"-prefixed notes for whoever opens it in the
     // editor. They mean nothing here, and npm reads such a key inside a
     // dependencies block as a package name and fails the install outright.

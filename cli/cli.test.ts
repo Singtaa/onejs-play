@@ -388,6 +388,8 @@ describe("a clone made into a JSRunner project", () => {
         const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
         expect(pkg.name).toBe("big-fish")
         expect(pkg["//note"]).toBeUndefined()
+        const own = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
+        expect(pkg.dependencies["onejs-play"]).toBe(`^${own}`)
         expect(fs.readFileSync(path.join(root, "types", "global.d.ts"), "utf8")).toBe("template global.d.ts.txt")
         const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).stdout
         expect(status.split("\n").filter(Boolean).sort()).toEqual(["?? game.tsx", "?? oj.json"])

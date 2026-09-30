@@ -196,6 +196,15 @@ the screen.
 The arithmetic is unit tested and does not need Unity. What still does is that
 the bridge is reachable at all, which is the one thing those tests cannot prove.
 
+**A project without the Input System has no bridge.** OneJS compiles
+`InputBridge` only when the package is installed and its backend is on, and the
+CS proxy answers `CS.OneJS.Input.InputBridge` either way, so the first read on a
+missing one failed with `Type not found` on every frame. `bridgeFrom` asks
+`System.Type.GetType` instead, which answers null without logging, and the game
+then gets `IDLE_INPUT` (nothing pressed, pointer at the origin) and one warning
+saying how to turn input on. Checked in a Unity project both ways: no warning
+with the Input System, one warning and no error without it.
+
 **Input actions are not covered.** A backend is not consulted for them, so an
 ejected game using an action reaches the real bridge directly. Correct for
 everything except a position read out of an action, which will be in screen

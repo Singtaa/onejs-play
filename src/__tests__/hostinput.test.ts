@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { createHostInputBackend } from "../hostinput"
+import { bridgeFrom, createHostInputBackend, IDLE_INPUT } from "../hostinput"
 import { stageOf } from "../stage"
 
 /**
@@ -145,5 +145,32 @@ describe("createHostInputBackend", () => {
         const backend = make(fakeBridge()) as any
         expect(backend.GetTouchCount()).toBe(2)
         expect(backend.GetGamepadCount()).toBe(1)
+    })
+})
+
+describe("finding the bridge", () => {
+    /** A CS stand-in whose System.Type.GetType knows only the names given. */
+    const cs = (compiled: string[]) => ({
+        System: { Type: { GetType: (name: string) => compiled.includes(name) ? { name } : null } },
+        OneJS: { Input: { InputBridge: { GetKeyDown: () => false } } },
+    })
+
+    it("takes the bridge when the project compiled it", () => {
+        expect(bridgeFrom(cs(["OneJS.Input.InputBridge, OneJS.Runtime.InputSystem"]))).not.toBeNull()
+    })
+
+    it("answers null for a project without the Input System, whose CS path still answers", () => {
+        expect(bridgeFrom(cs([]))).toBeNull()
+        expect(bridgeFrom(undefined)).toBeNull()
+    })
+
+    it("answers null rather than throwing when asking throws", () => {
+        expect(bridgeFrom({ System: { Type: { GetType: () => { throw new Error("Type not found") } } } })).toBeNull()
+    })
+
+    it("has an idle input that reports nothing for every method", () => {
+        for (const [name, fn] of Object.entries(IDLE_INPUT)) {
+            expect([0, false, undefined], name).toContain((fn as (...a: number[]) => unknown)(0, 0, 0, 0))
+        }
     })
 })

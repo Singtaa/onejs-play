@@ -23,7 +23,7 @@
  */
 
 import { createRuntime, getCurrentRuntime, type ContainerRuntime } from "./runtime"
-import { createHostInputBackend } from "./hostinput"
+import { createHostInputBackend, IDLE_INPUT, NO_INPUT_WARNING } from "./hostinput"
 import { setInputBackend } from "onejs-unity/input"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
@@ -124,15 +124,19 @@ export function startStandalone(): ContainerRuntime {
      * produces. The stage is read fresh on every call, so a window resize is
      * picked up without reinstalling anything.
      *
-     * Nothing is installed when there is no bridge to wrap: onejs-unity then
-     * takes its own default path and reports its own error, which says more
-     * than anything this file could invent.
+     * A project without the Input System has no bridge to wrap. Its game
+     * gets input that reports nothing, and one warning saying why, rather
+     * than a "Type not found" error on every frame that reads input.
      */
     const hostInput = createHostInputBackend({
         stage: () => standalone!.oj.stage,
         pixelRatio,
     })
     if (hostInput !== null) setInputBackend(hostInput)
+    else {
+        console.warn(NO_INPUT_WARNING)
+        setInputBackend(IDLE_INPUT)
+    }
 
     let last = { width: size?.width ?? 0, height: size?.height ?? 0, dpr: pixelRatio() }
     // null rather than 0 for "no frame yet": a timestamp of exactly 0 is a
