@@ -82,12 +82,23 @@ function excludeFile(root) {
     const git = spawnSync("git", ["rev-parse", "--show-toplevel", "--git-path", "info/exclude"], { cwd: root, encoding: "utf8" })
     if (git.status === 0) {
         const [top, exclude] = git.stdout.split(/\r?\n/)
-        if (top && exclude && fs.realpathSync(top) === fs.realpathSync(root)) return path.resolve(root, exclude)
+        if (top && exclude && samePath(top, root)) return path.resolve(root, exclude)
         return null
     }
     // No git on this machine, or a .git folder git does not recognise yet.
     const dotGit = path.join(root, ".git")
     return fs.existsSync(dotGit) && fs.statSync(dotGit).isDirectory() ? path.join(dotGit, "info", "exclude") : null
+}
+
+/**
+ * Whether two paths name the same folder. The native realpath, because the JS
+ * one keeps a Windows 8.3 name (`C:\Users\RUNNER~1`) where git prints the long
+ * one, and the two compared unequal; and ignoring case on Windows, where paths
+ * are not case-sensitive.
+ */
+function samePath(a, b) {
+    const real = (p) => fs.realpathSync.native(p)
+    return process.platform === "win32" ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b)
 }
 
 /** The game's name from oj.json, as npm allows it, else the folder's. */
