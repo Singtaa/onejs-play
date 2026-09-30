@@ -529,13 +529,13 @@ constant, and open the screenshot.
 launch and speak to, so the launcher and the protocol client exist once.
 Chrome is found in the usual places or named by `OJ_CHROME`, and is driven
 over Node's built-in WebSocket, so `oj run` and `oj test` need Node 22 or
-newer. One container costs a couple of cores under the software rasteriser,
-so keep to a few runs at a time on a machine, and to one on Windows, where
-four at once starved a four-core machine outright (the `npm test` sweep runs
-half the cores' worth, at most four, and one on Windows; key presses wait for
-frames, so a slow machine only makes a run longer). Ctrl-C during `oj test`
-closes its browser before it exits. `OJ_SITE` points every command at another
-origin; `OJ_HOME` moves the cache.
+newer. One container fills about four cores under the software rasteriser,
+so run one per four cores, and one at a time on Windows, where two at once
+ran past a 12 minute cap and four starved a four-core machine outright (key
+presses wait for frames, so a slow machine only makes a run longer). The
+first Chrome after a reboot can take half a minute to start; `oj` allows it
+90 s. Ctrl-C during `oj test` closes its browser before it exits. `OJ_SITE`
+points every command at another origin; `OJ_HOME` moves the cache.
 
 ## Testing
 
@@ -546,10 +546,14 @@ npm run typecheck # tsc --noEmit
 
 `npm test` runs `oj test` on every example and CLI fixture, in the CLI's own
 headless Chrome against the runtime the site says is live (fetched once into
-`~/.onejs-play`). Up to four run at once, one on Windows, and a run with no
-result after two minutes is interrupted and fails with what it printed. About
-a minute, five on Windows; `npx vitest run --exclude cli/examples.e2e.test.ts`
-skips it while iterating on something else.
+`~/.onejs-play`). One Chrome is started first, so a cold machine's slow first
+start is not charged to a sketch. Runs go one per four cores (one on a
+four-core CI runner, always one on Windows; `OJ_SWEEP_LIMIT` overrides it), and
+a run with no result after three minutes is interrupted and fails with what it
+printed. The sweep ends by printing Chrome's start times (median, p90, worst,
+against the limit) and the run lengths. About two and a half minutes on a
+four-core runner, five on Windows; `npx vitest run --exclude
+cli/examples.e2e.test.ts` skips it while iterating on something else.
 
 `pre-setup.ts` installs a permissive `CS` stub, because onejs-react's
 `components.tsx` calls `useExtensions(CS.UnityEngine.ImageConversion)` at module

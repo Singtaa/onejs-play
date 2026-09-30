@@ -42,8 +42,16 @@ export function findChrome() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** How long a browser may take to start and offer a page. */
-const STARTUP_MS = 30000
+/**
+ * How long a browser may take to start and offer a page. Measured on the CI
+ * runners (4 cores, Ubuntu and Windows, 2026-09-30): once one Chrome has run
+ * on the machine, every start listed its page within 1.5 s, at any number of
+ * runs at once. The first start on a fresh machine is another matter: 0.6 to
+ * 32.4 s, and 32.4 s is past the 30 s this used to allow, which is how a sweep
+ * failed on main with "offered no page". A person's first `oj run` after a
+ * reboot pays the same. 90 s is 2.8 times that worst cold start.
+ */
+export const STARTUP_MS = 90000
 
 /**
  * Launches a browser and attaches to its first page.
@@ -75,14 +83,15 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         `--window-size=${window[0]},${window[1]}`,
         "about:blank",
     ]
+    const began = Date.now()
+    const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" })
     let stderr = ""
     child.stderr.on("data", (d) => { stderr += d })
 
-    // One deadline for the whole start, generous on purpose. A browser
-    // starting beside three others and a test suite took more than the old
-    // five seconds to list its first page, and a run that fails there fails
-    // for a reason that has nothing to do with the sketch.
+    // One deadline for the whole start, generous on purpose (STARTUP_MS): a
+    // run that fails here fails for a reason that has nothing to do with the
+    // sketch.
     const deadline = Date.now() + STARTUP_MS
     const portFile = path.join(profile, "DevToolsActivePort")
     let port = null
@@ -94,17 +103,28 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         kill(child)
         throw new Error(`Chrome did not start (${binary}):\n${stderr.slice(-600)}`)
     }
+    const portMs = Date.now() - began
     let page = null
+    let last = "nothing yet"
     while (page === null && Date.now() < deadline) {
         try {
             const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())
             page = list.find((t) => t.type === "page") ?? null
-        } catch { /* not listening yet */ }
+            last = `targets [${list.map((t) => t.type).join(", ")}]`
+        } catch (error) {
+            last = `list failed: ${error.message}`
+        }
         if (page === null) await sleep(100)
     }
-    if (page === null) { kill(child); throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s`) }
+    if (page === null) {
+        kill(child)
+        throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
+    }
+    const pageMs = Date.now() - began
 
-    say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)})`)
+    // The start time, in a form a harness can read back: how close a run
+    // under load comes to STARTUP_MS is the number that says whether it holds.
+    say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)}), port after ${seconds(portMs)}, page after ${seconds(pageMs)}`)
     const browser = new Browser(child, profile, page)
     // From here the browser is ours to close: a step that fails must not
     // leave it running with nobody holding its handle.
