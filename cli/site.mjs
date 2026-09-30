@@ -11,11 +11,38 @@ export function siteOrigin() {
     return (process.env.OJ_SITE ?? DEFAULT_SITE).replace(/\/$/, "")
 }
 
-/** The token, from OJ_TOKEN. Throws with the fix when absent. */
-export function token() {
-    const value = process.env.OJ_TOKEN
-    if (!value) throw new Error("Set OJ_TOKEN to a personal access token from " + siteOrigin() + "/manage.")
+/**
+ * The token: the one in the clone URL (`https://oj:<token>@`), which is how a
+ * sketch is handed to an agent, else OJ_TOKEN. Null when neither has one.
+ *
+ * The URL's comes first because git pushes with it whatever else is set, so
+ * status and push then ask as the same caller. It is only used when the
+ * remote is the site oj is talking to, so OJ_SITE pointed somewhere else never
+ * carries it there.
+ */
+export function tokenOf(root) {
+    return (root === undefined ? null : tokenFromRemote(remoteOf(root))) ?? (process.env.OJ_TOKEN || null)
+}
+
+/** tokenOf, or a throw with the fix. */
+export function token(root) {
+    const value = tokenOf(root)
+    if (!value) {
+        throw new Error("Set OJ_TOKEN to an access token from " + siteOrigin() + "/manage/tokens, or clone with the token in the URL.")
+    }
     return value
+}
+
+/** The password in a clone URL of this site, or null. */
+export function tokenFromRemote(url) {
+    let parsed
+    try {
+        parsed = new URL(url ?? "")
+    } catch {
+        return null
+    }
+    if (parsed.origin !== siteOrigin() || parsed.password === "") return null
+    return decodeURIComponent(parsed.password)
 }
 
 /** The sid in a clone URL, or null. */
@@ -24,10 +51,15 @@ export function sidFromRemote(url) {
     return match ? match[1] : null
 }
 
+/** This folder's origin remote, or "" when it has none. */
+function remoteOf(root) {
+    const result = spawnSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" })
+    return (result.stdout ?? "").trim()
+}
+
 /** This folder's game, read from its origin remote. */
 export function sidOf(root) {
-    const result = spawnSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" })
-    const sid = sidFromRemote((result.stdout ?? "").trim())
+    const sid = sidFromRemote(remoteOf(root))
     if (sid === null) {
         throw new Error("This folder is not a clone of a sketch on " + siteOrigin() + ". Pass --sid, or clone one first.")
     }

@@ -8,7 +8,7 @@
  *   oj run              build, then run the game in the real container in a local Chrome
  *   oj test <script>    run, then drive the game from a script that reads, clicks and asserts
  *   oj status           what the site is running: head, live, and why they differ
- *   oj push             git push origin main with OJ_TOKEN, then fail if the tip did not build
+ *   oj push             git push origin main with the token, then fail if the tip did not build
  *   oj new <name>       create a game on the site and clone it here
  *   oj runtime          fetch the container the site serves into the local cache
  *
@@ -17,7 +17,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, folderFor, git, sidOf, siteOrigin, status, token, version } from "./site.mjs"
+import { create, folderFor, git, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
@@ -43,7 +43,7 @@ const HELP = `usage: oj <command> [options]
                           line or crowded
                           --headed, --window, --for as above
   status                head, live and buildError for this sketch (--sid <id>)
-  push                  git push origin main with OJ_TOKEN; exits 1 if the tip failed to build
+  push                  git push origin main with the token; exits 1 if the tip failed to build
   new <name>            create a sketch on the site with OJ_TOKEN and clone it into ./<name>
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
@@ -51,7 +51,8 @@ const HELP = `usage: oj <command> [options]
   --runtime <version>   run against a specific container version
   --site <origin>       the site (default ${siteOrigin()}; also OJ_SITE)
 
-OJ_TOKEN  a personal access token from ${siteOrigin()}/manage, for push, new and private sketches
+OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, for push, new and private sketches;
+          a clone URL that carries one (https://oj:<token>@...) is used first
 OJ_CHROME the browser binary, when it is not in the usual place
 `
 
@@ -201,13 +202,13 @@ async function main() {
         }
         case "status": {
             const sid = flags.sid ? String(flags.sid) : sidOf(root)
-            const s = await status(sid, { bearer: process.env.OJ_TOKEN })
+            const s = await status(sid, { bearer: tokenOf(root) })
             console.log(JSON.stringify(s, null, 2))
             return 0
         }
         case "push": {
             const sid = flags.sid ? String(flags.sid) : sidOf(root)
-            const bearer = token()
+            const bearer = token(root)
             const code = git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
             const s = await status(sid, { bearer })

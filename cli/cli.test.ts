@@ -5,7 +5,7 @@ import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree } from "./game.mjs"
-import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
+import { sidFromRemote, folderFor, credentialArgs, tokenFromRemote, tokenOf } from "./site.mjs"
 import { keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
@@ -155,6 +155,42 @@ describe("the site from a terminal", () => {
         const args = credentialArgs("tok")
         expect(args.slice(0, 2)).toEqual(["-c", "credential.helper="])
         expect(args[3]).toMatch(/^credential\.helper=!f\(\) \{ echo username=oj; echo password=tok; \}; f$/)
+    })
+
+    it("reads a token out of a clone URL of this site and nowhere else", () => {
+        expect(tokenFromRemote("https://oj:ojs_abc@play.onejs.com/g/a5x3a2uwh5gb.git")).toBe("ojs_abc")
+        expect(tokenFromRemote("https://oj:a%2Fb@play.onejs.com/g/a5x3a2uwh5gb.git")).toBe("a/b")
+        expect(tokenFromRemote("https://play.onejs.com/g/a5x3a2uwh5gb.git")).toBeNull()
+        // A key for this site must never be sent to another one.
+        expect(tokenFromRemote("https://oj:ojs_abc@example.com/g/a5x3a2uwh5gb.git")).toBeNull()
+        expect(tokenFromRemote("git@github.com:Singtaa/onejs-play.git")).toBeNull()
+        expect(tokenFromRemote("")).toBeNull()
+    })
+
+    it("uses a clone's own token before OJ_TOKEN, and OJ_TOKEN without one", () => {
+        const clone = (url: string) => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-token-"))
+            spawnSync("git", ["init", "-q", dir])
+            spawnSync("git", ["-C", dir, "remote", "add", "origin", url])
+            return dir
+        }
+        const keyed = clone("https://oj:ojs_key@play.onejs.com/g/a5x3a2uwh5gb.git")
+        const plain = clone("https://play.onejs.com/g/a5x3a2uwh5gb.git")
+        vi.stubEnv("OJ_SITE", "https://play.onejs.com")
+        try {
+            vi.stubEnv("OJ_TOKEN", "")
+            expect(tokenOf(keyed)).toBe("ojs_key")
+            expect(tokenOf(plain)).toBeNull()
+            vi.stubEnv("OJ_TOKEN", "ojp_account")
+            // git pushes with the URL's credential whatever else is set, so
+            // status has to ask as the same caller.
+            expect(tokenOf(keyed)).toBe("ojs_key")
+            expect(tokenOf(plain)).toBe("ojp_account")
+            expect(tokenOf(undefined)).toBe("ojp_account")
+        } finally {
+            vi.unstubAllEnvs()
+            for (const dir of [keyed, plain]) fs.rmSync(dir, { recursive: true, force: true })
+        }
     })
 
     it("names a folder after the game without punctuation", () => {

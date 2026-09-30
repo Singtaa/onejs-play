@@ -485,7 +485,7 @@ oj typecheck        # tsc --noEmit
 oj run              # the game in the site's real container, in a local headless Chrome
 oj test playtest.mjs   # run, then drive the game from a script (no script: a smoke run)
 oj status           # what the site is running: head, live, buildError
-oj push             # git push with OJ_TOKEN, then exit 1 if the tip did not build
+oj push             # git push with the clone URL's token or OJ_TOKEN, then exit 1 if the tip did not build
 oj new "Name"       # create a game on the site and clone it
 oj runtime          # fetch the container into ~/.onejs-play (--runtime <version>)
 ```
