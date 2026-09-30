@@ -221,6 +221,16 @@ build. The container passes its origin in as `assetBase` when it creates the
 runtime; with none set, OneJS's own project convention applies, which is exactly
 what an ejected copy needs.
 
+**Where the files go.** An asset's name is its path from the sketch's root:
+`pop.wav` beside `index.tsx`, or `sfx/pop.wav` in a folder of your own. Never in
+a folder called `assets/`: `assetUrl` strips a leading `assets/` (the habit a
+web developer arrives with), so the site stores such a file and never serves
+it. Images are png or jpeg, and names are case-sensitive. `oj run` and `oj
+test` serve `/assets/` by the same rule (`cli/assets.mjs`, a copy of the
+site's `media.ts`), warn at start about any asset no request can reach, and
+print why each refused request was refused. `fireworks` and `one-note` kept
+their sounds in `assets/` and were silent locally and live until this (#3).
+
 Explicit at the call site on purpose. Teaching every loader a hidden base would
 mean a bare `"glow.png"` resolving through machinery a reader cannot see, and
 two loaders that disagreed about it would be a bug with no visible cause.
@@ -410,9 +420,12 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `cover-story` | 1.6 KB | How to give a game a card: `cover.tsx` is the lesson |
 | `foobar` | 2.1 KB | A test bed for the asset path |
 
-Every one typechecks against `oj` exactly as a published game does, and the
-logic in each is tested without a screen: `npm test` covers the rules of the
-games, not their pixels.
+Every one typechecks against `oj` exactly as a published game does, the
+logic in each is tested without a screen, and `npm test` also runs `oj test` on
+every one in the real container (`cli/examples.e2e.test.ts`): its
+`playtest.mjs` when it has one, otherwise a smoke run that boots it and fails on
+a console error or a row that looks wrong. Three examples failed that for
+months with nothing running them (#3).
 
 The four after `starter` are deliberately the smallest thing that teaches one
 idea, and nothing else: a frame loop, a reducer, a sound, a shader. They are
@@ -441,7 +454,7 @@ frame sees exactly the events that arrived since the previous one.
    text beside it (`examples/arcane-portal/playtest.mjs`).
 3. `oj test playtest.mjs` passes. That also fails on a console error, on a
    centred row whose controls do not line up with their labels, and on a
-   control within 8px of its neighbour.
+   control within 8px of its neighbour. `npm test` runs it for every example.
 4. A value that changes (a slider's readout, a score) sits in a fixed-width
    box, right-aligned with tabular digits, 12px from the control it reports,
    so it neither jitters nor touches the control (`examples/arcane-portal`).
@@ -460,7 +473,7 @@ npx onejs-play init   # package.json, tsconfig.json, env.d.ts, ignore rules (.gi
 oj build            # bundle the game the way the site does; errors as file:line:col
 oj typecheck        # tsc --noEmit
 oj run              # the game in the site's real container, in a local headless Chrome
-oj test playtest.mjs   # run, then drive the game from a script
+oj test playtest.mjs   # run, then drive the game from a script (no script: a smoke run)
 oj status           # what the site is running: head, live, buildError
 oj push             # git push with OJ_TOKEN, then exit 1 if the tip did not build
 oj new "Name"       # create a game on the site and clone it
@@ -490,7 +503,21 @@ layout): in a centred row, a slider's track, a toggle's box or a text field's
 input off the row's centre line; in any row, a control within 8px of its
 neighbour, measured from a text's ink rather than its box. A screenshot lands in `.oj/`
 either way. `examples/wordie/playtest.mjs` is the one to
-copy from.
+copy from. With no script, `oj test` lets the sketch run `--for` seconds
+(default 2) and applies the same checks.
+
+**A pressed key is its own press.** `press`, `hold` and `type` wait for the
+container to run a frame after each key goes down and after it comes up. A
+frame knows which keys went down since the last one but not in what order, so
+two presses that share a frame reach a game's loop in whatever order it checks
+them. A player never lands two keystrokes in one frame; a script can, and
+right after start the container's first frame lasts seconds: Wordie's playtest
+typed CRANE into it and submitted ACENR (#3). Keys go down the way a real
+keystroke does, `keyDown` with its text (Enter types `\r`) or `rawKeyDown` when
+it types nothing, and the page is the focused, visible tab: headless Chrome
+otherwise opens it unfocused and hides it at the first key, and a hidden page
+runs no frames. `cli/fixtures/keys` presses every named key straight after
+start and requires each to arrive alone and in order.
 
 What the harnesses in `Tools/playtest` learned applies here unchanged, and
 their README's section on instruments that report clean answers while
@@ -501,16 +528,22 @@ constant, and open the screenshot.
 `cli/chrome.mjs` is also what the production harnesses in `Tools/playtest`
 launch and speak to, so the launcher and the protocol client exist once.
 Chrome is found in the usual places or named by `OJ_CHROME`. One container
-costs several cores under the software rasteriser, so one run at a time on a
-machine. `OJ_SITE` points every command at another origin; `OJ_HOME` moves
+costs several cores under the software rasteriser, so keep to a few runs at a
+time on a machine (the `npm test` sweep runs four; key presses wait for frames,
+so a slow one only makes a run longer). `OJ_SITE` points every command at another origin; `OJ_HOME` moves
 the cache.
 
 ## Testing
 
 ```bash
-npm test          # vitest
+npm test          # vitest, including oj test over every example (needs Chrome and the network)
 npm run typecheck # tsc --noEmit
 ```
+
+`npm test` runs `oj test` on every example and CLI fixture four at a time, in
+the CLI's own headless Chrome against the runtime the site says is live
+(fetched once into `~/.onejs-play`). About a minute; `npx vitest run
+--exclude cli/examples.e2e.test.ts` skips it while iterating on something else.
 
 `pre-setup.ts` installs a permissive `CS` stub, because onejs-react's
 `components.tsx` calls `useExtensions(CS.UnityEngine.ImageConversion)` at module
