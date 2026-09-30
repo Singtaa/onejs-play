@@ -29,12 +29,14 @@ import { initUnity, npm } from "./unity.mjs"
 
 const HELP = `usage: oj <command> [options]
 
-  init                  write package.json, tsconfig.json, env.d.ts and .gitignore, then npm install
+  init                  write package.json, tsconfig.json and env.d.ts and ignore them (.gitignore,
+                          or .git/info/exclude in a clone); run npm install after
                           --unity         in a clone at Assets/<Name>/~ of a Unity project with OneJS:
                                           make it a JSRunner project, install and build it
   build                 bundle the sketch as the site does, to .oj/bundle.js (--out <file>)
   typecheck             tsc --noEmit
-  run                   run the sketch in the site's container in a local Chrome
+  run                   run the sketch in the site's container in a local Chrome; exits 1 on a
+                          console error
                           --headed        a window you can watch, kept open until Ctrl-C
                           --watch         rebuild and swap the sketch in on every change
                           --for <s>       headless: seconds to run before the screenshot (default 5)

@@ -386,11 +386,13 @@ deliberately tunnels to `globalThis.CS` is out of contract and free to break.
 ## Writing a game
 
 ```tsx
+import { useState } from "react"
 import { View, Text, mount, useFrame, input } from "oj"
 
 function Game() {
-    useFrame(() => { if (input.keyboard.wasKeyPressed("Space")) jump() }, [])
-    return <View><Text>hello</Text></View>
+    const [jumps, setJumps] = useState(0)
+    useFrame(() => { if (input.keyboard.wasKeyPressed("Space")) setJumps(jumps + 1) }, [])
+    return <View><Text>{`jumps: ${jumps}`}</Text></View>
 }
 
 mount(<Game />)
@@ -525,7 +527,8 @@ QuickJS rather than V8, and the bugs that matter (the 1.0.12 Task that never
 settled) were WebGL-only. Headless by default; `--headed --watch` opens a
 window and swaps a fresh build in on every save without reloading the
 runtime, which is the container's own hot path and takes about ten
-milliseconds.
+milliseconds. It exits 1 if the sketch logged a console error, `Property not
+found` included.
 
 **`oj test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
@@ -536,8 +539,9 @@ gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
 console error or a row that looks wrong (`cli/rows.mjs`, measured from resolved
 layout): in a centred row, a slider's track, a toggle's box or a text field's
 input off the row's centre line; in any row, a control within 8px of its
-neighbour, measured from a text's ink rather than its box. A screenshot lands in `.oj/`
-either way. `examples/wordie/playtest.mjs` is the one to
+neighbour, measured from a text's ink rather than its box. When the script throws,
+a screenshot lands in `.oj/failed.png`; call `shot(file)` for one otherwise.
+`examples/wordie/playtest.mjs` is the one to
 copy from. With no script, `oj test` lets the sketch run `--for` seconds
 (default 2) and applies the same checks.
 
