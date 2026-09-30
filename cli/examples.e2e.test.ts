@@ -103,12 +103,21 @@ async function slot<T>(work: () => Promise<T>): Promise<T> {
 }
 
 let runtime = ""
+/** How long the warm-up's cold Chrome took, start to closed. */
+let coldS = 0
 
 beforeAll(async () => {
     // One version for the whole file, fetched once, rather than each run
     // asking the site and racing the others to the same cache file.
     runtime = (await version()).runtime
     await ensureRuntime(siteOrigin(), runtime)
+    // The first Chrome a fresh machine starts is slow: 9 to 13 s to its first
+    // page on the CI runners, against 1.3 s at worst for every one after. It
+    // is paid here, once, with a deadline of its own, instead of by whichever
+    // sketch happens to run first.
+    const began = Date.now()
+    ;(await launch({ startupMs: 120_000 })).close()
+    coldS = (Date.now() - began) / 1000
 }, 300_000)
 
 /** Probes a browser's debugging port until it stops answering, or 5 s pass. */
@@ -141,7 +150,7 @@ function startSummary(): string {
     const failed = starts.filter((s) => s.pageS === null).map((s) => s.name)
     const runs = starts.map((s) => s.runS).sort((a, b) => a - b)
     return [
-        `[sweep] ${process.platform}, ${os.availableParallelism()} cores, ${LIMIT} at a time, ${starts.length} runs`,
+        `[sweep] ${process.platform}, ${os.availableParallelism()} cores, ${LIMIT} at a time, ${starts.length} runs; cold chrome warm-up ${coldS.toFixed(1)} s`,
         `[sweep] chrome page after: median ${at(0.5)?.toFixed(1)} s, p90 ${at(0.9)?.toFixed(1)} s, worst ${worst?.pageS?.toFixed(1)} s (${worst?.name}); limit ${STARTUP_S} s`,
         `[sweep] no page: ${failed.length === 0 ? "none" : failed.join(", ")}`,
         `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${runs[runs.length - 1]?.toFixed(1)} s`,

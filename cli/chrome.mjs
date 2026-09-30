@@ -53,7 +53,7 @@ const STARTUP_MS = 30000
  * cannot collide. The profile is fresh and thrown away: nothing a game does
  * survives into the next run.
  */
-export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
+export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-", startupMs = STARTUP_MS } = {}) {
     // Checked before Chrome starts, so an old Node fails with the fix in hand
     // rather than "WebSocket is not defined" after starting a browser for nothing.
     if (typeof WebSocket !== "function") {
@@ -85,7 +85,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     // starting beside three others and a test suite took more than the old
     // five seconds to list its first page, and a run that fails there fails
     // for a reason that has nothing to do with the sketch.
-    const deadline = Date.now() + STARTUP_MS
+    const deadline = Date.now() + startupMs
     const portFile = path.join(profile, "DevToolsActivePort")
     let port = null
     while (port === null && Date.now() < deadline) {
@@ -111,7 +111,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     }
     if (page === null) {
         kill(child)
-        throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
+        throw new Error(`Chrome started but offered no page to attach to within ${startupMs / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
     }
     const pageMs = Date.now() - began
 
