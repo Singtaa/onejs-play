@@ -27,6 +27,7 @@ import crypto from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { ignoreLocally, packageName } from "./init.mjs"
 import { entryOf, manifestOf, readTree } from "./game.mjs"
+import { buildConfig } from "./unity-assets.mjs"
 
 /**
  * JSRunner's default files: the OneJS template, and where it lands in the
@@ -111,33 +112,6 @@ export function oneJSOf(project) {
             return false
         }
     }) ?? null
-}
-
-/**
- * The template's build, pointed at the sketch's entry, with the plugin that
- * copies the sketch's files into assets/ (cli/unity-assets.mjs).
- *
- * The template names index.tsx, which is every sketch's entry unless its
- * oj.json says otherwise. A template whose entry no longer matches the
- * pattern is left naming index.tsx, which is right for nearly every sketch.
- * One with no plugins list is refused instead: the sketch would build and run
- * without its files, and nothing would say why. The container's scaffold gate
- * runs this against OneJS's real template, so a reshaped one fails there first.
- */
-export function buildConfig(template, entry) {
-    let text = entry === "index.tsx" ? template
-        : template.replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
-    const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
-    if (plugins === null) {
-        throw new Error("OneJS's esbuild.config.mjs template has no plugins list for the step that copies the sketch's files into assets/. "
-            + "Update onejs-play (npx onejs-play@latest init --unity), or report it if this is the latest.")
-    }
-    const indent = plugins[1] + "    "
-    const at = plugins.index + plugins[0].length
-    text = text.slice(0, at)
-        + `${indent}// The sketch's files, copied into assets/ where OneJS looks for them\n${indent}assetsPlugin(),\n`
-        + text.slice(at)
-    return `import { assetsPlugin } from "onejs-play/unity"\n${text}`
 }
 
 /** This package's own version: the oj a clone set up by this command should build with. */
