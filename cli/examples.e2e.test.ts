@@ -3,7 +3,7 @@ import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { launch } from "./chrome.mjs"
+import { STARTUP_MS, launch } from "./chrome.mjs"
 import { ensureRuntime } from "./local.mjs"
 import { siteOrigin, version } from "./site.mjs"
 
@@ -44,8 +44,12 @@ function playtestOf(dir: string): string | null {
     return named[0] ?? null
 }
 
-/** How long one run may take once it has started: a sketch takes about ten seconds. */
-const RUN_MS = 120_000
+/**
+ * How long one run may take once it has started. Measured on the CI runners,
+ * one at a time: a median of 4 s on Ubuntu and 9 s on Windows, and 52 s at
+ * worst on Windows. 180 s is 3.5 times that.
+ */
+const RUN_MS = 180_000
 
 /**
  * Stops a run the way Ctrl-C would, so `oj test` closes its browser on the
@@ -82,13 +86,21 @@ function ojTest(dir: string, runtime: string, script = playtestOf(dir), onOutput
 }
 
 /**
- * How many runs at once. Each is a software-rendered container that wants a
- * couple of cores, so half the machine's, at most four. Windows runs one: on
- * a four-core Windows runner four at once starved the whole machine, to the
- * point that a build took two minutes and the runner stopped answering, while
- * one at a time took ten seconds a sketch.
+ * How many runs at once: one per four cores, at most four, and one on
+ * Windows. Measured on the 4-core CI runners (2026-09-30, full npm test):
+ *
+ * - Ubuntu took the same 131 to 165 s for the sweep at one, two or four at a
+ *   time. A software-rendered container already fills four cores, so running
+ *   more only stretched each run (the worst from 11 s at one to 78 s at four)
+ *   and gained nothing.
+ * - Windows at two at a time ran past a 12 minute cap, and at four the runner
+ *   stopped answering; one at a time took five minutes.
+ *
+ * Chrome's start stayed within 1.5 s at every setting once warm (STARTUP_MS),
+ * so this is set by run length and by Windows, not by the start.
+ * OJ_SWEEP_LIMIT overrides it, for measuring.
  */
-const LIMIT = Number(process.env.OJ_SWEEP_LIMIT) || (process.platform === "win32" ? 1 : Math.min(4, Math.max(1, Math.floor(os.availableParallelism() / 2))))
+const LIMIT = Number(process.env.OJ_SWEEP_LIMIT) || (process.platform === "win32" ? 1 : Math.min(4, Math.max(1, Math.floor(os.availableParallelism() / 4))))
 let running = 0
 const waiting: Array<() => void> = []
 async function slot<T>(work: () => Promise<T>): Promise<T> {
@@ -111,12 +123,12 @@ beforeAll(async () => {
     // asking the site and racing the others to the same cache file.
     runtime = (await version()).runtime
     await ensureRuntime(siteOrigin(), runtime)
-    // The first Chrome a fresh machine starts is slow: 9 to 13 s to its first
-    // page on the CI runners, against 1.3 s at worst for every one after. It
-    // is paid here, once, with a deadline of its own, instead of by whichever
-    // sketch happens to run first.
+    // The first Chrome a fresh machine starts is slow: up to 32.4 s to its
+    // first page on the CI runners, against 1.5 s at worst for every one after
+    // (STARTUP_MS). It is paid here, once, and reported on its own, instead
+    // of by whichever sketch happens to run first.
     const began = Date.now()
-    ;(await launch({ startupMs: 120_000 })).close()
+    ;(await launch()).close()
     coldS = (Date.now() - began) / 1000
 }, 300_000)
 
@@ -149,16 +161,14 @@ function startSummary(): string {
     const worst = starts.filter((s) => s.pageS !== null).sort((a, b) => b.pageS! - a.pageS!)[0]
     const failed = starts.filter((s) => s.pageS === null).map((s) => s.name)
     const runs = starts.map((s) => s.runS).sort((a, b) => a - b)
+    const slowest = [...starts].sort((a, b) => b.runS - a.runS)[0]
     return [
         `[sweep] ${process.platform}, ${os.availableParallelism()} cores, ${LIMIT} at a time, ${starts.length} runs; cold chrome warm-up ${coldS.toFixed(1)} s`,
-        `[sweep] chrome page after: median ${at(0.5)?.toFixed(1)} s, p90 ${at(0.9)?.toFixed(1)} s, worst ${worst?.pageS?.toFixed(1)} s (${worst?.name}); limit ${STARTUP_S} s`,
+        `[sweep] chrome page after: median ${at(0.5)?.toFixed(1)} s, p90 ${at(0.9)?.toFixed(1)} s, worst ${worst?.pageS?.toFixed(1)} s (${worst?.name}); limit ${STARTUP_MS / 1000} s`,
         `[sweep] no page: ${failed.length === 0 ? "none" : failed.join(", ")}`,
-        `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${runs[runs.length - 1]?.toFixed(1)} s`,
+        `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${slowest?.runS.toFixed(1)} s (${slowest?.name}); limit ${RUN_MS / 1000} s`,
     ].join("\n")
 }
-
-/** STARTUP_MS in cli/chrome.mjs, in seconds, as its failure message states it. */
-const STARTUP_S = 30
 
 describe("oj test over every example", () => {
     afterAll(() => {

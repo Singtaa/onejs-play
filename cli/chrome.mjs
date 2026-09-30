@@ -42,8 +42,16 @@ export function findChrome() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** How long a browser may take to start and offer a page. */
-const STARTUP_MS = 30000
+/**
+ * How long a browser may take to start and offer a page. Measured on the CI
+ * runners (4 cores, Ubuntu and Windows, 2026-09-30): once one Chrome has run
+ * on the machine, every start listed its page within 1.5 s, at any number of
+ * runs at once. The first start on a fresh machine is another matter: 0.6 to
+ * 32.4 s, and 32.4 s is past the 30 s this used to allow, which is how a sweep
+ * failed on main with "offered no page". A person's first `oj run` after a
+ * reboot pays the same. 90 s is 2.8 times that worst cold start.
+ */
+export const STARTUP_MS = 90000
 
 /**
  * Launches a browser and attaches to its first page.
@@ -53,7 +61,7 @@ const STARTUP_MS = 30000
  * cannot collide. The profile is fresh and thrown away: nothing a game does
  * survives into the next run.
  */
-export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-", startupMs = STARTUP_MS } = {}) {
+export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
     // Checked before Chrome starts, so an old Node fails with the fix in hand
     // rather than "WebSocket is not defined" after starting a browser for nothing.
     if (typeof WebSocket !== "function") {
@@ -81,11 +89,10 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     let stderr = ""
     child.stderr.on("data", (d) => { stderr += d })
 
-    // One deadline for the whole start, generous on purpose. A browser
-    // starting beside three others and a test suite took more than the old
-    // five seconds to list its first page, and a run that fails there fails
-    // for a reason that has nothing to do with the sketch.
-    const deadline = Date.now() + startupMs
+    // One deadline for the whole start, generous on purpose (STARTUP_MS): a
+    // run that fails here fails for a reason that has nothing to do with the
+    // sketch.
+    const deadline = Date.now() + STARTUP_MS
     const portFile = path.join(profile, "DevToolsActivePort")
     let port = null
     while (port === null && Date.now() < deadline) {
@@ -111,7 +118,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     }
     if (page === null) {
         kill(child)
-        throw new Error(`Chrome started but offered no page to attach to within ${startupMs / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
+        throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
     }
     const pageMs = Date.now() - began
 
