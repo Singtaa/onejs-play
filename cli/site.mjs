@@ -41,6 +41,17 @@ export function token(root = process.cwd()) {
     return value
 }
 
+/**
+ * The account's own sketches, private ones included: what "which sketches do
+ * I have" needs. The site's public list leaves out every private sketch.
+ */
+export async function mine(bearer) {
+    const response = await fetch(`${siteOrigin()}/api/me/sketches`, { headers: { authorization: `Bearer ${bearer}` } })
+    const body = await json(response)
+    if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
+    return body
+}
+
 /** The sid in a clone URL, or null. */
 export function sidFromRemote(url) {
     const match = /\/g\/([a-z0-9]{12})\.git\/?$/.exec(url ?? "")

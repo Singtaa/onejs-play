@@ -8,6 +8,7 @@
  *   oj run              build, then run the game in the real container in a local Chrome
  *   oj test <script>    run, then drive the game from a script that reads, clicks and asserts
  *   oj status           what the site is running: head, live, and why they differ
+ *   oj list             every sketch on the account, private ones included
  *   oj push             git push origin main with OJ_TOKEN, then fail if the tip did not build
  *   oj new <name>       create a game on the site and clone it here
  *   oj login            print a link; once the person presses Allow, this machine can push
@@ -19,7 +20,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, folderFor, git, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
+import { create, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
 import { login, logout } from "./login.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
@@ -48,6 +49,7 @@ const HELP = `usage: oj <command> [options]
                           line or crowded
                           --headed, --window, --for as above
   status                head, live and buildError for this sketch (--sid <id>)
+  list                  every sketch on the account, private ones included (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
@@ -207,6 +209,17 @@ async function main() {
             } finally {
                 stop(game)
             }
+        }
+        case "list": {
+            const { handle, sketches } = await mine(token(root))
+            if (flags.json === true) {
+                console.log(JSON.stringify({ handle, sketches }, null, 2))
+                return 0
+            }
+            const hidden = sketches.filter((s) => !s.public).length
+            say(`${handle} has ${sketches.length} sketch${sketches.length === 1 ? "" : "es"}, ${hidden} private`)
+            for (const g of sketches) console.log(`${g.sid}  ${g.public ? "public " : "private"}  ${g.name}  ${g.url}`)
+            return 0
         }
         case "status": {
             const sid = flags.sid ? String(flags.sid) : sidOf(root)

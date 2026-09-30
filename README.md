@@ -486,6 +486,7 @@ oj typecheck        # tsc --noEmit
 oj run              # the game in the site's real container, in a local headless Chrome
 oj test playtest.mjs   # run, then drive the game from a script (no script: a smoke run)
 oj status           # what the site is running: head, live, buildError
+oj list             # every sketch on the account, private ones included
 oj login            # print a play.onejs.com link; after Allow there, this machine can push
 oj logout           # forget that login, here and on the site
 oj push             # git push, then exit 1 if the tip did not build

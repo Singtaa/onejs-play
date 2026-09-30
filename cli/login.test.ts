@@ -4,8 +4,8 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { deviceName, helperFor, login, logout } from "./login.mjs"
-import { storedToken, tokenOf } from "./site.mjs"
+import { deviceName, helperFor, installId, login, logout } from "./login.mjs"
+import { mine, storedToken, tokenOf } from "./site.mjs"
 
 /**
  * `oj login` against a stand-in for the site's three routes (PlaySite
@@ -46,6 +46,10 @@ beforeEach(async () => {
             return send(200, { token: TOKEN, handle: "owner", expiresAt: 1 })
         }
         if (req.url === "/api/logout") return send(200, { ok: true })
+        if (req.url === "/api/me/sketches") {
+            if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx onejs-play login again." })
+            return send(200, { handle: "owner", sketches: [{ sid: "abcdefabcdef", name: "Hidden", public: false }, { sid: "bcdefabcdefa", name: "Shown", public: true }] })
+        }
         send(404, {})
     })
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
@@ -160,6 +164,60 @@ describe("oj login", () => {
         expect(seen.at(-1)).toMatchObject({ path: "/api/logout", auth: `Bearer ${TOKEN}` })
         expect(storedToken(dir)).toBeNull()
         expect(gitPassword(process.env.OJ_SITE!)).not.toBe(TOKEN)
+    })
+})
+
+describe("which install this is", () => {
+    it("sends one id per install with every login, kept beside the token", async () => {
+        await login(dir, quiet)
+        await login(dir, quiet)
+        const sent = seen.filter((s) => s.path === "/api/login").map((s) => s.body.install)
+        expect(sent).toHaveLength(2)
+        expect(sent[0]).toMatch(/^[a-z0-9]{32}$/)
+        expect(sent[1]).toBe(sent[0])
+        expect(fs.readFileSync(path.join(dir, "home", "install"), "utf8").trim()).toBe(sent[0])
+        // Another home is another install, so neither login replaces the other.
+        vi.stubEnv("OJ_HOME", path.join(dir, "home2"))
+        expect(installId(dir)).not.toBe(sent[0])
+    })
+})
+
+describe("oj list", () => {
+    it("asks for the account's own sketches with the token, and passes on why a refused token is refused", async () => {
+        const { handle, sketches } = await mine(TOKEN)
+        expect(handle).toBe("owner")
+        expect(sketches.map((g: { name: string }) => g.name)).toEqual(["Hidden", "Shown"])
+        await expect(mine("oja_" + "b".repeat(32))).rejects.toThrow("replaced by a newer login from the same install")
+    })
+})
+
+describe("oj logout and ~/.gitconfig", () => {
+    const before = [
+        "[user]",
+        "\tname = Somebody",
+        "[credential]",
+        "\thelper = osxkeychain",
+        '[credential "https://github.com"]',
+        "\tusername = somebody",
+        "",
+    ].join("\n")
+
+    it("takes out exactly the block login put in, and nothing else", async () => {
+        const file = path.join(dir, "gitconfig")
+        fs.writeFileSync(file, before)
+        await login(dir, quiet)
+        expect(fs.readFileSync(file, "utf8")).toContain(`[credential "${process.env.OJ_SITE}"]`)
+        await logout(dir, { say: () => {} })
+        expect(fs.readFileSync(file, "utf8")).toBe(before)
+    })
+
+    it("keeps anything of the person's own in the site's section", async () => {
+        const file = path.join(dir, "gitconfig")
+        const mineToo = before + `[credential "${process.env.OJ_SITE}"]\n\tusername = me\n`
+        fs.writeFileSync(file, mineToo)
+        await login(dir, quiet)
+        await logout(dir, { say: () => {} })
+        expect(fs.readFileSync(file, "utf8")).toBe(mineToo)
     })
 })
 
