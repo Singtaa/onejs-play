@@ -567,7 +567,8 @@ constant, and open the screenshot.
 launch and speak to, so the launcher and the protocol client exist once.
 Chrome is found in the usual places or named by `OJ_CHROME`, and is driven
 over Node's built-in WebSocket, so `oj run` and `oj test` need Node 22 or
-newer. One container fills about four cores under the software rasteriser,
+newer, and say so when started on older Node. The package declares no
+`engines`: every new OneJS project installs it, and most never run those two. One container fills about four cores under the software rasteriser,
 so run one per four cores, and one at a time on Windows, where two at once
 ran past a 12 minute cap and four starved a four-core machine outright (key
 presses wait for frames, so a slow machine only makes a run longer). The

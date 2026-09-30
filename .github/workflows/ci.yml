@@ -65,8 +65,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # The oldest Node the package supports (package.json engines): oj drives
-          # Chrome over the global WebSocket, which Node 20 does not have.
+          # The oldest Node oj run and oj test support (cli/chrome.mjs refuses
+          # older): oj drives Chrome over the global WebSocket, which Node 20
+          # does not have. The package declares no engines, so a OneJS project
+          # installing it on older Node gets no warning for commands it never runs.
           node-version: 22
           cache: npm
           cache-dependency-path: onejs-play/package-lock.json
