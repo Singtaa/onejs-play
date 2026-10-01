@@ -162,8 +162,11 @@ describe("ojplay add, in a folder with nothing in it", () => {
             "Started a cart here that uses @singtaa/lightning 1.2.0: index.tsx shows Bolt, Glow.",
             `Next: ${COMMAND} run`,
         ])
+        // No "runtime", though the used cart's oj.json has one: nothing reads
+        // it (the site puts a cart on the current container at publish), and
+        // every field a new cart shows should do something (Tachi, 1 Oct).
         expect(json(root, "oj.json")).toEqual({
-            schema: 1, runtime: "1.4.0", name: "Storm Chaser", entry: "index.tsx", controls: ["pointer"],
+            schema: 1, name: "Storm Chaser", entry: "index.tsx", controls: ["pointer"],
             dependencies: { "@singtaa/lightning": "1.2.0" },
         })
         expect(read(root, "index.tsx")).toContain(`import { said, COLORS, Bolt, Glow } from "@singtaa/lightning"`)

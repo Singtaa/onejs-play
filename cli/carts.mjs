@@ -277,13 +277,13 @@ export async function add(root, address, options = {}) {
 
     if (place === "empty") {
         // Fetched first: what the new cart says it uses has to be readable,
-        // and its controls and runtime come from the cart it runs.
+        // and its controls come from the cart it runs. No "runtime": nothing
+        // reads it, and every field a new cart shows should do something.
         const kept = await download(root, pinned.address, value)
         const { own } = fetchedOf(root, key)
         const name = path.basename(root).replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim() || "My Cart"
         writeManifest(root, {
             schema: 1,
-            runtime: typeof own.runtime === "string" ? own.runtime : "1.0.0",
             name,
             entry: "index.tsx",
             controls: Array.isArray(own.controls) ? own.controls : ["pointer", "touch"],
