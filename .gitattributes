@@ -1,2 +1,5 @@
 # The scaffold is copied byte for byte into a clone; keep it as npm ships it.
 cli/scaffold/* text eol=lf
+# Unity's own scene bytes, which unity-scene.test.ts compares against; a CRLF
+# checkout would make them a scene Unity never wrote.
+cli/fixtures/unity-scene/*.unity -text

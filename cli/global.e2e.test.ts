@@ -21,7 +21,15 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const OWN = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { name: string, version: string }
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-global-e2e-"))
 const prefix = path.join(work, "prefix")
-const bin = path.join(prefix, "bin", BIN)
+/**
+ * Where npm puts a global install's commands: prefix/bin, except on Windows,
+ * where they are prefix itself and the command is a .cmd shim. Node spawns a
+ * .cmd only through a shell, npm's own included.
+ */
+const WINDOWS = process.platform === "win32"
+const binDir = WINDOWS ? prefix : path.join(prefix, "bin")
+const bin = path.join(binDir, WINDOWS ? `${BIN}.cmd` : BIN)
+const NPM = WINDOWS ? "npm.cmd" : "npm"
 let server: Server
 let origin = ""
 
@@ -35,7 +43,7 @@ function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
         // The real cache, read-only in effect, so a run does not download the world.
         npm_config_cache: path.join(os.homedir(), ".npm"),
         npm_config_prefix: prefix,
-        PATH: `${path.join(prefix, "bin")}${path.delimiter}${process.env.PATH}`,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
         GIT_CONFIG_GLOBAL: path.join(work, "gitconfig"),
         ...extra,
     }
@@ -43,7 +51,7 @@ function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
 
 function ojplay(args: string[], cwd: string, extra: Record<string, string> = {}): Promise<{ code: number, out: string }> {
     return new Promise((resolve) => {
-        const child = spawn(bin, args, { cwd, env: env(extra) })
+        const child = spawn(bin, args, { cwd, env: env(extra), shell: WINDOWS })
         let out = ""
         child.stdout.on("data", (d) => { out += d })
         child.stderr.on("data", (d) => { out += d })
@@ -56,10 +64,10 @@ const PORTAL = "a".repeat(40)
 beforeAll(async () => {
     fs.mkdirSync(path.join(work, "home"), { recursive: true })
     fs.writeFileSync(path.join(work, "gitconfig"), "")
-    const packed = spawnSync("npm", ["pack", "--silent", "--pack-destination", work], { cwd: ROOT, encoding: "utf8", env: env() })
+    const packed = spawnSync(NPM, ["pack", "--silent", "--pack-destination", work], { cwd: ROOT, encoding: "utf8", env: env(), shell: WINDOWS })
     expect(packed.status, packed.stderr).toBe(0)
     const tarball = path.join(work, packed.stdout.trim().split("\n").pop()!)
-    const installed = spawnSync("npm", ["install", "-g", "--no-audit", "--no-fund", tarball], { cwd: work, encoding: "utf8", env: env() })
+    const installed = spawnSync(NPM, ["install", "-g", "--no-audit", "--no-fund", tarball], { cwd: work, encoding: "utf8", env: env(), shell: WINDOWS })
     expect(installed.status, installed.stderr).toBe(0)
 
     server = createServer((req, res) => {
@@ -90,7 +98,7 @@ afterAll(async () => {
 describe(`npm install -g ${PACKAGE}`, () => {
     it("puts one command on the PATH, ojplay, and no oj", () => {
         expect(fs.existsSync(bin)).toBe(true)
-        expect(fs.existsSync(path.join(prefix, "bin", "oj"))).toBe(false)
+        expect(fs.existsSync(path.join(binDir, WINDOWS ? "oj.cmd" : "oj"))).toBe(false)
     })
 
     it("answers --help with its own name, version and the hand-off line", async () => {
