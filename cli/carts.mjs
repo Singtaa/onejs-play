@@ -39,7 +39,7 @@ async function site(method, route, root, body) {
             body: body ? JSON.stringify(body) : undefined,
         })
     } catch (error) {
-        throw new Error(`Could not reach ${siteOrigin()} (${error.cause?.code ?? error.message}). Check the connection and run it again.`)
+        throw new Error(`Could not reach ${siteOrigin()} (${error.cause?.code ?? error.message}). Check the connection and run it again.`, { cause: error })
     }
     return response
 }

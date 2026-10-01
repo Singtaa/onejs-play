@@ -314,7 +314,7 @@ async function main() {
         case "help":
         case "--help":
             process.stdout.write(HELP)
-            return command === undefined ? 1 : 0
+            return command === undefined && flags.help !== true && flags.h !== true ? 1 : 0
         default:
             throw new Error(`unknown command ${command}\n\n${HELP}`)
     }
