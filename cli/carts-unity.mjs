@@ -4,7 +4,8 @@
  * At the project's root (Assets/ beside ProjectSettings/), the whole cart
  * becomes its own JSRunner: today's Eject in one line. The cart goes in
  * `Assets/<Name>/~`, `init --unity` writes the PanelSettings and the prefab
- * beside it, and npm installs and builds it. Whose cart it is decides the form
+ * beside it, npm installs and builds it, and the prefab goes in a scene
+ * (unity-scene.mjs). Whose cart it is decides the form
  * (Sai, 30 Sep: "go with all four defaults"):
  *
  *   your own cart lands as a git clone you push from, through the stored
@@ -22,6 +23,7 @@ import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
 import { git, mine, tokenOf } from "./site.mjs"
 import { NO_ONEJS, initUnity, npm as runNpm, objectName, oneJSOf, unityProjectOf } from "./unity.mjs"
 import { withCartsPlugin } from "./unity-config.mjs"
+import { placePrefab } from "./unity-scene.mjs"
 
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
@@ -90,10 +92,16 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
     const what = own !== undefined
         ? `Took ${pinned.address}, yours, into Assets/${name}/~ as a clone: push from there and the site builds it.`
         : `Took ${shown(kept)} into Assets/${name}/~.`
-    return [
-        what + (fetched.length > 0 ? ` It uses ${fetched.join(", ")}, fetched into ~/.oj/carts.` : ""),
-        `Next: drag ${made.prefab} into a scene.`,
-    ]
+    const took = what + (fetched.length > 0 ? ` It uses ${fetched.join(", ")}, fetched into ~/.oj/carts.` : "")
+
+    // Into a scene, unless an editor has the project open (unity-scene.mjs).
+    const prefabName = path.basename(made.prefab, ".prefab")
+    const placed = placePrefab(project, made.prefab, prefabName)
+    if (placed === null) return [took, `Next: drag ${made.prefab} into a scene.`]
+    const where = placed.already ? `${prefabName} is already in ${placed.scene}.`
+        : placed.made ? `Made ${placed.scene} with ${prefabName} in it${placed.listed ? ", and added it to the build list" : ""}.`
+            : `Put ${prefabName} in ${placed.scene}${placed.listed ? ", and added that to the build list" : ""}.`
+    return [took, where, `Next: open ${placed.scene} and press Play.`]
 }
 
 function refuseIfThere(project, app) {

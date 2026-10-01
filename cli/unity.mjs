@@ -174,7 +174,7 @@ export function objectName(name, fallback = "Cart") {
  * generate its own, Unity would give the PanelSettings a fresh one and the
  * prefab's reference would dangle.
  */
-const meta = (guid, importer) => `fileFormatVersion: 2\nguid: ${guid}\n${importer}:\n  externalObjects: {}\n${
+export const meta = (guid, importer) => `fileFormatVersion: 2\nguid: ${guid}\n${importer}:\n  externalObjects: {}\n${
     importer === "NativeFormatImporter" ? "  mainObjectFileID: 11400000\n" : ""}  userData: \n  assetBundleName: \n  assetBundleVariant: \n`
 
 function panelSettings(name) {
