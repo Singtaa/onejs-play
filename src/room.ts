@@ -239,7 +239,9 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                 }, HEARTBEAT_MS)
             }
 
-            ws.onmessage = (event: MessageEvent) => {
+            // Typed by what is read: OneJS's WebSocket (its global.d.ts) and the
+            // DOM's hand over different event types, and both carry these.
+            ws.onmessage = (event: { data: unknown }) => {
                 let wire: Wire
                 try {
                     wire = JSON.parse(String(event.data))
@@ -281,7 +283,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             }
 
             ws.onerror = () => gone("error")
-            ws.onclose = (event: CloseEvent) => gone(event?.reason || "closed")
+            ws.onclose = (event: { reason?: string }) => gone(event?.reason || "closed")
         }
 
         open()

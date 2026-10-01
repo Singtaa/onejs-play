@@ -67,6 +67,23 @@ function panelSettings(): any {
 }
 
 /**
+ * Whether a Unity object from the bridge is really there.
+ *
+ * OneJS's bridge tests C# null by reference, so an unassigned field (Unity's
+ * fake null, such as the targetTexture of a panel drawn to the Game view) or a
+ * destroyed object reaches JS as a live proxy. Reading any property of it
+ * throws in C#, and the bridge logs that as a red "[QuickJS Invoke Error]"
+ * line before JS can catch it. Unity's own truth test, the bool operator,
+ * answers without touching the object; OneJS's __csHelpers.callStatic reaches
+ * it. Anything that did not come over the bridge (no __csHandle) is there.
+ */
+function present(obj: any): boolean {
+    if (obj === null || obj === undefined) return false
+    if (obj.__csHandle === undefined) return true
+    return globalThis.__csHelpers?.callStatic("UnityEngine.Object", "op_Implicit", obj) === true
+}
+
+/**
  * The viewport in logical pixels, measured where the panel cannot mislead us.
  *
  * Normally that is the screen. A panel rendering into a RenderTexture (an
@@ -77,7 +94,7 @@ function panelSettings(): any {
 function viewport(): { width: number; height: number } | undefined {
     try {
         const target = panelSettings()?.targetTexture
-        if (target !== null && target !== undefined) {
+        if (present(target)) {
             const dpr = pixelRatio()
             const width = Math.round(target.width / dpr)
             const height = Math.round(target.height / dpr)
