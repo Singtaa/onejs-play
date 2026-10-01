@@ -26,7 +26,7 @@
  *
  * A text's visible part is its ink: its measured width, placed by its
  * alignment inside its content box. It is an expression for the game's page,
- * where `__root` and `CS` are, so `ojp test` and the site's playtest harness
+ * where `__root` and `CS` are, so `ojplay test` and the site's playtest harness
  * (Tools/playtest) run the same check.
  */
 

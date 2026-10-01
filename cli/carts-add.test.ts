@@ -9,7 +9,7 @@ import { build } from "./game.mjs"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 
 /**
- * `ojp add`, `update` and `remove` (PlaySite docs/carts.md §3, step 5)
+ * `ojplay add`, `update` and `remove` (PlaySite docs/carts.md §3, step 5)
  * against a stand-in for the site's three routes: the pin, a kept build, and
  * one of its files. The stand-in answers the way PlaySite's do, which its own
  * tests hold (src/used-carts.test.ts, "a kept build, for oj add").
@@ -97,7 +97,7 @@ afterEach(() => {
 
 /** A folder named `name`, holding `files`, with the stand-in as the site and no login anywhere. */
 function folder(name: string, files: Record<string, string> = {}): string {
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "ojp-add-"))
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-add-"))
     made.push(parent)
     const root = path.join(parent, name)
     fs.mkdirSync(root)
@@ -154,7 +154,7 @@ const CART = (deps?: Record<string, string>) => ({
     "index.tsx": "import { mount, View } from \"oj\"\nmount(<View />)\n",
 })
 
-describe("ojp add, in a folder with nothing in it", () => {
+describe("ojplay add, in a folder with nothing in it", () => {
     it("starts a cart that shows the used cart's components, with no account", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0"]) }
         const root = folder("storm-chaser")
@@ -205,7 +205,7 @@ describe("ojp add, in a folder with nothing in it", () => {
     })
 })
 
-describe("ojp add, in a cart", () => {
+describe("ojplay add, in a cart", () => {
     it("adds the newest version to oj.json, fetches it, and says how to import it", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0", "1.3.0"]) }
         const root = folder("storm", CART())
@@ -234,7 +234,7 @@ describe("ojp add, in a cart", () => {
         expect(await add(root, undefined)).toEqual(["Everything oj.json uses is already in .oj/carts.", `Next: ${COMMAND} run`])
     })
 
-    it("points the tsconfig ojp init wrote at the fetched source", async () => {
+    it("points the tsconfig ojplay init wrote at the fetched source", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0"]) }
         const root = folder("storm", { ...CART(), "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { oj: [`./node_modules/${PACKAGE}/src/index.ts`] } }, exclude: ["node_modules"] }) })
         await add(root, "@singtaa/lightning")
@@ -266,7 +266,7 @@ describe("ojp add, in a cart", () => {
     })
 })
 
-describe("ojp update", () => {
+describe("ojplay update", () => {
     it("moves a version within its major, and further with --major", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0", "1.3.0", "2.0.0"]) }
         const root = folder("storm", CART({ "@singtaa/lightning": "1.2.0" }))
@@ -293,7 +293,7 @@ describe("ojp update", () => {
     })
 })
 
-describe("ojp remove", () => {
+describe("ojplay remove", () => {
     it("takes it out of oj.json and .oj/carts, naming the files that still import it", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0"]) }
         const root = folder("storm", { ...CART({ "@singtaa/lightning": "1.2.0" }), "hud/top.tsx": `import { Bolt } from "@singtaa/lightning"\n`, "other.ts": "export {}\n" })

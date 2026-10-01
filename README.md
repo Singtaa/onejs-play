@@ -1,9 +1,9 @@
-# ojp
+# ojplay
 
 OJPlay from the terminal, and the container runtime its carts run on.
-Published to npm as `ojp` (until 1 Oct 2026, `onejs-play`, which stays frozen
+Published to npm as `ojplay` (until 1 Oct 2026, `onejs-play`, which stays frozen
 at 0.8.9 for the OneJS projects that pin it; this repository keeps that name).
-Installed once, `npm install -g ojp`, it is a command: `ojp add @handle/name`.
+Installed once, `npm install -g ojplay`, it is a command: `ojplay add @handle/name`.
 Games import the runtime as `oj` through an esbuild alias. The npm name `oj`
 was already taken, and the alias is the same mechanism OneJS already uses to
 dedupe React, so it ships in the scaffolded esbuild config and survives eject.
@@ -39,7 +39,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
 | `theme.ts` | The default look of the controls the runtime provides |
 | `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
-| `container.ts` | The host-facing surface, `ojp/container` |
+| `container.ts` | The host-facing surface, `ojplay/container` |
 | `runtime.ts` | Container-side: builds the `oj` object a game receives |
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
@@ -52,13 +52,13 @@ Beside `src/`, two folders that are not the runtime:
 
 | Folder | Contents |
 |---|---|
-| `build/` | `game.mjs`, the one builder every game is built with (the site on publish and on Run, `ojp build`, the shipped-games script), and `externals.json`, the modules the container provides. The esbuild instance is a parameter, wasm in the Worker and native here. |
+| `build/` | `game.mjs`, the one builder every game is built with (the site on publish and on Run, `ojplay build`, the shipped-games script), and `externals.json`, the modules the container provides. The esbuild instance is a parameter, wasm in the Worker and native here. |
 | `cli/` | The `oj` command line, the package's `bin`. |
-| `host/` | `boot.mjs`, the script that boots the container and hands it a game, inlined by the site's sandbox document and by the page `ojp run` serves. One copy of the contract with `__ojPlay.load`; the two documents differ only in where the runtime is, how the bundle arrives and whom they tell. |
+| `host/` | `boot.mjs`, the script that boots the container and hands it a game, inlined by the site's sandbox document and by the page `ojplay run` serves. One copy of the contract with `__ojPlay.load`; the two documents differ only in where the runtime is, how the bundle arrives and whom they tell. |
 
 Everything above the `container.ts` line is reachable from a game. Everything
 below it is the host's, and a game bundle cannot see it: `oj` is the package
-root and `ojp/container` is a separate entry point.
+root and `ojplay/container` is a separate entry point.
 
 Value types are pure JavaScript, never bridged. That is faster than the real
 thing (no reflection crossing, no handle-table entry) and it keeps the container
@@ -130,7 +130,7 @@ const p = input.mouse.position     // stage pixels, as a pointer event reports t
 ```
 
 That module normally reads UnityEngine's InputBridge through `CS`, which the
-container shadows. So `createContainerInput()` in `ojp/container`
+container shadows. So `createContainerInput()` in `ojplay/container`
 supplies the same methods from browser events, and the host installs it with
 onejs-unity's `setInputBackend`. One API, one implementation, a swappable
 source. Writing a second input API here would have been the maintenance
@@ -237,7 +237,7 @@ what an ejected copy needs.
 `pop.wav` beside `index.tsx`, or `sfx/pop.wav` in a folder of your own. Never in
 a folder called `assets/`: `assetUrl` strips a leading `assets/` (the habit a
 web developer arrives with), so the site stores such a file and never serves
-it. Images are png or jpeg, and names are case-sensitive. `ojp run` and `oj
+it. Images are png or jpeg, and names are case-sensitive. `ojplay run` and `oj
 test` serve `/assets/` by the same rule (`cli/assets.mjs`, a copy of the
 site's `media.ts`), warn at start about any asset no request can reach, and
 print why each refused request was refused. `fireworks` and `one-note` kept
@@ -434,7 +434,7 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `foobar` | 2.1 KB | A test bed for the asset path |
 
 Every one typechecks against `oj` exactly as a published game does, the
-logic in each is tested without a screen, and `npm test` also runs `ojp test` on
+logic in each is tested without a screen, and `npm test` also runs `ojplay test` on
 every one in the real container (`cli/examples.e2e.test.ts`): its
 `playtest.mjs` when it has one, otherwise a smoke run that boots it and fails on
 a console error or a row that looks wrong. Three examples failed that for
@@ -462,10 +462,10 @@ frame sees exactly the events that arrived since the previous one.
 
 **Before an example ships:**
 
-1. `ojp typecheck` passes.
+1. `ojplay typecheck` passes.
 2. A `playtest.mjs` drives every control and checks what it changes, not the
    text beside it (`examples/arcane-portal/playtest.mjs`).
-3. `ojp test playtest.mjs` passes. That also fails on a console error, on a
+3. `ojplay test playtest.mjs` passes. That also fails on a console error, on a
    centred row whose controls do not line up with their labels, and on a
    control within 8px of its neighbour. `npm test` runs it for every example.
 4. A value that changes (a slider's readout, a score) sits in a fixed-width
@@ -476,40 +476,40 @@ frame sees exactly the events that arrived since the previous one.
 
 ## The command line
 
-`ojp` is this package's `bin`: `npm install -g ojp` once, then `ojp <command>`
-anywhere. `npx ojp <command>` needs no install, and is what agents are told.
-Inside a cart with its own ojp in `node_modules`, the global `ojp` runs that
+`ojplay` is this package's `bin`: `npm install -g ojplay` once, then `ojplay <command>`
+anywhere. `npx ojplay <command>` needs no install, and is what agents are told.
+Inside a cart with its own ojplay in `node_modules`, the global `ojplay` runs that
 copy, so the version that builds the cart is the one it chose; once a day at
-most, a global `ojp` at a terminal says in one line when npm has a newer one.
+most, a global `ojplay` at a terminal says in one line when npm has a newer one.
 
 A cart's repository is two files, `index.tsx` and `oj.json`, because the site
 builds it and the editor's tree should be the cart and nothing else; what a
 terminal needs is written by `init` and gitignored like `node_modules`:
 
 ```bash
-ojp add @singtaa/lightning   # use another cart: oj.json gets its newest version, .oj/carts its source and art
+ojplay add @singtaa/lightning   # use another cart: oj.json gets its newest version, .oj/carts its source and art
                              #   (in an empty folder, starts a cart that uses it; no account needed)
-ojp update          # the carts this one uses, to their newest in the same major (--major: newest of all)
-ojp remove @singtaa/lightning   # stop using it; names the files that still import it
-ojp init            # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
-ojp init --unity    # in Assets/<Name>/~ of a Unity project: a JSRunner project and prefab, installed and built
-ojp build           # bundle the cart the way the site does; errors as file:line:col
-ojp typecheck       # tsc --noEmit
-ojp run             # the cart in the site's real container, in a local headless Chrome
-ojp test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
-ojp status          # what the site is running: head, live, buildError
-ojp list            # every cart on the account, private ones included
-ojp login           # print a play.onejs.com link; after Allow there, this machine can push
-ojp logout          # forget that login, here and on the site
-ojp push            # git push, then exit 1 if the tip did not build
-ojp new "Name"       # create a cart on the site and clone it
-ojp runtime         # fetch the container into ~/.onejs-play (--runtime <version>)
+ojplay update          # the carts this one uses, to their newest in the same major (--major: newest of all)
+ojplay remove @singtaa/lightning   # stop using it; names the files that still import it
+ojplay init            # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
+ojplay init --unity    # in Assets/<Name>/~ of a Unity project: a JSRunner project and prefab, installed and built
+ojplay build           # bundle the cart the way the site does; errors as file:line:col
+ojplay typecheck       # tsc --noEmit
+ojplay run             # the cart in the site's real container, in a local headless Chrome
+ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
+ojplay status          # what the site is running: head, live, buildError
+ojplay list            # every cart on the account, private ones included
+ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
+ojplay logout          # forget that login, here and on the site
+ojplay push            # git push, then exit 1 if the tip did not build
+ojplay new "Name"       # create a cart on the site and clone it
+ojplay runtime         # fetch the container into ~/.onejs-play (--runtime <version>)
 ```
 
 **`init --unity` makes a clone a JSRunner project in place.** Clone the cart
 to `Assets/<Name>/~` in a Unity project that has OneJS (Unity ignores a folder
 named `~`, which keeps the source and `node_modules` out of the import), then
-run `ojp init --unity` there. It writes JSRunner's own default files
+run `ojplay init --unity` there. It writes JSRunner's own default files
 into the clone, read from the OneJS the project installed rather than copied
 into this package, points the build at the entry `oj.json` names, and puts a
 PanelSettings and `<Name>.prefab` beside the clone. Every file it writes into
@@ -523,13 +523,13 @@ container's test holds the two together.
 
 The cart's files sit at their own names in the repository, and OneJS reads a
 JSRunner project's files from `~/assets/`. So the build `init --unity` writes
-carries `assetsPlugin()` (`ojp/unity`), which copies every file the
+carries `assetsPlugin()` (`ojplay/unity`), which copies every file the
 site would serve into `assets/` before each build, keeping its folders. The
 copies are excluded from git, the site refuses a top-level `assets` folder so
 none of the cart's files can be in the way, and a copy is removed once its file
 leaves the cart (only a copy the plugin wrote, never a file put there by hand).
 
-**`ojp run` runs what ships.** It fetches the container the site serves at
+**`ojplay run` runs what ships.** It fetches the container the site serves at
 `/runtime/<version>/` (the pin from `/api/version`, or `--runtime`) into
 `~/.onejs-play/runtime/<version>/` once, serves it with the cart's bundle and
 assets from a local origin, and boots it in Chrome the way the sandbox
@@ -542,7 +542,7 @@ runtime, which is the container's own hot path and takes about ten
 milliseconds. It exits 1 if the cart logged a console error, `Property not
 found` included.
 
-**`ojp test` hands a script the running game.** The script's default export
+**`ojplay test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
 `drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`,
 `hold("KeyA")` (returns a release function), `type("crane")`, `wait(ms)`,
@@ -554,7 +554,7 @@ input off the row's centre line; in any row, a control within 8px of its
 neighbour, measured from a text's ink rather than its box. When the script throws,
 a screenshot lands in `.oj/failed.png`; call `shot(file)` for one otherwise.
 `examples/wordie/playtest.mjs` is the one to
-copy from. With no script, `ojp test` lets the cart run `--for` seconds
+copy from. With no script, `ojplay test` lets the cart run `--for` seconds
 (default 2) and applies the same checks.
 
 **A pressed key is its own press.** `press`, `hold` and `type` wait for the
@@ -579,24 +579,24 @@ constant, and open the screenshot.
 `cli/chrome.mjs` is also what the production harnesses in `Tools/playtest`
 launch and speak to, so the launcher and the protocol client exist once.
 Chrome is found in the usual places or named by `OJ_CHROME`, and is driven
-over Node's built-in WebSocket, so `ojp run` and `ojp test` need Node 22 or
+over Node's built-in WebSocket, so `ojplay run` and `ojplay test` need Node 22 or
 newer, and say so when started on older Node. The package declares no
 `engines`: every new OneJS project installs it, and most never run those two. One container fills about four cores under the software rasteriser,
 so run one per four cores, and one at a time on Windows, where two at once
 ran past a 12 minute cap and four starved a four-core machine outright (key
 presses wait for frames, so a slow machine only makes a run longer). The
 first Chrome after a reboot can take half a minute to start; `oj` allows it
-90 s. Ctrl-C during `ojp test` closes its browser before it exits. `ojp login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the cart where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `ojp login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
+90 s. Ctrl-C during `ojplay test` closes its browser before it exits. `ojplay login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the cart where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `ojplay login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
 points every command at another origin; `OJ_HOME` moves the cache.
 
 ## Testing
 
 ```bash
-npm test          # vitest, including ojp test over every example (needs Chrome and the network)
+npm test          # vitest, including ojplay test over every example (needs Chrome and the network)
 npm run typecheck # tsc --noEmit
 ```
 
-`npm test` runs `ojp test` on every example and CLI fixture, in the CLI's own
+`npm test` runs `ojplay test` on every example and CLI fixture, in the CLI's own
 headless Chrome against the runtime the site says is live (fetched once into
 `~/.onejs-play`). One Chrome is started first, so a cold machine's slow first
 start is not charged to a cart. Runs go one per four cores (one on a

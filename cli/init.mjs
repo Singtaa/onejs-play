@@ -7,7 +7,7 @@
  * to install types and the oj command, a tsconfig, declarations for the
  * virtual modules) is local tooling, written here and excluded from git
  * through .git/info/exclude, so it is ignored like node_modules without a
- * .gitignore joining the two files. Run `npx ojp init` (or `ojp init`) in a fresh clone; the package is
+ * .gitignore joining the two files. Run `npx ojplay init` (or `ojplay init`) in a fresh clone; the package is
  * fetched for that one run and installed properly by the npm install after.
  *
  * Nothing here overwrites: a file the game already has is left alone and

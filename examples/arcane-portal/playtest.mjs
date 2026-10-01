@@ -1,4 +1,4 @@
-// Arcane Portal, driven the way a player plays it: `npx ojp test playtest.mjs`.
+// Arcane Portal, driven the way a player plays it: `npx ojplay test playtest.mjs`.
 //
 // A swatch has to become the selected one, and a drag on the slider has to move
 // the speed. `oj test` then checks, as it does for every game, that each row's

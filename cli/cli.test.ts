@@ -335,7 +335,7 @@ describe("the tooling a clone writes for itself", () => {
     it("keeps the test script for a game that has a playtest", () => {
         const dir = scratch({ "index.tsx": "", "playtest.mjs": "export default async () => {}" })
         init(dir)
-        expect(JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")).scripts.test).toBe("ojp test playtest.mjs")
+        expect(JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")).scripts.test).toBe("ojplay test playtest.mjs")
     })
 
     it("leaves the starter at two files", () => {

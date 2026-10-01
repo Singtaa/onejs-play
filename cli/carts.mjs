@@ -1,7 +1,7 @@
 /**
  * Carts inside carts, from a terminal (PlaySite docs/carts.md §3, step 5):
  * `add`, `update` and `remove`, and fetching what oj.json uses into
- * `.oj/carts/<key>/`, where the build and `ojp run` read it.
+ * `.oj/carts/<key>/`, where the build and `ojplay run` read it.
  *
  * Every command says what changed in a line or two and names the next step
  * (Sai, 1 Oct: "simple for new users... absolute best DX"). None needs an
@@ -180,9 +180,9 @@ function prune(root, manifest) {
 }
 
 /**
- * Points the local tsconfig at the fetched carts, so `ojp typecheck` and an
+ * Points the local tsconfig at the fetched carts, so `ojplay typecheck` and an
  * editor resolve `@singtaa/lightning` to the source the build compiles. Only
- * the tsconfig `ojp init` wrote (it maps "oj"); a cart's own is left alone.
+ * the tsconfig `ojplay init` wrote (it maps "oj"); a cart's own is left alone.
  * The cart's own uses win where two versions of one cart are in the tree.
  */
 export function syncTypes(root, manifest = manifestOf(root) ?? {}) {
@@ -236,7 +236,7 @@ function exportedNames(root, key, exportsFile) {
 // ---------- the commands ----------
 
 /**
- * `ojp add @handle/name`: in a cart, adds it to oj.json at its newest version
+ * `ojplay add @handle/name`: in a cart, adds it to oj.json at its newest version
  * (or its running build) and fetches it; in a folder that is neither a cart
  * nor a Unity project, starts a cart there that uses it (Tachi, 1 Oct). With
  * no address, fetches what oj.json already lists. Answers the lines to print.
@@ -346,7 +346,7 @@ function starterFor(root, key) {
 }
 
 /**
- * `ojp update [@handle/name] [--major]`: each version to the newest in its
+ * `ojplay update [@handle/name] [--major]`: each version to the newest in its
  * major (all majors with --major), each commit pin to the cart's running
  * build. Prints what moved, as `@singtaa/lightning 1.2.0 → 1.3.0`, and a
  * commit pin as days, `@koma/rain updated (30 Sep → 1 Oct)`.
@@ -384,7 +384,7 @@ export async function update(root, only, { major = false } = {}) {
     return [...lines, `Next: ${COMMAND} run`]
 }
 
-/** `ojp remove @handle/name`: out of oj.json and .oj/carts, naming the files that still import it. */
+/** `ojplay remove @handle/name`: out of oj.json and .oj/carts, naming the files that still import it. */
 export async function remove(root, address) {
     if (placeOf(root) !== "cart" && !isUnityApp(root)) throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} remove runs in one.`)
     if (address === undefined) throw new Error(`Which one? ${COMMAND} remove @handle/name`)

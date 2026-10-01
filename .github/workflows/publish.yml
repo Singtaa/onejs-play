@@ -1,4 +1,4 @@
-# Publishes ojp to npm through trusted publishing (OIDC), so no npm token
+# Publishes ojplay to npm through trusted publishing (OIDC), so no npm token
 # exists anywhere: not in repository secrets, not on a laptop. GitHub
 # mints a short-lived token for this one workflow, npm verifies it against the
 # trusted publisher registered in the package settings, and provenance is
