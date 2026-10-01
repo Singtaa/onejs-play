@@ -26,7 +26,7 @@ import { RESERVED_ASSET_FOLDER, isAssetName, resolveAsset } from "./assets.mjs"
 import { withCartsPlugin } from "./unity-carts.mjs"
 
 export { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-carts.mjs"
-import { PACKAGE } from "../build/command.mjs"
+import { BIN, PACKAGE } from "../build/command.mjs"
 
 /** The names the last sync wrote, relative to the working directory. */
 const RECORD = path.join("node_modules", ".cache", "onejs-play", "unity-assets.json")
@@ -109,10 +109,10 @@ export function assetsPlugin() {
                 try {
                     const { copied, removed } = syncAssets(root)
                     if (copied.length + removed.length > 0) {
-                        console.log(`[oj] assets/: ${[...copied.map((n) => `+${n}`), ...removed.map((n) => `-${n}`)].join(" ")}`)
+                        console.log(`[${BIN}] assets/: ${[...copied.map((n) => `+${n}`), ...removed.map((n) => `-${n}`)].join(" ")}`)
                     }
                 } catch (e) {
-                    return { errors: [{ text: `[oj] could not copy the cart's files into assets/: ${e.message}` }] }
+                    return { errors: [{ text: `[${BIN}] could not copy the cart's files into assets/: ${e.message}` }] }
                 }
             })
         },
