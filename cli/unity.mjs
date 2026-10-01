@@ -27,7 +27,7 @@ import crypto from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { ignoreLocally, packageName } from "./init.mjs"
 import { entryOf, manifestOf, readTree } from "./game.mjs"
-import { buildConfig } from "./unity-assets.mjs"
+import { buildConfig } from "./unity-config.mjs"
 import { FORMER_PACKAGE, PACKAGE } from "../build/command.mjs"
 
 /**
