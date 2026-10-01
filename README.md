@@ -578,7 +578,7 @@ constant, and open the screenshot.
 
 `cli/chrome.mjs` is also what the production harnesses in `Tools/playtest`
 launch and speak to, so the launcher and the protocol client exist once.
-Chrome is found in the usual places or named by `OJ_CHROME`, and is driven
+Chrome is found in the usual places or named by `OJ_CHROME`, starts with a mock keychain and a basic password store so it never asks the OS for its cookie key (on macOS with no keychain under HOME that was a dialog on the person's screen, and `Page.navigate` waited on it), and is driven
 over Node's built-in WebSocket, so `ojplay run` and `ojplay test` need Node 22 or
 newer, and say so when started on older Node. The package declares no
 `engines`: every new OneJS project installs it, and most never run those two. One container fills about four cores under the software rasteriser,
