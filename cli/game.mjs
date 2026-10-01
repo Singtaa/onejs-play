@@ -5,7 +5,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
-import { buildGame, formatBuildErrors } from "../build/game.mjs"
+import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -67,6 +67,43 @@ export function entryOf(files, manifest) {
 }
 
 /**
+ * The carts this one uses, read from `.oj/carts/<key>/`, where `oj add`
+ * fetches each one's kept build (PlaySite docs/carts.md §3), following each
+ * one's own dependencies. The shape `buildGame` takes as `carts`. Refuses a
+ * cart not fetched and a chain that comes back to a cart already on it, each
+ * saying what to do; an entry that is not a cart pin is skipped (cartPins),
+ * and refused with its sentence only if something imports it.
+ */
+export function readUsedCarts(root, manifest) {
+    const carts = {}
+    const visit = (deps, chain) => {
+        const uses = {}
+        const { pins, skipped } = cartPins(deps)
+        for (const [address, pin] of pins) {
+            const key = cartKey(address, pin)
+            uses[address.toLowerCase()] = key
+            if (chain.includes(key)) {
+                throw new Error(`${[...chain.slice(chain.indexOf(key)), key].map(cartLabel).join(", which uses ").replace(", which uses ", " uses ")}: a cart cannot end up using itself.`)
+            }
+            if (key in carts) continue
+            const dir = path.join(root, ".oj", "carts", ...key.split("/"))
+            if (!fs.existsSync(dir)) {
+                throw new Error(`${cartLabel(key)} is not in .oj/carts. Fetch it with: npx onejs-play add ${address.toLowerCase()}`)
+            }
+            const files = readTree(dir)
+            const own = manifestOf(files)
+            carts[key] = { exports: typeof own.exports === "string" ? own.exports : null, uses: {}, files }
+            const inner = visit(own.dependencies, [...chain, key])
+            carts[key].uses = inner.uses
+            carts[key].skipped = inner.skipped
+        }
+        return { uses, skipped }
+    }
+    const top = visit(manifest.dependencies, [])
+    return { uses: top.uses, skipped: top.skipped, carts }
+}
+
+/**
  * esbuild, resolved from the game's own node_modules (it is a peer of this
  * package, so a game that runs `oj build` has it beside onejs-play), and
  * failing with a sentence rather than a module-not-found stack.
@@ -101,8 +138,11 @@ export async function build(root, options = {}) {
         // do: the filesystem root is absolute everywhere Node runs.
         const result = await buildGame(esbuild, files, entry, {
             workingDir: path.parse(process.cwd()).root || "/",
+            carts: readUsedCarts(root, manifest),
         })
-        return { ...result, entry, files, manifest }
+        // Entries that are not a cart pin are skipped; say so, as a push does.
+        const warnings = [...result.warnings, ...cartPins(manifest.dependencies).problems]
+        return { ...result, warnings, entry, files, manifest }
     } catch (error) {
         const lines = formatBuildErrors(error)
         throw Object.assign(new Error(lines.join("\n"), { cause: error }), { lines })

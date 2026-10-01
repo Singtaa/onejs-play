@@ -35,6 +35,48 @@ export interface GameBuild {
 /** Modules the container provides, which a game imports and never bundles. */
 export const EXTERNALS: string[]
 
+/** One used cart, as the caller fetched it from its kept build. */
+export interface UsedCart {
+    /** Its oj.json `exports`: the file `import ... from "@handle/name"` reads. */
+    exports: string | null
+    /** Its own oj.json dependencies, address to key. */
+    uses: Record<string, string>
+    /** Entries in its dependencies that are not a cart pin, address to the sentence why. */
+    skipped?: Record<string, string>
+    /** Its source files, names relative to its root. */
+    files: GameFile[]
+}
+
+/** The carts a cart uses, transitively: its own `uses`, and every key's files. */
+export interface UsedCarts {
+    uses: Record<string, string>
+    /** Entries in the cart's dependencies that are not a cart pin, address to the sentence why. */
+    skipped?: Record<string, string>
+    carts: Record<string, UsedCart>
+}
+
+/** oj.json's dependencies split into cart pins and skipped entries (`problems` are the warnings). */
+export function cartPins(deps: unknown): {
+    pins: Array<[string, string]>
+    skipped: Record<string, string>
+    problems: string[]
+}
+
+/** `@singtaa/lightning@1.2.0`, or `@koma/rain@3f2a91c07b44` for a `#` commit pin. */
+export function cartKey(address: string, pin: string): string
+
+/** What is wrong with one dependency, as a sentence with the fix, or null. */
+export function pinProblem(address: string, pin: unknown): string | null
+
+/** "@singtaa/lightning 1.2.0", or "@koma/rain #3f2a91c07b44". */
+export function cartLabel(key: string): string
+
+/** The names a used cart's scoped oj reads inside its own folder. */
+export const SCOPED: string[]
+
+/** The source of the scoped oj a used cart gets for "oj". */
+export function scopedOj(key: string): string
+
 /** Resolves "." and ".." inside a POSIX path. */
 export function normalize(path: string): string
 
@@ -61,6 +103,8 @@ export function buildGame(
          * Omit it in Node and the plugin compiles the parser itself.
          */
         slCompiler?: unknown
+        /** The carts this one uses (PlaySite docs/carts.md §3). None when omitted. */
+        carts?: UsedCarts
     },
 ): Promise<GameBuild>
 

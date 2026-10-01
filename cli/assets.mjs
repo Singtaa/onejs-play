@@ -58,7 +58,12 @@ const extOf = (name) => {
 }
 
 export function isAssetName(name) {
-    return extOf(name) in ASSET_TYPES
+    return extOf(name) in ASSET_TYPES || isSidecar(name)
+}
+
+/** A flipbook's sidecar, served beside its sheet. PlaySite isSidecar. */
+export function isSidecar(name) {
+    return /\.sheet\.json$/i.test(name)
 }
 
 /** Whether the site would STORE these bytes: every asset type, except images other than png and jpeg. */
@@ -90,6 +95,7 @@ export function validAssetName(name) {
 
 /** Content type for a served asset. */
 export function contentTypeOf(name) {
+    if (isSidecar(name)) return "application/json; charset=utf-8"
     return ASSET_TYPES[extOf(name)] ?? "application/octet-stream"
 }
 
@@ -108,7 +114,7 @@ export function resolveAsset(root, name) {
         }
         return { reason: `${name}: not a name the site accepts (letters, digits, . _ - in each part, at most ${MAX_PATH_DEPTH} levels, ${MAX_NAME_LENGTH} characters).` }
     }
-    if (!isUploadableAsset(name)) {
+    if (!isUploadableAsset(name) && !isSidecar(name)) {
         return { reason: `${name}: the site does not store ${extOf(name)} images; convert it to png or jpg.` }
     }
     const file = exactFile(root, name)
@@ -146,7 +152,9 @@ function exactFile(root, name) {
  * Asset files in the cart that no request can reach, one line each: what
  * the site does with the file, and what to change. Empty when every asset
  * would be served. Walks what a push would carry: node_modules is skipped,
- * and dot folders other than `.oj/`.
+ * and dot folders other than `.oj/`, and `.oj/carts/`, which holds the carts
+ * this one uses as `oj add` fetched them: their files are theirs, served
+ * under their own key.
  */
 export function unservableAssets(root) {
     const problems = []
@@ -155,6 +163,7 @@ export function unservableAssets(root) {
             if (entry.name === "node_modules") continue
             if (entry.name.startsWith(".") && !(prefix === "" && entry.name === OJ_FOLDER)) continue
             const rel = prefix + entry.name
+            if (entry.isDirectory() && rel === `${OJ_FOLDER}/carts`) continue
             if (entry.isDirectory()) walk(path.join(dir, entry.name), rel + "/")
             else if (entry.isFile() && isAssetName(rel)) {
                 const { reason } = resolveAsset(root, rel)

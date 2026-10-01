@@ -1,2 +1,6 @@
 node_modules
 .oj
+# The one fixture that ships used carts, as oj add would have fetched them.
+!cli/fixtures/carts-scoped/.oj
+cli/fixtures/carts-scoped/.oj/*
+!cli/fixtures/carts-scoped/.oj/carts

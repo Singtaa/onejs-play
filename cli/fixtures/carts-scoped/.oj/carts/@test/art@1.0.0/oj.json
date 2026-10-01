@@ -1,0 +1,6 @@
+{
+    "schema": 1,
+    "name": "Art",
+    "version": "1.0.0",
+    "exports": "art.tsx"
+}

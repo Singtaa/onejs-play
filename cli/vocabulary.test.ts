@@ -10,16 +10,18 @@ import path from "node:path"
  * a new cart is made from could keep the old word after the site moved on.
  * "Sketch" became "cart" on 30 Sep 2026 (PlaySite docs/carts.md).
  *
- * And one command spelling: before `npm install`, `npx oj` is not this
- * package. It resolves to an unrelated npm package called "oj" (Mac 003's
- * sample port, 30 Sep), so the commands somebody types into a fresh clone or
- * an empty folder are written `npx onejs-play`.
+ * And one command spelling, everywhere: `npx onejs-play <command>`. Before
+ * `npm install`, `npx oj` is not this package: it resolves to an unrelated
+ * npm package called "oj" (Mac 003's sample port, 30 Sep), and a Koma bot ran
+ * `npx -y oj --help` on 1 Oct, fetching it. `npx onejs-play` works in both
+ * places, since npx runs the local install when there is one, so it is the
+ * only spelling (Tachi, 1 Oct).
  */
 
 const ROOT = path.join(import.meta.dirname, "..")
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8")
 
-/** What a person reads: the CLI's sources, the README, the starter and every example's oj.json. */
+/** What a person or an agent reads: the CLI's sources, the README, the starter, every example's oj.json and playtest. */
 const FILES = [
     ...fs.readdirSync(path.join(ROOT, "cli")).filter((f) => f.endsWith(".mjs")).map((f) => `cli/${f}`),
     "README.md",
@@ -27,11 +29,14 @@ const FILES = [
     ...fs.readdirSync(path.join(ROOT, "examples"))
         .filter((d) => fs.existsSync(path.join(ROOT, "examples", d, "oj.json")))
         .map((d) => `examples/${d}/oj.json`),
+    ...fs.readdirSync(path.join(ROOT, "examples"))
+        .filter((d) => fs.existsSync(path.join(ROOT, "examples", d, "playtest.mjs")))
+        .map((d) => `examples/${d}/playtest.mjs`),
 ]
 
 const OLD_WORD = /\b[Ss]ketch(?:es)?\b/
-/** The commands run before anything is installed. */
-const BARE = /\bnpx oj (?:init|new|login|list|logout|status)\b/
+/** Any command spelled through the bare name. */
+const BARE = /\bnpx (?:-y )?oj\b/
 
 const offenders = (pattern: RegExp) => FILES.flatMap((rel) =>
     read(rel).split("\n").flatMap((line, i) => pattern.test(line) ? [`${rel}:${i + 1}: ${line.trim()}`] : []))
@@ -41,7 +46,7 @@ describe("what onejs-play says", () => {
         expect(offenders(OLD_WORD)).toEqual([])
     })
 
-    it("writes the commands a fresh folder runs as npx onejs-play", () => {
+    it("writes every command as npx onejs-play", () => {
         expect(offenders(BARE)).toEqual([])
     })
 
@@ -49,6 +54,8 @@ describe("what onejs-play says", () => {
         expect(OLD_WORD.test("every sketch on the account")).toBe(true)
         expect(OLD_WORD.test("a sketchbook")).toBe(false)
         expect(BARE.test("then: npx oj init")).toBe(true)
-        expect(BARE.test("npm install, then npx oj run")).toBe(false)
+        expect(BARE.test("npm install, then npx oj run")).toBe(true)
+        expect(BARE.test("npx -y oj --help")).toBe(true)
+        expect(BARE.test("npx onejs-play run")).toBe(false)
     })
 })

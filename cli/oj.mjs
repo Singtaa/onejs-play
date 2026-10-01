@@ -100,7 +100,7 @@ async function main() {
                 return 0
             }
             for (const line of init(root)) say(line)
-            say("now: npm install, then npx oj run")
+            say("now: npm install, then npx onejs-play run")
             return 0
         }
         case "build": {

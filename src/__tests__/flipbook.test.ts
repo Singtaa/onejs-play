@@ -159,3 +159,16 @@ describe("attachFlipbook", () => {
         expect(el.uv).toEqual({ x: 0, y: 0, width: 0.5, height: 1 })
     })
 })
+
+/**
+ * A used cart's scoped oj prefixes the sheet's name with its key
+ * (`@test/art@1.0.0/sheet.png`), and the sidecar is found as the sheet's
+ * sibling, so it lands under the same key: the used cart's sidecar, never
+ * the using cart's (PlaySite docs/carts.md §3, step 4).
+ */
+describe("a used cart's sheet", () => {
+    it("finds its sidecar inside the same cart", () => {
+        expect(sheetName("@test/art@1.0.0/sheet.png")).toBe("@test/art@1.0.0/sheet.sheet.json")
+        expect(sheetName("@test/art@1.0.0/fx/spark.png")).toBe("@test/art@1.0.0/fx/spark.sheet.json")
+    })
+})

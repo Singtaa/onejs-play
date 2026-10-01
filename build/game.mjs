@@ -48,6 +48,95 @@ const dirname = (path) => {
 /** The tree is POSIX; a working directory esbuild echoes back may not be. */
 const toPosix = (path) => path.replace(/\\/g, "/")
 
+/**
+ * A used cart's key: its address and what pins it, in a shape a URL path and
+ * a folder name can both carry (`@singtaa/lightning@1.2.0`, and
+ * `@koma/rain@3f2a91c07b44` for a commit pin, whose `#` cannot be in a path).
+ * The key is where its files sit in the tree, in the asset URLs its scoped oj
+ * makes, and in a Unity project's assets folder (PlaySite docs/carts.md §3).
+ */
+export function cartKey(address, pin) {
+    return `${address.toLowerCase()}@${pin.startsWith("#") ? pin.slice(1) : pin}`
+}
+
+const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const ADDRESS = /^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/
+
+/**
+ * What is wrong with one oj.json dependency, in a sentence that says what to
+ * write instead, or null when it is an exact version or a `#` commit pin.
+ * Exact, because a use moves only when its author asks: a range names the
+ * version inside it. The site warns in these same words (PlaySite
+ * `ojWarnings`, held to them by a test there).
+ */
+export function pinProblem(address, pin) {
+    if (!ADDRESS.test(address)) return `"${address}" should be a cart's address, like "@singtaa/lightning".`
+    if (typeof pin === "string" && (VERSION.test(pin) || /^#[0-9a-f]{12}$/.test(pin))) return null
+    const inside = typeof pin === "string" ? /(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/.exec(pin) : null
+    return inside !== null
+        ? `"${pin}" for ${address} is a range. Use "${inside[0]}"; oj update moves it.`
+        : `${JSON.stringify(pin)} for ${address} should be a version, like "1.2.0".`
+}
+
+/**
+ * oj.json's `dependencies`, split into the carts to build with and the
+ * entries that are not a cart pin, each with the sentence that says so.
+ *
+ * Only an address with an exact version or a `#` commit is a cart pin. The
+ * rest are skipped, not refused: the key meant nothing to a build until
+ * carts could be used, so a cart that carried, say, npm names there must not
+ * stop building on its next save. The editor and a push still warn with the
+ * same sentence, and importing a skipped address refuses with it.
+ */
+export function cartPins(deps) {
+    const pins = [], skipped = {}, problems = []
+    if (deps === undefined || deps === null) return { pins, skipped, problems }
+    if (typeof deps !== "object" || Array.isArray(deps)) {
+        problems.push(`"dependencies" should name each cart with its version, like { "@singtaa/lightning": "1.2.0" }.`)
+        return { pins, skipped, problems }
+    }
+    for (const [address, pin] of Object.entries(deps)) {
+        const problem = pinProblem(address, pin)
+        if (problem === null) pins.push([address, pin])
+        else { skipped[address.toLowerCase()] = problem; problems.push(problem) }
+    }
+    return { pins, skipped, problems }
+}
+
+/** "@singtaa/lightning 1.2.0", or "@koma/rain #3f2a91c07b44", for a sentence. */
+export const cartLabel = (key) => {
+    const at = key.lastIndexOf("@")
+    const pin = key.slice(at + 1)
+    return `${key.slice(0, at)} ${pin.includes(".") ? pin : "#" + pin}`
+}
+
+/** `@handle/name`, optionally followed by a path inside that cart. */
+const CART_IMPORT = /^(@[A-Za-z0-9-]+\/[A-Za-z0-9-]+)(?:\/(.+))?$/
+
+/**
+ * What a used cart gets when it imports "oj": the container's oj, with every
+ * function that takes one of the cart's own file names reading that name
+ * inside the cart's folder. These six are all of them: each one resolves
+ * through `assetUrl`, so prefixing the name is the whole of the scoping, and
+ * a flipbook's sidecar is still the sibling it always was. A full URL or a
+ * rooted path passes through, as `assetUrl` passes it.
+ */
+export const SCOPED = ["assetUrl", "loadTexture", "useTexture", "loadSheet", "useFlipbook", "audio"]
+
+export function scopedOj(key) {
+    return `import * as oj from "oj"
+export * from "oj"
+const scope = (name) => typeof name !== "string" || name === "" || name.includes("://") || name.startsWith("/") || /^[A-Za-z]:[\\\\/]/.test(name)
+    ? name : ${JSON.stringify(key + "/")} + name.replace(/^\\.\\//, "").replace(/^assets\\//, "")
+export const assetUrl = (name) => oj.assetUrl(scope(name))
+export const loadTexture = (name) => oj.loadTexture(scope(name))
+export const useTexture = (name) => oj.useTexture(scope(name))
+export const loadSheet = (name) => oj.loadSheet(scope(name))
+export const useFlipbook = (ref, name) => oj.useFlipbook(ref, scope(name))
+export const audio = { ...oj.audio, load: (name) => oj.audio.load(scope(name)) }
+`
+}
+
 /** Resolves "." and ".." inside a POSIX path, so a relative import cannot escape. */
 export function normalize(path) {
     const out = []
@@ -87,6 +176,25 @@ export async function buildGame(esbuild, files, entry, options = {}) {
     const tree = {}
     for (const file of files) tree["/" + file.name] = file.text
     if (!(("/" + entry) in tree)) throw new Error(`the entry ${entry} is not in the tree`)
+
+    /*
+     * The carts this one uses, fetched by the caller: `uses` maps each address
+     * in its oj.json to a key, and `carts` holds each key's files, its
+     * `exports` file and its own `uses`. Every used cart's files join the tree
+     * under its key. A cart's own names can never start with "@" (the site's
+     * name rule), so nothing collides, and the same key used twice is one
+     * folder, so identical versions share one copy.
+     */
+    const carts = options.carts ?? { uses: {}, carts: {} }
+    for (const [key, cart] of Object.entries(carts.carts)) {
+        for (const file of cart.files) tree[`/${key}/${file.name}`] = file.text
+    }
+    /** The used cart a path in the tree belongs to, or null for the cart being built. */
+    const cartOf = (p) => {
+        const parts = toPosix(p).split("/")
+        const key = parts[1]?.startsWith("@") ? `${parts[1]}/${parts[2]}` : null
+        return key !== null && key in carts.carts ? key : null
+    }
 
     /**
      * Finds a file in the tree given a path a consumer built for us.
@@ -144,7 +252,33 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         name: "game-tree",
         setup(build) {
             build.onResolve({ filter: /.*/ }, (args) => {
+                // The scoped oj's own import of the real one.
+                if (args.namespace === "cart-oj") return { path: args.path, namespace: "ext" }
+                const owner = args.namespace === "src" ? cartOf(args.importer) : null
+                if (args.path === "oj" && owner !== null) return { path: owner, namespace: "cart-oj" }
                 if (externals.includes(args.path)) return { path: args.path, namespace: "ext" }
+                const wanted = CART_IMPORT.exec(args.path)
+                if (wanted !== null) {
+                    const address = wanted[1].toLowerCase()
+                    const key = (owner === null ? carts.uses : carts.carts[owner].uses)[address]
+                    if (key === undefined) {
+                        const skipped = (owner === null ? carts.skipped : carts.carts[owner].skipped)?.[address]
+                        return { errors: [{ text: skipped !== undefined && owner === null ? skipped : owner === null
+                            ? `${address} is not in this cart's oj.json dependencies. Add it with: npx onejs-play add ${address}`
+                            : `${cartLabel(owner)} imports ${address}, which its oj.json does not list. Its author has to add it; or pin a different version of ${owner.slice(0, owner.lastIndexOf("@"))}.` }] }
+                    }
+                    const cart = carts.carts[key]
+                    if (cart === undefined) return { errors: [{ text: `${cartLabel(key)} was not fetched for this build.` }] }
+                    const inside = wanted[2] ?? cart.exports
+                    if (typeof inside !== "string" || inside === "") {
+                        return { errors: [{ text: `${address} exports nothing, so a cart cannot import it. It can still be taken into Unity whole.` }] }
+                    }
+                    const resolved = normalize(`/${key}/${inside}`)
+                    for (const candidate of [resolved, `${resolved}.ts`, `${resolved}.tsx`, `${resolved}.js`, `${resolved}.jsx`]) {
+                        if (candidate in tree && candidate.startsWith(`/${key}/`)) return { path: candidate, namespace: "src" }
+                    }
+                    return { errors: [{ text: `${cartLabel(key)} has no ${inside}` }] }
+                }
                 // Only relative imports resolve. A bare specifier is a package
                 // the platform does not provide, and saying so beats a build
                 // that silently omits it.
@@ -158,12 +292,23 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                 // the same way fromTree already does for Tailwind's cwd join.
                 const base = args.resolveDir === "" ? dirname(toPosix(args.importer)) : toPosix(args.resolveDir)
                 const resolved = normalize(`${base}/${args.path}`)
+                // A relative import stays inside the cart it is written in: a
+                // used cart cannot reach the using cart's files or another
+                // cart's, and the using cart cannot reach into a used one
+                // except by its address.
+                const inCart = (key) => owner === null ? !key.startsWith("/@") : key.startsWith(`/${owner}/`)
                 for (const candidate of [resolved, `${resolved}.ts`, `${resolved}.tsx`, `${resolved}.js`, `${resolved}.jsx`]) {
                     const key = keyInTree(candidate)
-                    if (key !== undefined) return { path: key, namespace: "src" }
+                    if (key !== undefined && inCart(key)) return { path: key, namespace: "src" }
                 }
                 return { errors: [{ text: `cannot resolve ${args.path}` }] }
             })
+
+            build.onLoad({ filter: /.*/, namespace: "cart-oj" }, (args) => ({
+                contents: scopedOj(args.path),
+                loader: "js",
+                resolveDir: "/",
+            }))
 
             // Not esbuild's `external`: its IIFE output turns that into an
             // internal __require that throws. A tiny CommonJS shim reading the
@@ -212,7 +357,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
             // for a class it has seen, and scanning the entry alone meant a
             // class used in ui/Panel.tsx generated nothing: the bundle carried
             // the className and the stylesheet had no such rule.
-            tailwindPlugin({ content: files.map((f) => "/" + f.name) }),
+            tailwindPlugin({ content: Object.keys(tree) }),
             ussModulesPlugin({ generateTypes: false }),
             // Before the resolver, whose filter matches everything: esbuild
             // takes the first plugin that claims a path, and a `.sl` file has
