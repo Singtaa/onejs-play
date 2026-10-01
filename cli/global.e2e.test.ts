@@ -36,7 +36,9 @@ let origin = ""
 /** The environment of someone at a terminal: their own HOME, the global bin on PATH, nothing npm set. */
 function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
     const out: NodeJS.ProcessEnv = {}
-    for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("npm_") && k !== "OJ_TOKEN" && k !== "OJ_SITE" && k !== "OJ_HOME") out[k] = v
+    // Case-blind: Windows names are, and its runners set NPM_CONFIG_PREFIX,
+    // which would win over the npm_config_prefix below.
+    for (const [k, v] of Object.entries(process.env)) if (!k.toLowerCase().startsWith("npm_") && k !== "OJ_TOKEN" && k !== "OJ_SITE" && k !== "OJ_HOME") out[k] = v
     return {
         ...out,
         HOME: path.join(work, "home"),
