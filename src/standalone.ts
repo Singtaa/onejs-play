@@ -66,8 +66,26 @@ function panelSettings(): any {
     }
 }
 
-/** The viewport in logical pixels, measured where the panel cannot mislead us. */
+/**
+ * The viewport in logical pixels, measured where the panel cannot mislead us.
+ *
+ * Normally that is the screen. A panel rendering into a RenderTexture (an
+ * in-world screen, a capture) lays out across that texture instead, whatever
+ * size the window is, so its stage is the texture's size, divided by the same
+ * pixel ratio applyPixelRatio scales the panel by.
+ */
 function viewport(): { width: number; height: number } | undefined {
+    try {
+        const target = panelSettings()?.targetTexture
+        if (target !== null && target !== undefined) {
+            const dpr = pixelRatio()
+            const width = Math.round(target.width / dpr)
+            const height = Math.round(target.height / dpr)
+            if (width > 0 && height > 0) return { width, height }
+        }
+    } catch {
+        // No readable target; the screen below is the next best measure.
+    }
     try {
         const screen = globalThis.CS?.UnityEngine?.Screen
         const dpr = pixelRatio()
