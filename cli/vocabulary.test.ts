@@ -40,7 +40,7 @@ const OLD_WORD = /\b[Ss]ketch(?:es)?\b/
 /** Any command spelled through the bare name. */
 const BARE = /\bnpx (?:-y )?oj\b/
 /** Any command or install spelled through the former name. */
-const FORMER = /\bnpx (?:-y )?onejs-play\b|\bnpm (?:install|i)\b.*\bonejs-play\b/
+const FORMER = /\bnpx (?:-y )?onejs-play\b|\bnpm (?:install|i)(?: -[gD])? onejs-play\b/
 
 const offenders = (pattern: RegExp) => FILES.flatMap((rel) =>
     read(rel).split("\n").flatMap((line, i) => pattern.test(line) ? [`${rel}:${i + 1}: ${line.trim()}`] : []))
