@@ -133,7 +133,7 @@ async function main() {
             return 0
         }
         case "add": {
-            for (const line of await add(root, args[0])) say(line)
+            for (const line of await add(root, args[0], { say })) say(line)
             return 0
         }
         case "update": {

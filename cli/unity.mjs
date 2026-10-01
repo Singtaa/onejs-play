@@ -55,6 +55,10 @@ export const TEMPLATE_MAPPING = [
  */
 const GROWN = ["node_modules", "package-lock.json", ".onejs", ".oj", "*.sl.d.ts", "*.module.uss.d.ts", "/assets/"]
 
+/** What a Unity project without OneJS is told, by `init --unity` and by `add` before it fetches anything. */
+export const NO_ONEJS = "This Unity project does not have OneJS installed yet. Install it from the Package Manager "
+    + "(https://github.com/Singtaa/OneJS.git) and open the project once, then run this again."
+
 /** The OneJS package's name, which is how an installed copy is recognised wherever it lives. */
 const ONEJS = "com.singtaa.onejs"
 
@@ -123,10 +127,15 @@ const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, ".
  * version writing it. The installed OneJS's template may pin an older one,
  * without the oj this cart was written against, or name it by its former
  * name, onejs-play (OneJS 3.2.3 to 3.9.2), which then gives way to ojplay.
+ * Its version is the cart's own, or none: npm prints `> build` for a package
+ * without one, where the template's 1.0.0 said `> lightning@1.0.0 build` for a
+ * cart at 1.2.0.
  */
-export function packageJson(template, name) {
+export function packageJson(template, name, version = null) {
     const pkg = JSON.parse(template)
     pkg.name = name
+    if (typeof version === "string" && version !== "") pkg.version = version
+    else delete pkg.version
     for (const deps of [pkg.dependencies, pkg.devDependencies]) {
         if (deps && FORMER_PACKAGE in deps) {
             delete deps[FORMER_PACKAGE]
@@ -249,10 +258,7 @@ export function initUnity(root) {
         throw new Error("This clone is not inside a Unity project's Assets folder. Clone it to Assets/<Name>/~ in the project.")
     }
     const onejs = oneJSOf(project)
-    if (onejs === null) {
-        throw new Error("This Unity project does not have OneJS installed yet. Install it from the Package Manager "
-            + "(https://github.com/Singtaa/OneJS.git) and open the project once, then run this again.")
-    }
+    if (onejs === null) throw new Error(NO_ONEJS)
 
     const lines = []
     const put = (file, shown, text) => {
@@ -270,7 +276,7 @@ export function initUnity(root) {
         // a second one beside it.
         if (target === "index.tsx") continue
         let text = fs.readFileSync(path.join(templates, template), "utf8")
-        if (target === "package.json") text = packageJson(text, packageName(root))
+        if (target === "package.json") text = packageJson(text, packageName(root), manifestOf(files)?.version)
         if (target === "esbuild.config.mjs") text = buildConfig(text, entry)
         // The oj alias, in the build and in tsconfig, follows the package.
         if (target === "esbuild.config.mjs" || target === "tsconfig.json") text = text.replaceAll(`node_modules/${FORMER_PACKAGE}/`, `node_modules/${PACKAGE}/`)
