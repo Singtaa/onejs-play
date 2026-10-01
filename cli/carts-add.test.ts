@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { spawnSync } from "node:child_process"
 import { add, remove, syncTypes, update } from "./carts.mjs"
 import { build } from "./game.mjs"
 import { COMMAND } from "../build/command.mjs"
@@ -19,6 +20,8 @@ interface Cart { versions: Record<string, string>, live: string | null, builds: 
 
 const COMMIT = (c: string) => c.repeat(40).slice(0, 40)
 let carts: Record<string, Cart> = {}
+/** What /api/me/carts answers the token "the-owner". */
+let mineList: Array<{ sid: string, name: string, public: boolean, url: string, clone: string }> = []
 const asked: string[] = []
 let server: Server
 let origin = ""
@@ -39,6 +42,9 @@ beforeAll(async () => {
         let body = ""
         req.on("data", (c) => { body += c })
         req.on("end", () => {
+            if (req.url === "/api/me/carts") {
+                return req.headers.authorization === "Bearer the-owner" ? send(200, { handle: "singtaa", carts: mineList }) : send(401, { error: "The site does not know this token. Run npx ojp login again." })
+            }
             const m = /^\/api\/carts\/(@[^/]+\/[^/]+)\/(pin|kept\/([^/]+)(?:\/files\/(.+))?)$/.exec(req.url ?? "")
             const cart = m === null ? undefined : carts[m[1]!.toLowerCase()]
             if (m === null || cart === undefined) return send(404, { error: "No cart at that address. Check the spelling; a private cart can be added only by its owner." })
@@ -246,10 +252,11 @@ describe("ojp add, in a cart", () => {
         expect(read(mine, "tsconfig.json")).toBe("{ \"mine\": true }")
     })
 
-    it("says a Unity project's turn comes with the next release", async () => {
+    it("refuses a Unity project without OneJS before fetching anything", async () => {
         const root = folder("Game", { "Assets/.keep": "", "ProjectSettings/ProjectVersion.txt": "" })
-        await expect(add(root, "@singtaa/lightning")).rejects.toThrow(/This is a Unity project\. Adding a cart to one comes with the next ojp release/)
+        await expect(add(root, "@singtaa/lightning")).rejects.toThrow(/^This Unity project does not have OneJS installed yet/)
         expect(asked).toEqual([])
+        expect(fs.readdirSync(path.join(root, "Assets"))).toEqual([".keep"])
     })
 
     it("refuses a folder that has code but is not a cart, rather than writing over it", async () => {
@@ -298,5 +305,90 @@ describe("ojp remove", () => {
         expect(json(root, "oj.json")).toEqual({ schema: 1, name: "Storm", entry: "index.tsx" })
         expect(exists(root, ".oj/carts/@singtaa")).toBe(false)
         await expect(remove(root, "@singtaa/lightning")).rejects.toThrow("@singtaa/lightning is not in oj.json, which uses no carts.")
+    })
+})
+
+describe("ojp add at a Unity project's root", () => {
+    /** A Unity project with OneJS in the package cache, its templates reduced to what init --unity reads. */
+    function unityProject(): string {
+        const project = folder("Game", { "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n", "Assets/.keep": "" })
+        const templates = path.join(project, "Library", "PackageCache", "com.singtaa.onejs@abc123", "Editor", "Templates")
+        fs.mkdirSync(templates, { recursive: true })
+        fs.writeFileSync(path.join(templates, "..", "..", "package.json"), JSON.stringify({ name: "com.singtaa.onejs" }))
+        for (const [template, text] of Object.entries({
+            "package.json.txt": JSON.stringify({ name: "onejs-app", dependencies: { "onejs-play": "^0.8.3" } }),
+            "tsconfig.json.txt": "{ \"compilerOptions\": { \"paths\": { \"oj\": [\"./node_modules/onejs-play/src\"] } } }\n",
+            "esbuild.config.mjs.txt": "const config = {\n    entryPoints: [\"index.tsx\"],\n    plugins: [\n        importTransformPlugin(),\n    ],\n}\n",
+            "index.tsx.txt": "", "global.d.ts.txt": "", "main.uss.txt": "", "gitignore.txt": "", "AGENTS.md.txt": "",
+        })) fs.writeFileSync(path.join(templates, template), text)
+        return project
+    }
+    const npmCalls: string[] = []
+    const npm = (dir: string, args: string[]) => { npmCalls.push(`${path.relative(path.dirname(path.dirname(path.dirname(dir))), dir)}: npm ${args.join(" ")}`); return 0 }
+
+    it("takes somebody else's cart whole, pinned, with its prefab, and installs and builds it", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const project = unityProject()
+        npmCalls.length = 0
+        expect(await add(project, "@singtaa/portal", { npm })).toEqual([
+            "Took @singtaa/portal (1 Oct) into Assets/portal/~, pinned and read only. To change it, fork it on " + origin + " and add yours.",
+            "Next: drag Assets/portal/portal.prefab into a scene.",
+        ])
+        const app = path.join(project, "Assets", "portal", "~")
+        expect(read(app, "main.tsx")).toContain("portal two")
+        expect(json(app, ".oj-kept.json")).toMatchObject({ address: "@singtaa/portal", commit: "b".repeat(40) })
+        expect(json(app, "package.json").dependencies).toEqual({ ojp: expect.stringMatching(/^\^0\./) })
+        expect(read(app, "esbuild.config.mjs")).toContain(`entryPoints: ["main.tsx"]`)
+        expect(exists(project, "Assets/portal/portal.prefab")).toBe(true)
+        expect(npmCalls).toEqual(["Assets/portal/~: npm install --no-audit --no-fund", "Assets/portal/~: npm run build"])
+        // Nothing left behind from the fetch.
+        expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "portal", "portal.meta"].filter((n) => exists(project, `Assets/${n}`)))
+    })
+
+    it("takes your own cart as a clone you push from, through the stored login", async () => {
+        const home = path.join(path.dirname(folder("unused")), "git")
+        fs.mkdirSync(home, { recursive: true })
+        const gitEnv = { ...process.env, HOME: home, GIT_CONFIG_GLOBAL: path.join(home, "gitconfig"), GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" }
+        fs.writeFileSync(gitEnv.GIT_CONFIG_GLOBAL, "")
+        const work = path.join(home, "work"), bare = path.join(home, "storm.git")
+        fs.mkdirSync(work)
+        fs.writeFileSync(path.join(work, "index.tsx"), "import { mount, View } from \"oj\"\nmount(<View />)\n")
+        fs.writeFileSync(path.join(work, "oj.json"), JSON.stringify({ name: "Storm Chaser", entry: "index.tsx" }))
+        for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "first"], ["clone", "-q", "--bare", work, bare]]) {
+            expect(spawnSync("git", args, { cwd: work, env: gitEnv }).status).toBe(0)
+        }
+        carts = { "@singtaa/storm": { versions: {}, live: COMMIT("d"), builds: { [COMMIT("d")]: { files: { "oj.json": "{}" } } } } }
+        mineList = [{ sid: "storm1234567", name: "Storm Chaser", public: false, url: `${origin}/@singtaa/storm`, clone: bare }]
+        const project = unityProject()
+        process.env.OJ_TOKEN = "the-owner"
+        const saved = process.env.GIT_CONFIG_GLOBAL
+        process.env.GIT_CONFIG_GLOBAL = gitEnv.GIT_CONFIG_GLOBAL
+        try {
+            expect(await add(project, "@singtaa/storm", { npm })).toEqual([
+                "Took @singtaa/storm, yours, into Assets/Storm Chaser/~ as a clone: push from there and the site builds it.",
+                "Next: drag Assets/Storm Chaser/StormChaser.prefab into a scene.",
+            ])
+        } finally {
+            if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL
+            else process.env.GIT_CONFIG_GLOBAL = saved
+        }
+        const app = path.join(project, "Assets", "Storm Chaser", "~")
+        expect(spawnSync("git", ["remote", "get-url", "origin"], { cwd: app, encoding: "utf8", env: gitEnv }).stdout.trim()).toBe(bare)
+        // init --unity's files stay out of the clone's git status.
+        expect(spawnSync("git", ["status", "--porcelain"], { cwd: app, encoding: "utf8", env: gitEnv }).stdout).toBe("")
+    })
+
+    it("refuses to land on a folder already there, and says where to work instead", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const project = unityProject()
+        fs.mkdirSync(path.join(project, "Assets", "portal"))
+        await expect(add(project, "@singtaa/portal", { npm })).rejects.toThrow(`Assets/portal is already there. Move or delete it to take the cart again, or work in it: cd "Assets/portal/~"`)
+        expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "portal"])
+    })
+
+    it("says where to run it from anywhere else in the project", async () => {
+        const project = unityProject()
+        fs.mkdirSync(path.join(project, "Assets", "Art"))
+        await expect(add(path.join(project, "Assets", "Art"), "@singtaa/portal", { npm })).rejects.toThrow(`Run ${COMMAND} add at the Unity project's root, where Assets and ProjectSettings are`)
     })
 })

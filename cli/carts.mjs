@@ -11,9 +11,10 @@
 import fs from "node:fs"
 import path from "node:path"
 import { cartKey, cartLabel, cartPins } from "../build/game.mjs"
-import { COMMAND, PACKAGE } from "../build/command.mjs"
+import { COMMAND } from "../build/command.mjs"
 import { siteOrigin, tokenOf } from "./site.mjs"
 import { ignoreLocally } from "./init.mjs"
+import { addWhole, unityPlace, unityRefusal } from "./carts-unity.mjs"
 
 const ADDRESS = /^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/
 /** What a fetched cart's folder carries beside its files: where it came from. A cart's own names never start with a dot. */
@@ -23,7 +24,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 export const cartsDir = (root) => path.join(root, ".oj", "carts")
 const dirOf = (root, key) => path.join(cartsDir(root), ...key.split("/"))
 const addressOf = (key) => key.slice(0, key.lastIndexOf("@"))
-const pinText = (version, commit) => version ?? "#" + commit.slice(0, 12)
+export const pinText = (version, commit) => version ?? "#" + commit.slice(0, 12)
 const day = (at) => { const d = new Date(at * 1000); return `${d.getDate()} ${MONTHS[d.getMonth()]}` }
 const time = (at) => { const d = new Date(at * 1000); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}` }
 
@@ -53,17 +54,20 @@ async function answer(response) {
 }
 
 /** What to write for `address`: its newest version, or its running build. Records the use on the site. */
-async function pinOf(root, address, within = null, major = false) {
+export async function pinOf(root, address, within = null, major = false) {
     const route = `/api/carts/${address.toLowerCase()}/pin`
     return answer(await site("POST", route, root, within === null ? {} : { within, major }))
 }
 
-/** A kept build into `.oj/carts/<key>/`: its source, its art, and where it came from. */
-async function download(root, address, pin) {
+/**
+ * A kept build into `.oj/carts/<key>/` (or `final`): its source, its art, and
+ * where it came from. Written whole under a temporary name first, so an
+ * interrupted fetch leaves nothing that looks complete.
+ */
+export async function download(root, address, pin, final = dirOf(root, cartKey(address, pin))) {
     const at = `/api/carts/${address}/kept/${pin.replace(/^#/, "")}`
     const kept = await answer(await site("GET", at, root))
     const key = cartKey(address, pin)
-    const final = dirOf(root, key)
     const temporary = `${final}.partial`
     fs.rmSync(temporary, { recursive: true, force: true })
     for (const file of kept.files) put(temporary, file.name, file.text)
@@ -83,7 +87,7 @@ async function download(root, address, pin) {
  * a # pin the day its build was made, `@koma/rain (1 Oct)`, which is what the
  * editor shows too. Twelve hex digits say nothing to a person.
  */
-const shown = (kept) => kept.version !== null ? `${kept.address} ${kept.version}` : `${kept.address} (${day(kept.builtAt)})`
+export const shown = (kept) => kept.version !== null ? `${kept.address} ${kept.version}` : `${kept.address} (${day(kept.builtAt)})`
 
 function put(dir, name, data) {
     const file = path.join(dir, ...name.split("/"))
@@ -226,10 +230,13 @@ function exportedNames(root, key, exportsFile) {
  * nor a Unity project, starts a cart there that uses it (Tachi, 1 Oct). With
  * no address, fetches what oj.json already lists. Answers the lines to print.
  */
-export async function add(root, address) {
+export async function add(root, address, options = {}) {
     const place = placeOf(root)
     if (place === "unity") {
-        throw new Error(`This is a Unity project. Adding a cart to one comes with the next ${PACKAGE} release; until then, open the cart on ${siteOrigin()} and press Take.`)
+        const where = unityPlace(root)
+        if (where === "root" && address !== undefined && ADDRESS.test(address)) return addWhole(root, address, options)
+        if (where === "root" && address !== undefined) throw new Error(`"${address}" is not a cart's address. One looks like @singtaa/lightning: @, the handle, a slash, the name.`)
+        throw new Error(unityRefusal(where))
     }
     if (address === undefined) {
         if (place !== "cart") throw new Error(`This folder is not a cart (no oj.json with an entry). Start one that uses a cart: ${COMMAND} add @handle/name`)

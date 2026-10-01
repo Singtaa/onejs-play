@@ -55,6 +55,10 @@ export const TEMPLATE_MAPPING = [
  */
 const GROWN = ["node_modules", "package-lock.json", ".onejs", ".oj", "*.sl.d.ts", "*.module.uss.d.ts", "/assets/"]
 
+/** What a Unity project without OneJS is told, by `init --unity` and by `add` before it fetches anything. */
+export const NO_ONEJS = "This Unity project does not have OneJS installed yet. Install it from the Package Manager "
+    + "(https://github.com/Singtaa/OneJS.git) and open the project once, then run this again."
+
 /** The OneJS package's name, which is how an installed copy is recognised wherever it lives. */
 const ONEJS = "com.singtaa.onejs"
 
@@ -249,10 +253,7 @@ export function initUnity(root) {
         throw new Error("This clone is not inside a Unity project's Assets folder. Clone it to Assets/<Name>/~ in the project.")
     }
     const onejs = oneJSOf(project)
-    if (onejs === null) {
-        throw new Error("This Unity project does not have OneJS installed yet. Install it from the Package Manager "
-            + "(https://github.com/Singtaa/OneJS.git) and open the project once, then run this again.")
-    }
+    if (onejs === null) throw new Error(NO_ONEJS)
 
     const lines = []
     const put = (file, shown, text) => {
