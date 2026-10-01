@@ -99,6 +99,31 @@ describe("startStandalone", () => {
         expect(host.panelSettings.scale).toBeGreaterThan(0)
     })
 
+    it("sizes the stage from the panel's RenderTexture, not the screen, when the panel renders into one", () => {
+        // An in-world screen, or any panel pointed at a targetTexture: the
+        // window is 640x480 but the panel lays out across 1920x1080.
+        host = fakeHost({ width: 640, height: 480 })
+        ;(host.panelSettings as any).targetTexture = { width: 1920, height: 1080 }
+        const runtime = startStandalone()
+        expect(runtime.oj.stage).toEqual({ width: 1920, height: 1080 })
+    })
+
+    it("follows a RenderTexture assigned after the game started", () => {
+        const runtime = startStandalone()
+        host.step(0)
+        ;(host.panelSettings as any).targetTexture = { width: 1024, height: 768 }
+        host.step(16)
+        expect(runtime.oj.stage).toEqual({ width: 1024, height: 768 })
+    })
+
+    it("divides a RenderTexture by the pixel ratio the panel is scaled by", () => {
+        host = fakeHost({ width: 640, height: 480, dpr: 2 })
+        ;(host.panelSettings as any).targetTexture = { width: 1920, height: 1080 }
+        const runtime = startStandalone()
+        expect(host.panelSettings.scale).toBe(2)
+        expect(runtime.oj.stage).toEqual({ width: 960, height: 540 })
+    })
+
     it("joins the existing run rather than starting a second one", () => {
         const first = startStandalone()
         expect(startStandalone()).toBe(first)
