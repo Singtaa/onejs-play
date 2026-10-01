@@ -23,10 +23,10 @@
 import fs from "node:fs"
 import path from "node:path"
 import { RESERVED_ASSET_FOLDER, isAssetName, resolveAsset } from "./assets.mjs"
-import { withCartsPlugin } from "./unity-carts.mjs"
 
-export { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-carts.mjs"
-import { BIN, PACKAGE } from "../build/command.mjs"
+export { cartsPlugin, syncCartAssets } from "./unity-carts.mjs"
+export { buildConfig, withCartsPlugin } from "./unity-config.mjs"
+import { BIN } from "../build/command.mjs"
 
 /** The names the last sync wrote, relative to the working directory. */
 const RECORD = path.join("node_modules", ".cache", "onejs-play", "unity-assets.json")
@@ -119,32 +119,3 @@ export function assetsPlugin() {
     }
 }
 
-/**
- * The template's build, pointed at the cart's entry, with the plugin that
- * copies the cart's files into assets/ (assetsPlugin, above).
- *
- * The template names index.tsx, which is every cart's entry unless its
- * oj.json says otherwise. A template whose entry no longer matches the
- * pattern is left naming index.tsx, which is right for nearly every cart.
- * One with no plugins list is refused instead: the cart would build and run
- * without its files, and nothing would say why. The container's scaffold gate
- * runs this against OneJS's real template, so a reshaped one fails there first;
- * it lives here, beside the plugin, because this file imports nothing the
- * gate would have to install.
- */
-export function buildConfig(template, entry) {
-    let text = entry === "index.tsx" ? template
-        : template.replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
-    const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
-    if (plugins === null) {
-        throw new Error("OneJS's esbuild.config.mjs template has no plugins list for the step that copies the cart's files into assets/. "
-            + `Update ${PACKAGE} (npx ${PACKAGE}@latest init --unity), or report it if this is the latest.`)
-    }
-    const indent = plugins[1] + "    "
-    const at = plugins.index + plugins[0].length
-    text = text.slice(0, at)
-        + `${indent}// The cart's files, copied into assets/ where OneJS looks for them\n${indent}assetsPlugin(),\n`
-        + text.slice(at)
-    // The carts oj.json uses, resolved and scoped the way the site does it.
-    return withCartsPlugin(`import { assetsPlugin } from "${PACKAGE}/unity"\n${text}`)
-}

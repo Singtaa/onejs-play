@@ -21,7 +21,7 @@ import { COMMAND, PACKAGE } from "../build/command.mjs"
 import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
 import { git, mine, tokenOf } from "./site.mjs"
 import { NO_ONEJS, initUnity, npm as runNpm, objectName, oneJSOf, unityProjectOf } from "./unity.mjs"
-import { withCartsPlugin } from "./unity-carts.mjs"
+import { withCartsPlugin } from "./unity-config.mjs"
 
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
