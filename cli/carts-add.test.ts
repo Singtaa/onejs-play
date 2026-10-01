@@ -328,7 +328,11 @@ describe("ojplay remove", () => {
 describe("ojplay add at a Unity project's root", () => {
     /** A Unity project with OneJS in the package cache, its templates reduced to what init --unity reads. */
     function unityProject(): string {
-        const project = folder("Game", { "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n", "Assets/.keep": "" })
+        const project = folder("Game", {
+            "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n",
+            "ProjectSettings/EditorBuildSettings.asset": BUILD_SETTINGS,
+            "Assets/.keep": "",
+        })
         const templates = path.join(project, "Library", "PackageCache", "com.singtaa.onejs@abc123", "Editor", "Templates")
         fs.mkdirSync(templates, { recursive: true })
         fs.writeFileSync(path.join(templates, "..", "..", "package.json"), JSON.stringify({ name: "com.singtaa.onejs" }))
@@ -340,6 +344,8 @@ describe("ojplay add at a Unity project's root", () => {
         })) fs.writeFileSync(path.join(templates, template), text)
         return project
     }
+    /** A fresh project's build list, as Unity -createProject writes it: empty. */
+    const BUILD_SETTINGS = "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!1045 &1\nEditorBuildSettings:\n  m_ObjectHideFlags: 0\n  serializedVersion: 2\n  m_Scenes: []\n  m_configObjects: {}\n"
     const npmCalls: string[] = []
     const npm = (dir: string, args: string[]) => { npmCalls.push(`${path.relative(path.dirname(path.dirname(path.dirname(dir))), dir)}: npm ${args.join(" ")}`); return 0 }
 
@@ -350,8 +356,11 @@ describe("ojplay add at a Unity project's root", () => {
         const said: string[] = []
         expect(await add(project, "@singtaa/portal", { npm, say: (line: string) => said.push(line) })).toEqual([
             "Took @singtaa/portal (1 Oct) into Assets/portal/~.",
-            "Next: drag Assets/portal/portal.prefab into a scene.",
+            "Made Assets/Scenes/Main.unity with portal in it, and added it to the build list.",
+            "Next: open Assets/Scenes/Main.unity and press Play.",
         ])
+        expect(read(project, "Assets/Scenes/Main.unity")).toContain("      value: portal\n")
+        expect(read(project, "ProjectSettings/EditorBuildSettings.asset")).toContain("    path: Assets/Scenes/Main.unity\n")
         // Nothing about each file init --unity wrote: the line says what it did.
         expect(said).toEqual([])
         const app = path.join(project, "Assets", "portal", "~")
@@ -365,7 +374,41 @@ describe("ojplay add at a Unity project's root", () => {
         expect(exists(project, "Assets/portal/portal.prefab")).toBe(true)
         expect(npmCalls).toEqual(["Assets/portal/~: npm install --no-audit --no-fund", "Assets/portal/~: npm run build"])
         // Nothing left behind from the fetch.
-        expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "portal", "portal.meta"].filter((n) => exists(project, `Assets/${n}`)))
+        expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "Scenes", "portal", "portal.meta"].filter((n) => exists(project, `Assets/${n}`)))
+    })
+
+    it("leaves the scenes to you while Unity has the project open", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const project = unityProject()
+        fs.mkdirSync(path.join(project, "Temp"))
+        fs.writeFileSync(path.join(project, "Temp", "UnityLockfile"), "")
+        expect(await add(project, "@singtaa/portal", { npm })).toEqual([
+            "Took @singtaa/portal (1 Oct) into Assets/portal/~.",
+            "Next: drag Assets/portal/portal.prefab into a scene.",
+        ])
+        expect(exists(project, "Assets/Scenes")).toBe(false)
+        expect(read(project, "ProjectSettings/EditorBuildSettings.asset")).toBe(BUILD_SETTINGS)
+    })
+
+    it("puts it in the first build scene, and once: taken again after a delete, it is not there twice", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const project = unityProject()
+        const settings = BUILD_SETTINGS.replace(" []", "\n  - enabled: 1\n    path: Assets/Level.unity\n    guid: 33333333333333333333333333333333")
+        fs.writeFileSync(path.join(project, "ProjectSettings", "EditorBuildSettings.asset"), settings)
+        fs.writeFileSync(path.join(project, "Assets", "Level.unity"), "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!1660057539 &9223372036854775807\nSceneRoots:\n  m_ObjectHideFlags: 0\n  m_Roots: []\n")
+        const lines = [
+            "Took @singtaa/portal (1 Oct) into Assets/portal/~.",
+            "Put portal in Assets/Level.unity.",
+            "Next: open Assets/Level.unity and press Play.",
+        ]
+        expect(await add(project, "@singtaa/portal", { npm })).toEqual(lines)
+        const placed = read(project, "Assets/Level.unity")
+        expect(placed.split("\n").filter((l) => l.startsWith("--- !u!1001 &"))).toHaveLength(1)
+        expect(placed).toMatch(/ {2}m_Roots:\n {2}- \{fileID: [0-9]+\}\n$/)
+        fs.rmSync(path.join(project, "Assets", "portal"), { recursive: true })
+        expect(await add(project, "@singtaa/portal", { npm })).toEqual([lines[0], "portal is already in Assets/Level.unity.", lines[2]])
+        expect(read(project, "Assets/Level.unity")).toBe(placed)
+        expect(read(project, "ProjectSettings/EditorBuildSettings.asset")).toBe(settings)
     })
 
     it("names the taken app's package after the cart's version", async () => {
@@ -373,7 +416,8 @@ describe("ojplay add at a Unity project's root", () => {
         const project = unityProject()
         expect(await add(project, "@singtaa/lightning", { npm })).toEqual([
             "Took @singtaa/lightning 1.2.0 into Assets/lightning/~.",
-            "Next: drag Assets/lightning/lightning.prefab into a scene.",
+            "Made Assets/Scenes/Main.unity with lightning in it, and added it to the build list.",
+            "Next: open Assets/Scenes/Main.unity and press Play.",
         ])
         expect(json(path.join(project, "Assets", "lightning", "~"), "package.json")).toMatchObject({ name: "lightning", version: "1.2.0" })
     })
@@ -399,7 +443,8 @@ describe("ojplay add at a Unity project's root", () => {
         try {
             expect(await add(project, "@singtaa/storm", { npm })).toEqual([
                 "Took @singtaa/storm, yours, into Assets/StormChaser/~ as a clone: push from there and the site builds it.",
-                "Next: drag Assets/StormChaser/StormChaser.prefab into a scene.",
+                "Made Assets/Scenes/Main.unity with StormChaser in it, and added it to the build list.",
+                "Next: open Assets/Scenes/Main.unity and press Play.",
             ])
         } finally {
             if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL
