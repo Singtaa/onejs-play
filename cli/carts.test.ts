@@ -71,10 +71,6 @@ describe("used carts, locally", () => {
                 .toBe("@singtaa/lightning 1.2.0 is not in .oj/carts. Fetch it with: npx onejs-play add @singtaa/lightning")
         })
 
-        it("a range, naming the version to write", () => {
-            expect(refusal({ "oj.json": oj({ dependencies: { "@singtaa/lightning": "^1.2.0" } }) }))
-                .toBe("\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; oj update moves it.")
-        })
 
         it("a cart that ends up using itself", () => {
             expect(refusal({
@@ -83,6 +79,27 @@ describe("used carts, locally", () => {
                 ".oj/carts/@b/y@1.0.0/oj.json": oj({ exports: "y.ts", dependencies: { "@a/x": "1.0.0" } }),
             })).toBe("@a/x 1.0.0 uses @b/y 1.0.0, which uses @a/x 1.0.0: a cart cannot end up using itself.")
         })
+    })
+
+    /**
+     * Before carts could be used, oj.json's dependencies meant nothing to a
+     * build, so whatever a cart carries there that is not a cart pin is
+     * skipped with a warning rather than stopping its next build. Importing
+     * one is refused, with the same sentence.
+     */
+    it("skips an entry that is not a cart pin, warning, and refuses importing it in the same words", async () => {
+        const deps = { "@singtaa/lightning": "^1.2.0", "lodash": "4.17.21" }
+        const root = cart({ "index.tsx": "export {}", "oj.json": oj({ dependencies: deps }) })
+        expect(readUsedCarts(root, { dependencies: deps })).toEqual({
+            uses: {}, carts: {},
+            skipped: {
+                "@singtaa/lightning": "\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; oj update moves it.",
+                "lodash": "\"lodash\" should be a cart's address, like \"@singtaa/lightning\".",
+            },
+        })
+        expect((await build(root)).warnings).toEqual(Object.values(readUsedCarts(root, { dependencies: deps }).skipped!))
+        const importing = cart({ "index.tsx": `import { bolt } from "@singtaa/lightning"\nexport const out = bolt`, "oj.json": oj({ dependencies: deps }) })
+        await expect(build(importing)).rejects.toThrow("\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; oj update moves it.")
     })
 
     it("leaves used carts' files out of this cart's own asset check", () => {

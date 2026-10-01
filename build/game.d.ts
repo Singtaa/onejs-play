@@ -41,6 +41,8 @@ export interface UsedCart {
     exports: string | null
     /** Its own oj.json dependencies, address to key. */
     uses: Record<string, string>
+    /** Entries in its dependencies that are not a cart pin, address to the sentence why. */
+    skipped?: Record<string, string>
     /** Its source files, names relative to its root. */
     files: GameFile[]
 }
@@ -48,7 +50,16 @@ export interface UsedCart {
 /** The carts a cart uses, transitively: its own `uses`, and every key's files. */
 export interface UsedCarts {
     uses: Record<string, string>
+    /** Entries in the cart's dependencies that are not a cart pin, address to the sentence why. */
+    skipped?: Record<string, string>
     carts: Record<string, UsedCart>
+}
+
+/** oj.json's dependencies split into cart pins and skipped entries (`problems` are the warnings). */
+export function cartPins(deps: unknown): {
+    pins: Array<[string, string]>
+    skipped: Record<string, string>
+    problems: string[]
 }
 
 /** `@singtaa/lightning@1.2.0`, or `@koma/rain@3f2a91c07b44` for a `#` commit pin. */

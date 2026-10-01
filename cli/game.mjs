@@ -5,7 +5,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
-import { buildGame, formatBuildErrors, cartKey, cartLabel, pinProblem } from "../build/game.mjs"
+import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -70,20 +70,16 @@ export function entryOf(files, manifest) {
  * The carts this one uses, read from `.oj/carts/<key>/`, where `oj add`
  * fetches each one's kept build (PlaySite docs/carts.md §3), following each
  * one's own dependencies. The shape `buildGame` takes as `carts`. Refuses a
- * dependency that is not an exact version or commit, one not fetched, and a
- * chain that comes back to a cart already on it, each saying what to do.
+ * cart not fetched and a chain that comes back to a cart already on it, each
+ * saying what to do; an entry that is not a cart pin is skipped (cartPins),
+ * and refused with its sentence only if something imports it.
  */
 export function readUsedCarts(root, manifest) {
     const carts = {}
     const visit = (deps, chain) => {
         const uses = {}
-        if (deps === undefined || deps === null) return uses
-        if (typeof deps !== "object" || Array.isArray(deps)) {
-            throw new Error(`"dependencies" should name each cart with its version, like { "@singtaa/lightning": "1.2.0" }.`)
-        }
-        for (const [address, pin] of Object.entries(deps)) {
-            const problem = pinProblem(address, pin)
-            if (problem !== null) throw new Error(problem)
+        const { pins, skipped } = cartPins(deps)
+        for (const [address, pin] of pins) {
             const key = cartKey(address, pin)
             uses[address.toLowerCase()] = key
             if (chain.includes(key)) {
@@ -97,11 +93,14 @@ export function readUsedCarts(root, manifest) {
             const files = readTree(dir)
             const own = manifestOf(files)
             carts[key] = { exports: typeof own.exports === "string" ? own.exports : null, uses: {}, files }
-            carts[key].uses = visit(own.dependencies, [...chain, key])
+            const inner = visit(own.dependencies, [...chain, key])
+            carts[key].uses = inner.uses
+            carts[key].skipped = inner.skipped
         }
-        return uses
+        return { uses, skipped }
     }
-    return { uses: visit(manifest.dependencies, []), carts }
+    const top = visit(manifest.dependencies, [])
+    return { uses: top.uses, skipped: top.skipped, carts }
 }
 
 /**
@@ -141,7 +140,9 @@ export async function build(root, options = {}) {
             workingDir: path.parse(process.cwd()).root || "/",
             carts: readUsedCarts(root, manifest),
         })
-        return { ...result, entry, files, manifest }
+        // Entries that are not a cart pin are skipped; say so, as a push does.
+        const warnings = [...result.warnings, ...cartPins(manifest.dependencies).problems]
+        return { ...result, warnings, entry, files, manifest }
     } catch (error) {
         const lines = formatBuildErrors(error)
         throw Object.assign(new Error(lines.join("\n"), { cause: error }), { lines })

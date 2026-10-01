@@ -78,6 +78,31 @@ export function pinProblem(address, pin) {
         : `${JSON.stringify(pin)} for ${address} should be a version, like "1.2.0".`
 }
 
+/**
+ * oj.json's `dependencies`, split into the carts to build with and the
+ * entries that are not a cart pin, each with the sentence that says so.
+ *
+ * Only an address with an exact version or a `#` commit is a cart pin. The
+ * rest are skipped, not refused: the key meant nothing to a build until
+ * carts could be used, so a cart that carried, say, npm names there must not
+ * stop building on its next save. The editor and a push still warn with the
+ * same sentence, and importing a skipped address refuses with it.
+ */
+export function cartPins(deps) {
+    const pins = [], skipped = {}, problems = []
+    if (deps === undefined || deps === null) return { pins, skipped, problems }
+    if (typeof deps !== "object" || Array.isArray(deps)) {
+        problems.push(`"dependencies" should name each cart with its version, like { "@singtaa/lightning": "1.2.0" }.`)
+        return { pins, skipped, problems }
+    }
+    for (const [address, pin] of Object.entries(deps)) {
+        const problem = pinProblem(address, pin)
+        if (problem === null) pins.push([address, pin])
+        else { skipped[address.toLowerCase()] = problem; problems.push(problem) }
+    }
+    return { pins, skipped, problems }
+}
+
 /** "@singtaa/lightning 1.2.0", or "@koma/rain #3f2a91c07b44", for a sentence. */
 export const cartLabel = (key) => {
     const at = key.lastIndexOf("@")
@@ -237,7 +262,8 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                     const address = wanted[1].toLowerCase()
                     const key = (owner === null ? carts.uses : carts.carts[owner].uses)[address]
                     if (key === undefined) {
-                        return { errors: [{ text: owner === null
+                        const skipped = (owner === null ? carts.skipped : carts.carts[owner].skipped)?.[address]
+                        return { errors: [{ text: skipped !== undefined && owner === null ? skipped : owner === null
                             ? `${address} is not in this cart's oj.json dependencies. Add it with: npx onejs-play add ${address}`
                             : `${cartLabel(owner)} imports ${address}, which its oj.json does not list. Its author has to add it; or pin a different version of ${owner.slice(0, owner.lastIndexOf("@"))}.` }] }
                     }
