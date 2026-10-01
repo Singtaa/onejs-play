@@ -43,7 +43,7 @@ beforeAll(async () => {
         req.on("data", (c) => { body += c })
         req.on("end", () => {
             if (req.url === "/api/me/carts") {
-                return req.headers.authorization === "Bearer the-owner" ? send(200, { handle: "singtaa", carts: mineList }) : send(401, { error: "The site does not know this token. Run npx ojp login again." })
+                return req.headers.authorization === "Bearer the-owner" ? send(200, { handle: "singtaa", carts: mineList }) : send(401, { error: "The site does not know this token. Run npx ojplay login again." })
             }
             const m = /^\/api\/carts\/(@[^/]+\/[^/]+)\/(pin|kept\/([^/]+)(?:\/files\/(.+))?)$/.exec(req.url ?? "")
             const cart = m === null ? undefined : carts[m[1]!.toLowerCase()]
@@ -308,7 +308,7 @@ describe("ojplay remove", () => {
     })
 })
 
-describe("ojp add at a Unity project's root", () => {
+describe("ojplay add at a Unity project's root", () => {
     /** A Unity project with OneJS in the package cache, its templates reduced to what init --unity reads. */
     function unityProject(): string {
         const project = folder("Game", { "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n", "Assets/.keep": "" })

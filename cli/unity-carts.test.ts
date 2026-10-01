@@ -6,7 +6,7 @@ import path from "node:path"
 import * as esbuild from "esbuild"
 import { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-assets.mjs"
 import { add } from "./carts.mjs"
-import { COMMAND, PACKAGE } from "../build/command.mjs"
+import { BIN, COMMAND, PACKAGE } from "../build/command.mjs"
 
 /**
  * Used carts in a OneJS app's own build (PlaySite docs/carts.md §4, step 6,
@@ -56,7 +56,7 @@ afterEach(() => {
 
 /** A OneJS app's ~ in a Unity project: its files, and a stand-in oj that says which name it was asked for. */
 function app(files: Record<string, string | Uint8Array>): string {
-    const project = fs.mkdtempSync(path.join(os.tmpdir(), "ojp-unity-carts-"))
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-unity-carts-"))
     made.push(project)
     fs.mkdirSync(path.join(project, "ProjectSettings"))
     fs.writeFileSync(path.join(project, "ProjectSettings", "ProjectVersion.txt"), "")
@@ -124,7 +124,7 @@ describe("cartsPlugin, in a OneJS app's build", () => {
         process.env.OJ_SITE = "http://127.0.0.1:9"
         const failure = await buildApp(root).then(() => null, (e: esbuild.BuildFailure) => e.errors.map((m) => m.text))
         expect(failure).toHaveLength(1)
-        expect(failure![0]).toMatch(new RegExp(`^\\[ojp\\] @singtaa/lightning 1\\.2\\.0 is not in \\.oj/carts and could not be fetched: Could not reach http://127\\.0\\.0\\.1:9 \\([^)]+\\)\\. Connect and run it again, or: ${COMMAND.replace(/ /g, " ")} add$`))
+        expect(failure![0]).toMatch(new RegExp(`^\\[${BIN}\\] @singtaa/lightning 1\\.2\\.0 is not in \\.oj/carts and could not be fetched: Could not reach http://127\\.0\\.0\\.1:9 \\([^)]+\\)\\. Connect and run it again, or: ${COMMAND.replace(/ /g, " ")} add$`))
         expect(failure![0]).not.toContain("\n")
     })
 
@@ -157,8 +157,8 @@ describe("cartsPlugin, in a OneJS app's build", () => {
     })
 })
 
-describe("ojp add in a OneJS app's ~", () => {
-    it("adds the cart to oj.json, the plugin to the build and ojp to package.json, once", async () => {
+describe("ojplay add in a OneJS app's ~", () => {
+    it("adds the cart to oj.json, the plugin to the build and ojplay to package.json, once", async () => {
         const root = app({
             "package.json": JSON.stringify({ name: "app", dependencies: { "onejs-play": "^0.8.3" } }),
             "esbuild.config.mjs": `import { assetsPlugin } from "${PACKAGE}/unity"\nconst config = {\n    plugins: [\n        importTransformPlugin(),\n    ],\n}\n`,

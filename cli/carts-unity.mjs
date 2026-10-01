@@ -1,5 +1,5 @@
 /**
- * `ojp add` in a Unity project (PlaySite docs/carts.md §4, step 6).
+ * `ojplay add` in a Unity project (PlaySite docs/carts.md §4, step 6).
  *
  * At the project's root (Assets/ beside ProjectSettings/), the whole cart
  * becomes its own JSRunner: today's Eject in one line. The cart goes in
@@ -39,7 +39,7 @@ export function folderName(name) {
 }
 
 /**
- * `ojp add @handle/name` at a Unity project's root. `npm` runs npm in a
+ * `ojplay add @handle/name` at a Unity project's root. `npm` runs npm in a
  * folder and answers its exit code; tests pass a stand-in.
  */
 export async function addWhole(project, address, { npm = runNpm, say = () => {} } = {}) {
@@ -52,7 +52,7 @@ export async function addWhole(project, address, { npm = runNpm, say = () => {} 
     // The folder is named after the cart, which only its build says for
     // somebody else's; fetched first into a scratch folder in Assets, so a
     // failed fetch leaves Assets as it was.
-    const scratch = path.join(project, "Assets", `.ojp-${process.pid}~`)
+    const scratch = path.join(project, "Assets", `.ojplay-${process.pid}~`)
     let name, app, kept = null
     try {
         if (own !== undefined) {
@@ -97,7 +97,7 @@ function refuseIfThere(project, app) {
     }
 }
 
-/** What `ojp add` says somewhere in a Unity project that is neither its root nor an app's ~. */
+/** What `ojplay add` says somewhere in a Unity project that is neither its root nor an app's ~. */
 export function unityRefusal() {
     return `Run ${COMMAND} add at the Unity project's root, where Assets and ProjectSettings are, to take a cart whole as its own app; `
         + `or in an app's ~ folder to use it as a piece of that app.`
@@ -108,7 +108,7 @@ export const UNITY_NEXT = "npm run build (or save a file while JSRunner watches)
 
 /**
  * A OneJS app's build made ready for used carts: cartsPlugin() in its
- * esbuild.config.mjs, and ojp in its package.json, installed. Both once.
+ * esbuild.config.mjs, and ojplay in its package.json, installed. Both once.
  */
 export function prepareUnityBuild(app, { npm = runNpm, say = () => {} } = {}) {
     const configFile = path.join(app, "esbuild.config.mjs")

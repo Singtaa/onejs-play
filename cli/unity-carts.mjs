@@ -7,7 +7,7 @@
  * `assetsPlugin()` is (Tachi, 1 Oct, option b):
  *
  *   `~/oj.json` "dependencies" names the carts, the one spelling a cart uses;
- *   their source is in `~/.oj/carts/<key>/`, fetched by `ojp add`, and by
+ *   their source is in `~/.oj/carts/<key>/`, fetched by `ojplay add`, and by
  *   the build itself when a fresh clone of the project lacks it;
  *   `@handle/name` resolves to that cart's `exports`, and a cart with none
  *   runs its entry on a bare import;
@@ -22,14 +22,14 @@
 import fs from "node:fs"
 import path from "node:path"
 import { cartLabel, scopedOj } from "../build/game.mjs"
-import { PACKAGE } from "../build/command.mjs"
+import { BIN, PACKAGE } from "../build/command.mjs"
 import { readUsedCarts } from "./game.mjs"
 import { cartsDir, fetchUsed } from "./carts.mjs"
 import { RESERVED_ASSET_FOLDER, isAssetName } from "./assets.mjs"
 
 const CART_IMPORT = /^(@[A-Za-z0-9-]+\/[A-Za-z0-9-]+)(?:\/(.+))?$/
 /** The keys the last sync copied into assets/, so only those are ever removed. */
-const RECORD = path.join("node_modules", ".cache", "ojp", "unity-carts.json")
+const RECORD = path.join("node_modules", ".cache", "ojplay", "unity-carts.json")
 
 function manifestOf(root) {
     try {
@@ -107,7 +107,7 @@ export function syncCartAssets(root, keys) {
  */
 export function cartsPlugin() {
     return {
-        name: "ojp-carts",
+        name: "ojplay-carts",
         setup(build) {
             // The real path: esbuild reports importers by theirs, and a
             // working folder reached through a symlink (macOS's /var is
@@ -122,10 +122,10 @@ export function cartsPlugin() {
                     carts = readUsedCarts(root, manifest)
                     const { copied, removed } = syncCartAssets(root, Object.keys(carts.carts))
                     if (copied.length + removed.length > 0) {
-                        console.log(`[ojp] assets/: ${[...copied.map((k) => `+${k}/`), ...removed.map((k) => `-${k}/`)].join(" ")}`)
+                        console.log(`[${BIN}] assets/: ${[...copied.map((k) => `+${k}/`), ...removed.map((k) => `-${k}/`)].join(" ")}`)
                     }
                 } catch (e) {
-                    return { errors: [{ text: `[ojp] ${e.message}` }] }
+                    return { errors: [{ text: `[${BIN}] ${e.message}` }] }
                 }
             })
 
@@ -148,7 +148,7 @@ export function cartsPlugin() {
                 const cart = carts.carts[key]
                 const dir = path.join(cartsDir(root), ...key.split("/"))
                 const inside = wanted[2] ?? cart.exports
-                if (typeof inside !== "string" || inside === "") return { path: key, namespace: "ojp-cart-whole", pluginData: { dir, entry: cart.entry ?? "index.tsx" } }
+                if (typeof inside !== "string" || inside === "") return { path: key, namespace: "ojplay-cart-whole", pluginData: { dir, entry: cart.entry ?? "index.tsx" } }
                 const found = await build.resolve(`./${inside}`, { resolveDir: dir, kind: args.kind })
                 if (found.errors.length > 0) return { errors: [{ text: `${cartLabel(key)} has no ${inside}` }] }
                 return { path: found.path }
@@ -161,10 +161,10 @@ export function cartsPlugin() {
             build.onResolve({ filter: /^oj$/ }, (args) => {
                 if (args.namespace !== "file") return undefined
                 const owner = cartOfFile(root, args.importer)
-                return owner === null ? undefined : { path: owner, namespace: "ojp-cart-oj" }
+                return owner === null ? undefined : { path: owner, namespace: "ojplay-cart-oj" }
             })
-            build.onLoad({ filter: /.*/, namespace: "ojp-cart-oj" }, (args) => ({ contents: scopedOj(args.path), loader: "js", resolveDir: root }))
-            build.onLoad({ filter: /.*/, namespace: "ojp-cart-whole" }, (args) => ({
+            build.onLoad({ filter: /.*/, namespace: "ojplay-cart-oj" }, (args) => ({ contents: scopedOj(args.path), loader: "js", resolveDir: root }))
+            build.onLoad({ filter: /.*/, namespace: "ojplay-cart-whole" }, (args) => ({
                 contents: `import ${JSON.stringify("./" + args.pluginData.entry)}\nexport {}`,
                 loader: "js",
                 resolveDir: args.pluginData.dir,
