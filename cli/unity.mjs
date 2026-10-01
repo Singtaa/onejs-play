@@ -158,10 +158,14 @@ export function stableGuid(assetPath) {
     return crypto.createHash("sha256").update(assetPath).digest("hex").slice(0, 32)
 }
 
-/** A folder name as a Unity object name: the letters, digits, spaces, underscores and hyphens of it. */
-function objectName(folder) {
-    const cleaned = folder.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/\s+/g, "")
-    return cleaned === "" ? "Cart" : cleaned
+/**
+ * A name as a Unity object name: its letters, digits, underscores and
+ * hyphens, so also a folder name with nothing to quote in a terminal.
+ * `fallback` when nothing is left of it.
+ */
+export function objectName(name, fallback = "Cart") {
+    const cleaned = name.replace(/[^A-Za-z0-9_-]/g, "")
+    return cleaned === "" ? fallback : cleaned
 }
 
 /**
