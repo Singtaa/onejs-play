@@ -64,7 +64,13 @@ async function answer(response) {
 /** What to write for `address`: its newest version, or its running build. Records the use on the site. */
 export async function pinOf(root, address, within = null, major = false) {
     const route = `/api/carts/${address.toLowerCase()}/pin`
-    return answer(await site("POST", route, root, within === null ? {} : { within, major }))
+    const response = await site("POST", route, root, within === null ? {} : { within, major })
+    // The site answers a private cart and a typo alike, so signed out, a 404
+    // says how to sign in; signed in, the account's own would have answered.
+    if (response.status === 404) {
+        throw new Error(`Can't find ${address}.${tokenOf(root) ? "" : ` If it's private, sign in first: ${COMMAND} login`}`)
+    }
+    return answer(response)
 }
 
 /**

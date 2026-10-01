@@ -198,7 +198,19 @@ describe("ojplay add, in a folder with nothing in it", () => {
     it("says so when there is no such cart, and leaves the folder empty", async () => {
         carts = {}
         const root = folder("empty")
-        await expect(add(root, "@singtaa/nothing")).rejects.toThrow("No cart at that address. Check the spelling; a private cart can be added only by its owner.")
+        // Signed in, a 404 is just that: a private cart of this account's would have answered.
+        process.env.OJ_TOKEN = "ojp_signed_in"
+        await expect(add(root, "@singtaa/nothing")).rejects.toMatchObject({ message: "Can't find @singtaa/nothing." })
+        expect(fs.readdirSync(root)).toEqual([])
+    })
+
+    it("signed out, says a private cart needs signing in, since a 404 can't tell private from a typo", async () => {
+        carts = {}
+        const root = folder("empty")
+        expect(fs.existsSync(path.join(process.env.OJ_HOME!, "token"))).toBe(false)
+        await expect(add(root, "@singtaa/nothing")).rejects.toMatchObject({
+            message: `Can't find @singtaa/nothing. If it's private, sign in first: ${COMMAND} login`,
+        })
         expect(fs.readdirSync(root)).toEqual([])
     })
 
