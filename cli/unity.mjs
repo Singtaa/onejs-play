@@ -1,5 +1,5 @@
 /**
- * `ojp init --unity`: a clone turned into a JSRunner project, in place, inside
+ * `ojplay init --unity`: a clone turned into a JSRunner project, in place, inside
  * the Unity project it was cloned into.
  *
  * A cart's repository is index.tsx and oj.json. A JSRunner project is a
@@ -119,10 +119,10 @@ export function oneJSOf(project) {
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
 /**
- * The template's package.json, named after the cart, with ojp at least the
+ * The template's package.json, named after the cart, with ojplay at least the
  * version writing it. The installed OneJS's template may pin an older one,
  * without the oj this cart was written against, or name it by its former
- * name, onejs-play (OneJS 3.2.3 to 3.9.2), which then gives way to ojp.
+ * name, onejs-play (OneJS 3.2.3 to 3.9.2), which then gives way to ojplay.
  */
 export function packageJson(template, name) {
     const pkg = JSON.parse(template)

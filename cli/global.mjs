@@ -1,13 +1,13 @@
 /**
- * What `ojp` does differently when it is the copy `npm install -g ojp` put
+ * What `ojplay` does differently when it is the copy `npm install -g ojplay` put
  * on the PATH (Sai, 1 Oct 2026).
  *
- * Hand-off: inside a cart or project that has its own ojp in node_modules,
- * the global ojp runs that one instead, so the version that builds the cart
+ * Hand-off: inside a cart or project that has its own ojplay in node_modules,
+ * the global ojplay runs that one instead, so the version that builds the cart
  * is the one its package.json chose. Said once, in --help.
  *
  * Update notice: at most once a day, one line, and only when npm has a newer
- * ojp than this one. The check runs in the background of one command and the
+ * ojplay than this one. The check runs in the background of one command and the
  * line prints at the end of a later one, so no command waits on npm; when
  * npm cannot be reached, nothing is said.
  */
@@ -38,10 +38,10 @@ export function localCopy(root) {
  * looking again.
  */
 export async function handOff(root) {
-    if (process.env.OJP_HANDED_OFF === "1") return false
+    if (process.env.OJPLAY_HANDED_OFF === "1") return false
     const local = localCopy(root)
     if (local === null) return false
-    process.env.OJP_HANDED_OFF = "1"
+    process.env.OJPLAY_HANDED_OFF = "1"
     await import(pathToFileURL(local).href)
     return true
 }

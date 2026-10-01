@@ -1,5 +1,5 @@
 // An OJPlay cart: runs on play.onejs.com, built by the site when published.
-// To work on it here: npx ojp init && npm install, then npx ojp run.
+// To work on it here: npx ojplay init && npm install, then npx ojplay run.
 // For AI agents: https://play.onejs.com/agents.md
 import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, useStage, input, random, batchedVisualContent } from "oj"

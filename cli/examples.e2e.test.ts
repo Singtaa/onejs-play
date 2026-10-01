@@ -19,7 +19,7 @@ import { siteOrigin, version } from "./site.mjs"
  * misaligned row. A failure prints the command's own output.
  *
  * Needs Chrome and the network (the site says which runtime is live, and the
- * container is fetched once into ~/.onejs-play). Both are what `ojp run` needs.
+ * container is fetched once into ~/.onejs-play). Both are what `ojplay run` needs.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..")

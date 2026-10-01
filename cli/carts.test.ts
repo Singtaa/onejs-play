@@ -94,13 +94,13 @@ describe("used carts, locally", () => {
         expect(readUsedCarts(root, { dependencies: deps })).toEqual({
             uses: {}, carts: {},
             skipped: {
-                "@singtaa/lightning": "\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; ojp update moves it.",
+                "@singtaa/lightning": "\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; ojplay update moves it.",
                 "lodash": "\"lodash\" should be a cart's address, like \"@singtaa/lightning\".",
             },
         })
         expect((await build(root)).warnings).toEqual(Object.values(readUsedCarts(root, { dependencies: deps }).skipped!))
         const importing = cart({ "index.tsx": `import { bolt } from "@singtaa/lightning"\nexport const out = bolt`, "oj.json": oj({ dependencies: deps }) })
-        await expect(build(importing)).rejects.toThrow("\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; ojp update moves it.")
+        await expect(build(importing)).rejects.toThrow("\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; ojplay update moves it.")
     })
 
     it("leaves used carts' files out of this cart's own asset check", () => {

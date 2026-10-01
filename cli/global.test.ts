@@ -6,20 +6,20 @@ import { localCopy, newer, updateNotice } from "./global.mjs"
 import { BIN, INSTALL, PACKAGE } from "../build/command.mjs"
 
 /**
- * The global ojp (Sai, 1 Oct 2026): the hand-off to a cart's own copy, and
+ * The global ojplay (Sai, 1 Oct 2026): the hand-off to a cart's own copy, and
  * the update line, at most once a day and never when npm cannot be reached.
  */
 
 const made: string[] = []
 afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }) })
 const scratch = () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ojp-global-"))
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-global-"))
     made.push(dir)
     return dir
 }
 
 describe("the hand-off", () => {
-    it("finds the cart's own ojp from any folder inside it, and not this one", () => {
+    it("finds the cart's own ojplay from any folder inside it, and not this one", () => {
         const cart = scratch()
         const own = path.join(cart, "node_modules", ...PACKAGE.split("/"), "cli", "oj.mjs")
         fs.mkdirSync(path.dirname(own), { recursive: true })

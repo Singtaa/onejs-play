@@ -1,4 +1,4 @@
-// A round of Wordie, driven the way a player plays it: `npx ojp test playtest.mjs`.
+// A round of Wordie, driven the way a player plays it: `npx ojplay test playtest.mjs`.
 //
 // Counting beats membership. Every letter of the guess is already on the
 // keyboard once, so "the screen shows C" would pass with no tile filled; a

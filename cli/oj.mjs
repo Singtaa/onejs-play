@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * ojp: an OJPlay cart from the terminal.
+ * ojplay: an OJPlay cart from the terminal.
  *
- *   ojp add <address>    use another cart in this one; in an empty folder, start a cart that uses it
- *   ojp update           move the carts this one uses to their newest versions
- *   ojp remove <address> stop using a cart
- *   ojp init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
- *   ojp build            bundle the cart the way the site does; errors as file:line:col
- *   ojp typecheck        tsc --noEmit against the same oj the site builds with
- *   ojp run              build, then run the cart in the real container in a local Chrome
- *   ojp test <script>    run, then drive the cart from a script that reads, clicks and asserts
- *   ojp status           what the site is running: head, live, and why they differ
- *   ojp list             every cart on the account, private ones included
- *   ojp push             git push origin main with OJ_TOKEN, then fail if the tip did not build
- *   ojp new <name>       create a cart on the site and clone it here
- *   ojp login            print a link; once the person presses Allow, this machine can push
- *   ojp logout           forget that login, here and on the site
- *   ojp runtime          fetch the container the site serves into the local cache
+ *   ojplay add <address>    use another cart in this one; in an empty folder, start a cart that uses it
+ *   ojplay update           move the carts this one uses to their newest versions
+ *   ojplay remove <address> stop using a cart
+ *   ojplay init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
+ *   ojplay build            bundle the cart the way the site does; errors as file:line:col
+ *   ojplay typecheck        tsc --noEmit against the same oj the site builds with
+ *   ojplay run              build, then run the cart in the real container in a local Chrome
+ *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
+ *   ojplay status           what the site is running: head, live, and why they differ
+ *   ojplay list             every cart on the account, private ones included
+ *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build
+ *   ojplay new <name>       create a cart on the site and clone it here
+ *   ojplay login            print a link; once the person presses Allow, this machine can push
+ *   ojplay logout           forget that login, here and on the site
+ *   ojplay runtime          fetch the container the site serves into the local cache
  *
  * Every command reads the cart in the current folder, or --root <dir>.
  */
@@ -325,8 +325,8 @@ const startRoot = path.resolve(rootArg === -1 ? "." : process.argv[rootArg + 1] 
 // The global copy, typed bare at a terminal: the daily update line, and the
 // hand-off to the cart's own copy. Neither for npx or a package.json script,
 // which already run the copy they mean, nor for an agent reading the output.
-const global = process.env.npm_command === undefined && process.env.OJP_HANDED_OFF !== "1"
-if (global && process.stderr.isTTY && !process.env.CI && process.env.OJP_NO_UPDATE_CHECK === undefined) {
+const global = process.env.npm_command === undefined && process.env.OJPLAY_HANDED_OFF !== "1"
+if (global && process.stderr.isTTY && !process.env.CI && process.env.OJPLAY_NO_UPDATE_CHECK === undefined) {
     const notice = updateNotice(OWN_VERSION)
     process.on("exit", notice.tell)
 }

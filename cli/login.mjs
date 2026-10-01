@@ -1,7 +1,7 @@
 /**
- * `ojp login` and `ojp logout`: login by link.
+ * `ojplay login` and `ojplay logout`: login by link.
  *
- * `ojp login` asks the site for a link and prints it. The person opens it,
+ * `ojplay login` asks the site for a link and prints it. The person opens it,
  * signed in, and presses Allow; the next poll collects a token of the site's
  * 'agent' kind (create, edit, push, rebuild; never delete, publish or the
  * account; main by fast forward only; 30 days). Nothing is pasted anywhere.
@@ -180,8 +180,8 @@ function pick(code, say) {
 }
 
 /**
- * `ojp login`. Prints the link, then waits for Allow unless `noWait`, in which
- * case `ojp login --wait` collects it later. Returns an exit code.
+ * `ojplay login`. Prints the link, then waits for Allow unless `noWait`, in which
+ * case `ojplay login --wait` collects it later. Returns an exit code.
  */
 export async function login(root, { name, wait = true, resume = false, code, say = console.error, print = console.log } = {}) {
     let pending
@@ -225,7 +225,7 @@ export async function login(root, { name, wait = true, resume = false, code, say
     return 1
 }
 
-/** `ojp logout`: the site forgets the token, then this machine does. */
+/** `ojplay logout`: the site forgets the token, then this machine does. */
 export async function logout(root, { say = console.error } = {}) {
     const token = storedToken(root)
     if (token !== null) {

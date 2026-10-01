@@ -1,5 +1,5 @@
 {
-  "name": "ojp",
+  "name": "ojplay",
   "version": "0.9.0",
   "description": "OJPlay from the terminal: add carts to carts, build, run and test them like the site does. The runtime carts import as \"oj\".",
   "main": "src/index.ts",
@@ -72,6 +72,6 @@
     }
   },
   "bin": {
-    "ojp": "cli/oj.mjs"
+    "ojplay": "cli/oj.mjs"
   }
 }
