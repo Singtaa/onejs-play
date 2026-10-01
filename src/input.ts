@@ -8,7 +8,7 @@
  * events instead. See onejs-unity/input/backend.ts for the seam.
  *
  *     import { input, setInputBackend } from "onejs-unity/input"
- *     import { createContainerInput } from "ojp/container"
+ *     import { createContainerInput } from "ojplay/container"
  *
  *     const container = createContainerInput()
  *     setInputBackend(container.backend)

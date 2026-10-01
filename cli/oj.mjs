@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * ojp: an OJPlay cart from the terminal.
+ * ojplay: an OJPlay cart from the terminal.
  *
- *   ojp add <address>    use another cart in this one; in an empty folder, start a cart that uses it
- *   ojp update           move the carts this one uses to their newest versions
- *   ojp remove <address> stop using a cart
- *   ojp init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
- *   ojp build            bundle the cart the way the site does; errors as file:line:col
- *   ojp typecheck        tsc --noEmit against the same oj the site builds with
- *   ojp run              build, then run the cart in the real container in a local Chrome
- *   ojp test <script>    run, then drive the cart from a script that reads, clicks and asserts
- *   ojp status           what the site is running: head, live, and why they differ
- *   ojp list             every cart on the account, private ones included
- *   ojp push             git push origin main with OJ_TOKEN, then fail if the tip did not build
- *   ojp new <name>       create a cart on the site and clone it here
- *   ojp login            print a link; once the person presses Allow, this machine can push
- *   ojp logout           forget that login, here and on the site
- *   ojp runtime          fetch the container the site serves into the local cache
+ *   ojplay add <address>    use another cart in this one; in an empty folder, start a cart that uses it
+ *   ojplay update           move the carts this one uses to their newest versions
+ *   ojplay remove <address> stop using a cart
+ *   ojplay init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
+ *   ojplay build            bundle the cart the way the site does; errors as file:line:col
+ *   ojplay typecheck        tsc --noEmit against the same oj the site builds with
+ *   ojplay run              build, then run the cart in the real container in a local Chrome
+ *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
+ *   ojplay status           what the site is running: head, live, and why they differ
+ *   ojplay list             every cart on the account, private ones included
+ *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build
+ *   ojplay new <name>       create a cart on the site and clone it here
+ *   ojplay login            print a link; once the person presses Allow, this machine can push
+ *   ojplay logout           forget that login, here and on the site
+ *   ojplay runtime          fetch the container the site serves into the local cache
  *
  * Every command reads the cart in the current folder, or --root <dir>.
  */
@@ -32,7 +32,7 @@ import { init } from "./init.mjs"
 import { initUnity, npm } from "./unity.mjs"
 import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
 import { handOff, updateNotice } from "./global.mjs"
-import { COMMAND, PACKAGE } from "../build/command.mjs"
+import { BIN, COMMAND, PACKAGE } from "../build/command.mjs"
 
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
@@ -80,8 +80,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
 OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, used instead of ${COMMAND} login's
 OJ_CHROME the browser binary, when it is not in the usual place
 
-Inside a cart with its own ${PACKAGE} in node_modules, ${PACKAGE} runs that copy, so the version matches the cart.
-${PACKAGE} ${OWN_VERSION}
+Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so the version matches the cart.
+${BIN} ${OWN_VERSION}
 `
 
 function parse(argv) {
@@ -98,7 +98,7 @@ function parse(argv) {
     return { command: positional[0], args: positional.slice(1), flags }
 }
 
-const say = (line) => console.error(`[${PACKAGE}] ${line}`)
+const say = (line) => console.error(`[${BIN}] ${line}`)
 
 async function main() {
     const { command, args, flags } = parse(process.argv.slice(2))
@@ -325,12 +325,12 @@ const startRoot = path.resolve(rootArg === -1 ? "." : process.argv[rootArg + 1] 
 // The global copy, typed bare at a terminal: the daily update line, and the
 // hand-off to the cart's own copy. Neither for npx or a package.json script,
 // which already run the copy they mean, nor for an agent reading the output.
-const global = process.env.npm_command === undefined && process.env.OJP_HANDED_OFF !== "1"
-if (global && process.stderr.isTTY && !process.env.CI && process.env.OJP_NO_UPDATE_CHECK === undefined) {
+const global = process.env.npm_command === undefined && process.env.OJPLAY_HANDED_OFF !== "1"
+if (global && process.stderr.isTTY && !process.env.CI && process.env.OJPLAY_NO_UPDATE_CHECK === undefined) {
     const notice = updateNotice(OWN_VERSION)
     process.on("exit", notice.tell)
 }
 if (!global || !await handOff(startRoot)) main().then((code) => process.exit(code), (error) => {
-    console.error(error.lines ? error.lines.join("\n") : `[${PACKAGE}] ${error.message}`)
+    console.error(error.lines ? error.lines.join("\n") : `[${BIN}] ${error.message}`)
     process.exit(1)
 })

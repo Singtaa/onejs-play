@@ -7,7 +7,7 @@
  * player build copies that folder into StreamingAssets. So a clone in a Unity
  * project runs, but `assetUrl("glow.png")` finds nothing.
  *
- * `ojp init --unity` puts `assetsPlugin()` in the build it writes, and the
+ * `ojplay init --unity` puts `assetsPlugin()` in the build it writes, and the
  * plugin copies the files across at the start of every build: `npm run build`,
  * and each rebuild `npm run watch` makes on save. `assets/` is in the clone's
  * info/exclude, so git never sees the copies, and the site refuses a
@@ -23,6 +23,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { RESERVED_ASSET_FOLDER, isAssetName, resolveAsset } from "./assets.mjs"
+import { PACKAGE } from "../build/command.mjs"
 
 /** The names the last sync wrote, relative to the working directory. */
 const RECORD = path.join("node_modules", ".cache", "onejs-play", "unity-assets.json")
@@ -92,7 +93,7 @@ export function syncAssets(root) {
 }
 
 /**
- * The esbuild plugin `ojp init --unity` adds to a clone's build. It syncs before
+ * The esbuild plugin `ojplay init --unity` adds to a clone's build. It syncs before
  * each build and says so only when something changed; a sync that fails fails
  * the build, since the cart would otherwise run without its files.
  */
@@ -134,12 +135,12 @@ export function buildConfig(template, entry) {
     const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
     if (plugins === null) {
         throw new Error("OneJS's esbuild.config.mjs template has no plugins list for the step that copies the cart's files into assets/. "
-            + "Update ojp (npx ojp@latest init --unity), or report it if this is the latest.")
+            + `Update ${PACKAGE} (npx ${PACKAGE}@latest init --unity), or report it if this is the latest.`)
     }
     const indent = plugins[1] + "    "
     const at = plugins.index + plugins[0].length
     text = text.slice(0, at)
         + `${indent}// The cart's files, copied into assets/ where OneJS looks for them\n${indent}assetsPlugin(),\n`
         + text.slice(at)
-    return `import { assetsPlugin } from "ojp/unity"\n${text}`
+    return `import { assetsPlugin } from "${PACKAGE}/unity"\n${text}`
 }

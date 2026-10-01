@@ -75,7 +75,7 @@ export function pinProblem(address, pin) {
     if (typeof pin === "string" && (VERSION.test(pin) || /^#[0-9a-f]{12}$/.test(pin))) return null
     const inside = typeof pin === "string" ? /(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/.exec(pin) : null
     return inside !== null
-        ? `"${pin}" for ${address} is a range. Use "${inside[0]}"; ojp update moves it.`
+        ? `"${pin}" for ${address} is a range. Use "${inside[0]}"; ojplay update moves it.`
         : `${JSON.stringify(pin)} for ${address} should be a version, like "1.2.0".`
 }
 

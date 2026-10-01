@@ -14,12 +14,12 @@ export function siteOrigin() {
     return (process.env.OJ_SITE ?? DEFAULT_SITE).replace(/\/$/, "")
 }
 
-/** Where `ojp login` keeps its token: home first, the cart's .oj/ when home cannot be written. */
+/** Where `ojplay login` keeps its token: home first, the cart's .oj/ when home cannot be written. */
 export function tokenPaths(root) {
     return [path.join(home(), "token"), path.join(root, ".oj", "token")]
 }
 
-/** The token `ojp login` stored, or null. */
+/** The token `ojplay login` stored, or null. */
 export function storedToken(root = process.cwd()) {
     for (const file of tokenPaths(root)) {
         try {
@@ -30,7 +30,7 @@ export function storedToken(root = process.cwd()) {
     return null
 }
 
-/** OJ_TOKEN when set, else what `ojp login` stored, else null. */
+/** OJ_TOKEN when set, else what `ojplay login` stored, else null. */
 export function tokenOf(root = process.cwd()) {
     return process.env.OJ_TOKEN || storedToken(root)
 }
@@ -131,7 +131,7 @@ export function git(args, { cwd, bearer } = {}) {
     return result.status ?? 1
 }
 
-/** Where `ojp new` clones to: the name as a folder, made safe. */
+/** Where `ojplay new` clones to: the name as a folder, made safe. */
 export function folderFor(name) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
     return path.resolve(slug === "" ? "cart" : slug)

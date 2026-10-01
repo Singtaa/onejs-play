@@ -4,11 +4,12 @@ import { createServer, type Server } from "node:http"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { BIN, PACKAGE } from "../build/command.mjs"
 
 /**
- * ojp as people get it (Sai, 1 Oct 2026): `npm install -g ojp`, from this
+ * ojplay as people get it (Sai, 1 Oct 2026): `npm install -g ojplay`, from this
  * package packed the way npm publishes it, into a throwaway prefix with its
- * own HOME. Then `ojp --help`, `ojp add` in an empty folder (against a
+ * own HOME. Then `ojplay --help`, `ojplay add` in an empty folder (against a
  * stand-in site, with no login anywhere), and the hand-off to a cart's own
  * copy. What a unit test cannot see: the files list, the bin, and that the
  * dependencies a global install brings are enough to build.
@@ -18,9 +19,9 @@ import path from "node:path"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const OWN = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { name: string, version: string }
-const work = fs.mkdtempSync(path.join(os.tmpdir(), "ojp-global-e2e-"))
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-global-e2e-"))
 const prefix = path.join(work, "prefix")
-const bin = path.join(prefix, "bin", "ojp")
+const bin = path.join(prefix, "bin", BIN)
 let server: Server
 let origin = ""
 
@@ -40,7 +41,7 @@ function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
     }
 }
 
-function ojp(args: string[], cwd: string, extra: Record<string, string> = {}): Promise<{ code: number, out: string }> {
+function ojplay(args: string[], cwd: string, extra: Record<string, string> = {}): Promise<{ code: number, out: string }> {
     return new Promise((resolve) => {
         const child = spawn(bin, args, { cwd, env: env(extra) })
         let out = ""
@@ -86,44 +87,44 @@ afterAll(async () => {
     fs.rmSync(work, { recursive: true, force: true })
 })
 
-describe("npm install -g ojp", () => {
-    it("puts one command on the PATH, ojp, and no oj", () => {
+describe(`npm install -g ${PACKAGE}`, () => {
+    it("puts one command on the PATH, ojplay, and no oj", () => {
         expect(fs.existsSync(bin)).toBe(true)
         expect(fs.existsSync(path.join(prefix, "bin", "oj"))).toBe(false)
     })
 
     it("answers --help with its own name, version and the hand-off line", async () => {
-        const help = await ojp(["--help"], work)
+        const help = await ojplay(["--help"], work)
         expect(help.code).toBe(0)
-        expect(help.out).toContain("usage: ojp <command> [options]")
+        expect(help.out).toContain(`usage: ${BIN} <command> [options]`)
         expect(help.out).toContain("add <@handle/name>")
-        expect(help.out).toContain("Inside a cart with its own ojp in node_modules, ojp runs that copy, so the version matches the cart.")
-        expect(help.out).toContain(`ojp ${OWN.version}`)
+        expect(help.out).toContain(`Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so the version matches the cart.`)
+        expect(help.out).toContain(`${BIN} ${OWN.version}`)
     })
 
-    it("starts a cart in an empty folder with ojp add, no account, and builds it", async () => {
+    it("starts a cart in an empty folder with ojplay add, no account, and builds it", async () => {
         const folder = path.join(work, "my-portal")
         fs.mkdirSync(folder)
-        const added = await ojp(["add", "@singtaa/portal"], folder, { OJ_SITE: origin })
+        const added = await ojplay(["add", "@singtaa/portal"], folder, { OJ_SITE: origin })
         expect(added.out.trim().split("\n")).toEqual([
-            "[ojp] Started a cart here that runs @singtaa/portal (1 Oct): index.tsx imports it, oj.json lists it.",
-            "[ojp] Next: ojp run",
+            `[${BIN}] Started a cart here that runs @singtaa/portal (1 Oct): index.tsx imports it, oj.json lists it.`,
+            `[${BIN}] Next: ${BIN} run`,
         ])
         expect(added.code).toBe(0)
-        const built = await ojp(["build"], folder, { OJ_SITE: origin })
+        const built = await ojplay(["build"], folder, { OJ_SITE: origin })
         expect(built.code, built.out).toBe(0)
         expect(fs.readFileSync(path.join(folder, ".oj", "bundle.js"), "utf8")).toContain("the portal")
     }, 60_000)
 
-    it("hands off to the cart's own ojp, from anywhere inside the cart", async () => {
+    it("hands off to the cart's own ojplay, from anywhere inside the cart", async () => {
         const cart = path.join(work, "pinned")
-        const own = path.join(cart, "node_modules", "ojp")
+        const own = path.join(cart, "node_modules", ...PACKAGE.split("/"))
         fs.mkdirSync(path.join(own, "cli"), { recursive: true })
         fs.mkdirSync(path.join(cart, "hud"), { recursive: true })
-        fs.writeFileSync(path.join(own, "package.json"), JSON.stringify({ name: "ojp", version: "0.9.0-pinned" }))
-        fs.writeFileSync(path.join(own, "cli", "oj.mjs"), "console.log(`the cart's own ojp: ${process.argv.slice(2).join(\" \")}`)\n")
-        const ran = await ojp(["build", "--for", "1"], path.join(cart, "hud"))
-        expect(ran.out.trim()).toBe("the cart's own ojp: build --for 1")
+        fs.writeFileSync(path.join(own, "package.json"), JSON.stringify({ name: PACKAGE, version: "0.9.0-pinned" }))
+        fs.writeFileSync(path.join(own, "cli", "oj.mjs"), "console.log(`the cart's own ojplay: ${process.argv.slice(2).join(\" \")}`)\n")
+        const ran = await ojplay(["build", "--for", "1"], path.join(cart, "hud"))
+        expect(ran.out.trim()).toBe("the cart's own ojplay: build --for 1")
         expect(ran.code).toBe(0)
     })
 })

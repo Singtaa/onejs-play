@@ -6,7 +6,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
-import { COMMAND } from "../build/command.mjs"
+import { COMMAND, INSTALL, PACKAGE } from "../build/command.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -68,7 +68,7 @@ export function entryOf(files, manifest) {
 }
 
 /**
- * The carts this one uses, read from `.oj/carts/<key>/`, where `ojp add`
+ * The carts this one uses, read from `.oj/carts/<key>/`, where `ojplay add`
  * fetches each one's kept build (PlaySite docs/carts.md §3), following each
  * one's own dependencies. The shape `buildGame` takes as `carts`. Refuses a
  * cart not fetched and a chain that comes back to a cart already on it, each
@@ -106,14 +106,14 @@ export function readUsedCarts(root, manifest) {
 
 /**
  * esbuild, a dependency of this package since it became a command people
- * install once (npm install -g ojp), failing with a sentence rather than a
+ * install once (npm install -g ojplay), failing with a sentence rather than a
  * module-not-found stack if an install lost it.
  */
 async function loadEsbuild() {
     try {
         return await import("esbuild")
     } catch (error) {
-        throw new Error("esbuild is missing beside ojp. Install ojp again: npm install -g ojp, or npm install in the cart.", { cause: error })
+        throw new Error(`esbuild is missing beside ${PACKAGE}. Install it again: ${INSTALL}, or npm install in the cart.`, { cause: error })
     }
 }
 

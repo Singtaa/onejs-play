@@ -9,7 +9,7 @@ import { mine, storedToken, tokenOf } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
 
 /**
- * `ojp login` against a stand-in for the site's three routes (PlaySite
+ * `ojplay login` against a stand-in for the site's three routes (PlaySite
  * src/index.tsx, "login by link"), with HOME, OJ_HOME and git's global config
  * in a temporary folder so nothing on this machine is touched.
  */
@@ -48,7 +48,7 @@ beforeEach(async () => {
         }
         if (req.url === "/api/logout") return send(200, { ok: true })
         if (req.url === "/api/me/carts") {
-            if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx ojp login again." })
+            if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx ojplay login again." })
             return send(200, { handle: "owner", carts: [{ sid: "abcdefabcdef", name: "Hidden", public: false }, { sid: "bcdefabcdefa", name: "Shown", public: true }] })
         }
         send(404, {})
@@ -80,7 +80,7 @@ function gitPassword(url: string): string | null {
     return /^password=(.*)$/m.exec(out.stdout ?? "")?.[1] ?? null
 }
 
-describe("ojp login", () => {
+describe("ojplay login", () => {
     it("prints the link, collects the token on Allow, keeps it 0600, and hands it to git for the site only", async () => {
         const printed: string[] = []
         expect(await login(dir, { name: "claude on test", say: () => {}, print: (l: string) => printed.push(l) })).toBe(0)
@@ -92,8 +92,8 @@ describe("ojp login", () => {
         if (process.platform !== "win32") expect(fs.statSync(file).mode & 0o777).toBe(0o600)
         expect(storedToken(dir)).toBe(TOKEN)
         expect(tokenOf(dir)).toBe(TOKEN)
-        vi.stubEnv("OJ_TOKEN", "ojp_env")
-        expect(tokenOf(dir)).toBe("ojp_env")
+        vi.stubEnv("OJ_TOKEN", "ojplay_env")
+        expect(tokenOf(dir)).toBe("ojplay_env")
 
         // git asks the helper for this site, and nobody else gets the token.
         expect(gitPassword(process.env.OJ_SITE!)).toBe(TOKEN)
