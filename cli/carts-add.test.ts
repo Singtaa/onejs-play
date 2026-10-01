@@ -6,7 +6,7 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { add, remove, syncTypes, update } from "./carts.mjs"
 import { build } from "./game.mjs"
-import { COMMAND } from "../build/command.mjs"
+import { COMMAND, PACKAGE } from "../build/command.mjs"
 
 /**
  * `ojp add`, `update` and `remove` (PlaySite docs/carts.md §3, step 5)
@@ -236,11 +236,11 @@ describe("ojp add, in a cart", () => {
 
     it("points the tsconfig ojp init wrote at the fetched source", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0"]) }
-        const root = folder("storm", { ...CART(), "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { oj: ["./node_modules/ojp/src/index.ts"] } }, exclude: ["node_modules"] }) })
+        const root = folder("storm", { ...CART(), "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { oj: [`./node_modules/${PACKAGE}/src/index.ts`] } }, exclude: ["node_modules"] }) })
         await add(root, "@singtaa/lightning")
         expect(json(root, "tsconfig.json")).toEqual({
             compilerOptions: { paths: {
-                "oj": ["./node_modules/ojp/src/index.ts"],
+                "oj": [`./node_modules/${PACKAGE}/src/index.ts`],
                 "@singtaa/lightning": ["./.oj/carts/@singtaa/lightning@1.2.0/bolt.tsx"],
                 "@singtaa/lightning/*": ["./.oj/carts/@singtaa/lightning@1.2.0/*"],
             } },
@@ -337,7 +337,7 @@ describe("ojp add at a Unity project's root", () => {
         const app = path.join(project, "Assets", "portal", "~")
         expect(read(app, "main.tsx")).toContain("portal two")
         expect(json(app, ".oj-kept.json")).toMatchObject({ address: "@singtaa/portal", commit: "b".repeat(40) })
-        expect(json(app, "package.json").dependencies).toEqual({ ojp: expect.stringMatching(/^\^0\./) })
+        expect(json(app, "package.json").dependencies).toEqual({ [PACKAGE]: expect.stringMatching(/^\^0\./) })
         expect(read(app, "esbuild.config.mjs")).toContain(`entryPoints: ["main.tsx"]`)
         expect(exists(project, "Assets/portal/portal.prefab")).toBe(true)
         expect(npmCalls).toEqual(["Assets/portal/~: npm install --no-audit --no-fund", "Assets/portal/~: npm run build"])

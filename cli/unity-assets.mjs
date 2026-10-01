@@ -26,6 +26,7 @@ import { RESERVED_ASSET_FOLDER, isAssetName, resolveAsset } from "./assets.mjs"
 import { withCartsPlugin } from "./unity-carts.mjs"
 
 export { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-carts.mjs"
+import { PACKAGE } from "../build/command.mjs"
 
 /** The names the last sync wrote, relative to the working directory. */
 const RECORD = path.join("node_modules", ".cache", "onejs-play", "unity-assets.json")
@@ -137,7 +138,7 @@ export function buildConfig(template, entry) {
     const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
     if (plugins === null) {
         throw new Error("OneJS's esbuild.config.mjs template has no plugins list for the step that copies the cart's files into assets/. "
-            + "Update ojp (npx ojp@latest init --unity), or report it if this is the latest.")
+            + `Update ${PACKAGE} (npx ${PACKAGE}@latest init --unity), or report it if this is the latest.`)
     }
     const indent = plugins[1] + "    "
     const at = plugins.index + plugins[0].length
@@ -145,5 +146,5 @@ export function buildConfig(template, entry) {
         + `${indent}// The cart's files, copied into assets/ where OneJS looks for them\n${indent}assetsPlugin(),\n`
         + text.slice(at)
     // The carts oj.json uses, resolved and scoped the way the site does it.
-    return withCartsPlugin(`import { assetsPlugin } from "ojp/unity"\n${text}`)
+    return withCartsPlugin(`import { assetsPlugin } from "${PACKAGE}/unity"\n${text}`)
 }

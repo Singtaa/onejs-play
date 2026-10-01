@@ -14,6 +14,7 @@ import { assetsPlugin, buildConfig, syncAssets } from "./unity-assets.mjs"
 import { spawnSync } from "node:child_process"
 import { Game } from "./run.mjs"
 import { containerBoot } from "../host/boot.mjs"
+import { PACKAGE } from "../build/command.mjs"
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
 
@@ -284,7 +285,7 @@ describe("the tooling a clone writes for itself", () => {
         const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))
         expect(pkg.name).toBe("big-fish")
         expect(pkg.scripts.test).toBeUndefined()
-        expect(pkg.devDependencies["ojp"]).toMatch(/^\^0\./)
+        expect(pkg.devDependencies[PACKAGE]).toMatch(/^\^0\./)
         fs.writeFileSync(path.join(dir, "tsconfig.json"), "{ \"mine\": true }")
         const second = init(dir)
         expect(second[1]).toBe("tsconfig.json: already there, left alone")
@@ -394,7 +395,7 @@ describe("a clone made into a JSRunner project", () => {
         expect(fs.existsSync(path.join(root, "index.tsx"))).toBe(false)
         const config = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")
         expect(config).toContain("entryPoints: [\"game.tsx\"]")
-        expect(config.startsWith("import { assetsPlugin, cartsPlugin } from \"ojp/unity\"\n")).toBe(true)
+        expect(config.startsWith(`import { assetsPlugin, cartsPlugin } from "${PACKAGE}/unity"\n`)).toBe(true)
         expect(config).toContain("    plugins: [\n        // The carts oj.json uses, resolved and scoped as on the site\n        cartsPlugin(),\n        // The cart's files, copied into assets/ where OneJS looks for them\n        assetsPlugin(),\n        importTransformPlugin(),")
         const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
         expect(pkg.name).toBe("big-fish")
@@ -402,10 +403,10 @@ describe("a clone made into a JSRunner project", () => {
         const own = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
         expect(pkg.dependencies["onejs-play"]).toBeUndefined()
         // The oj alias follows the package to its new name.
-        expect(config).toContain("node_modules/ojp/src/index.ts")
+        expect(config).toContain(`node_modules/${PACKAGE}/src/index.ts`)
         expect(config).not.toContain("onejs-play")
-        expect(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8")).toBe(TSCONFIG_TEMPLATE.replace("onejs-play", "ojp"))
-        expect(pkg.dependencies["ojp"]).toBe(`^${own}`)
+        expect(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8")).toBe(TSCONFIG_TEMPLATE.replace("onejs-play", PACKAGE))
+        expect(pkg.dependencies[PACKAGE]).toBe(`^${own}`)
         expect(fs.readFileSync(path.join(root, "types", "global.d.ts"), "utf8")).toBe("template global.d.ts.txt")
         // The build's copies of the cart's files stay out of git too.
         fs.writeFileSync(path.join(root, "glow.png"), "png")
@@ -506,10 +507,10 @@ describe("the scaffold's pins", () => {
     // 0.x is a different API; one the installed version does not satisfy
     // cannot install at all.
     const scaffold = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "scaffold/package.json"), "utf8"))
-    const versionOf = (name: string) => name === "ojp"
+    const versionOf = (name: string) => name === PACKAGE
         ? JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
         : JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, `../node_modules/${name}/package.json`), "utf8")).version
-    for (const name of ["ojp", "onejs-unity", "onejs-react"]) {
+    for (const name of [PACKAGE, "onejs-unity", "onejs-react"]) {
         it(`pins ${name} on the minor it is`, () => {
             const pin = scaffold.devDependencies[name] as string
             const [major, minor, patch] = versionOf(name).split(".").map(Number)

@@ -32,7 +32,7 @@ import { init } from "./init.mjs"
 import { initUnity, npm } from "./unity.mjs"
 import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
 import { handOff, updateNotice } from "./global.mjs"
-import { COMMAND, PACKAGE } from "../build/command.mjs"
+import { BIN, COMMAND, PACKAGE } from "../build/command.mjs"
 
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
@@ -80,8 +80,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
 OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, used instead of ${COMMAND} login's
 OJ_CHROME the browser binary, when it is not in the usual place
 
-Inside a cart with its own ${PACKAGE} in node_modules, ${PACKAGE} runs that copy, so the version matches the cart.
-${PACKAGE} ${OWN_VERSION}
+Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so the version matches the cart.
+${BIN} ${OWN_VERSION}
 `
 
 function parse(argv) {
@@ -98,7 +98,7 @@ function parse(argv) {
     return { command: positional[0], args: positional.slice(1), flags }
 }
 
-const say = (line) => console.error(`[${PACKAGE}] ${line}`)
+const say = (line) => console.error(`[${BIN}] ${line}`)
 
 async function main() {
     const { command, args, flags } = parse(process.argv.slice(2))
@@ -331,6 +331,6 @@ if (global && process.stderr.isTTY && !process.env.CI && process.env.OJP_NO_UPDA
     process.on("exit", notice.tell)
 }
 if (!global || !await handOff(startRoot)) main().then((code) => process.exit(code), (error) => {
-    console.error(error.lines ? error.lines.join("\n") : `[${PACKAGE}] ${error.message}`)
+    console.error(error.lines ? error.lines.join("\n") : `[${BIN}] ${error.message}`)
     process.exit(1)
 })

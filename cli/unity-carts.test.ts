@@ -6,7 +6,7 @@ import path from "node:path"
 import * as esbuild from "esbuild"
 import { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-assets.mjs"
 import { add } from "./carts.mjs"
-import { COMMAND } from "../build/command.mjs"
+import { COMMAND, PACKAGE } from "../build/command.mjs"
 
 /**
  * Used carts in a OneJS app's own build (PlaySite docs/carts.md §4, step 6,
@@ -161,7 +161,7 @@ describe("ojp add in a OneJS app's ~", () => {
     it("adds the cart to oj.json, the plugin to the build and ojp to package.json, once", async () => {
         const root = app({
             "package.json": JSON.stringify({ name: "app", dependencies: { "onejs-play": "^0.8.3" } }),
-            "esbuild.config.mjs": `import { assetsPlugin } from "ojp/unity"\nconst config = {\n    plugins: [\n        importTransformPlugin(),\n    ],\n}\n`,
+            "esbuild.config.mjs": `import { assetsPlugin } from "${PACKAGE}/unity"\nconst config = {\n    plugins: [\n        importTransformPlugin(),\n    ],\n}\n`,
             "index.tsx": "export {}\n",
         })
         const npm: string[] = []
@@ -172,9 +172,9 @@ describe("ojp add in a OneJS app's ~", () => {
         ])
         expect(JSON.parse(fs.readFileSync(path.join(root, "oj.json"), "utf8"))).toEqual({ dependencies: { "@singtaa/lightning": "1.2.0" } })
         const config = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")
-        expect(config.startsWith(`import { assetsPlugin, cartsPlugin } from "ojp/unity"\n`)).toBe(true)
+        expect(config.startsWith(`import { assetsPlugin, cartsPlugin } from "${PACKAGE}/unity"\n`)).toBe(true)
         expect(config).toContain("        cartsPlugin(),\n        importTransformPlugin(),")
-        expect(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies).toMatchObject({ "onejs-play": "^0.8.3", ojp: expect.stringMatching(/^\^0\./) })
+        expect(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies).toMatchObject({ "onejs-play": "^0.8.3", [PACKAGE]: expect.stringMatching(/^\^0\./) })
         expect(npm).toEqual(["install --no-audit --no-fund"])
         // Again: nothing doubled, npm not run twice.
         await add(root, "@singtaa/lightning", { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } })
@@ -185,7 +185,7 @@ describe("ojp add in a OneJS app's ~", () => {
     it("adds the plugin call once, beside assetsPlugin's import or on its own", () => {
         const bare = `const config = {\n    plugins: [\n        x(),\n    ],\n}\n`
         const once = withCartsPlugin(bare)
-        expect(once.startsWith(`import { cartsPlugin } from "ojp/unity"\n`)).toBe(true)
+        expect(once.startsWith(`import { cartsPlugin } from "${PACKAGE}/unity"\n`)).toBe(true)
         expect(withCartsPlugin(once)).toBe(once)
         expect(() => withCartsPlugin("const config = {}\n")).toThrow(/no plugins list/)
     })

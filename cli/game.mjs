@@ -6,7 +6,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
-import { COMMAND } from "../build/command.mjs"
+import { COMMAND, INSTALL, PACKAGE } from "../build/command.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -113,7 +113,7 @@ async function loadEsbuild() {
     try {
         return await import("esbuild")
     } catch (error) {
-        throw new Error("esbuild is missing beside ojp. Install ojp again: npm install -g ojp, or npm install in the cart.", { cause: error })
+        throw new Error(`esbuild is missing beside ${PACKAGE}. Install it again: ${INSTALL}, or npm install in the cart.`, { cause: error })
     }
 }
 

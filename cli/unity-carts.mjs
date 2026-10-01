@@ -22,6 +22,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { cartLabel, scopedOj } from "../build/game.mjs"
+import { PACKAGE } from "../build/command.mjs"
 import { readUsedCarts } from "./game.mjs"
 import { cartsDir, fetchUsed } from "./carts.mjs"
 import { RESERVED_ASSET_FOLDER, isAssetName } from "./assets.mjs"
@@ -180,12 +181,12 @@ export function cartsPlugin() {
 export function withCartsPlugin(text) {
     if (/\bcartsPlugin\(\)/.test(text)) return text
     const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
-    if (plugins === null) throw new Error("This app's esbuild.config.mjs has no plugins list to add the carts step to. Add cartsPlugin() from \"ojp/unity\" to it by hand.")
+    if (plugins === null) throw new Error(`This app's esbuild.config.mjs has no plugins list to add the carts step to. Add cartsPlugin() from "${PACKAGE}/unity" to it by hand.`)
     const indent = plugins[1] + "    "
     const at = plugins.index + plugins[0].length
     text = text.slice(0, at) + `${indent}// The carts oj.json uses, resolved and scoped as on the site\n${indent}cartsPlugin(),\n` + text.slice(at)
-    const assets = /^import \{ assetsPlugin \} from "ojp\/unity"/m
+    const assets = new RegExp(`^import \\{ assetsPlugin \\} from "${PACKAGE.replace("/", "\\/")}\\/unity"`, "m")
     return assets.test(text)
-        ? text.replace(assets, `import { assetsPlugin, cartsPlugin } from "ojp/unity"`)
-        : `import { cartsPlugin } from "ojp/unity"\n${text}`
+        ? text.replace(assets, `import { assetsPlugin, cartsPlugin } from "${PACKAGE}/unity"`)
+        : `import { cartsPlugin } from "${PACKAGE}/unity"\n${text}`
 }
