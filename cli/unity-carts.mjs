@@ -24,12 +24,15 @@ import path from "node:path"
 import { cartLabel, scopedOj } from "../build/game.mjs"
 import { BIN, PACKAGE } from "../build/command.mjs"
 import { readUsedCarts } from "./game.mjs"
-import { cartsDir, fetchUsed } from "./carts.mjs"
+import { KEPT, cartsDir, fetchUsed, hashOf, shown } from "./carts.mjs"
+import { siteOrigin } from "./site.mjs"
 import { RESERVED_ASSET_FOLDER, isAssetName } from "./assets.mjs"
 
 const CART_IMPORT = /^(@[A-Za-z0-9-]+\/[A-Za-z0-9-]+)(?:\/(.+))?$/
 /** The keys the last sync copied into assets/, so only those are ever removed. */
 const RECORD = path.join("node_modules", ".cache", "ojplay", "unity-carts.json")
+/** The files of a cart taken whole that were edited at the last build, so the notice is said once per change. */
+const EDITED = path.join("node_modules", ".cache", "ojplay", "edited.json")
 
 function manifestOf(root) {
     try {
@@ -100,6 +103,31 @@ export function syncCartAssets(root, keys) {
 }
 
 /**
+ * Somebody else's cart taken whole into Unity (`ojplay add` at a project's
+ * root) is read only: its kept record holds each file's hash as it was
+ * taken. The line that says so, and how to change it, is said when one of
+ * those files is edited, the moment it matters, and again only when the set
+ * edited changes. Null when there is nothing new to say.
+ */
+export function readOnlyNotice(root) {
+    let kept = null
+    try { kept = JSON.parse(fs.readFileSync(path.join(root, KEPT), "utf8")) } catch { return null }
+    if (typeof kept?.files !== "object" || kept.files === null) return null
+    const edited = Object.entries(kept.files).filter(([name, hash]) => {
+        if (name.startsWith(".")) return false
+        try { return hashOf(fs.readFileSync(path.join(root, ...name.split("/")))) !== hash } catch { return true }
+    }).map(([name]) => name).sort()
+    let before = []
+    try { before = JSON.parse(fs.readFileSync(path.join(root, EDITED), "utf8")) } catch { /* none yet */ }
+    if (JSON.stringify(before) === JSON.stringify(edited)) return null
+    fs.mkdirSync(path.dirname(path.join(root, EDITED)), { recursive: true })
+    fs.writeFileSync(path.join(root, EDITED), JSON.stringify(edited))
+    if (edited.length === 0) return null
+    const names = edited.length <= 3 ? edited.join(", ") : `${edited.slice(0, 3).join(", ")} and ${edited.length - 3} more`
+    return `[${BIN}] You changed ${names} in ${shown(kept)}, which is read only here. To change it, fork it on ${siteOrigin()} and add yours.`
+}
+
+/**
  * The esbuild plugin. Before each build it fetches what `.oj/carts` lacks
  * (failing in one line naming the cart and the command, when offline),
  * reads the used carts, and copies their files into assets/; then it
@@ -120,8 +148,10 @@ export function cartsPlugin() {
             build.onStart(async () => {
                 const manifest = manifestOf(root)
                 unavailable = new Set()
+                const notice = readOnlyNotice(root)
+                if (notice !== null) console.log(notice)
                 try {
-                    await fetchUsed(root, manifest)
+                    await fetchUsed(root, manifest, { again: "build again" })
                     carts = readUsedCarts(root, manifest)
                     const { copied, removed } = syncCartAssets(root, Object.keys(carts.carts))
                     if (copied.length + removed.length > 0) {
@@ -131,7 +161,8 @@ export function cartsPlugin() {
                     carts = { uses: {}, skipped: {}, carts: {} }
                     const listed = manifest.dependencies
                     if (typeof listed === "object" && listed !== null) for (const a of Object.keys(listed)) unavailable.add(a.toLowerCase())
-                    return { errors: [{ text: `[${BIN}] ${e.message}` }] }
+                    // One plain sentence; esbuild adds [plugin ojplay-carts].
+                    return { errors: [{ text: e.message }] }
                 }
             })
 

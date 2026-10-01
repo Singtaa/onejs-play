@@ -1,12 +1,13 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { createServer, type Server } from "node:http"
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import * as esbuild from "esbuild"
 import { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-assets.mjs"
-import { add } from "./carts.mjs"
-import { BIN, COMMAND, PACKAGE } from "../build/command.mjs"
+import { add, remove, update } from "./carts.mjs"
+import { PACKAGE } from "../build/command.mjs"
 
 /**
  * Used carts in a OneJS app's own build (PlaySite docs/carts.md §4, step 6,
@@ -123,10 +124,17 @@ describe("cartsPlugin, in a OneJS app's build", () => {
             "index.tsx": `import { said } from "@singtaa/lightning"\nglobalThis.out = said\n`,
             "oj.json": JSON.stringify({ dependencies: { "@singtaa/lightning": "1.2.0" } }),
         })
-        process.env.OJ_SITE = "http://127.0.0.1:9"
+        // A port nothing listens on: refused, as a site that is down is.
+        // (Port 9 is on fetch's blocked list, which fails with no code.)
+        const closed = createServer()
+        await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve))
+        const port = (closed.address() as { port: number }).port
+        await new Promise<void>((resolve) => closed.close(() => resolve()))
+        process.env.OJ_SITE = `http://127.0.0.1:${port}`
         const failure = await buildApp(root).then(() => null, (e: esbuild.BuildFailure) => e.errors.map((m) => m.text))
         expect(failure).toHaveLength(1)
-        expect(failure![0]).toMatch(new RegExp(`^\\[${BIN}\\] @singtaa/lightning 1\\.2\\.0 is not in \\.oj/carts and could not be fetched: Could not reach http://127\\.0\\.0\\.1:9 \\([^)]+\\)\\. Connect and run it again, or: ${COMMAND.replace(/ /g, " ")} add$`))
+        // One plain sentence: the cart, the host and why, and what to do.
+        expect(failure![0]).toBe(`Can't fetch @singtaa/lightning 1.2.0: 127.0.0.1:${port} unreachable (ECONNREFUSED). Connect and build again.`)
         expect(failure![0]).not.toContain("\n")
     })
 
@@ -159,8 +167,46 @@ describe("cartsPlugin, in a OneJS app's build", () => {
     })
 })
 
+describe("a cart taken whole, edited", () => {
+    it("says once, when its files change, that it is read only and how to change it", async () => {
+        const root = app({
+            "index.tsx": "globalThis.out = 1\n",
+            "oj.json": JSON.stringify({ name: "portal", entry: "index.tsx" }),
+        })
+        const hash = (t: string) => createHash("sha256").update(t).digest("hex")
+        fs.writeFileSync(path.join(root, ".oj-kept.json"), JSON.stringify({ address: "@singtaa/portal", version: "1.2.0", commit: "1".repeat(40), builtAt: 1,
+            files: { "index.tsx": hash("globalThis.out = 1\n"), "oj.json": hash(JSON.stringify({ name: "portal", entry: "index.tsx" })) } }))
+        const log = vi.spyOn(console, "log").mockImplementation(() => {})
+        try {
+            await buildApp(root)
+            expect(log.mock.calls.flat().filter((l) => String(l).includes("read only"))).toEqual([])
+            fs.writeFileSync(path.join(root, "index.tsx"), "globalThis.out = 2\n")
+            await buildApp(root)
+            await buildApp(root)
+            expect(log.mock.calls.flat().filter((l) => String(l).includes("read only"))).toEqual([
+                `[ojplay] You changed index.tsx in @singtaa/portal 1.2.0, which is read only here. To change it, fork it on ${origin} and add yours.`,
+            ])
+        } finally {
+            log.mockRestore()
+        }
+    })
+})
+
 describe("ojplay add in a OneJS app's ~", () => {
-    it("adds the cart to oj.json, the plugin to the build and ojplay to package.json, once", async () => {
+    it("raises an ojplay too old for carts, and builds", async () => {
+        const root = app({
+            "package.json": JSON.stringify({ name: "app", dependencies: { [PACKAGE]: "^0.9.0" } }),
+            "esbuild.config.mjs": `import { assetsPlugin, cartsPlugin } from "${PACKAGE}/unity"\nconst config = {\n    plugins: [\n        cartsPlugin(),\n    ],\n}\n`,
+            "index.tsx": "export {}\n",
+        })
+        const npm: string[] = []
+        const lines = await add(root, "@singtaa/lightning", { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } })
+        expect(lines[0]).toBe("Set up this app for carts (package.json).")
+        expect(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies[PACKAGE]).toBe("^0.9.1")
+        expect(npm).toEqual(["install --no-audit --no-fund", "run build"])
+    })
+
+    it("adds the cart to oj.json, the plugin to the build and ojplay to package.json, once, and builds", async () => {
         const root = app({
             "package.json": JSON.stringify({ name: "app", dependencies: { "onejs-play": "^0.8.3" } }),
             "esbuild.config.mjs": `import { assetsPlugin } from "${PACKAGE}/unity"\nconst config = {\n    plugins: [\n        importTransformPlugin(),\n    ],\n}\n`,
@@ -169,19 +215,37 @@ describe("ojplay add in a OneJS app's ~", () => {
         const npm: string[] = []
         const lines = await add(root, "@singtaa/lightning", { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } })
         expect(lines).toEqual([
-            `Added @singtaa/lightning 1.2.0 to oj.json. It exports Bolt, said: import { Bolt, said } from "@singtaa/lightning"`,
-            "Next: npm run build (or save a file while JSRunner watches)",
+            "Set up this app for carts (esbuild.config.mjs, package.json).",
+            `Added @singtaa/lightning 1.2.0. Use it: import { Bolt, said } from "@singtaa/lightning"`,
         ])
         expect(JSON.parse(fs.readFileSync(path.join(root, "oj.json"), "utf8"))).toEqual({ dependencies: { "@singtaa/lightning": "1.2.0" } })
         const config = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")
         expect(config.startsWith(`import { assetsPlugin, cartsPlugin } from "${PACKAGE}/unity"\n`)).toBe(true)
         expect(config).toContain("        cartsPlugin(),\n        importTransformPlugin(),")
         expect(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies).toMatchObject({ "onejs-play": "^0.8.3", [PACKAGE]: expect.stringMatching(/^\^0\./) })
-        expect(npm).toEqual(["install --no-audit --no-fund"])
-        // Again: nothing doubled, npm not run twice.
-        await add(root, "@singtaa/lightning", { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } })
+        // Built here too, the way a cart taken whole is: no next step to remember.
+        expect(npm).toEqual(["install --no-audit --no-fund", "run build"])
+        // Again: nothing doubled, the setup not said or installed twice; built again.
+        expect(await add(root, "@singtaa/lightning", { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } })).toEqual([
+            `@singtaa/lightning 1.2.0 is already added, at its newest. Use it: import { Bolt, said } from "@singtaa/lightning"`,
+        ])
         expect(fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")).toBe(config)
-        expect(npm).toHaveLength(1)
+        expect(npm).toEqual(["install --no-audit --no-fund", "run build", "run build"])
+    })
+
+    it("ends update and remove built too, never pointing at ojplay run", async () => {
+        const root = app({
+            "package.json": JSON.stringify({ name: "app", dependencies: { [PACKAGE]: "^0.9.1" } }),
+            "esbuild.config.mjs": `import { assetsPlugin, cartsPlugin } from "${PACKAGE}/unity"\nconst config = {\n    plugins: [\n        cartsPlugin(),\n    ],\n}\n`,
+            "index.tsx": "export {}\n",
+            "oj.json": JSON.stringify({ dependencies: { "@singtaa/lightning": "1.2.0" } }),
+            ...fetched(),
+        })
+        const npm: string[] = []
+        const options = { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } }
+        expect(await update(root, undefined, options)).toEqual(["@singtaa/lightning 1.2.0 is the newest 1.x; --major looks further."])
+        expect(await remove(root, "@singtaa/lightning", options)).toEqual(["Removed @singtaa/lightning from oj.json."])
+        expect(npm).toEqual(["run build", "run build"])
     })
 
     it("adds the plugin call once, beside assetsPlugin's import or on its own", () => {

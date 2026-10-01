@@ -8,18 +8,19 @@
  * account for a public cart; a stored login or OJ_TOKEN reaches the
  * account's own private ones.
  */
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { cartKey, cartLabel, cartPins } from "../build/game.mjs"
 import { COMMAND } from "../build/command.mjs"
 import { siteOrigin, tokenOf } from "./site.mjs"
 import { ignoreLocally } from "./init.mjs"
-import { UNITY_NEXT, addWhole, prepareUnityBuild, unityPlace, unityRefusal } from "./carts-unity.mjs"
-import { unityProjectOf } from "./unity.mjs"
+import { addWhole, prepareUnityBuild, unityPlace, unityRefusal } from "./carts-unity.mjs"
+import { npm as runNpm, unityProjectOf } from "./unity.mjs"
 
 const ADDRESS = /^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/
 /** What a fetched cart's folder carries beside its files: where it came from. A cart's own names never start with a dot. */
-const KEPT = ".oj-kept.json"
+export const KEPT = ".oj-kept.json"
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 export const cartsDir = (root) => path.join(root, ".oj", "carts")
@@ -28,6 +29,8 @@ const addressOf = (key) => key.slice(0, key.lastIndexOf("@"))
 export const pinText = (version, commit) => version ?? "#" + commit.slice(0, 12)
 const day = (at) => { const d = new Date(at * 1000); return `${d.getDate()} ${MONTHS[d.getMonth()]}` }
 const time = (at) => { const d = new Date(at * 1000); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}` }
+/** A file's contents as the kept record holds them: sha256, hex. */
+export const hashOf = (data) => createHash("sha256").update(data).digest("hex")
 
 // ---------- the site ----------
 
@@ -41,7 +44,11 @@ async function site(method, route, root, body) {
             body: body ? JSON.stringify(body) : undefined,
         })
     } catch (error) {
-        throw new Error(`Could not reach ${siteOrigin()} (${error.cause?.code ?? error.message}). Check the connection and run it again.`, { cause: error })
+        // Node's fetch nests the reason: ENOTFOUND, or ECONNREFUSED inside an AggregateError.
+        const code = error.cause?.code ?? error.cause?.errors?.[0]?.code ?? error.cause?.cause?.code ?? error.cause?.message ?? error.message
+        const failed = new Error(`Could not reach ${siteOrigin()} (${code}). Check the connection and run it again.`, { cause: error })
+        failed.unreachable = { host: new URL(siteOrigin()).host, code }
+        throw failed
     }
     return response
 }
@@ -71,13 +78,17 @@ export async function download(root, address, pin, final = dirOf(root, cartKey(a
     const key = cartKey(address, pin)
     const temporary = `${final}.partial`
     fs.rmSync(temporary, { recursive: true, force: true })
-    for (const file of kept.files) put(temporary, file.name, file.text)
+    // Each file's hash beside it, so a build can tell when a cart taken
+    // whole and read only has been edited (unity-carts.mjs).
+    const files = {}
+    const keep = (name, data) => { put(temporary, name, data); files[name] = hashOf(data) }
+    for (const file of kept.files) keep(file.name, file.text)
     for (const name of Object.keys(kept.assets)) {
         const response = await site("GET", `${at}/files/${name.split("/").map(encodeURIComponent).join("/")}`, root)
         if (!response.ok) throw new Error(`${cartLabel(key)}: ${name} would not download (${response.status}). Run it again.`)
-        put(temporary, name, new Uint8Array(await response.arrayBuffer()))
+        keep(name, new Uint8Array(await response.arrayBuffer()))
     }
-    put(temporary, KEPT, JSON.stringify({ address: kept.address, version: kept.version, commit: kept.commit, builtAt: kept.builtAt }) + "\n")
+    put(temporary, KEPT, JSON.stringify({ address: kept.address, version: kept.version, commit: kept.commit, builtAt: kept.builtAt, files }) + "\n")
     fs.rmSync(final, { recursive: true, force: true })
     fs.renameSync(temporary, final)
     return kept
@@ -125,9 +136,10 @@ export function placeOf(root) {
 
 /**
  * Fetches every cart oj.json uses, and the carts those use, that is not in
- * `.oj/carts/` yet. Answers the labels it fetched.
+ * `.oj/carts/` yet. Answers the labels it fetched. A failure is one plain
+ * sentence; `again` is what to do once connected ("build again" in a build).
  */
-export async function fetchUsed(root, manifest = manifestOf(root) ?? {}) {
+export async function fetchUsed(root, manifest = manifestOf(root) ?? {}, { again = "run it again" } = {}) {
     const fetched = []
     const seen = new Set()
     const visit = async (deps) => {
@@ -139,8 +151,12 @@ export async function fetchUsed(root, manifest = manifestOf(root) ?? {}) {
                 try {
                     fetched.push(shown(await download(root, address.toLowerCase(), pin)))
                 } catch (error) {
-                    const reason = error.message.replace(/ Check the connection and run it again\.$/, "").replace(/\.$/, "")
-                    throw new Error(`${cartLabel(key)} is not in .oj/carts and could not be fetched: ${reason}. Connect and run it again, or: ${COMMAND} add`, { cause: error })
+                    const label = cartLabel(key)
+                    if (error.unreachable !== undefined) {
+                        const { host, code } = error.unreachable
+                        throw new Error(`Can't fetch ${label}: ${host} unreachable (${code}). Connect and ${again}.`, { cause: error })
+                    }
+                    throw new Error(`Can't fetch ${label}: ${error.message.replace(/\.$/, "")}.`, { cause: error })
                 }
             }
             await visit(fetchedOf(root, key).own.dependencies)
@@ -203,14 +219,14 @@ export function syncTypes(root, manifest = manifestOf(root) ?? {}) {
     fs.writeFileSync(file, JSON.stringify(config, null, 4) + "\n")
 }
 
-/** "It exports Bolt and Glow: import { Bolt, Glow } from ..." or how a whole cart runs. */
+/** "Use it: import { Bolt, Glow } from ...", or the bare import that runs a whole cart. */
 function howToUse(root, key) {
     const { own } = fetchedOf(root, key)
     const address = addressOf(key)
-    if (typeof own.exports !== "string") return `It is a whole cart: import "${address}" runs it.`
+    if (typeof own.exports !== "string") return `Use it: import "${address}"`
     const names = exportedNames(root, key, own.exports)
-    if (names.length === 0) return `Import it: import ... from "${address}"`
-    return `It exports ${names.join(", ")}: import { ${names.join(", ")} } from "${address}"`
+    if (names.length === 0) return `Use it: import ... from "${address}"`
+    return `Use it: import { ${names.join(", ")} } from "${address}"`
 }
 
 /** A name that reads as a component, `Bolt` or `HealthBar`, not a constant such as `COLORS`. */
@@ -258,11 +274,9 @@ export async function add(root, address, options = {}) {
         if (place !== "cart") throw new Error(`This folder is not a cart (no oj.json with an entry). Start one that uses a cart: ${COMMAND} add @handle/name`)
         const fetched = await fetchUsed(root)
         syncTypes(root)
-        if (unity === "app") prepareUnityBuild(root, options)
-        return [
-            fetched.length === 0 ? "Everything oj.json uses is already in .oj/carts." : `Fetched ${fetched.join(", ")} into .oj/carts.`,
-            `Next: ${unity === "app" ? UNITY_NEXT : `${COMMAND} run`}`,
-        ]
+        const said = fetched.length === 0 ? "Everything oj.json uses is already in .oj/carts." : `Fetched ${fetched.join(", ")} into .oj/carts.`
+        if (unity === "app") return [...setUpAndBuild(root, options), said]
+        return [said, `Next: ${COMMAND} run`]
     }
     if (!ADDRESS.test(address)) {
         throw new Error(`"${address}" is not a cart's address. One looks like @singtaa/lightning: @, the handle, a slash, the name.`)
@@ -277,13 +291,13 @@ export async function add(root, address, options = {}) {
 
     if (place === "empty") {
         // Fetched first: what the new cart says it uses has to be readable,
-        // and its controls come from the cart it runs. No "runtime": nothing
-        // reads it, and every field a new cart shows should do something.
+        // and its controls come from the cart it runs. No "runtime" or
+        // "schema": nothing reads them (a missing schema means 1), and every
+        // field a new cart shows should do something (Tachi, 1 Oct).
         const kept = await download(root, pinned.address, value)
         const { own } = fetchedOf(root, key)
         const name = path.basename(root).replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim() || "My Cart"
         writeManifest(root, {
-            schema: 1,
             name,
             entry: "index.tsx",
             controls: Array.isArray(own.controls) ? own.controls : ["pointer", "touch"],
@@ -314,12 +328,22 @@ export async function add(root, address, options = {}) {
     prune(root, manifest)
     syncTypes(root, manifest)
     const what = before === value
-        ? `${shown(pinned)} is already in oj.json, at its newest.`
+        ? `${shown(pinned)} is already added, at its newest.`
         : before === undefined
-            ? `Added ${shown(pinned)} to oj.json.`
-            : `${pinned.address} ${before} → ${value.replace(/^#/, "#")} in oj.json.`
-    if (unity === "app") prepareUnityBuild(root, options)
-    return [`${what} ${howToUse(root, key)}`, `Next: ${unity === "app" ? UNITY_NEXT : `${COMMAND} run`}`]
+            ? `Added ${shown(pinned)}.`
+            : `${pinned.address} ${before} → ${value}.`
+    const said = `${what} ${howToUse(root, key)}`
+    // In a OneJS app it ends built, as a cart taken whole does: no next step.
+    if (unity === "app") return [...setUpAndBuild(root, options), said]
+    return [said, `Next: ${COMMAND} run`]
+}
+
+/** An app's build made ready for carts (said once, the first time), then run. */
+function setUpAndBuild(root, options) {
+    const setUp = prepareUnityBuild(root, options)
+    const code = (options.npm ?? runNpm)(root, ["run", "build"])
+    if (code !== 0) throw new Error(`npm run build failed (exit ${code}). Fix what it said, then: npm run build`)
+    return setUp === null ? [] : [setUp]
 }
 
 /** The index.tsx a new cart starts with: the bare import of a whole cart, or the import of a piece. */
@@ -351,7 +375,7 @@ function starterFor(root, key) {
  * build. Prints what moved, as `@singtaa/lightning 1.2.0 → 1.3.0`, and a
  * commit pin as days, `@koma/rain updated (30 Sep → 1 Oct)`.
  */
-export async function update(root, only, { major = false } = {}) {
+export async function update(root, only, { major = false, ...options } = {}) {
     if (placeOf(root) !== "cart" && !isUnityApp(root)) throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} update runs in one.`)
     const manifest = manifestOf(root)
     const { pins } = cartPins(manifest.dependencies)
@@ -381,11 +405,12 @@ export async function update(root, only, { major = false } = {}) {
     await fetchUsed(root, manifest)
     prune(root, manifest)
     syncTypes(root, manifest)
+    if (isUnityApp(root)) return [...setUpAndBuild(root, options), ...lines]
     return [...lines, `Next: ${COMMAND} run`]
 }
 
 /** `ojplay remove @handle/name`: out of oj.json and .oj/carts, naming the files that still import it. */
-export async function remove(root, address) {
+export async function remove(root, address, options = {}) {
     if (placeOf(root) !== "cart" && !isUnityApp(root)) throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} remove runs in one.`)
     if (address === undefined) throw new Error(`Which one? ${COMMAND} remove @handle/name`)
     const manifest = manifestOf(root)
@@ -401,9 +426,11 @@ export async function remove(root, address) {
         const text = fs.readFileSync(path.join(root, file), "utf8")
         return new RegExp(`(from|import)\\s*["']${listed.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}(/[^"']*)?["']`, "i").test(text)
     })
-    return importers.length === 0
-        ? [`Removed ${listed.toLowerCase()} from oj.json.`, `Next: ${COMMAND} run`]
-        : [`Removed ${listed.toLowerCase()} from oj.json. ${importers.join(", ")} still ${importers.length === 1 ? "imports" : "import"} it.`, `Next: take ${importers.length === 1 ? "that import" : "those imports"} out, then ${COMMAND} run`]
+    const removed = `Removed ${listed.toLowerCase()} from oj.json.`
+    if (importers.length === 0) return isUnityApp(root) ? [...setUpAndBuild(root, options), removed] : [removed, `Next: ${COMMAND} run`]
+    // Not built: it would only fail on the imports named here.
+    const then = isUnityApp(root) ? "npm run build" : `${COMMAND} run`
+    return [`${removed} ${importers.join(", ")} still ${importers.length === 1 ? "imports" : "import"} it.`, `Next: take ${importers.length === 1 ? "that import" : "those imports"} out, then ${then}`]
 }
 
 function notListed(address, pins) {

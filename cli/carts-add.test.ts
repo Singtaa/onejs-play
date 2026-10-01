@@ -162,11 +162,12 @@ describe("ojplay add, in a folder with nothing in it", () => {
             "Started a cart here that uses @singtaa/lightning 1.2.0: index.tsx shows Bolt, Glow.",
             `Next: ${COMMAND} run`,
         ])
-        // No "runtime", though the used cart's oj.json has one: nothing reads
-        // it (the site puts a cart on the current container at publish), and
-        // every field a new cart shows should do something (Tachi, 1 Oct).
+        // No "runtime" or "schema", though the used cart's oj.json has both:
+        // nothing reads them (the site puts a cart on the current container at
+        // publish; a missing schema means 1), and every field a new cart
+        // shows should do something (Tachi, 1 Oct).
         expect(json(root, "oj.json")).toEqual({
-            schema: 1, name: "Storm Chaser", entry: "index.tsx", controls: ["pointer"],
+            name: "Storm Chaser", entry: "index.tsx", controls: ["pointer"],
             dependencies: { "@singtaa/lightning": "1.2.0" },
         })
         expect(read(root, "index.tsx")).toContain(`import { said, COLORS, Bolt, Glow } from "@singtaa/lightning"`)
@@ -213,14 +214,14 @@ describe("ojplay add, in a cart", () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0", "1.3.0"]) }
         const root = folder("storm", CART())
         expect(await add(root, "@Singtaa/Lightning")).toEqual([
-            `Added @singtaa/lightning 1.3.0 to oj.json. It exports said, COLORS, Bolt, Glow: import { said, COLORS, Bolt, Glow } from "@singtaa/lightning"`,
+            `Added @singtaa/lightning 1.3.0. Use it: import { said, COLORS, Bolt, Glow } from "@singtaa/lightning"`,
             `Next: ${COMMAND} run`,
         ])
         expect(json(root, "oj.json")).toEqual({ schema: 1, name: "Storm", entry: "index.tsx", dependencies: { "@singtaa/lightning": "1.3.0" } })
         // The cart's own index.tsx is the author's: add never writes it.
         expect(read(root, "index.tsx")).toBe(CART()["index.tsx"])
         expect(await add(root, "@singtaa/lightning")).toEqual([
-            `@singtaa/lightning 1.3.0 is already in oj.json, at its newest. It exports said, COLORS, Bolt, Glow: import { said, COLORS, Bolt, Glow } from "@singtaa/lightning"`,
+            `@singtaa/lightning 1.3.0 is already added, at its newest. Use it: import { said, COLORS, Bolt, Glow } from "@singtaa/lightning"`,
             `Next: ${COMMAND} run`,
         ])
     })
@@ -333,19 +334,35 @@ describe("ojplay add at a Unity project's root", () => {
         carts = { "@singtaa/portal": portal() }
         const project = unityProject()
         npmCalls.length = 0
-        expect(await add(project, "@singtaa/portal", { npm })).toEqual([
-            "Took @singtaa/portal (1 Oct) into Assets/portal/~, pinned and read only. To change it, fork it on " + origin + " and add yours.",
+        const said: string[] = []
+        expect(await add(project, "@singtaa/portal", { npm, say: (line: string) => said.push(line) })).toEqual([
+            "Took @singtaa/portal (1 Oct) into Assets/portal/~.",
             "Next: drag Assets/portal/portal.prefab into a scene.",
         ])
+        // Nothing about each file init --unity wrote: the line says what it did.
+        expect(said).toEqual([])
         const app = path.join(project, "Assets", "portal", "~")
         expect(read(app, "main.tsx")).toContain("portal two")
-        expect(json(app, ".oj-kept.json")).toMatchObject({ address: "@singtaa/portal", commit: "b".repeat(40) })
+        // The kept record carries each file's hash, so a build can tell when one is edited.
+        expect(json(app, ".oj-kept.json")).toMatchObject({ address: "@singtaa/portal", commit: "b".repeat(40), files: { "main.tsx": expect.stringMatching(/^[0-9a-f]{64}$/), "oj.json": expect.any(String) } })
+        // No version: the cart has none, and npm then prints "> build", not a made-up 1.0.0.
+        expect(json(app, "package.json").version).toBeUndefined()
         expect(json(app, "package.json").dependencies).toEqual({ [PACKAGE]: expect.stringMatching(/^\^0\./) })
         expect(read(app, "esbuild.config.mjs")).toContain(`entryPoints: ["main.tsx"]`)
         expect(exists(project, "Assets/portal/portal.prefab")).toBe(true)
         expect(npmCalls).toEqual(["Assets/portal/~: npm install --no-audit --no-fund", "Assets/portal/~: npm run build"])
         // Nothing left behind from the fetch.
         expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "portal", "portal.meta"].filter((n) => exists(project, `Assets/${n}`)))
+    })
+
+    it("names the taken app's package after the cart's version", async () => {
+        carts = { "@singtaa/lightning": lightning(["1.2.0"]) }
+        const project = unityProject()
+        expect(await add(project, "@singtaa/lightning", { npm })).toEqual([
+            "Took @singtaa/lightning 1.2.0 into Assets/lightning/~.",
+            "Next: drag Assets/lightning/lightning.prefab into a scene.",
+        ])
+        expect(json(path.join(project, "Assets", "lightning", "~"), "package.json")).toMatchObject({ name: "lightning", version: "1.2.0" })
     })
 
     it("takes your own cart as a clone you push from, through the stored login", async () => {

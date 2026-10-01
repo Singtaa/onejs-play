@@ -1,5 +1,4 @@
 {
-    "schema": 1,
     "name": "Pop",
     "entry": "index.tsx",
     "controls": ["pointer", "touch"]

@@ -19,7 +19,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
-import { git, mine, siteOrigin, tokenOf } from "./site.mjs"
+import { git, mine, tokenOf } from "./site.mjs"
 import { NO_ONEJS, initUnity, npm as runNpm, oneJSOf, unityProjectOf } from "./unity.mjs"
 import { withCartsPlugin } from "./unity-carts.mjs"
 
@@ -42,7 +42,7 @@ export function folderName(name) {
  * `ojplay add @handle/name` at a Unity project's root. `npm` runs npm in a
  * folder and answers its exit code; tests pass a stand-in.
  */
-export async function addWhole(project, address, { npm = runNpm, say = () => {} } = {}) {
+export async function addWhole(project, address, { npm = runNpm } = {}) {
     if (oneJSOf(project) === null) throw new Error(NO_ONEJS)
     const pinned = await pinOf(project, address)
     const value = pinText(pinned.version, pinned.commit)
@@ -76,14 +76,17 @@ export async function addWhole(project, address, { npm = runNpm, say = () => {} 
     }
 
     const fetched = await fetchUsed(app)
+    // Quiet: the line below says what happened. `ojplay init --unity` is the
+    // one that lists each file it wrote.
     const made = initUnity(app)
-    for (const line of made.lines) say(line)
     const code = npm(app, ["install", "--no-audit", "--no-fund"]) || npm(app, ["run", "build"])
     if (code !== 0) throw new Error(`npm in Assets/${name}/~ failed (exit ${code}); the cart is there. Fix what npm said, then: cd "Assets/${name}/~" && npm install && npm run build`)
 
+    // Somebody else's is read only, which a build says when it is edited
+    // (unity-carts.mjs), the moment it matters, rather than here.
     const what = own !== undefined
         ? `Took ${pinned.address}, yours, into Assets/${name}/~ as a clone: push from there and the site builds it.`
-        : `Took ${shown(kept)} into Assets/${name}/~, pinned and read only. To change it, fork it on ${siteOrigin()} and add yours.`
+        : `Took ${shown(kept)} into Assets/${name}/~.`
     return [
         what + (fetched.length > 0 ? ` It uses ${fetched.join(", ")}, fetched into ~/.oj/carts.` : ""),
         `Next: drag ${made.prefab} into a scene.`,
@@ -103,29 +106,42 @@ export function unityRefusal() {
         + `or in an app's ~ folder to use it as a piece of that app.`
 }
 
-/** What a OneJS app does next once oj.json changed: JSRunner rebuilds on a save, npm on demand. */
-export const UNITY_NEXT = "npm run build (or save a file while JSRunner watches)"
+/** The first ojplay with cartsPlugin: an app on an older range is raised to this one's. */
+export const CARTS_SINCE = "0.9.1"
+
+/** The lowest version a dependency range names, as numbers, or null for one that names none (a file: link, latest). */
+function floorOf(range) {
+    const m = /(\d+)\.(\d+)\.(\d+)/.exec(String(range))
+    return m === null ? null : m.slice(1).map(Number)
+}
+const below = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
 
 /**
  * A OneJS app's build made ready for used carts: cartsPlugin() in its
- * esbuild.config.mjs, and ojplay in its package.json, installed. Both once.
+ * esbuild.config.mjs, and an ojplay new enough to have it in its
+ * package.json, installed. Answers the one line that says so, or null when
+ * there was nothing to do: it is said once, the first time.
  */
-export function prepareUnityBuild(app, { npm = runNpm, say = () => {} } = {}) {
+export function prepareUnityBuild(app, { npm = runNpm } = {}) {
+    const changed = []
     const configFile = path.join(app, "esbuild.config.mjs")
     const config = fs.readFileSync(configFile, "utf8")
     const next = withCartsPlugin(config)
     if (next !== config) {
         fs.writeFileSync(configFile, next)
-        say("esbuild.config.mjs: cartsPlugin() added")
+        changed.push("esbuild.config.mjs")
     }
     const pkgFile = path.join(app, "package.json")
     const pkg = JSON.parse(fs.readFileSync(pkgFile, "utf8"))
-    const has = [pkg.dependencies, pkg.devDependencies].some((d) => d !== undefined && PACKAGE in d)
-    if (!has) {
-        pkg.dependencies = { ...(pkg.dependencies ?? {}), [PACKAGE]: `^${OWN_VERSION}` }
+    const deps = [pkg.dependencies, pkg.devDependencies].find((d) => d !== undefined && PACKAGE in d)
+    const floor = deps === undefined ? null : floorOf(deps[PACKAGE])
+    if (deps === undefined || (floor !== null && below(floor, floorOf(CARTS_SINCE)) < 0)) {
+        const into = deps ?? (pkg.dependencies ??= {})
+        into[PACKAGE] = `^${OWN_VERSION}`
         fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n")
-        say(`package.json: ${PACKAGE} added`)
+        changed.push("package.json")
         const code = npm(app, ["install", "--no-audit", "--no-fund"])
-        if (code !== 0) throw new Error(`npm install failed (exit ${code}) after adding ${PACKAGE} to package.json. Fix what npm said, then: npm install`)
+        if (code !== 0) throw new Error(`npm install failed (exit ${code}) after setting ${PACKAGE} ^${OWN_VERSION} in package.json. Fix what npm said, then: npm install`)
     }
+    return changed.length === 0 ? null : `Set up this app for carts (${changed.join(", ")}).`
 }
