@@ -61,6 +61,28 @@ export const STARTUP_MS = 90000
  * cannot collide. The profile is fresh and thrown away: nothing a game does
  * survives into the next run.
  */
+/** The command line launch() starts Chrome with. */
+export function chromeArgs({ headless, window, profile }) {
+    return [
+        ...(headless ? ["--headless=new"] : []),
+        "--remote-debugging-port=0", `--user-data-dir=${profile}`,
+        "--no-first-run", "--no-default-browser-check", "--mute-audio", "--disable-gpu-sandbox",
+        // Chrome fetches its cookie key from the OS at the first navigation. On
+        // macOS that is the keychain: with none under HOME it is a modal dialog
+        // on the person's screen and Page.navigate waits until somebody clicks,
+        // and with one it writes Chrome Safe Storage into their login keychain.
+        // Linux has the same through the desktop's password store. A throwaway
+        // profile needs neither.
+        "--use-mock-keychain", "--password-store=basic",
+        // Software rasteriser, deliberately: headless Chrome has no usable GPU
+        // on the machines this has run on, and asking for the real one falls
+        // back here anyway. A headed window gets whatever the desktop has.
+        ...(headless ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
+        `--window-size=${window[0]},${window[1]}`,
+        "about:blank",
+    ]
+}
+
 export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
     // Checked before Chrome starts, so an old Node fails with the fix in hand
     // rather than "WebSocket is not defined" after starting a browser for nothing.
@@ -72,17 +94,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     // sweeps orphans with `pkill -f <prefix>` gives its own, so the sweep
     // cannot reach another session's Chrome.
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), profilePrefix))
-    const args = [
-        ...(headless ? ["--headless=new"] : []),
-        "--remote-debugging-port=0", `--user-data-dir=${profile}`,
-        "--no-first-run", "--no-default-browser-check", "--mute-audio", "--disable-gpu-sandbox",
-        // Software rasteriser, deliberately: headless Chrome has no usable GPU
-        // on the machines this has run on, and asking for the real one falls
-        // back here anyway. A headed window gets whatever the desktop has.
-        ...(headless ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
-        `--window-size=${window[0]},${window[1]}`,
-        "about:blank",
-    ]
+    const args = chromeArgs({ headless, window, profile })
     const began = Date.now()
     const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" })

@@ -6,7 +6,7 @@ import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree } from "./game.mjs"
 import { addressFromRemote, sidFromRemote, sidOf, siteOrigin, folderFor, credentialArgs } from "./site.mjs"
-import { keyOf, keyEvent, launch } from "./chrome.mjs"
+import { chromeArgs, keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
 import { initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING } from "./unity.mjs"
@@ -252,6 +252,20 @@ describe("the browser", () => {
             await expect(launch()).rejects.toThrow(/needs Node 22 or newer; this is Node /)
         } finally {
             vi.unstubAllGlobals()
+        }
+    })
+
+    // Without these, Chrome asks the OS keychain for its cookie key at the first
+    // navigation: on macOS with no keychain under HOME that is a modal dialog,
+    // and Page.navigate waits on it until somebody clicks. With a real HOME it
+    // writes Chrome Safe Storage into the person's login keychain instead.
+    it("keeps Chrome away from the system keychain and password store", () => {
+        for (const headless of [true, false]) {
+            const args = chromeArgs({ headless, window: [960, 540], profile: "/tmp/p" })
+            expect(args).toContain("--use-mock-keychain")
+            expect(args).toContain("--password-store=basic")
+            expect(args).toContain("--user-data-dir=/tmp/p")
+            expect(args.at(-1)).toBe("about:blank")
         }
     })
 
