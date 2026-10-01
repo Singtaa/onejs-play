@@ -11,7 +11,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { cartKey, cartLabel, cartPins } from "../build/game.mjs"
-import { COMMAND, PACKAGE } from "../build/command.mjs"
+import { BIN, COMMAND } from "../build/command.mjs"
 import { siteOrigin, tokenOf } from "./site.mjs"
 import { ignoreLocally } from "./init.mjs"
 
@@ -229,7 +229,7 @@ function exportedNames(root, key, exportsFile) {
 export async function add(root, address) {
     const place = placeOf(root)
     if (place === "unity") {
-        throw new Error(`This is a Unity project. Adding a cart to one comes with the next ${PACKAGE} release; until then, open the cart on ${siteOrigin()} and press Take.`)
+        throw new Error(`This is a Unity project. Adding a cart to one comes with the next ${BIN} release; until then, open the cart on ${siteOrigin()} and press Take.`)
     }
     if (address === undefined) {
         if (place !== "cart") throw new Error(`This folder is not a cart (no oj.json with an entry). Start one that uses a cart: ${COMMAND} add @handle/name`)

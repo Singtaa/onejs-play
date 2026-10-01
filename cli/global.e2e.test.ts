@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { BIN, PACKAGE } from "../build/command.mjs"
 
 /**
  * ojp as people get it (Sai, 1 Oct 2026): `npm install -g ojp`, from this
@@ -20,7 +21,7 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const OWN = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { name: string, version: string }
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "ojp-global-e2e-"))
 const prefix = path.join(work, "prefix")
-const bin = path.join(prefix, "bin", "ojp")
+const bin = path.join(prefix, "bin", BIN)
 let server: Server
 let origin = ""
 
@@ -95,10 +96,10 @@ describe("npm install -g ojp", () => {
     it("answers --help with its own name, version and the hand-off line", async () => {
         const help = await ojp(["--help"], work)
         expect(help.code).toBe(0)
-        expect(help.out).toContain("usage: ojp <command> [options]")
+        expect(help.out).toContain(`usage: ${BIN} <command> [options]`)
         expect(help.out).toContain("add <@handle/name>")
-        expect(help.out).toContain("Inside a cart with its own ojp in node_modules, ojp runs that copy, so the version matches the cart.")
-        expect(help.out).toContain(`ojp ${OWN.version}`)
+        expect(help.out).toContain(`Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so the version matches the cart.`)
+        expect(help.out).toContain(`${BIN} ${OWN.version}`)
     })
 
     it("starts a cart in an empty folder with ojp add, no account, and builds it", async () => {
@@ -106,8 +107,8 @@ describe("npm install -g ojp", () => {
         fs.mkdirSync(folder)
         const added = await ojp(["add", "@singtaa/portal"], folder, { OJ_SITE: origin })
         expect(added.out.trim().split("\n")).toEqual([
-            "[ojp] Started a cart here that runs @singtaa/portal (1 Oct): index.tsx imports it, oj.json lists it.",
-            "[ojp] Next: ojp run",
+            `[${BIN}] Started a cart here that runs @singtaa/portal (1 Oct): index.tsx imports it, oj.json lists it.`,
+            `[${BIN}] Next: ${BIN} run`,
         ])
         expect(added.code).toBe(0)
         const built = await ojp(["build"], folder, { OJ_SITE: origin })
@@ -117,10 +118,10 @@ describe("npm install -g ojp", () => {
 
     it("hands off to the cart's own ojp, from anywhere inside the cart", async () => {
         const cart = path.join(work, "pinned")
-        const own = path.join(cart, "node_modules", "ojp")
+        const own = path.join(cart, "node_modules", ...PACKAGE.split("/"))
         fs.mkdirSync(path.join(own, "cli"), { recursive: true })
         fs.mkdirSync(path.join(cart, "hud"), { recursive: true })
-        fs.writeFileSync(path.join(own, "package.json"), JSON.stringify({ name: "ojp", version: "0.9.0-pinned" }))
+        fs.writeFileSync(path.join(own, "package.json"), JSON.stringify({ name: PACKAGE, version: "0.9.0-pinned" }))
         fs.writeFileSync(path.join(own, "cli", "oj.mjs"), "console.log(`the cart's own ojp: ${process.argv.slice(2).join(\" \")}`)\n")
         const ran = await ojp(["build", "--for", "1"], path.join(cart, "hud"))
         expect(ran.out.trim()).toBe("the cart's own ojp: build --for 1")

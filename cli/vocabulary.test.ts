@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { BIN, PACKAGE } from "../build/command.mjs"
 
 /**
  * What this package says to people, held to the site's words.
@@ -39,6 +40,12 @@ const FILES = [
 const OLD_WORD = /\b[Ss]ketch(?:es)?\b/
 /** Any command spelled through the bare name. */
 const BARE = /\bnpx (?:-y )?oj\b/
+/**
+ * The command run through npx by its bin's name, when the package is named
+ * otherwise (a scoped name): npx would fetch whatever is published under the
+ * bare name, which is not this package.
+ */
+const BIN_THROUGH_NPX = PACKAGE === BIN ? null : new RegExp(`\\bnpx (?:-y )?${BIN}\\b`)
 /** Any command or install spelled through the former name. */
 const FORMER = /\bnpx (?:-y )?onejs-play\b|\bnpm (?:install|i)(?: -[gD])? onejs-play\b/
 
@@ -53,6 +60,7 @@ describe("what ojp says", () => {
     it("writes every command as ojp or npx ojp", () => {
         expect(offenders(BARE)).toEqual([])
         expect(offenders(FORMER)).toEqual([])
+        if (BIN_THROUGH_NPX !== null) expect(offenders(BIN_THROUGH_NPX)).toEqual([])
     })
 
     it("would catch either", () => {

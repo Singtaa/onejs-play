@@ -14,7 +14,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { PACKAGE } from "../build/command.mjs"
+import { BIN, INSTALL, PACKAGE } from "../build/command.mjs"
 import { home } from "./local.mjs"
 
 const SELF = fs.realpathSync(path.join(import.meta.dirname, "oj.mjs"))
@@ -23,7 +23,7 @@ const DAY = 24 * 60 * 60 * 1000
 /** The cart's own copy of this CLI, from `root` upward, when it is not this one. */
 export function localCopy(root) {
     for (let at = path.resolve(root); ; at = path.dirname(at)) {
-        const candidate = path.join(at, "node_modules", PACKAGE, "cli", "oj.mjs")
+        const candidate = path.join(at, "node_modules", ...PACKAGE.split("/"), "cli", "oj.mjs")
         if (fs.existsSync(candidate)) {
             const real = fs.realpathSync(candidate)
             return real === SELF ? null : real
@@ -72,7 +72,7 @@ export function updateNotice(own, { now = Date.now(), fetchLatest = latestOnNpm,
         : Promise.resolve()
     const tell = () => {
         if (!newer(state.latest, own) || now - (state.toldAt ?? 0) < DAY) return
-        print(`[ojp] ojp ${state.latest} is out (this is ${own}): npm install -g ${PACKAGE}`)
+        print(`[${BIN}] ${PACKAGE} ${state.latest} is out (this is ${own}): ${INSTALL}`)
         state = { ...state, toldAt: now }
         save(state)
     }
@@ -81,7 +81,7 @@ export function updateNotice(own, { now = Date.now(), fetchLatest = latestOnNpm,
 
 async function latestOnNpm() {
     try {
-        const response = await fetch(`https://registry.npmjs.org/${PACKAGE}/latest`, { signal: AbortSignal.timeout(3000) })
+        const response = await fetch(`https://registry.npmjs.org/${PACKAGE.replace("/", "%2f")}/latest`, { signal: AbortSignal.timeout(3000) })
         if (!response.ok) return null
         const body = await response.json()
         return typeof body.version === "string" ? body.version : null

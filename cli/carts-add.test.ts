@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { add, remove, syncTypes, update } from "./carts.mjs"
 import { build } from "./game.mjs"
-import { COMMAND } from "../build/command.mjs"
+import { COMMAND, PACKAGE } from "../build/command.mjs"
 
 /**
  * `ojp add`, `update` and `remove` (PlaySite docs/carts.md §3, step 5)
@@ -230,11 +230,11 @@ describe("ojp add, in a cart", () => {
 
     it("points the tsconfig ojp init wrote at the fetched source", async () => {
         carts = { "@singtaa/lightning": lightning(["1.2.0"]) }
-        const root = folder("storm", { ...CART(), "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { oj: ["./node_modules/ojp/src/index.ts"] } }, exclude: ["node_modules"] }) })
+        const root = folder("storm", { ...CART(), "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { oj: [`./node_modules/${PACKAGE}/src/index.ts`] } }, exclude: ["node_modules"] }) })
         await add(root, "@singtaa/lightning")
         expect(json(root, "tsconfig.json")).toEqual({
             compilerOptions: { paths: {
-                "oj": ["./node_modules/ojp/src/index.ts"],
+                "oj": [`./node_modules/${PACKAGE}/src/index.ts`],
                 "@singtaa/lightning": ["./.oj/carts/@singtaa/lightning@1.2.0/bolt.tsx"],
                 "@singtaa/lightning/*": ["./.oj/carts/@singtaa/lightning@1.2.0/*"],
             } },
