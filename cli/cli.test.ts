@@ -145,6 +145,18 @@ describe("building with the site's builder", () => {
     })
 })
 
+describe("the command line", () => {
+    const OJ = path.resolve(import.meta.dirname, "oj.mjs")
+    const OWN = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
+
+    // It printed the whole usage and exited 1, with the version as its last line.
+    it("prints only its version for --version", () => {
+        const run = spawnSync(process.execPath, [OJ, "--version"], { encoding: "utf8", env: { ...process.env, OJPLAY_NO_UPDATE_CHECK: "1" } })
+        expect(run.stdout).toBe(`${OWN}\n`)
+        expect(run.status).toBe(0)
+    })
+})
+
 describe("the site from a terminal", () => {
     it("reads the sid out of a clone URL and nothing else", () => {
         expect(sidFromRemote("https://play.onejs.com/g/a5x3a2uwh5gb.git")).toBe("a5x3a2uwh5gb")

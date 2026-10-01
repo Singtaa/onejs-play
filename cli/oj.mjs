@@ -102,6 +102,10 @@ const say = (line) => console.error(`[${BIN}] ${line}`)
 
 async function main() {
     const { command, args, flags } = parse(process.argv.slice(2))
+    if (command === undefined && flags.version === true) {
+        console.log(OWN_VERSION)
+        return 0
+    }
     if (flags.site) process.env.OJ_SITE = String(flags.site)
     const root = path.resolve(flags.root ? String(flags.root) : ".")
     const size = flags.window ? String(flags.window).split(",").map(Number) : undefined
