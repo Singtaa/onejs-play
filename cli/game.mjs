@@ -5,7 +5,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
-import { buildGame, formatBuildErrors } from "../build/game.mjs"
+import { buildGame, formatBuildErrors, cartKey, cartLabel, pinProblem } from "../build/game.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -67,6 +67,44 @@ export function entryOf(files, manifest) {
 }
 
 /**
+ * The carts this one uses, read from `.oj/carts/<key>/`, where `oj add`
+ * fetches each one's kept build (PlaySite docs/carts.md §3), following each
+ * one's own dependencies. The shape `buildGame` takes as `carts`. Refuses a
+ * dependency that is not an exact version or commit, one not fetched, and a
+ * chain that comes back to a cart already on it, each saying what to do.
+ */
+export function readUsedCarts(root, manifest) {
+    const carts = {}
+    const visit = (deps, chain) => {
+        const uses = {}
+        if (deps === undefined || deps === null) return uses
+        if (typeof deps !== "object" || Array.isArray(deps)) {
+            throw new Error(`"dependencies" should name each cart with its version, like { "@singtaa/lightning": "1.2.0" }.`)
+        }
+        for (const [address, pin] of Object.entries(deps)) {
+            const problem = pinProblem(address, pin)
+            if (problem !== null) throw new Error(problem)
+            const key = cartKey(address, pin)
+            uses[address.toLowerCase()] = key
+            if (chain.includes(key)) {
+                throw new Error(`${[...chain.slice(chain.indexOf(key)), key].map(cartLabel).join(", which uses ").replace(", which uses ", " uses ")}: a cart cannot end up using itself.`)
+            }
+            if (key in carts) continue
+            const dir = path.join(root, ".oj", "carts", ...key.split("/"))
+            if (!fs.existsSync(dir)) {
+                throw new Error(`${cartLabel(key)} is not in .oj/carts. Fetch it with: npx onejs-play add ${address.toLowerCase()}`)
+            }
+            const files = readTree(dir)
+            const own = manifestOf(files)
+            carts[key] = { exports: typeof own.exports === "string" ? own.exports : null, uses: {}, files }
+            carts[key].uses = visit(own.dependencies, [...chain, key])
+        }
+        return uses
+    }
+    return { uses: visit(manifest.dependencies, []), carts }
+}
+
+/**
  * esbuild, resolved from the game's own node_modules (it is a peer of this
  * package, so a game that runs `oj build` has it beside onejs-play), and
  * failing with a sentence rather than a module-not-found stack.
@@ -101,6 +139,7 @@ export async function build(root, options = {}) {
         // do: the filesystem root is absolute everywhere Node runs.
         const result = await buildGame(esbuild, files, entry, {
             workingDir: path.parse(process.cwd()).root || "/",
+            carts: readUsedCarts(root, manifest),
         })
         return { ...result, entry, files, manifest }
     } catch (error) {

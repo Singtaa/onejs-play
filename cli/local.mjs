@@ -141,8 +141,17 @@ export function serve({ runtime, root, manifest, bundle, port = 0, refused = () 
         // error that a run would then be failed for.
         if (url === "/favicon.ico") return send(204, "", "image/x-icon")
         if (url.startsWith("/assets/")) {
-            const name = url.slice("/assets/".length)
-            const asset = resolveAsset(root, name)
+            let name = url.slice("/assets/".length)
+            let from = root
+            // A used cart's file, asked for by its scoped oj under its key,
+            // from where `oj add` fetched it. The key's own shape is checked
+            // so it can only name a folder in .oj/carts.
+            const used = /^(@[a-z0-9-]+)\/([a-z0-9-]+@[a-z0-9.]+)\/(.+)$/.exec(name)
+            if (used !== null) {
+                from = path.join(root, ".oj", "carts", used[1], used[2])
+                name = used[3]
+            }
+            const asset = resolveAsset(from, name)
             if (asset.reason !== undefined) {
                 refused(asset.reason)
                 return send(404, asset.reason, "text/plain")
