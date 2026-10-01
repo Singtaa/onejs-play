@@ -6,6 +6,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -67,7 +68,7 @@ export function entryOf(files, manifest) {
 }
 
 /**
- * The carts this one uses, read from `.oj/carts/<key>/`, where `oj add`
+ * The carts this one uses, read from `.oj/carts/<key>/`, where `ojp add`
  * fetches each one's kept build (PlaySite docs/carts.md §3), following each
  * one's own dependencies. The shape `buildGame` takes as `carts`. Refuses a
  * cart not fetched and a chain that comes back to a cart already on it, each
@@ -88,11 +89,11 @@ export function readUsedCarts(root, manifest) {
             if (key in carts) continue
             const dir = path.join(root, ".oj", "carts", ...key.split("/"))
             if (!fs.existsSync(dir)) {
-                throw new Error(`${cartLabel(key)} is not in .oj/carts. Fetch it with: npx onejs-play add ${address.toLowerCase()}`)
+                throw new Error(`${cartLabel(key)} is not in .oj/carts. Fetch it with: ${COMMAND} add`)
             }
             const files = readTree(dir)
             const own = manifestOf(files)
-            carts[key] = { exports: typeof own.exports === "string" ? own.exports : null, uses: {}, files }
+            carts[key] = { exports: typeof own.exports === "string" ? own.exports : null, entry: typeof own.entry === "string" ? own.entry : null, uses: {}, files }
             const inner = visit(own.dependencies, [...chain, key])
             carts[key].uses = inner.uses
             carts[key].skipped = inner.skipped
@@ -104,15 +105,15 @@ export function readUsedCarts(root, manifest) {
 }
 
 /**
- * esbuild, resolved from the game's own node_modules (it is a peer of this
- * package, so a game that runs `oj build` has it beside onejs-play), and
- * failing with a sentence rather than a module-not-found stack.
+ * esbuild, a dependency of this package since it became a command people
+ * install once (npm install -g ojp), failing with a sentence rather than a
+ * module-not-found stack if an install lost it.
  */
 async function loadEsbuild() {
     try {
         return await import("esbuild")
     } catch (error) {
-        throw new Error("esbuild is not installed. Add it to devDependencies (npm install -D esbuild) to build locally.", { cause: error })
+        throw new Error("esbuild is missing beside ojp. Install ojp again: npm install -g ojp, or npm install in the cart.", { cause: error })
     }
 }
 

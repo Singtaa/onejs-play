@@ -27,6 +27,7 @@ import { ussModulesPlugin } from "onejs-unity/esbuild/uss-modules"
 import { tailwindPlugin } from "onejs-unity/esbuild/tailwind"
 import { slPlugin } from "onejs-unity/esbuild/sl"
 import DEFAULT_EXTERNALS from "./externals.json" with { type: "json" }
+import { ANYWHERE } from "./command.mjs"
 
 /**
  * Modules the container provides, which must not be bundled into a game.
@@ -74,7 +75,7 @@ export function pinProblem(address, pin) {
     if (typeof pin === "string" && (VERSION.test(pin) || /^#[0-9a-f]{12}$/.test(pin))) return null
     const inside = typeof pin === "string" ? /(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/.exec(pin) : null
     return inside !== null
-        ? `"${pin}" for ${address} is a range. Use "${inside[0]}"; oj update moves it.`
+        ? `"${pin}" for ${address} is a range. Use "${inside[0]}"; ojp update moves it.`
         : `${JSON.stringify(pin)} for ${address} should be a version, like "1.2.0".`
 }
 
@@ -254,6 +255,11 @@ export async function buildGame(esbuild, files, entry, options = {}) {
             build.onResolve({ filter: /.*/ }, (args) => {
                 // The scoped oj's own import of the real one.
                 if (args.namespace === "cart-oj") return { path: args.path, namespace: "ext" }
+                // A whole cart's stand-in importing its entry.
+                if (args.namespace === "cart-whole") {
+                    const entryPath = normalize(args.path)
+                    return entryPath in tree ? { path: entryPath, namespace: "src" } : { errors: [{ text: `${cartLabel(args.importer)} has no ${entryPath.slice(args.importer.length + 2)}` }] }
+                }
                 const owner = args.namespace === "src" ? cartOf(args.importer) : null
                 if (args.path === "oj" && owner !== null) return { path: owner, namespace: "cart-oj" }
                 if (externals.includes(args.path)) return { path: args.path, namespace: "ext" }
@@ -264,15 +270,18 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                     if (key === undefined) {
                         const skipped = (owner === null ? carts.skipped : carts.carts[owner].skipped)?.[address]
                         return { errors: [{ text: skipped !== undefined && owner === null ? skipped : owner === null
-                            ? `${address} is not in this cart's oj.json dependencies. Add it with: npx onejs-play add ${address}`
+                            ? `${address} is not in this cart's oj.json dependencies. Add it with: ${ANYWHERE} add ${address}`
                             : `${cartLabel(owner)} imports ${address}, which its oj.json does not list. Its author has to add it; or pin a different version of ${owner.slice(0, owner.lastIndexOf("@"))}.` }] }
                     }
                     const cart = carts.carts[key]
                     if (cart === undefined) return { errors: [{ text: `${cartLabel(key)} was not fetched for this build.` }] }
                     const inside = wanted[2] ?? cart.exports
-                    if (typeof inside !== "string" || inside === "") {
-                        return { errors: [{ text: `${address} exports nothing, so a cart cannot import it. It can still be taken into Unity whole.` }] }
-                    }
+                    // A whole cart, one with no `exports`: `import "@x/y"`
+                    // runs its entry, which mounts it (Tachi, 1 Oct: adding
+                    // a sample and seeing it run is the first thing a new
+                    // user tries). A named import from it is refused below,
+                    // in finishErrors, naming the bare import.
+                    if (typeof inside !== "string" || inside === "") return { path: key, namespace: "cart-whole" }
                     const resolved = normalize(`/${key}/${inside}`)
                     for (const candidate of [resolved, `${resolved}.ts`, `${resolved}.tsx`, `${resolved}.js`, `${resolved}.jsx`]) {
                         if (candidate in tree && candidate.startsWith(`/${key}/`)) return { path: candidate, namespace: "src" }
@@ -303,6 +312,15 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                 }
                 return { errors: [{ text: `cannot resolve ${args.path}` }] }
             })
+
+            // A whole cart: its entry, run for what it does, exporting nothing.
+            build.onLoad({ filter: /.*/, namespace: "cart-whole" }, (args) => ({
+                // `export {}` makes it an ES module that exports nothing, so a
+                // named import from it is an error rather than an undefined.
+                contents: `import ${JSON.stringify(`/${args.path}/${carts.carts[args.path].entry ?? "index.tsx"}`)}\nexport {}`,
+                loader: "js",
+                resolveDir: "/",
+            }))
 
             build.onLoad({ filter: /.*/, namespace: "cart-oj" }, (args) => ({
                 contents: scopedOj(args.path),
@@ -369,13 +387,29 @@ export async function buildGame(esbuild, files, entry, options = {}) {
             }),
             resolver,
         ],
-    })
+    }).catch((error) => { throw finishErrors(error) })
 
     return {
         code: result.outputFiles[0].text,
         slManifest,
         warnings: result.warnings.map((w) => w.text),
     }
+}
+
+/**
+ * esbuild's own words where a cart's would say more. A named import from a
+ * whole cart (one with no `exports`) reaches esbuild as "No matching export
+ * in "cart-whole:@x/y@1.0.0" for import "Hud"", which names a namespace
+ * nobody wrote; this says what to write instead.
+ */
+function finishErrors(error) {
+    for (const e of Array.isArray(error?.errors) ? error.errors : []) {
+        const whole = /^No matching export in "cart-whole:(@[^"]+)" for import "([^"]+)"$/.exec(e.text ?? "")
+        if (whole === null) continue
+        const address = whole[1].slice(0, whole[1].lastIndexOf("@"))
+        e.text = `${cartLabel(whole[1])} is a whole cart: it exports nothing, so ${whole[2]} cannot come from it. import "${address}" runs it.`
+    }
+    return error
 }
 
 /**

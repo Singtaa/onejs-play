@@ -4,7 +4,7 @@
  * A cart asks for a sound or an image by name (`audio.load("pop.wav")`,
  * `assetUrl("art/bg.png")`), the runtime turns that into `/assets/<name>` on
  * the game's origin, and the site answers from the files the cart pushed.
- * `oj run` plays the part of that origin, so it has to answer the same
+ * `ojp run` plays the part of that origin, so it has to answer the same
  * requests the same way, or a cart that sounds right here is silent live.
  * Before this it served any file under the cart's root by any name, and
  * two examples kept their sounds in an `assets/` folder that the site never
@@ -153,7 +153,7 @@ function exactFile(root, name) {
  * the site does with the file, and what to change. Empty when every asset
  * would be served. Walks what a push would carry: node_modules is skipped,
  * and dot folders other than `.oj/`, and `.oj/carts/`, which holds the carts
- * this one uses as `oj add` fetched them: their files are theirs, served
+ * this one uses as `ojp add` fetched them: their files are theirs, served
  * under their own key.
  */
 export function unservableAssets(root) {

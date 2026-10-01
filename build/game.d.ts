@@ -39,6 +39,8 @@ export const EXTERNALS: string[]
 export interface UsedCart {
     /** Its oj.json `exports`: the file `import ... from "@handle/name"` reads. */
     exports: string | null
+    /** Its oj.json `entry`: what `import "@handle/name"` runs when it has no `exports`. index.tsx when absent. */
+    entry?: string | null
     /** Its own oj.json dependencies, address to key. */
     uses: Record<string, string>
     /** Entries in its dependencies that are not a cart pin, address to the sentence why. */

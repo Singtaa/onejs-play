@@ -5,6 +5,7 @@ import path from "node:path"
 import { build, readUsedCarts } from "./game.mjs"
 import { serve } from "./local.mjs"
 import { unservableAssets } from "./assets.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 /**
  * Used carts on a developer's machine (PlaySite docs/carts.md §3, step 4):
@@ -68,7 +69,7 @@ describe("used carts, locally", () => {
 
         it("a cart that is not fetched", () => {
             expect(refusal({ "oj.json": oj({ dependencies: { "@singtaa/lightning": "1.2.0" } }) }))
-                .toBe("@singtaa/lightning 1.2.0 is not in .oj/carts. Fetch it with: npx onejs-play add @singtaa/lightning")
+                .toBe(`@singtaa/lightning 1.2.0 is not in .oj/carts. Fetch it with: ${COMMAND} add`)
         })
 
 

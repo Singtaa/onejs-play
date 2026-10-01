@@ -3,7 +3,7 @@
  *
  * The container creates the input backend and hands it to onejs-unity, but a
  * backend with nothing pushing into it answers "no key is down" forever. This
- * is the half that pushes: it is the only file in onejs-play that touches the
+ * is the half that pushes: it is the only file in ojp that touches the
  * DOM, and it exists because the container runs inside Unity WebGL, where the
  * bootstrap shares the embedding page's global scope and `document` is the
  * real one.

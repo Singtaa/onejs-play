@@ -1,12 +1,12 @@
 /**
- * The host-facing half of onejs-play.
+ * The host-facing half of ojp.
  *
  * Nothing here is game API. The container imports this to stand a game up:
  * shadow the runtime's globals, evaluate the bundle, and feed input. Games
  * import "oj" (the package root) and never see any of it, which is the same
  * split react and react-dom draw.
  *
- *     import { evaluateBundle, createContainerInput } from "onejs-play/container"
+ *     import { evaluateBundle, createContainerInput } from "ojp/container"
  *     import { setInputBackend } from "onejs-unity/input"
  */
 

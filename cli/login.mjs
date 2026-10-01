@@ -1,7 +1,7 @@
 /**
- * `oj login` and `oj logout`: login by link.
+ * `ojp login` and `ojp logout`: login by link.
  *
- * `oj login` asks the site for a link and prints it. The person opens it,
+ * `ojp login` asks the site for a link and prints it. The person opens it,
  * signed in, and presses Allow; the next poll collects a token of the site's
  * 'agent' kind (create, edit, push, rebuild; never delete, publish or the
  * account; main by fast forward only; 30 days). Nothing is pasted anywhere.
@@ -23,6 +23,7 @@ import { spawnSync } from "node:child_process"
 import { home } from "./local.mjs"
 import { ignoreLocally } from "./init.mjs"
 import { siteOrigin, storedToken, tokenPaths } from "./site.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -169,18 +170,18 @@ function pick(code, say) {
     if (code !== undefined) {
         const want = String(code).toUpperCase()
         const found = waiting.find((p) => p.code === want)
-        if (found === undefined) say(`no login with code ${want} is waiting; run oj login first`)
+        if (found === undefined) say(`no login with code ${want} is waiting; run ${COMMAND} login first`)
         return found ?? null
     }
     if (waiting.length === 1) return waiting[0]
-    if (waiting.length === 0) say("no login is waiting; run oj login first")
-    else say(`${waiting.length} logins are waiting (${waiting.map((p) => p.code).join(", ")}); say which: oj login --wait <code>`)
+    if (waiting.length === 0) say(`no login is waiting; run ${COMMAND} login first`)
+    else say(`${waiting.length} logins are waiting (${waiting.map((p) => p.code).join(", ")}); say which: ${COMMAND} login --wait <code>`)
     return null
 }
 
 /**
- * `oj login`. Prints the link, then waits for Allow unless `noWait`, in which
- * case `oj login --wait` collects it later. Returns an exit code.
+ * `ojp login`. Prints the link, then waits for Allow unless `noWait`, in which
+ * case `ojp login --wait` collects it later. Returns an exit code.
  */
 export async function login(root, { name, wait = true, resume = false, code, say = console.error, print = console.log } = {}) {
     let pending
@@ -199,7 +200,7 @@ export async function login(root, { name, wait = true, resume = false, code, say
         if (!wait) {
             fs.mkdirSync(pendingDir(), { recursive: true })
             fs.writeFileSync(pendingFile(pending.code), JSON.stringify(pending), { mode: 0o600 })
-            say(`then: oj login --wait ${pending.code}`)
+            say(`then: ${COMMAND} login --wait ${pending.code}`)
             return 0
         }
     }
@@ -220,11 +221,11 @@ export async function login(root, { name, wait = true, resume = false, code, say
         return 0
     }
     fs.rmSync(pendingFile(pending.code), { force: true })
-    say("the link expired; run oj login again")
+    say(`the link expired; run ${COMMAND} login again`)
     return 1
 }
 
-/** `oj logout`: the site forgets the token, then this machine does. */
+/** `ojp logout`: the site forgets the token, then this machine does. */
 export async function logout(root, { say = console.error } = {}) {
     const token = storedToken(root)
     if (token !== null) {

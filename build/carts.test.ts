@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as esbuild from "esbuild"
 import { buildGame, cartKey } from "./game.mjs"
+import { ANYWHERE } from "./command.mjs"
 
 /**
  * Carts using carts (PlaySite docs/carts.md §3, step 4).
@@ -51,7 +52,25 @@ export { spark } from "./fx/spark"` },
     ...over,
 })
 
+/** A whole cart: no `exports`, an entry that mounts itself through its own oj. */
+const whole = () => lightning({
+    exports: null,
+    entry: "main.tsx",
+    files: [
+        { name: "main.tsx", text: `import { useTexture } from "oj"\nglobalThis.__mounted = useTexture("hud.png")` },
+        { name: "oj.json", text: "{}" },
+    ],
+})
+
 describe("a cart using a cart", () => {
+    /** Tachi, 1 Oct: adding a sample and seeing it run is the first thing a new user tries. */
+    it("runs a whole cart's entry on a bare import, its art still its own", async () => {
+        const { seen } = await run([{ name: "index.tsx", text: `import "@singtaa/lightning"` }], {
+            uses: { "@singtaa/lightning": LIGHTNING }, carts: { [LIGHTNING]: whole() },
+        })
+        expect(seen).toEqual(["useTexture @singtaa/lightning@1.2.0/hud.png"])
+    })
+
     it("keys a version and a commit pin the way URLs and folders can carry them", () => {
         expect(cartKey("@singtaa/lightning", "1.2.0")).toBe("@singtaa/lightning@1.2.0")
         expect(cartKey("@koma/rain", "#3f2a91c07b44")).toBe("@koma/rain@3f2a91c07b44")
@@ -111,7 +130,7 @@ describe("a cart using a cart", () => {
 
         it("an import of a cart that oj.json does not list", async () => {
             expect(await refusal([{ name: "index.tsx", text: `import "@singtaa/lightning"` }], { uses: {}, carts: {} }))
-                .toBe("@singtaa/lightning is not in this cart's oj.json dependencies. Add it with: npx onejs-play add @singtaa/lightning")
+                .toBe(`@singtaa/lightning is not in this cart's oj.json dependencies. Add it with: ${ANYWHERE} add @singtaa/lightning`)
         })
 
         it("an import inside a used cart of a cart its own oj.json does not list", async () => {
@@ -121,10 +140,10 @@ describe("a cart using a cart", () => {
             })).toBe("@singtaa/lightning 1.2.0 imports @koma/rain, which its oj.json does not list. Its author has to add it; or pin a different version of @singtaa/lightning.")
         })
 
-        it("a used cart that exports nothing", async () => {
-            expect(await refusal([{ name: "index.tsx", text: `import "@singtaa/lightning"` }], {
-                uses: { "@singtaa/lightning": LIGHTNING }, carts: { [LIGHTNING]: lightning({ exports: null }) },
-            })).toBe("@singtaa/lightning exports nothing, so a cart cannot import it. It can still be taken into Unity whole.")
+        it("a named import from a whole cart, naming the bare import that runs it", async () => {
+            expect(await refusal([{ name: "index.tsx", text: `import { Hud } from "@singtaa/lightning"\nexport const out = Hud` }], {
+                uses: { "@singtaa/lightning": LIGHTNING }, carts: { [LIGHTNING]: whole() },
+            })).toBe(`@singtaa/lightning 1.2.0 is a whole cart: it exports nothing, so Hud cannot come from it. import "@singtaa/lightning" runs it.`)
         })
 
         it("a relative import that would leave the used cart", async () => {

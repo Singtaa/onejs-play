@@ -22,7 +22,7 @@ const MUST_NOT_EXPORT = [
 ]
 
 /**
- * Container machinery that must live behind onejs-play/container, not on the
+ * Container machinery that must live behind ojp/container, not on the
  * surface a game imports. Same split react and react-dom draw.
  */
 const CONTAINER_ONLY = [

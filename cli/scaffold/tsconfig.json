@@ -13,7 +13,7 @@
         "forceConsistentCasingInFileNames": true,
         "jsx": "react-jsx",
         "types": ["unity-types", "react"],
-        "paths": { "oj": ["./node_modules/onejs-play/src/index.ts"] }
+        "paths": { "oj": ["./node_modules/ojp/src/index.ts"] }
     },
     "include": ["**/*"],
     "exclude": ["node_modules"]

@@ -1,7 +1,7 @@
 {
-  "name": "onejs-play",
-  "version": "0.8.9",
-  "description": "Container runtime for OJPlay. Imported as \"oj\".",
+  "name": "ojp",
+  "version": "0.9.0",
+  "description": "OJPlay from the terminal: add carts to carts, build, run and test them like the site does. The runtime carts import as \"oj\".",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "files": [
@@ -30,17 +30,18 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "esbuild": "^0.25.0"
+  },
   "peerDependencies": {
     "onejs-react": ">=0.1.60",
     "onejs-unity": ">=0.6.0",
-    "react": "^18.0.0 || ^19.0.0",
-    "esbuild": ">=0.25.0"
+    "react": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.0.3",
     "@types/react": "^19.0.0",
-    "esbuild": "^0.25.0",
     "eslint": "^10.9.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
@@ -71,11 +72,6 @@
     }
   },
   "bin": {
-    "oj": "cli/oj.mjs"
-  },
-  "peerDependenciesMeta": {
-    "esbuild": {
-      "optional": true
-    }
+    "ojp": "cli/oj.mjs"
   }
 }

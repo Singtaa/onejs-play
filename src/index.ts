@@ -1,7 +1,7 @@
 /**
  * oj: the container runtime for OJPlay.
  *
- * Published to npm as "onejs-play" and imported as "oj" through an esbuild
+ * Published to npm as "ojp" (formerly "onejs-play") and imported as "oj" through an esbuild
  * alias, the same mechanism OneJS already uses to dedupe React. The alias ships
  * in the scaffolded esbuild config, so it survives eject.
  *
@@ -35,7 +35,7 @@
  *   getDebugInfo                   internal surfaces, not game API.
  *
  * Container-side machinery (the global shadowing, the input backend) lives in
- * onejs-play/container, not here. A game never imports it.
+ * ojp/container, not here. A game never imports it.
  *
  * Filtering this list is necessary and nowhere near sufficient. The OneJS
  * bootstrap puts CS, useExtensions and about 35 other names straight onto the

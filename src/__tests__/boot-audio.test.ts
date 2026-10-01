@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { containerBoot } from "onejs-play/host/boot"
+import { containerBoot } from "ojp/host/boot"
 
 /**
  * The audio deferral in the container page, RUN rather than read.

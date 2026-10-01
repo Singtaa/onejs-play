@@ -6,9 +6,10 @@ import os from "node:os"
 import path from "node:path"
 import { deviceName, helperFor, installId, login, logout } from "./login.mjs"
 import { mine, storedToken, tokenOf } from "./site.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 /**
- * `oj login` against a stand-in for the site's three routes (PlaySite
+ * `ojp login` against a stand-in for the site's three routes (PlaySite
  * src/index.tsx, "login by link"), with HOME, OJ_HOME and git's global config
  * in a temporary folder so nothing on this machine is touched.
  */
@@ -47,7 +48,7 @@ beforeEach(async () => {
         }
         if (req.url === "/api/logout") return send(200, { ok: true })
         if (req.url === "/api/me/carts") {
-            if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx onejs-play login again." })
+            if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx ojp login again." })
             return send(200, { handle: "owner", carts: [{ sid: "abcdefabcdef", name: "Hidden", public: false }, { sid: "bcdefabcdefa", name: "Shown", public: true }] })
         }
         send(404, {})
@@ -79,7 +80,7 @@ function gitPassword(url: string): string | null {
     return /^password=(.*)$/m.exec(out.stdout ?? "")?.[1] ?? null
 }
 
-describe("oj login", () => {
+describe("ojp login", () => {
     it("prints the link, collects the token on Allow, keeps it 0600, and hands it to git for the site only", async () => {
         const printed: string[] = []
         expect(await login(dir, { name: "claude on test", say: () => {}, print: (l: string) => printed.push(l) })).toBe(0)
@@ -118,12 +119,12 @@ describe("oj login", () => {
         expect(await login(dir, { wait: false, ...log })).toBe(0)
         expect(await login(dir, { wait: false, ...log })).toBe(0)
         expect(printed.map((l) => /code (\S+)\)/.exec(l)?.[1])).toEqual(["WDJB-MJHT", "BCDF-GHJK"])
-        expect(said).toContain("then: oj login --wait BCDF-GHJK")
+        expect(said).toContain(`then: ${COMMAND} login --wait BCDF-GHJK`)
 
         // Two are waiting, so --wait alone does not guess which.
         said.length = 0
         expect(await login(dir, { resume: true, ...log })).toBe(1)
-        expect(said).toEqual(["2 logins are waiting (WDJB-MJHT, BCDF-GHJK); say which: oj login --wait <code>"])
+        expect(said).toEqual([`2 logins are waiting (WDJB-MJHT, BCDF-GHJK); say which: ${COMMAND} login --wait <code>`])
 
         // The first one's person presses Allow; the second's has not yet.
         decisions.set("wdjbmjhtpppppppppppppppppppppppp", "allow")
@@ -136,7 +137,7 @@ describe("oj login", () => {
         expect(await login(dir, { resume: true, ...log })).toBe(1)
         expect(said).toEqual(["Cancelled on the site."])
         expect(await login(dir, { resume: true, code: "BCDF-GHJK", ...log })).toBe(1)
-        expect(said.at(-1)).toBe("no login with code BCDF-GHJK is waiting; run oj login first")
+        expect(said.at(-1)).toBe(`no login with code BCDF-GHJK is waiting; run ${COMMAND} login first`)
     })
 
     it("fails when the person cancels, and stores nothing", async () => {
