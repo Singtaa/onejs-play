@@ -367,6 +367,15 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         absWorkingDir: workingDir,
         minify: true,
         target: "es2022",
+        /*
+         * A map only on request (PlaySite's editor, to read a runtime error's
+         * stack as the cart's own files and lines). External, so the code
+         * carries no sourceMappingURL comment: the bundle reaches a sandbox by
+         * postMessage or from storage, where no .map sits beside it. No
+         * sourcesContent, because whoever asked already holds the sources.
+         * esbuild wants an output path to name the map; nothing is written.
+         */
+        ...(options.sourcemap ? { sourcemap: "external", sourcesContent: false, outfile: "bundle.js" } : {}),
         // Errors are returned, not printed: each caller reports them in its
         // own voice (a 422 body, a remote: line, a terminal).
         logLevel: "silent",
@@ -389,11 +398,28 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         ],
     }).catch((error) => { throw finishErrors(error) })
 
+    const code = result.outputFiles.find((f) => !f.path.endsWith(".map")) ?? result.outputFiles[0]
+    const map = result.outputFiles.find((f) => f.path.endsWith(".map"))
     return {
-        code: result.outputFiles[0].text,
+        code: code.text,
+        ...(map === undefined ? {} : { map: cartSources(map.text) }),
         slManifest,
         warnings: result.warnings.map((w) => w.text),
     }
+}
+
+/**
+ * The map's sources as the cart's own file names: "lib/rules.ts", not the
+ * namespace and rooted path esbuild records for the tree ("src:/lib/rules.ts").
+ * A used cart's file keeps its key folder ("@singtaa/lightning@1.2.0/bolt.tsx"),
+ * which is what tells it apart from the cart's own. Every other namespace is
+ * left on ("ext:react", "cart-oj:..."), so a reader can tell a shim the build
+ * made from a file somebody wrote.
+ */
+function cartSources(text) {
+    const map = JSON.parse(text)
+    map.sources = map.sources.map((s) => (s.startsWith("src:") ? s.slice(4).replace(/^\/+/, "") : s))
+    return JSON.stringify(map)
 }
 
 /**

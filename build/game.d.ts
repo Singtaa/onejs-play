@@ -30,6 +30,13 @@ export interface GameBuild {
      */
     slManifest: ShaderManifest | null
     warnings: string[]
+    /**
+     * The source map, as JSON text, only when `sourcemap` was asked for.
+     * Its `sources` are the cart's file names ("lib/rules.ts"), a used cart's
+     * under its key folder; no `sourcesContent`. The code carries no
+     * sourceMappingURL comment either way.
+     */
+    map?: string
 }
 
 /** Modules the container provides, which a game imports and never bundles. */
@@ -107,6 +114,8 @@ export function buildGame(
         slCompiler?: unknown
         /** The carts this one uses (PlaySite docs/carts.md §3). None when omitted. */
         carts?: UsedCarts
+        /** Also return a source map (`map`). Off by default; the code is the same either way. */
+        sourcemap?: boolean
     },
 ): Promise<GameBuild>
 
