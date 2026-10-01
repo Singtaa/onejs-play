@@ -139,8 +139,8 @@ export const SHADOWED_GLOBALS: readonly string[] = [
     "__persistentDataPath", "__streamingAssetsPath", "__dataPath",
     "__temporaryCachePath",
 
-    // debug and cartridge surfaces
-    "__dumpUI", "__findByClass", "__findByType", "__cartRegistry", "__cart",
+    // debug and pack surfaces (__cart is the name from before cartridges became packs)
+    "__dumpUI", "__findByClass", "__findByType", "__packRegistry", "__pack", "__cartRegistry", "__cart",
 
     // Unity host machinery
     "createUnityInstance", "unityFramework", "Module", "webgpuVersion",

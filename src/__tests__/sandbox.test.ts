@@ -257,6 +257,12 @@ describe("the portability contract", () => {
         }
     })
 
+    it("shadows the pack accessors under the new names and the old ones", () => {
+        for (const name of ["__pack", "__packRegistry", "__cart", "__cartRegistry"]) {
+            expect(SHADOWED_GLOBALS).toContain(name)
+        }
+    })
+
     it("shadows page event plumbing, which is how a game would reach the host", () => {
         for (const name of ["addEventListener", "removeEventListener", "postMessage"]) {
             expect(SHADOWED_GLOBALS).toContain(name)
