@@ -63,7 +63,7 @@ function load(src) {
  * So it polls every 400ms until it succeeds. Chrome's autoplay policy refuses
  * every attempt made before the page has user activation, and prints a line
  * for each one. Measured on the live site: 47 identical warnings in a 20
- * second load of one sketch, 60 in 25 seconds, which was almost everything in
+ * second load of one cart, 60 in 25 seconds, which was almost everything in
  * the console once the physics warnings went. Nothing is audible either way;
  * the browser was never going to allow it.
  *

@@ -8,10 +8,10 @@ import { serve } from "./local.mjs"
 /**
  * The site's asset rule, as `oj run` applies it (#3). The name cases are the
  * site's own (PlaySite/src/media.ts): what a push stores and the origin
- * serves, so a sketch that loads a sound here loads it live.
+ * serves, so a cart that loads a sound here loads it live.
  */
 
-function sketch(files: Record<string, string>): string {
+function cart(files: Record<string, string>): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-assets-"))
     for (const [name, text] of Object.entries(files)) {
         fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true })
@@ -21,7 +21,7 @@ function sketch(files: Record<string, string>): string {
 }
 
 describe("the site's asset name rule", () => {
-    it("serves a sketch's sounds, images and fonts by their path from its root", () => {
+    it("serves a cart's sounds, images and fonts by their path from its root", () => {
         for (const name of ["pop.wav", "art/bg.png", "a/b/c/d/e/f.ogg", "fonts/Inter-Bold.woff2", ".oj/covers/1.jpg"]) {
             expect(validAssetName(name), name).toBe(true)
         }
@@ -51,8 +51,8 @@ describe("the site's asset name rule", () => {
     })
 })
 
-describe("resolving /assets/<name> in a sketch folder", () => {
-    const root = sketch({
+describe("resolving /assets/<name> in a cart folder", () => {
+    const root = cart({
         "pop.wav": "RIFF", "art/bg.png": "png", "assets/boom.wav": "RIFF", "Loud.wav": "RIFF", "old.webp": "webp",
     })
 
@@ -82,13 +82,13 @@ describe("resolving /assets/<name> in a sketch folder", () => {
         expect(problems).toHaveLength(2)
         expect(problems.join("\n")).toMatch(/assets\/boom\.wav/)
         expect(problems.join("\n")).toMatch(/old\.webp/)
-        expect(unservableAssets(sketch({ "pop.wav": "RIFF", "index.tsx": "" }))).toEqual([])
+        expect(unservableAssets(cart({ "pop.wav": "RIFF", "index.tsx": "" }))).toEqual([])
     })
 })
 
 describe("the local origin's /assets/", () => {
     it("serves by the rule, with the site's content type, and reports each refusal", async () => {
-        const root = sketch({ "pop.wav": "RIFF", "assets/boom.wav": "RIFF", "index.tsx": "secret" })
+        const root = cart({ "pop.wav": "RIFF", "assets/boom.wav": "RIFF", "index.tsx": "secret" })
         const refused: string[] = []
         const server = await serve({ runtime: root, root, manifest: { name: "t" }, bundle: () => "", refused: (r: string) => refused.push(r) })
         try {

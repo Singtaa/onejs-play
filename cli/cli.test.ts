@@ -158,9 +158,9 @@ describe("the site from a terminal", () => {
         expect(args[3]).toMatch(/^credential\.helper=!f\(\) \{ echo username=oj; echo password=tok; \}; f$/)
     })
 
-    it("names a folder after the game without punctuation", () => {
+    it("names a folder after the cart without punctuation", () => {
         expect(path.basename(folderFor("My Cool Game!"))).toBe("my-cool-game")
-        expect(path.basename(folderFor("???"))).toBe("game")
+        expect(path.basename(folderFor("???"))).toBe("cart")
     })
 })
 
@@ -230,11 +230,11 @@ describe("a running game's console", () => {
         expect(game.errors).toEqual([])
     })
 
-    // The container says ready the moment the sketch is mounted; UI Toolkit
+    // The container says ready the moment the cart is mounted; UI Toolkit
     // lays the tree out on a later frame. A playtest that read positions
     // straight away found nothing laid out on a loaded machine: Arcane
     // Portal's "expected 5 swatches, found 0" in CI.
-    it("is ready once the sketch has run two frames past mounting, not the moment it mounted", async () => {
+    it("is ready once the cart has run two frames past mounting, not the moment it mounted", async () => {
         let frame = 7
         const seen: number[] = []
         const browser = {
@@ -381,24 +381,24 @@ describe("a clone made into a JSRunner project", () => {
         expect(oneJSOf(scratch({ "ProjectSettings/ProjectVersion.txt": "", "Assets/.keep": "" }))).toBeNull()
     })
 
-    it("writes JSRunner's files into the clone, builds the sketch's entry, and keeps them all out of git", () => {
+    it("writes JSRunner's files into the clone, builds the cart's entry, and keeps them all out of git", () => {
         const project = unityProject()
         const root = clone(project, "Big Fish", { "game.tsx": "", "oj.json": "{\"name\":\"Big Fish!\",\"entry\":\"game.tsx\"}" })
         const made = initUnity(root)
         expect(made.prefab).toBe("Assets/Big Fish/BigFish.prefab")
-        // The sketch keeps its own entry: JSRunner's index.tsx is never written beside it.
+        // The cart keeps its own entry: JSRunner's index.tsx is never written beside it.
         expect(fs.existsSync(path.join(root, "index.tsx"))).toBe(false)
         const config = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8")
         expect(config).toContain("entryPoints: [\"game.tsx\"]")
         expect(config.startsWith("import { assetsPlugin } from \"onejs-play/unity\"\n")).toBe(true)
-        expect(config).toContain("    plugins: [\n        // The sketch's files, copied into assets/ where OneJS looks for them\n        assetsPlugin(),\n        importTransformPlugin(),")
+        expect(config).toContain("    plugins: [\n        // The cart's files, copied into assets/ where OneJS looks for them\n        assetsPlugin(),\n        importTransformPlugin(),")
         const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
         expect(pkg.name).toBe("big-fish")
         expect(pkg["//note"]).toBeUndefined()
         const own = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8")).version
         expect(pkg.dependencies["onejs-play"]).toBe(`^${own}`)
         expect(fs.readFileSync(path.join(root, "types", "global.d.ts"), "utf8")).toBe("template global.d.ts.txt")
-        // The build's copies of the sketch's files stay out of git too.
+        // The build's copies of the cart's files stay out of git too.
         fs.writeFileSync(path.join(root, "glow.png"), "png")
         expect(syncAssets(root).copied).toEqual(["glow.png"])
         const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).stdout
@@ -474,7 +474,7 @@ describe("a clone's files in a Unity project", () => {
         expect(read(root, "glow.png")).toBe("z")
     })
 
-    it("removes a copy once its file leaves the sketch, and nothing it did not write", () => {
+    it("removes a copy once its file leaves the cart, and nothing it did not write", () => {
         const root = scratch({ "art/bg.png": "a", "glow.png": "b", "assets/mine.png": "put there by hand" })
         syncAssets(root)
         fs.rmSync(path.join(root, "art"), { recursive: true })

@@ -46,9 +46,9 @@ beforeEach(async () => {
             return send(200, { token: TOKEN, handle: "owner", expiresAt: 1 })
         }
         if (req.url === "/api/logout") return send(200, { ok: true })
-        if (req.url === "/api/me/sketches") {
+        if (req.url === "/api/me/carts") {
             if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx onejs-play login again." })
-            return send(200, { handle: "owner", sketches: [{ sid: "abcdefabcdef", name: "Hidden", public: false }, { sid: "bcdefabcdefa", name: "Shown", public: true }] })
+            return send(200, { handle: "owner", carts: [{ sid: "abcdefabcdef", name: "Hidden", public: false }, { sid: "bcdefabcdefa", name: "Shown", public: true }] })
         }
         send(404, {})
     })
@@ -147,15 +147,15 @@ describe("oj login", () => {
         expect(storedToken(dir)).toBeNull()
     })
 
-    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("keeps the token in the sketch's .oj/ when home cannot be written", async () => {
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("keeps the token in the cart's .oj/ when home cannot be written", async () => {
         const locked = path.join(dir, "locked")
         fs.mkdirSync(locked, { mode: 0o500 })
         vi.stubEnv("OJ_HOME", path.join(locked, "home"))
-        const sketch = path.join(dir, "sketch")
-        fs.mkdirSync(sketch)
-        expect(await login(sketch, quiet)).toBe(0)
-        expect(fs.readFileSync(path.join(sketch, ".oj", "token"), "utf8").trim()).toBe(TOKEN)
-        expect(storedToken(sketch)).toBe(TOKEN)
+        const cart = path.join(dir, "cart")
+        fs.mkdirSync(cart)
+        expect(await login(cart, quiet)).toBe(0)
+        expect(fs.readFileSync(path.join(cart, ".oj", "token"), "utf8").trim()).toBe(TOKEN)
+        expect(storedToken(cart)).toBe(TOKEN)
     })
 
     it("logs out on the site and here", async () => {
@@ -183,10 +183,10 @@ describe("which install this is", () => {
 })
 
 describe("oj list", () => {
-    it("asks for the account's own sketches with the token, and passes on why a refused token is refused", async () => {
-        const { handle, sketches } = await mine(TOKEN)
+    it("asks for the account's own carts with the token, and passes on why a refused token is refused", async () => {
+        const { handle, carts } = await mine(TOKEN)
         expect(handle).toBe("owner")
-        expect(sketches.map((g: { name: string }) => g.name)).toEqual(["Hidden", "Shown"])
+        expect(carts.map((g: { name: string }) => g.name)).toEqual(["Hidden", "Shown"])
         await expect(mine("oja_" + "b".repeat(32))).rejects.toThrow("replaced by a newer login from the same install")
     })
 })

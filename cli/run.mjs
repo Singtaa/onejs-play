@@ -70,7 +70,7 @@ export class Game {
             }
             await sleep(100)
         }
-        throw new Error(`the sketch did not start within ${timeoutMs / 1000}s`)
+        throw new Error(`the cart did not start within ${timeoutMs / 1000}s`)
     }
 
     /** Rebuilds the folder and swaps the new bundle in, leaving the container up. Resolves to the swap time in ms. */
@@ -172,7 +172,7 @@ export class Game {
      */
     async frameAfter(frame, timeoutMs = 15000) {
         return this.until(async () => (await this.frame()) > frame, {
-            timeoutMs, every: 5, what: `the sketch to run a frame after frame ${frame}`,
+            timeoutMs, every: 5, what: `the cart to run a frame after frame ${frame}`,
         })
     }
 
@@ -316,6 +316,6 @@ export function watch(root, game, say) {
 export async function runScript(file, game) {
     const mod = await import(pathToFileURL(path.resolve(game.root, file)).href)
     const fn = mod.default
-    if (typeof fn !== "function") throw new Error(`${file} must export a default async function (game) { ... }`)
+    if (typeof fn !== "function") throw new Error(`${file} must export a default async function (cart) { ... }`)
     await fn(game)
 }

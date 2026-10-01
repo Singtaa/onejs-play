@@ -26,7 +26,7 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const OJ = path.join(ROOT, "cli", "oj.mjs")
 
 /** Folders `oj test` can run: a manifest or an index beside it. */
-function sketchesIn(dir: string): string[] {
+function cartsIn(dir: string): string[] {
     return fs.readdirSync(dir, { withFileTypes: true })
         .filter((e) => e.isDirectory())
         .map((e) => path.join(dir, e.name))
@@ -34,9 +34,9 @@ function sketchesIn(dir: string): string[] {
         .sort()
 }
 
-const SKETCHES = [...sketchesIn(path.join(ROOT, "examples")), ...sketchesIn(path.join(ROOT, "cli", "fixtures"))]
+const CARTS = [...cartsIn(path.join(ROOT, "examples")), ...cartsIn(path.join(ROOT, "cli", "fixtures"))]
 
-/** The script a sketch is tested with: playtest.mjs, else a lone *.playtest.mjs, else none (a smoke run). */
+/** The script a cart is tested with: playtest.mjs, else a lone *.playtest.mjs, else none (a smoke run). */
 function playtestOf(dir: string): string | null {
     if (fs.existsSync(path.join(dir, "playtest.mjs"))) return "playtest.mjs"
     const named = fs.readdirSync(dir).filter((f) => f.endsWith(".playtest.mjs"))
@@ -126,7 +126,7 @@ beforeAll(async () => {
     // The first Chrome a fresh machine starts is slow: up to 32.4 s to its
     // first page on the CI runners, against 1.5 s at worst for every one after
     // (STARTUP_MS). It is paid here, once, and reported on its own, instead
-    // of by whichever sketch happens to run first.
+    // of by whichever cart happens to run first.
     const began = Date.now()
     ;(await launch()).close()
     coldS = (Date.now() - began) / 1000
@@ -176,11 +176,11 @@ describe("oj test over every example", () => {
     })
 
     it("finds the examples and the fixtures, so an empty sweep cannot pass", () => {
-        expect(SKETCHES.filter((d) => d.includes(`${path.sep}examples${path.sep}`)).length).toBeGreaterThan(20)
-        expect(SKETCHES.some((d) => d.endsWith(`${path.sep}keys`))).toBe(true)
+        expect(CARTS.filter((d) => d.includes(`${path.sep}examples${path.sep}`)).length).toBeGreaterThan(20)
+        expect(CARTS.some((d) => d.endsWith(`${path.sep}keys`))).toBe(true)
     })
 
-    for (const dir of SKETCHES) {
+    for (const dir of CARTS) {
         const name = path.relative(ROOT, dir)
         it.concurrent(`${name}${playtestOf(dir) ? ` (${playtestOf(dir)})` : ""}`, async () => {
             const { code, output, runS } = await slot(async () => {
@@ -193,7 +193,7 @@ describe("oj test over every example", () => {
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
         // The deadline that matters is RUN_MS, per run; this one also counts
         // the wait for a slot, so it allows for every run ahead in the queue.
-        }, (RUN_MS + 30_000) * Math.ceil(SKETCHES.length / LIMIT))
+        }, (RUN_MS + 30_000) * Math.ceil(CARTS.length / LIMIT))
     }
 })
 

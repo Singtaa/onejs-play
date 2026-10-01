@@ -1,12 +1,12 @@
 /**
- * Which of a sketch's files the site serves as assets, and under what name.
+ * Which of a cart's files the site serves as assets, and under what name.
  *
- * A sketch asks for a sound or an image by name (`audio.load("pop.wav")`,
+ * A cart asks for a sound or an image by name (`audio.load("pop.wav")`,
  * `assetUrl("art/bg.png")`), the runtime turns that into `/assets/<name>` on
- * the game's origin, and the site answers from the files the sketch pushed.
+ * the game's origin, and the site answers from the files the cart pushed.
  * `oj run` plays the part of that origin, so it has to answer the same
- * requests the same way, or a sketch that sounds right here is silent live.
- * Before this it served any file under the sketch's root by any name, and
+ * requests the same way, or a cart that sounds right here is silent live.
+ * Before this it served any file under the cart's root by any name, and
  * two examples kept their sounds in an `assets/` folder that the site never
  * serves (#3).
  *
@@ -45,7 +45,7 @@ export const UPLOADABLE_IMAGE = new Set([".png", ".jpg", ".jpeg"])
 /** The one folder an asset may not sit in: the runtime strips a leading `assets/` from every name. */
 export const RESERVED_ASSET_FOLDER = "assets"
 
-/** The one dot folder a sketch's files may sit in. */
+/** The one dot folder a cart's files may sit in. */
 export const OJ_FOLDER = ".oj"
 
 export const VALID_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -96,7 +96,7 @@ export function contentTypeOf(name) {
 /**
  * The file `/assets/<name>` answers with, or why there is none, as
  * `{ file }` or `{ reason }`. The reason is written for the person running
- * the sketch: it says what the site would do and what to change.
+ * the cart: it says what the site would do and what to change.
  */
 export function resolveAsset(root, name) {
     if (!validAssetName(name)) {
@@ -117,7 +117,7 @@ export function resolveAsset(root, name) {
         const hint = exactFile(root, `${RESERVED_ASSET_FOLDER}/${name}`) !== null
             ? ` There is one at ${RESERVED_ASSET_FOLDER}/${name}, which the site never serves: move it up to ${name}.`
             : fs.existsSync(loose) ? " A file matches it only ignoring case, and the site's names are case-sensitive." : ""
-        return { reason: `${name}: no such file in the sketch.${hint}` }
+        return { reason: `${name}: no such file in the cart.${hint}` }
     }
     return { file }
 }
@@ -143,7 +143,7 @@ function exactFile(root, name) {
 }
 
 /**
- * Asset files in the sketch that no request can reach, one line each: what
+ * Asset files in the cart that no request can reach, one line each: what
  * the site does with the file, and what to change. Empty when every asset
  * would be served. Walks what a push would carry: node_modules is skipped,
  * and dot folders other than `.oj/`.

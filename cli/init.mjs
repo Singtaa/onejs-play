@@ -109,5 +109,5 @@ export function packageName(root) {
         if (typeof manifest.name === "string" && manifest.name.trim() !== "") name = manifest.name
     } catch { /* no manifest, or not JSON: the folder name will do */ }
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    return slug === "" ? "game" : slug
+    return slug === "" ? "cart" : slug
 }

@@ -12,7 +12,7 @@
  * null then. The effect ran with the ref populated, built the world, and
  * setWorld re-rendered; on that pass the dependency was the element, so React
  * saw the list change, disposed the world and built a second one. Every world
- * was built twice. On the Drop Everything sketch that was 170 GameObjects
+ * was built twice. On the Drop Everything cart that was 170 GameObjects
  * created and thrown away, and it doubled every per-body warning the engine
  * had to make into 190 console lines before the first frame.
  *

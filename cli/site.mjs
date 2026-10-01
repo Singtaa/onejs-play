@@ -13,7 +13,7 @@ export function siteOrigin() {
     return (process.env.OJ_SITE ?? DEFAULT_SITE).replace(/\/$/, "")
 }
 
-/** Where `oj login` keeps its token: home first, the sketch's .oj/ when home cannot be written. */
+/** Where `oj login` keeps its token: home first, the cart's .oj/ when home cannot be written. */
 export function tokenPaths(root) {
     return [path.join(home(), "token"), path.join(root, ".oj", "token")]
 }
@@ -42,11 +42,11 @@ export function token(root = process.cwd()) {
 }
 
 /**
- * The account's own sketches, private ones included: what "which sketches do
- * I have" needs. The site's public list leaves out every private sketch.
+ * The account's own carts, private ones included: what "which carts do
+ * I have" needs. The site's public list leaves out every private cart.
  */
 export async function mine(bearer) {
-    const response = await fetch(`${siteOrigin()}/api/me/sketches`, { headers: { authorization: `Bearer ${bearer}` } })
+    const response = await fetch(`${siteOrigin()}/api/me/carts`, { headers: { authorization: `Bearer ${bearer}` } })
     const body = await json(response)
     if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
     return body
@@ -63,7 +63,7 @@ export function sidOf(root) {
     const result = spawnSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" })
     const sid = sidFromRemote((result.stdout ?? "").trim())
     if (sid === null) {
-        throw new Error("This folder is not a clone of a sketch on " + siteOrigin() + ". Pass --sid, or clone one first.")
+        throw new Error("This folder is not a clone of a cart on " + siteOrigin() + ". Pass --sid, or clone one first.")
     }
     return sid
 }
@@ -133,5 +133,5 @@ export function git(args, { cwd, bearer } = {}) {
 /** Where `oj new` clones to: the name as a folder, made safe. */
 export function folderFor(name) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    return path.resolve(slug === "" ? "game" : slug)
+    return path.resolve(slug === "" ? "cart" : slug)
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { reduce, start, type State } from "./tally"
 
 /**
- * The point of the sketch, checked the way the sketch claims you can check it:
+ * The point of the cart, checked the way the cart claims you can check it:
  * no container, no screen, no render. A reducer is a function, so its rules
  * are a table of inputs and outputs.
  */

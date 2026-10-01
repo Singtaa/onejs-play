@@ -2,7 +2,7 @@
  * `oj init --unity`: a clone turned into a JSRunner project, in place, inside
  * the Unity project it was cloned into.
  *
- * A sketch's repository is index.tsx and oj.json. A JSRunner project is a
+ * A cart's repository is index.tsx and oj.json. A JSRunner project is a
  * folder holding a PanelSettings (which marks it as the project), the built
  * `app.js.txt` beside it, and a working directory named `~` with the source
  * and whatever builds it. So the clone goes where the working directory goes,
@@ -15,7 +15,7 @@
  *   the prefab into a scene is the whole of running it.
  *
  * Everything written inside the clone is added to the repository's
- * info/exclude, so `git status` still shows the sketch and nothing else, and a
+ * info/exclude, so `git status` still shows the cart and nothing else, and a
  * push sends the site the two files it builds from. Unity ignores a folder
  * named `~`, which is what keeps the source and node_modules out of the
  * import. Nothing here overwrites: a file already there is left alone and
@@ -50,7 +50,7 @@ export const TEMPLATE_MAPPING = [
  * What else a JSRunner project grows in its working directory, for info/exclude:
  * the install, JSRunner's record of the defaults it gave (`.onejs/`), the
  * declarations the build writes beside `.sl` and `.module.uss` files, oj's
- * own output folder, and the copies of the sketch's files in `assets/`.
+ * own output folder, and the copies of the cart's files in `assets/`.
  */
 const GROWN = ["node_modules", "package-lock.json", ".onejs", ".oj", "*.sl.d.ts", "*.module.uss.d.ts", "/assets/"]
 
@@ -118,9 +118,9 @@ export function oneJSOf(project) {
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
 /**
- * The template's package.json, named after the sketch, with onejs-play at
+ * The template's package.json, named after the cart, with onejs-play at
  * least the version writing it. The installed OneJS's template may pin an
- * older onejs-play, one without the oj this sketch was written against.
+ * older onejs-play, one without the oj this cart was written against.
  */
 export function packageJson(template, name) {
     const pkg = JSON.parse(template)
@@ -146,7 +146,7 @@ export function stableGuid(assetPath) {
 /** A folder name as a Unity object name: the letters, digits, spaces, underscores and hyphens of it. */
 function objectName(folder) {
     const cleaned = folder.replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/\s+/g, "")
-    return cleaned === "" ? "Sketch" : cleaned
+    return cleaned === "" ? "Cart" : cleaned
 }
 
 /**
@@ -233,7 +233,7 @@ MonoBehaviour:
 export function initUnity(root) {
     root = path.resolve(root)
     if (path.basename(root) !== "~") {
-        throw new Error(`Clone the sketch into a folder named ~ inside Assets, such as Assets/${objectName(path.basename(root))}/~. `
+        throw new Error(`Clone the cart into a folder named ~ inside Assets, such as Assets/${objectName(path.basename(root))}/~. `
             + "Unity ignores a folder named that, which keeps the source and node_modules out of the import.")
     }
     const project = unityProjectOf(root)
@@ -260,7 +260,7 @@ export function initUnity(root) {
     const entry = entryOf(files, manifestOf(files))
     const templates = path.join(onejs, "Editor", "Templates")
     for (const [template, target] of TEMPLATE_MAPPING) {
-        // The sketch brings its own entry. JSRunner's index.tsx would only be
+        // The cart brings its own entry. JSRunner's index.tsx would only be
         // a second one beside it.
         if (target === "index.tsx") continue
         let text = fs.readFileSync(path.join(templates, template), "utf8")
@@ -269,7 +269,7 @@ export function initUnity(root) {
         put(path.join(root, target), target, text)
     }
     // Every scaffold path, whether written now or already there: a file this
-    // run left alone is still not the sketch's.
+    // run left alone is still not the cart's.
     const scaffold = TEMPLATE_MAPPING.map(([, target]) => target).filter((t) => t !== "index.tsx")
     lines.push(ignoreLocally(root, [...scaffold, ...GROWN].join("\n") + "\n"))
 
