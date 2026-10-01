@@ -17,6 +17,8 @@ import { PACKAGE } from "../build/command.mjs"
  * esbuild.config.mjs runs it, with "oj" aliased to a stand-in.
  */
 
+/** This package's own version: what add raises an older ojplay to. */
+const OWN = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 const GLOW = new Uint8Array([137, 80, 78, 71, 9, 9, 9])
 const LIGHTNING = {
     "oj.json": JSON.stringify({ name: "lightning", entry: "index.tsx", version: "1.2.0", exports: "bolt.tsx" }),
@@ -202,7 +204,7 @@ describe("ojplay add in a OneJS app's ~", () => {
         const npm: string[] = []
         const lines = await add(root, "@singtaa/lightning", { npm: (_dir: string, args: string[]) => { npm.push(args.join(" ")); return 0 } })
         expect(lines[0]).toBe("Set up this app for carts (package.json).")
-        expect(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies[PACKAGE]).toBe("^0.9.1")
+        expect(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).dependencies[PACKAGE]).toBe(`^${OWN}`)
         expect(npm).toEqual(["install --no-audit --no-fund", "run build"])
     })
 
