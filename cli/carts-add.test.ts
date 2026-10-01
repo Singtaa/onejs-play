@@ -347,7 +347,7 @@ describe("ojplay add at a Unity project's root", () => {
     /** A fresh project's build list, as Unity -createProject writes it: empty. */
     const BUILD_SETTINGS = "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!1045 &1\nEditorBuildSettings:\n  m_ObjectHideFlags: 0\n  serializedVersion: 2\n  m_Scenes: []\n  m_configObjects: {}\n"
     const npmCalls: string[] = []
-    const npm = (dir: string, args: string[]) => { npmCalls.push(`${path.relative(path.dirname(path.dirname(path.dirname(dir))), dir)}: npm ${args.join(" ")}`); return 0 }
+    const npm = (dir: string, args: string[]) => { npmCalls.push(`${path.relative(path.dirname(path.dirname(path.dirname(dir))), dir).split(path.sep).join("/")}: npm ${args.join(" ")}`); return 0 }
 
     it("takes somebody else's cart whole, pinned, with its prefab, and installs and builds it", async () => {
         carts = { "@singtaa/portal": portal() }

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
+import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, cartKey } from "./game.mjs"
 import { ANYWHERE } from "./command.mjs"
+
+/** The native esbuild judges absWorkingDir by the host's rules: "/" is not absolute on Windows (cli/game.mjs passes the same). */
+const WORKING_DIR = path.parse(process.cwd()).root || "/"
 
 /**
  * Carts using carts (PlaySite docs/carts.md §3, step 4).
@@ -31,7 +35,7 @@ const fakeOj = () => {
 }
 
 const run = async (files: Files, carts: Parameters<typeof buildGame>[3]["carts"], entry = "index.tsx") => {
-    const built = await buildGame(esbuild, files, entry, { workingDir: "/", carts })
+    const built = await buildGame(esbuild, files, entry, { workingDir: WORKING_DIR, carts })
     const { seen, oj } = fakeOj()
     const exports = new Function("__ojExternals", `${built.code}; return __exports`)({ oj, react: {}, "react/jsx-runtime": {} })
     return { exports, seen, code: built.code }
@@ -121,7 +125,7 @@ describe("a cart using a cart", () => {
     describe("refuses, saying what to do", () => {
         const refusal = async (files: Files, carts: Parameters<typeof buildGame>[3]["carts"]) => {
             try {
-                await buildGame(esbuild, files, "index.tsx", { workingDir: "/", carts })
+                await buildGame(esbuild, files, "index.tsx", { workingDir: WORKING_DIR, carts })
             } catch (error) {
                 return (error as { errors: Array<{ text: string }> }).errors.map((e) => e.text).join("\n")
             }
