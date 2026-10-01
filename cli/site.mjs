@@ -59,14 +59,33 @@ export function sidFromRemote(url) {
     return match ? match[1] : null
 }
 
-/** This folder's game, read from its origin remote. */
-export function sidOf(root) {
+/** The @handle/name in a clone URL made from the address bar, lowercased, or null. */
+export function addressFromRemote(url) {
+    const match = /\/(@[A-Za-z0-9-]+\/[A-Za-z0-9-]+)\.git\/?$/.exec(url ?? "")
+    return match ? match[1].toLowerCase() : null
+}
+
+/**
+ * This folder's game, read from its origin remote. A /g/<sid>.git clone names
+ * its sid; one made from the address bar names an address, which the account's
+ * own list turns into a sid, so that form needs `bearer`.
+ */
+export async function sidOf(root, bearer) {
     const result = spawnSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" })
-    const sid = sidFromRemote((result.stdout ?? "").trim())
-    if (sid === null) {
+    const remote = (result.stdout ?? "").trim()
+    const sid = sidFromRemote(remote)
+    if (sid !== null) return sid
+    const address = addressFromRemote(remote)
+    if (address === null) {
         throw new Error("This folder is not a clone of a cart on " + siteOrigin() + ". Pass --sid, or clone one first.")
     }
-    return sid
+    if (!bearer) throw new Error(`Finding which cart ${address} is needs a login. Run: ${COMMAND} login, or pass --sid.`)
+    const { carts } = await mine(bearer)
+    const found = carts.find((cart) => new URL(cart.url, siteOrigin()).pathname.toLowerCase() === "/" + address)
+    if (!found) {
+        throw new Error(`This account has no cart at ${address}. If it was renamed, ${COMMAND} list shows each cart's address and sid; pass --sid.`)
+    }
+    return found.sid
 }
 
 async function json(response) {

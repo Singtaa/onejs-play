@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree } from "./game.mjs"
-import { sidFromRemote, folderFor, credentialArgs } from "./site.mjs"
+import { addressFromRemote, sidFromRemote, sidOf, siteOrigin, folderFor, credentialArgs } from "./site.mjs"
 import { keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
@@ -153,6 +153,64 @@ describe("the site from a terminal", () => {
         expect(sidFromRemote("")).toBeNull()
     })
 
+    // The address bar plus .git is the first URL a person tries, and the site
+    // serves it, so push and status have to know which cart it is.
+    it("reads the address out of a clone URL made from the address bar", () => {
+        expect(addressFromRemote("https://play.onejs.com/@oj-newbie/dot-pop.git")).toBe("@oj-newbie/dot-pop")
+        expect(addressFromRemote("https://x:tok@play.onejs.com/@OJ-Newbie/Dot-Pop.git/")).toBe("@oj-newbie/dot-pop")
+        expect(addressFromRemote("https://play.onejs.com/g/a5x3a2uwh5gb.git")).toBeNull()
+        expect(addressFromRemote("")).toBeNull()
+    })
+
+    describe("which cart a clone is", () => {
+        function clone(remote: string): string {
+            const root = scratch({})
+            expect(spawnSync("git", ["init", "-q", root]).status).toBe(0)
+            expect(spawnSync("git", ["-C", root, "remote", "add", "origin", remote]).status).toBe(0)
+            return root
+        }
+
+        function account(carts: { sid: string, url: string }[]) {
+            const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ handle: "oj-newbie", carts })))
+            vi.stubGlobal("fetch", fetch)
+            return fetch
+        }
+
+        afterEach(() => vi.unstubAllGlobals())
+
+        it("reads a /g/ clone's sid without asking the site", async () => {
+            const fetch = account([])
+            expect(await sidOf(clone("https://play.onejs.com/g/a5x3a2uwh5gb.git"), null)).toBe("a5x3a2uwh5gb")
+            expect(fetch).not.toHaveBeenCalled()
+        })
+
+        it("asks the account which of its carts an address clone is", async () => {
+            const fetch = account([
+                { sid: "8xvg1ixn1i1r", url: `${siteOrigin()}/@oj-newbie/pop-kit` },
+                { sid: "0gr0k7jhe16c", url: `${siteOrigin()}/@oj-newbie/dot-pop` },
+            ])
+            expect(await sidOf(clone("https://play.onejs.com/@oj-newbie/dot-pop.git"), "tok")).toBe("0gr0k7jhe16c")
+            expect(fetch.mock.calls[0][0]).toBe(`${siteOrigin()}/api/me/carts`)
+            expect(fetch.mock.calls[0][1]?.headers).toEqual({ authorization: "Bearer tok" })
+        })
+
+        it("names the address it could not find, and how to look", async () => {
+            account([{ sid: "0gr0k7jhe16c", url: `${siteOrigin()}/@oj-newbie/dot-pop` }])
+            await expect(sidOf(clone("https://play.onejs.com/@oj-newbie/square-dodge.git"), "tok"))
+                .rejects.toThrow(/@oj-newbie\/square-dodge.*list/)
+        })
+
+        it("asks for a login before it can look an address up", async () => {
+            account([])
+            await expect(sidOf(clone("https://play.onejs.com/@oj-newbie/dot-pop.git"), null)).rejects.toThrow(/login/)
+        })
+
+        it("still says a folder is not a clone", async () => {
+            account([])
+            await expect(sidOf(clone("git@github.com:Singtaa/onejs-play.git"), "tok")).rejects.toThrow(/not a clone of a cart/)
+        })
+    })
+
     it("resets the credential helpers before adding its own, so a stored one cannot run first", () => {
         const args = credentialArgs("tok")
         expect(args.slice(0, 2)).toEqual(["-c", "credential.helper="])
@@ -195,6 +253,19 @@ describe("the browser", () => {
         } finally {
             vi.unstubAllGlobals()
         }
+    })
+
+    // A Chrome that never came up left its profile in the temp folder, one per
+    // failed run: 30 of them, 598 MB, on one machine by Oct 2026.
+    it("removes its profile when Chrome does not start", async () => {
+        const prefix = `oj-chrome-test-${process.pid}-`
+        vi.stubEnv("OJ_CHROME", process.execPath)
+        try {
+            await expect(launch({ profilePrefix: prefix })).rejects.toThrow(/Chrome did not start/)
+        } finally {
+            vi.unstubAllEnvs()
+        }
+        expect(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix))).toEqual([])
     })
 
     it("caches a container per version under the oj home", () => {
