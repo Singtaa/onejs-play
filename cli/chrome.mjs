@@ -48,7 +48,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * on the machine, every start listed its page within 1.5 s, at any number of
  * runs at once. The first start on a fresh machine is another matter: 0.6 to
  * 32.4 s, and 32.4 s is past the 30 s this used to allow, which is how a sweep
- * failed on main with "offered no page". A person's first `oj run` after a
+ * failed on main with "offered no page". A person's first `ojp run` after a
  * reboot pays the same. 90 s is 2.8 times that worst cold start.
  */
 export const STARTUP_MS = 90000

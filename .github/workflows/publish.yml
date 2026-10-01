@@ -1,5 +1,5 @@
-# Publishes onejs-play to npm through trusted publishing (OIDC), so no npm
-# token exists anywhere: not in repository secrets, not on a laptop. GitHub
+# Publishes ojp to npm through trusted publishing (OIDC), so no npm token
+# exists anywhere: not in repository secrets, not on a laptop. GitHub
 # mints a short-lived token for this one workflow, npm verifies it against the
 # trusted publisher registered in the package settings, and provenance is
 # attached automatically.
@@ -7,6 +7,10 @@
 # The filename matters. npm matches "publish.yml" literally against the trusted
 # publisher entry, so renaming this file breaks publishing until the entry on
 # npmjs.com is deleted and recreated (entries cannot be edited).
+#
+# The package was onejs-play until 1 Oct 2026. That name is frozen at 0.8.9 and
+# must never be published again: OneJS 3.2.3 to 3.9.2 pin "^0.8.3" in every
+# Unity project they scaffold. This repository keeps the old name.
 name: Publish
 
 on:

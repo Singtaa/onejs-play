@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
- * oj: an OJPlay cart from the terminal.
+ * ojp: an OJPlay cart from the terminal.
  *
- *   oj init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
- *   oj build            bundle the cart the way the site does; errors as file:line:col
- *   oj typecheck        tsc --noEmit against the same oj the site builds with
- *   oj run              build, then run the cart in the real container in a local Chrome
- *   oj test <script>    run, then drive the cart from a script that reads, clicks and asserts
- *   oj status           what the site is running: head, live, and why they differ
- *   oj list             every cart on the account, private ones included
- *   oj push             git push origin main with OJ_TOKEN, then fail if the tip did not build
- *   oj new <name>       create a cart on the site and clone it here
- *   oj login            print a link; once the person presses Allow, this machine can push
- *   oj logout           forget that login, here and on the site
- *   oj runtime          fetch the container the site serves into the local cache
+ *   ojp add <address>    use another cart in this one; in an empty folder, start a cart that uses it
+ *   ojp update           move the carts this one uses to their newest versions
+ *   ojp remove <address> stop using a cart
+ *   ojp init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
+ *   ojp build            bundle the cart the way the site does; errors as file:line:col
+ *   ojp typecheck        tsc --noEmit against the same oj the site builds with
+ *   ojp run              build, then run the cart in the real container in a local Chrome
+ *   ojp test <script>    run, then drive the cart from a script that reads, clicks and asserts
+ *   ojp status           what the site is running: head, live, and why they differ
+ *   ojp list             every cart on the account, private ones included
+ *   ojp push             git push origin main with OJ_TOKEN, then fail if the tip did not build
+ *   ojp new <name>       create a cart on the site and clone it here
+ *   ojp login            print a link; once the person presses Allow, this machine can push
+ *   ojp logout           forget that login, here and on the site
+ *   ojp runtime          fetch the container the site serves into the local cache
  *
  * Every command reads the cart in the current folder, or --root <dir>.
  */
@@ -27,8 +30,20 @@ import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
 import { initUnity, npm } from "./unity.mjs"
+import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
+import { handOff, updateNotice } from "./global.mjs"
+import { COMMAND, PACKAGE } from "../build/command.mjs"
 
-const HELP = `usage: oj <command> [options]
+const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
+
+const HELP = `usage: ${COMMAND} <command> [options]
+
+  add <@handle/name>    use another cart in this one: oj.json gets its newest version, and its
+                          source and art are fetched into .oj/carts. In an empty folder, starts
+                          a cart there that uses it. With no address, fetches what oj.json lists
+  update [@handle/name] move the carts this one uses to their newest version in the same major
+                          (--major: their newest of all)
+  remove <@handle/name> stop using a cart, and say which files still import it
 
   init                  write package.json, tsconfig.json and env.d.ts and ignore them (.gitignore,
                           or .git/info/exclude in a clone); run npm install after
@@ -62,8 +77,11 @@ const HELP = `usage: oj <command> [options]
   --runtime <version>   run against a specific container version
   --site <origin>       the site (default ${siteOrigin()}; also OJ_SITE)
 
-OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, used instead of oj login's
+OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, used instead of ${COMMAND} login's
 OJ_CHROME the browser binary, when it is not in the usual place
+
+Inside a cart with its own ${PACKAGE} in node_modules, ${PACKAGE} runs that copy, so the version matches the cart.
+${PACKAGE} ${OWN_VERSION}
 `
 
 function parse(argv) {
@@ -80,13 +98,23 @@ function parse(argv) {
     return { command: positional[0], args: positional.slice(1), flags }
 }
 
-const say = (line) => console.error(`[oj] ${line}`)
+const say = (line) => console.error(`[${PACKAGE}] ${line}`)
 
 async function main() {
     const { command, args, flags } = parse(process.argv.slice(2))
     if (flags.site) process.env.OJ_SITE = String(flags.site)
     const root = path.resolve(flags.root ? String(flags.root) : ".")
     const size = flags.window ? String(flags.window).split(",").map(Number) : undefined
+
+    // What oj.json uses and .oj/carts lacks (a fresh clone, or an edit by
+    // hand), fetched before anything builds it.
+    if (["build", "typecheck", "run", "test"].includes(command) && placeOf(root) === "cart") {
+        const fetched = await fetchUsed(root)
+        if (fetched.length > 0) {
+            say(`fetched ${fetched.join(", ")} into .oj/carts`)
+            syncTypes(root)
+        }
+    }
 
     switch (command) {
         case "init": {
@@ -100,7 +128,21 @@ async function main() {
                 return 0
             }
             for (const line of init(root)) say(line)
-            say("now: npm install, then npx onejs-play run")
+            syncTypes(root)
+            say(`now: npm install, then ${COMMAND} run`)
+            return 0
+        }
+        case "add": {
+            for (const line of await add(root, args[0])) say(line)
+            return 0
+        }
+        case "update": {
+            const only = args[0] ?? (typeof flags.major === "string" ? flags.major : undefined)
+            for (const line of await update(root, only, { major: flags.major !== undefined })) say(line)
+            return 0
+        }
+        case "remove": {
+            for (const line of await remove(root, args[0])) say(line)
             return 0
         }
         case "build": {
@@ -243,7 +285,7 @@ async function main() {
         }
         case "new": {
             const name = args.join(" ").trim()
-            if (!name) throw new Error("oj new <name>")
+            if (!name) throw new Error(`${COMMAND} new <name>`)
             const bearer = token(root)
             const made = await create(name, bearer)
             const dir = folderFor(name)
@@ -272,13 +314,23 @@ async function main() {
         case "help":
         case "--help":
             process.stdout.write(HELP)
-            return command === undefined ? 1 : 0
+            return command === undefined && flags.help !== true && flags.h !== true ? 1 : 0
         default:
             throw new Error(`unknown command ${command}\n\n${HELP}`)
     }
 }
 
-main().then((code) => process.exit(code), (error) => {
-    console.error(error.lines ? error.lines.join("\n") : `[oj] ${error.message}`)
+const rootArg = process.argv.indexOf("--root")
+const startRoot = path.resolve(rootArg === -1 ? "." : process.argv[rootArg + 1] ?? ".")
+// The global copy, typed bare at a terminal: the daily update line, and the
+// hand-off to the cart's own copy. Neither for npx or a package.json script,
+// which already run the copy they mean, nor for an agent reading the output.
+const global = process.env.npm_command === undefined && process.env.OJP_HANDED_OFF !== "1"
+if (global && process.stderr.isTTY && !process.env.CI && process.env.OJP_NO_UPDATE_CHECK === undefined) {
+    const notice = updateNotice(OWN_VERSION)
+    process.on("exit", notice.tell)
+}
+if (!global || !await handOff(startRoot)) main().then((code) => process.exit(code), (error) => {
+    console.error(error.lines ? error.lines.join("\n") : `[${PACKAGE}] ${error.message}`)
     process.exit(1)
 })

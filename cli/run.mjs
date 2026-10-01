@@ -1,7 +1,7 @@
 /**
  * A game running on this machine, and the handle a test script drives it by.
  *
- * `oj run` and `oj test` share everything up to the point where somebody
+ * `ojp run` and `ojp test` share everything up to the point where somebody
  * decides what to do with the running game: a person watches it, a script
  * reads it, clicks it and asserts.
  */

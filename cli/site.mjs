@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { home } from "./local.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 export const DEFAULT_SITE = "https://play.onejs.com"
 
@@ -13,12 +14,12 @@ export function siteOrigin() {
     return (process.env.OJ_SITE ?? DEFAULT_SITE).replace(/\/$/, "")
 }
 
-/** Where `oj login` keeps its token: home first, the cart's .oj/ when home cannot be written. */
+/** Where `ojp login` keeps its token: home first, the cart's .oj/ when home cannot be written. */
 export function tokenPaths(root) {
     return [path.join(home(), "token"), path.join(root, ".oj", "token")]
 }
 
-/** The token `oj login` stored, or null. */
+/** The token `ojp login` stored, or null. */
 export function storedToken(root = process.cwd()) {
     for (const file of tokenPaths(root)) {
         try {
@@ -29,7 +30,7 @@ export function storedToken(root = process.cwd()) {
     return null
 }
 
-/** OJ_TOKEN when set, else what `oj login` stored, else null. */
+/** OJ_TOKEN when set, else what `ojp login` stored, else null. */
 export function tokenOf(root = process.cwd()) {
     return process.env.OJ_TOKEN || storedToken(root)
 }
@@ -37,7 +38,7 @@ export function tokenOf(root = process.cwd()) {
 /** tokenOf, or a throw with the fix. */
 export function token(root = process.cwd()) {
     const value = tokenOf(root)
-    if (!value) throw new Error("Not logged in. Run: npx onejs-play login")
+    if (!value) throw new Error(`Not logged in. Run: ${COMMAND} login`)
     return value
 }
 
@@ -130,7 +131,7 @@ export function git(args, { cwd, bearer } = {}) {
     return result.status ?? 1
 }
 
-/** Where `oj new` clones to: the name as a folder, made safe. */
+/** Where `ojp new` clones to: the name as a folder, made safe. */
 export function folderFor(name) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
     return path.resolve(slug === "" ? "cart" : slug)

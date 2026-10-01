@@ -10,12 +10,14 @@ import path from "node:path"
  * a new cart is made from could keep the old word after the site moved on.
  * "Sketch" became "cart" on 30 Sep 2026 (PlaySite docs/carts.md).
  *
- * And one command spelling, everywhere: `npx onejs-play <command>`. Before
- * `npm install`, `npx oj` is not this package: it resolves to an unrelated
- * npm package called "oj" (Mac 003's sample port, 30 Sep), and a Koma bot ran
- * `npx -y oj --help` on 1 Oct, fetching it. `npx onejs-play` works in both
- * places, since npx runs the local install when there is one, so it is the
- * only spelling (Tachi, 1 Oct).
+ * And one command spelling, everywhere: `ojp <command>` for a person, who
+ * installs it once (`npm install -g ojp`), and `npx ojp <command>` where an
+ * agent reads, since it needs no install (Sai and Tachi, 1 Oct 2026). Never
+ * `npx oj`: before `npm install` that is not this package but an unrelated
+ * npm package called "oj" (Mac 003's sample port, 30 Sep; a Koma bot ran
+ * `npx -y oj --help` on 1 Oct and fetched it). And never the former name:
+ * `npx onejs-play` installs onejs-play 0.8.9, frozen for the OneJS projects
+ * that pin it, without any of what came after.
  */
 
 const ROOT = path.join(import.meta.dirname, "..")
@@ -37,17 +39,20 @@ const FILES = [
 const OLD_WORD = /\b[Ss]ketch(?:es)?\b/
 /** Any command spelled through the bare name. */
 const BARE = /\bnpx (?:-y )?oj\b/
+/** Any command or install spelled through the former name. */
+const FORMER = /\bnpx (?:-y )?onejs-play\b|\bnpm (?:install|i)(?: -[gD])? onejs-play\b/
 
 const offenders = (pattern: RegExp) => FILES.flatMap((rel) =>
     read(rel).split("\n").flatMap((line, i) => pattern.test(line) ? [`${rel}:${i + 1}: ${line.trim()}`] : []))
 
-describe("what onejs-play says", () => {
+describe("what ojp says", () => {
     it("says cart, not sketch", () => {
         expect(offenders(OLD_WORD)).toEqual([])
     })
 
-    it("writes every command as npx onejs-play", () => {
+    it("writes every command as ojp or npx ojp", () => {
         expect(offenders(BARE)).toEqual([])
+        expect(offenders(FORMER)).toEqual([])
     })
 
     it("would catch either", () => {
@@ -56,6 +61,10 @@ describe("what onejs-play says", () => {
         expect(BARE.test("then: npx oj init")).toBe(true)
         expect(BARE.test("npm install, then npx oj run")).toBe(true)
         expect(BARE.test("npx -y oj --help")).toBe(true)
-        expect(BARE.test("npx onejs-play run")).toBe(false)
+        expect(BARE.test("npx ojp run")).toBe(false)
+        expect(FORMER.test("then npx onejs-play run")).toBe(true)
+        expect(FORMER.test("npm install -g onejs-play")).toBe(true)
+        expect(FORMER.test("npx ojp run")).toBe(false)
+        expect(FORMER.test("onejs-play stays frozen at 0.8.9")).toBe(false)
     })
 })

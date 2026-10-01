@@ -5,6 +5,7 @@ import path from "node:path"
 import { build, readUsedCarts } from "./game.mjs"
 import { serve } from "./local.mjs"
 import { unservableAssets } from "./assets.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 /**
  * Used carts on a developer's machine (PlaySite docs/carts.md §3, step 4):
@@ -68,7 +69,7 @@ describe("used carts, locally", () => {
 
         it("a cart that is not fetched", () => {
             expect(refusal({ "oj.json": oj({ dependencies: { "@singtaa/lightning": "1.2.0" } }) }))
-                .toBe("@singtaa/lightning 1.2.0 is not in .oj/carts. Fetch it with: npx onejs-play add @singtaa/lightning")
+                .toBe(`@singtaa/lightning 1.2.0 is not in .oj/carts. Fetch it with: ${COMMAND} add`)
         })
 
 
@@ -93,13 +94,13 @@ describe("used carts, locally", () => {
         expect(readUsedCarts(root, { dependencies: deps })).toEqual({
             uses: {}, carts: {},
             skipped: {
-                "@singtaa/lightning": "\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; oj update moves it.",
+                "@singtaa/lightning": "\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; ojp update moves it.",
                 "lodash": "\"lodash\" should be a cart's address, like \"@singtaa/lightning\".",
             },
         })
         expect((await build(root)).warnings).toEqual(Object.values(readUsedCarts(root, { dependencies: deps }).skipped!))
         const importing = cart({ "index.tsx": `import { bolt } from "@singtaa/lightning"\nexport const out = bolt`, "oj.json": oj({ dependencies: deps }) })
-        await expect(build(importing)).rejects.toThrow("\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; oj update moves it.")
+        await expect(build(importing)).rejects.toThrow("\"^1.2.0\" for @singtaa/lightning is a range. Use \"1.2.0\"; ojp update moves it.")
     })
 
     it("leaves used carts' files out of this cart's own asset check", () => {

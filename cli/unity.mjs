@@ -1,5 +1,5 @@
 /**
- * `oj init --unity`: a clone turned into a JSRunner project, in place, inside
+ * `ojp init --unity`: a clone turned into a JSRunner project, in place, inside
  * the Unity project it was cloned into.
  *
  * A cart's repository is index.tsx and oj.json. A JSRunner project is a
@@ -28,6 +28,7 @@ import { spawnSync } from "node:child_process"
 import { ignoreLocally, packageName } from "./init.mjs"
 import { entryOf, manifestOf, readTree } from "./game.mjs"
 import { buildConfig } from "./unity-assets.mjs"
+import { FORMER_PACKAGE, PACKAGE } from "../build/command.mjs"
 
 /**
  * JSRunner's default files: the OneJS template, and where it lands in the
@@ -118,15 +119,20 @@ export function oneJSOf(project) {
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
 /**
- * The template's package.json, named after the cart, with onejs-play at
- * least the version writing it. The installed OneJS's template may pin an
- * older onejs-play, one without the oj this cart was written against.
+ * The template's package.json, named after the cart, with ojp at least the
+ * version writing it. The installed OneJS's template may pin an older one,
+ * without the oj this cart was written against, or name it by its former
+ * name, onejs-play (OneJS 3.2.3 to 3.9.2), which then gives way to ojp.
  */
 export function packageJson(template, name) {
     const pkg = JSON.parse(template)
     pkg.name = name
     for (const deps of [pkg.dependencies, pkg.devDependencies]) {
-        if (deps && "onejs-play" in deps) deps["onejs-play"] = `^${OWN_VERSION}`
+        if (deps && FORMER_PACKAGE in deps) {
+            delete deps[FORMER_PACKAGE]
+            deps[PACKAGE] = ""
+        }
+        if (deps && PACKAGE in deps) deps[PACKAGE] = `^${OWN_VERSION}`
     }
     // The template carries "//"-prefixed notes for whoever opens it in the
     // editor. They mean nothing here, and npm reads such a key inside a
@@ -266,6 +272,8 @@ export function initUnity(root) {
         let text = fs.readFileSync(path.join(templates, template), "utf8")
         if (target === "package.json") text = packageJson(text, packageName(root))
         if (target === "esbuild.config.mjs") text = buildConfig(text, entry)
+        // The oj alias, in the build and in tsconfig, follows the package.
+        if (target === "esbuild.config.mjs" || target === "tsconfig.json") text = text.replaceAll(`node_modules/${FORMER_PACKAGE}/`, `node_modules/${PACKAGE}/`)
         put(path.join(root, target), target, text)
     }
     // Every scaffold path, whether written now or already there: a file this

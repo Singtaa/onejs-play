@@ -144,7 +144,7 @@ export function serve({ runtime, root, manifest, bundle, port = 0, refused = () 
             let name = url.slice("/assets/".length)
             let from = root
             // A used cart's file, asked for by its scoped oj under its key,
-            // from where `oj add` fetched it. The key's own shape is checked
+            // from where `ojp add` fetched it. The key's own shape is checked
             // so it can only name a folder in .oj/carts.
             const used = /^(@[a-z0-9-]+)\/([a-z0-9-]+@[a-z0-9.]+)\/(.+)$/.exec(name)
             if (used !== null) {
