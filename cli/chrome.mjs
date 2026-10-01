@@ -100,7 +100,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         try { port = Number(fs.readFileSync(portFile, "utf8").split("\n")[0]) } catch { await sleep(100) }
     }
     if (port === null) {
-        kill(child)
+        discard(child, profile)
         throw new Error(`Chrome did not start (${binary}):\n${stderr.slice(-600)}`)
     }
     const portMs = Date.now() - began
@@ -117,7 +117,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         if (page === null) await sleep(100)
     }
     if (page === null) {
-        kill(child)
+        discard(child, profile)
         throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
     }
     const pageMs = Date.now() - began
@@ -151,6 +151,12 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
         throw e
     }
     return browser
+}
+
+/** Stops Chrome and deletes its profile: every way out of a run, failed or not. */
+function discard(child, profile) {
+    kill(child)
+    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) } catch { /* a locked profile is not worth failing over */ }
 }
 
 function kill(child) {
@@ -262,8 +268,7 @@ export class Browser {
 
     close() {
         try { this.ws?.close() } catch { /* going anyway */ }
-        kill(this.child)
-        try { fs.rmSync(this.profile, { recursive: true, force: true }) } catch { /* a locked profile is not worth failing over */ }
+        discard(this.child, this.profile)
     }
 }
 

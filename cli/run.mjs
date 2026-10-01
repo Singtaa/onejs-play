@@ -273,7 +273,12 @@ export async function start(root, { headless = true, window: size, runtime: pinn
         throw error
     }
     const game = new Game({ root, browser, server, manifest, say })
-    await browser.navigate(server.url)
+    try {
+        await browser.navigate(server.url)
+    } catch (error) {
+        stop(game)
+        throw error
+    }
     return game
 }
 

@@ -264,14 +264,15 @@ async function main() {
             return 0
         }
         case "status": {
-            const sid = flags.sid ? String(flags.sid) : sidOf(root)
-            const s = await status(sid, { bearer: tokenOf(root) })
+            const bearer = tokenOf(root)
+            const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
+            const s = await status(sid, { bearer })
             console.log(JSON.stringify(s, null, 2))
             return 0
         }
         case "push": {
-            const sid = flags.sid ? String(flags.sid) : sidOf(root)
             const bearer = token(root)
+            const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const code = git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
             const s = await status(sid, { bearer })

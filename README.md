@@ -586,8 +586,8 @@ so run one per four cores, and one at a time on Windows, where two at once
 ran past a 12 minute cap and four starved a four-core machine outright (key
 presses wait for frames, so a slow machine only makes a run longer). The
 first Chrome after a reboot can take half a minute to start; `oj` allows it
-90 s. Ctrl-C during `ojplay test` closes its browser before it exits. `ojplay login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the cart where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `ojplay login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
-points every command at another origin; `OJ_HOME` moves the cache.
+90 s. Ctrl-C during `ojplay test` closes its browser before it exits, and a run that fails at any step, Chrome's start and the first page load included, closes it and deletes the profile it made. `ojplay login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the cart where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `ojplay login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
+points every command at another origin; `OJ_HOME` moves the cache. `push` and `status` find the cart from the clone's `origin`: a `/g/<sid>.git` URL names it, and the address bar's `/@handle/name.git` is looked up in the account's own carts, so that form needs the login.
 
 ## Testing
 
