@@ -43,8 +43,39 @@ afterEach(() => {
     const g = globalThis as any
     for (const fn of host.teardowns) fn()
     delete g.__root; delete g.CS; delete g.devicePixelRatio
-    delete g.requestAnimationFrame; delete g.__onTeardown
+    delete g.requestAnimationFrame; delete g.__onTeardown; delete g.__csHelpers
 })
+
+/**
+ * A UnityEngine.Object as OneJS's bridge hands it over: a proxy with a handle.
+ * The bridge tests C# null by reference, so an unassigned field (Unity's fake
+ * null) arrives as one of these too, and reading a property of it throws in
+ * C#, which the bridge logs as "[QuickJS Invoke Error]" before JS can catch
+ * it. `bridgeLog` is that log. Unity's bool operator, reached through
+ * __csHelpers.callStatic, says whether the object is really there.
+ */
+const bridgeLog: string[] = []
+function unityObject(fields: Record<string, number> | null) {
+    const target: Record<string, unknown> = { __csHandle: 7, __csType: "UnityEngine.RenderTexture" }
+    for (const name of ["width", "height"]) {
+        Object.defineProperty(target, name, {
+            get() {
+                if (fields === null) {
+                    bridgeLog.push(`[QuickJS Invoke Error] GetProp on UnityEngine.RenderTexture.${name} failed: UnassignedReferenceException`)
+                    throw new Error("UnassignedReferenceException")
+                }
+                return fields[name]
+            },
+        })
+    }
+    ;(globalThis as any).__csHelpers = {
+        callStatic: (type: string, method: string, obj: unknown) => {
+            if (type !== "UnityEngine.Object" || method !== "op_Implicit") throw new Error(`unexpected ${type}.${method}`)
+            return obj !== target || fields !== null
+        },
+    }
+    return target
+}
 
 describe("startStandalone", () => {
     it("installs a runtime, so a game written for the container runs unchanged", () => {
@@ -122,6 +153,28 @@ describe("startStandalone", () => {
         const runtime = startStandalone()
         expect(host.panelSettings.scale).toBe(2)
         expect(runtime.oj.stage).toEqual({ width: 960, height: 540 })
+    })
+
+    it("reads nothing from an unassigned RenderTexture, so Play logs no red line", () => {
+        // The Game view: the PanelSettings' targetTexture is unassigned, and
+        // the bridge hands over Unity's fake null rather than null.
+        bridgeLog.length = 0
+        host = fakeHost({ width: 640, height: 480 })
+        ;(host.panelSettings as any).targetTexture = unityObject(null)
+        const runtime = startStandalone()
+        host.step(0)
+        host.step(16)
+        expect(bridgeLog).toEqual([])
+        expect(runtime.oj.stage).toEqual({ width: 640, height: 480 })
+    })
+
+    it("sizes the stage from a RenderTexture that came over the bridge", () => {
+        bridgeLog.length = 0
+        host = fakeHost({ width: 640, height: 480 })
+        ;(host.panelSettings as any).targetTexture = unityObject({ width: 1920, height: 1080 })
+        const runtime = startStandalone()
+        expect(runtime.oj.stage).toEqual({ width: 1920, height: 1080 })
+        expect(bridgeLog).toEqual([])
     })
 
     it("joins the existing run rather than starting a second one", () => {

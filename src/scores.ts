@@ -44,7 +44,22 @@ export interface SubmitOptions {
     name?: string
 }
 
-async function readJson(response: Response): Promise<any> {
+/**
+ * fetch, declared in this module by the shape it reads, as onejs-unity's
+ * assets and onejs-react's components declare it. Every host provides fetch
+ * (OneJS's bootstrap installs it, browsers have it), but only the DOM's lib
+ * types it: OneJS's global.d.ts does not, and a OneJS app type-checks oj from
+ * source with no DOM. Declared in the module, it shadows the DOM's in the
+ * site's build rather than clashing with it, as a global declaration would.
+ */
+interface SiteResponse {
+    readonly ok: boolean
+    readonly status: number
+    text(): Promise<string>
+}
+declare function fetch(url: string, init?: { method: string, headers: Record<string, string>, body: string }): Promise<SiteResponse>
+
+async function readJson(response: SiteResponse): Promise<any> {
     const text = await response.text()
     try {
         return JSON.parse(text)
@@ -87,10 +102,12 @@ export const scores = {
 
     /** The board. Empty rather than an error when there is no site. */
     async top(options: TopOptions = {}): Promise<ScoreEntry[]> {
-        const query = new URLSearchParams()
-        if (options.window !== undefined) query.set("window", options.window)
-        if (options.limit !== undefined) query.set("limit", String(options.limit))
-        const suffix = query.toString()
+        // By hand rather than URLSearchParams, which OneJS provides but does
+        // not type (see fetch above).
+        const pairs: string[] = []
+        if (options.window !== undefined) pairs.push(`window=${encodeURIComponent(options.window)}`)
+        if (options.limit !== undefined) pairs.push(`limit=${encodeURIComponent(String(options.limit))}`)
+        const suffix = pairs.join("&")
         const url = apiUrl(`/scores${suffix === "" ? "" : `?${suffix}`}`)
         if (url === null) return []
 
