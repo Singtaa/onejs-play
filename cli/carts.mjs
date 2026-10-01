@@ -14,7 +14,8 @@ import { cartKey, cartLabel, cartPins } from "../build/game.mjs"
 import { COMMAND } from "../build/command.mjs"
 import { siteOrigin, tokenOf } from "./site.mjs"
 import { ignoreLocally } from "./init.mjs"
-import { addWhole, unityPlace, unityRefusal } from "./carts-unity.mjs"
+import { UNITY_NEXT, addWhole, prepareUnityBuild, unityPlace, unityRefusal } from "./carts-unity.mjs"
+import { unityProjectOf } from "./unity.mjs"
 
 const ADDRESS = /^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/
 /** What a fetched cart's folder carries beside its files: where it came from. A cart's own names never start with a dot. */
@@ -110,6 +111,9 @@ const writeManifest = (root, manifest) => fs.writeFileSync(path.join(root, "oj.j
 /** A fetched cart's own oj.json and where it came from. */
 const fetchedOf = (root, key) => ({ own: readJson(path.join(dirOf(root, key), "oj.json")) ?? {}, kept: readJson(path.join(dirOf(root, key), KEPT)) })
 
+/** A OneJS app's working folder in a Unity project, which uses carts through its oj.json. */
+const isUnityApp = (root) => path.basename(root) === "~" && unityProjectOf(root) !== null && fs.existsSync(path.join(root, "oj.json"))
+
 /** What `root` is: a cart, a Unity project, or a folder with neither. */
 export function placeOf(root) {
     const manifest = manifestOf(root)
@@ -131,7 +135,14 @@ export async function fetchUsed(root, manifest = manifestOf(root) ?? {}) {
             const key = cartKey(address, pin)
             if (seen.has(key)) continue
             seen.add(key)
-            if (!fs.existsSync(dirOf(root, key))) fetched.push(shown(await download(root, address.toLowerCase(), pin)))
+            if (!fs.existsSync(dirOf(root, key))) {
+                try {
+                    fetched.push(shown(await download(root, address.toLowerCase(), pin)))
+                } catch (error) {
+                    const reason = error.message.replace(/ Check the connection and run it again\.$/, "").replace(/\.$/, "")
+                    throw new Error(`${cartLabel(key)} is not in .oj/carts and could not be fetched: ${reason}. Connect and run it again, or: ${COMMAND} add`, { cause: error })
+                }
+            }
             await visit(fetchedOf(root, key).own.dependencies)
         }
     }
@@ -231,20 +242,26 @@ function exportedNames(root, key, exportsFile) {
  * no address, fetches what oj.json already lists. Answers the lines to print.
  */
 export async function add(root, address, options = {}) {
-    const place = placeOf(root)
-    if (place === "unity") {
-        const where = unityPlace(root)
-        if (where === "root" && address !== undefined && ADDRESS.test(address)) return addWhole(root, address, options)
-        if (where === "root" && address !== undefined) throw new Error(`"${address}" is not a cart's address. One looks like @singtaa/lightning: @, the handle, a slash, the name.`)
-        throw new Error(unityRefusal(where))
+    let place = placeOf(root)
+    // In a Unity project: at its root the whole cart lands as its own app;
+    // in an app's ~ (a OneJS app, or a cart taken earlier) it is used as a
+    // piece, through oj.json the way a cart uses one.
+    const unity = place === "unity" ? unityPlace(root) : unityProjectOf(root) !== null && path.basename(root) === "~" ? "app" : null
+    if (unity === "root" && address !== undefined && ADDRESS.test(address)) return addWhole(root, address, options)
+    if (unity === "root" && address !== undefined) throw new Error(`"${address}" is not a cart's address. One looks like @singtaa/lightning: @, the handle, a slash, the name.`)
+    if (unity !== null && unity !== "app") throw new Error(unityRefusal(unity))
+    if (unity === "app") {
+        if (!fs.existsSync(path.join(root, "esbuild.config.mjs"))) throw new Error(`This ~ has no esbuild.config.mjs, so it is not a OneJS app yet. Initialize it from its JSRunner in Unity first, then run this again.`)
+        place = "cart"
     }
     if (address === undefined) {
         if (place !== "cart") throw new Error(`This folder is not a cart (no oj.json with an entry). Start one that uses a cart: ${COMMAND} add @handle/name`)
         const fetched = await fetchUsed(root)
         syncTypes(root)
+        if (unity === "app") prepareUnityBuild(root, options)
         return [
             fetched.length === 0 ? "Everything oj.json uses is already in .oj/carts." : `Fetched ${fetched.join(", ")} into .oj/carts.`,
-            `Next: ${COMMAND} run`,
+            `Next: ${unity === "app" ? UNITY_NEXT : `${COMMAND} run`}`,
         ]
     }
     if (!ADDRESS.test(address)) {
@@ -285,7 +302,7 @@ export async function add(root, address, options = {}) {
         ]
     }
 
-    const manifest = manifestOf(root)
+    const manifest = manifestOf(root) ?? {}
     const deps = typeof manifest.dependencies === "object" && manifest.dependencies !== null && !Array.isArray(manifest.dependencies) ? manifest.dependencies : {}
     const listed = Object.keys(deps).find((a) => a.toLowerCase() === pinned.address.toLowerCase())
     const before = listed === undefined ? undefined : deps[listed]
@@ -301,7 +318,8 @@ export async function add(root, address, options = {}) {
         : before === undefined
             ? `Added ${shown(pinned)} to oj.json.`
             : `${pinned.address} ${before} → ${value.replace(/^#/, "#")} in oj.json.`
-    return [`${what} ${howToUse(root, key)}`, `Next: ${COMMAND} run`]
+    if (unity === "app") prepareUnityBuild(root, options)
+    return [`${what} ${howToUse(root, key)}`, `Next: ${unity === "app" ? UNITY_NEXT : `${COMMAND} run`}`]
 }
 
 /** The index.tsx a new cart starts with: the bare import of a whole cart, or the import of a piece. */
@@ -334,7 +352,7 @@ function starterFor(root, key) {
  * commit pin as days, `@koma/rain updated (30 Sep → 1 Oct)`.
  */
 export async function update(root, only, { major = false } = {}) {
-    if (placeOf(root) !== "cart") throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} update runs in one.`)
+    if (placeOf(root) !== "cart" && !isUnityApp(root)) throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} update runs in one.`)
     const manifest = manifestOf(root)
     const { pins } = cartPins(manifest.dependencies)
     const chosen = only === undefined ? pins : pins.filter(([address]) => address.toLowerCase() === only.toLowerCase())
@@ -368,7 +386,7 @@ export async function update(root, only, { major = false } = {}) {
 
 /** `ojp remove @handle/name`: out of oj.json and .oj/carts, naming the files that still import it. */
 export async function remove(root, address) {
-    if (placeOf(root) !== "cart") throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} remove runs in one.`)
+    if (placeOf(root) !== "cart" && !isUnityApp(root)) throw new Error(`This folder is not a cart (no oj.json with an entry). ${COMMAND} remove runs in one.`)
     if (address === undefined) throw new Error(`Which one? ${COMMAND} remove @handle/name`)
     const manifest = manifestOf(root)
     const deps = manifest.dependencies ?? {}

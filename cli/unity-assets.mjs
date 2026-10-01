@@ -23,6 +23,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import { RESERVED_ASSET_FOLDER, isAssetName, resolveAsset } from "./assets.mjs"
+import { withCartsPlugin } from "./unity-carts.mjs"
+
+export { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-carts.mjs"
 
 /** The names the last sync wrote, relative to the working directory. */
 const RECORD = path.join("node_modules", ".cache", "onejs-play", "unity-assets.json")
@@ -141,5 +144,6 @@ export function buildConfig(template, entry) {
     text = text.slice(0, at)
         + `${indent}// The cart's files, copied into assets/ where OneJS looks for them\n${indent}assetsPlugin(),\n`
         + text.slice(at)
-    return `import { assetsPlugin } from "ojp/unity"\n${text}`
+    // The carts oj.json uses, resolved and scoped the way the site does it.
+    return withCartsPlugin(`import { assetsPlugin } from "ojp/unity"\n${text}`)
 }

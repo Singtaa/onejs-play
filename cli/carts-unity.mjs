@@ -21,6 +21,9 @@ import { COMMAND, PACKAGE } from "../build/command.mjs"
 import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
 import { git, mine, siteOrigin, tokenOf } from "./site.mjs"
 import { NO_ONEJS, initUnity, npm as runNpm, oneJSOf, unityProjectOf } from "./unity.mjs"
+import { withCartsPlugin } from "./unity-carts.mjs"
+
+const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
 /** Where in a Unity project `root` is: its root, an app's `~`, or somewhere else inside it. */
 export function unityPlace(root) {
@@ -94,9 +97,35 @@ function refuseIfThere(project, app) {
     }
 }
 
-/** What `ojp add` says where it does not run in a Unity project yet. */
-export function unityRefusal(place) {
-    return place === "app"
-        ? `Using a cart as a piece of a OneJS app comes with the next ${PACKAGE} release. To take it whole, run this at the project's root, where Assets and ProjectSettings are.`
-        : `Run ${COMMAND} add at the Unity project's root, where Assets and ProjectSettings are: the cart lands whole in Assets/<Name>/~ with a prefab to drag into a scene.`
+/** What `ojp add` says somewhere in a Unity project that is neither its root nor an app's ~. */
+export function unityRefusal() {
+    return `Run ${COMMAND} add at the Unity project's root, where Assets and ProjectSettings are, to take a cart whole as its own app; `
+        + `or in an app's ~ folder to use it as a piece of that app.`
+}
+
+/** What a OneJS app does next once oj.json changed: JSRunner rebuilds on a save, npm on demand. */
+export const UNITY_NEXT = "npm run build (or save a file while JSRunner watches)"
+
+/**
+ * A OneJS app's build made ready for used carts: cartsPlugin() in its
+ * esbuild.config.mjs, and ojp in its package.json, installed. Both once.
+ */
+export function prepareUnityBuild(app, { npm = runNpm, say = () => {} } = {}) {
+    const configFile = path.join(app, "esbuild.config.mjs")
+    const config = fs.readFileSync(configFile, "utf8")
+    const next = withCartsPlugin(config)
+    if (next !== config) {
+        fs.writeFileSync(configFile, next)
+        say("esbuild.config.mjs: cartsPlugin() added")
+    }
+    const pkgFile = path.join(app, "package.json")
+    const pkg = JSON.parse(fs.readFileSync(pkgFile, "utf8"))
+    const has = [pkg.dependencies, pkg.devDependencies].some((d) => d !== undefined && PACKAGE in d)
+    if (!has) {
+        pkg.dependencies = { ...(pkg.dependencies ?? {}), [PACKAGE]: `^${OWN_VERSION}` }
+        fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n")
+        say(`package.json: ${PACKAGE} added`)
+        const code = npm(app, ["install", "--no-audit", "--no-fund"])
+        if (code !== 0) throw new Error(`npm install failed (exit ${code}) after adding ${PACKAGE} to package.json. Fix what npm said, then: npm install`)
+    }
 }
