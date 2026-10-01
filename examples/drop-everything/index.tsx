@@ -81,7 +81,7 @@ function bodiesFor(width: number, height: number): BodyConfig[] {
  *
  * usePhysics builds its walls from the host element ONCE, on mount, and never
  * rebuilds them: physics state lives in C# and a re-render must not throw it
- * away. So a fluid sketch that only resized its host would reflow visually
+ * away. So a fluid cart that only resized its host would reflow visually
  * while the simulation kept the walls it was born with, and shapes would pile
  * against an edge nobody can see. Keying on the size is what makes a resize
  * reach the simulation, at the honest cost of restarting the box. See

@@ -91,7 +91,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
 
     // One deadline for the whole start, generous on purpose (STARTUP_MS): a
     // run that fails here fails for a reason that has nothing to do with the
-    // sketch.
+    // cart.
     const deadline = Date.now() + STARTUP_MS
     const portFile = path.join(profile, "DevToolsActivePort")
     let port = null

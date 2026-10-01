@@ -1,4 +1,4 @@
-// A sketch that only listens: every frame, which of these keys the game saw
+// A cart that only listens: every frame, which of these keys the game saw
 // pressed, in the order a frame loop checks them. `oj test` drives it from
 // keys.playtest.mjs and reads `__keyLog` back, so what is tested is what a
 // game's own `wasKeyPressed` reports, through the real container.

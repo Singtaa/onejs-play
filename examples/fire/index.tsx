@@ -29,7 +29,7 @@ function Fire() {
     // The flame is square and must stay square, so it takes the smaller side of
     // whatever window it is given and sits in the middle of it. The dark fill
     // around it is what the manifest used to declare as a letterbox matte: the
-    // same colour, now painted by the sketch because there are no bars.
+    // same colour, now painted by the cart because there are no bars.
     const side = Math.min(stage.width, stage.height)
     return (
         <View style={{

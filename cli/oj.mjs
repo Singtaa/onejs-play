@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 /**
- * oj: an OJPlay game from the terminal.
+ * oj: an OJPlay cart from the terminal.
  *
  *   oj init             the local tooling files a clone needs (package.json, tsconfig, types), gitignored
- *   oj build            bundle the game the way the site does; errors as file:line:col
+ *   oj build            bundle the cart the way the site does; errors as file:line:col
  *   oj typecheck        tsc --noEmit against the same oj the site builds with
- *   oj run              build, then run the game in the real container in a local Chrome
- *   oj test <script>    run, then drive the game from a script that reads, clicks and asserts
+ *   oj run              build, then run the cart in the real container in a local Chrome
+ *   oj test <script>    run, then drive the cart from a script that reads, clicks and asserts
  *   oj status           what the site is running: head, live, and why they differ
- *   oj list             every sketch on the account, private ones included
+ *   oj list             every cart on the account, private ones included
  *   oj push             git push origin main with OJ_TOKEN, then fail if the tip did not build
- *   oj new <name>       create a game on the site and clone it here
+ *   oj new <name>       create a cart on the site and clone it here
  *   oj login            print a link; once the person presses Allow, this machine can push
  *   oj logout           forget that login, here and on the site
  *   oj runtime          fetch the container the site serves into the local cache
  *
- * Every command reads the game in the current folder, or --root <dir>.
+ * Every command reads the cart in the current folder, or --root <dir>.
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -34,31 +34,31 @@ const HELP = `usage: oj <command> [options]
                           or .git/info/exclude in a clone); run npm install after
                           --unity         in a clone at Assets/<Name>/~ of a Unity project with OneJS:
                                           make it a JSRunner project, install and build it
-  build                 bundle the sketch as the site does, to .oj/bundle.js (--out <file>)
+  build                 bundle the cart as the site does, to .oj/bundle.js (--out <file>)
   typecheck             tsc --noEmit
-  run                   run the sketch in the site's container in a local Chrome; exits 1 on a
+  run                   run the cart in the site's container in a local Chrome; exits 1 on a
                           console error
                           --headed        a window you can watch, kept open until Ctrl-C
-                          --watch         rebuild and swap the sketch in on every change
+                          --watch         rebuild and swap the cart in on every change
                           --for <s>       headless: seconds to run before the screenshot (default 5)
                           --shot <file>   where the screenshot goes (default .oj/run.png)
                           --window <w,h>  browser size in CSS pixels (default 960,540)
-  test [script.mjs]     run, then call the script's default export with the sketch (with no
+  test [script.mjs]     run, then call the script's default export with the cart (with no
                           script, let it run --for seconds, default 2); fails on a console error,
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
                           --headed, --window, --for as above
-  status                head, live and buildError for this sketch (--sid <id>)
-  list                  every sketch on the account, private ones included (--json)
+  status                head, live and buildError for this cart (--sid <id>)
+  list                  every cart on the account, private ones included (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
   push                  git push origin main; exits 1 if the tip failed to build
-  new <name>            create a sketch on the site and clone it into ./<name>
+  new <name>            create a cart on the site and clone it into ./<name>
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
-  --root <dir>          the sketch folder (default: the current folder)
+  --root <dir>          the cart folder (default: the current folder)
   --runtime <version>   run against a specific container version
   --site <origin>       the site (default ${siteOrigin()}; also OJ_SITE)
 
@@ -130,7 +130,7 @@ async function main() {
             game.browser.listeners.add(print)
             try {
                 const ms = await game.ready()
-                say(`sketch started in ${ms} ms`)
+                say(`cart started in ${ms} ms`)
                 const unwatch = flags.watch ? watch(root, game, say) : () => {}
                 if (headed || flags.watch) {
                     say("running; Ctrl-C to stop")
@@ -155,7 +155,7 @@ async function main() {
             }
         }
         case "test": {
-            // No script is a smoke test: the sketch starts, runs a moment, and
+            // No script is a smoke test: the cart starts, runs a moment, and
             // passes the same checks. It is what every example gets that has
             // no playtest of its own.
             const script = args[0]
@@ -173,7 +173,7 @@ async function main() {
             try {
                 const play = (async () => {
                     const ms = await game.ready()
-                    say(`sketch started in ${ms} ms`)
+                    say(`cart started in ${ms} ms`)
                     if (script) await runScript(script, game)
                     else await game.wait(Number(flags.for ?? 2) * 1000)
                 })()
@@ -211,14 +211,14 @@ async function main() {
             }
         }
         case "list": {
-            const { handle, sketches } = await mine(token(root))
+            const { handle, carts } = await mine(token(root))
             if (flags.json === true) {
-                console.log(JSON.stringify({ handle, sketches }, null, 2))
+                console.log(JSON.stringify({ handle, carts }, null, 2))
                 return 0
             }
-            const hidden = sketches.filter((s) => !s.public).length
-            say(`${handle} has ${sketches.length} sketch${sketches.length === 1 ? "" : "es"}, ${hidden} private`)
-            for (const g of sketches) console.log(`${g.sid}  ${g.public ? "public " : "private"}  ${g.name}  ${g.url}`)
+            const hidden = carts.filter((s) => !s.public).length
+            say(`${handle} has ${carts.length} cart${carts.length === 1 ? "" : "s"}, ${hidden} private`)
+            for (const g of carts) console.log(`${g.sid}  ${g.public ? "public " : "private"}  ${g.name}  ${g.url}`)
             return 0
         }
         case "status": {

@@ -8,11 +8,11 @@
  *
  * The token is kept in ~/.onejs-play/token (OJ_HOME moves it), mode 0600.
  * Where that cannot be written, as in a sandbox that confines writes to the
- * working folder, it goes to .oj/token in the sketch, which git ignores.
+ * working folder, it goes to .oj/token in the cart, which git ignores.
  *
  * git gets it through a credential helper for the site's origin only, a
  * one-line shell function that reads the file, so a plain `git clone`,
- * `pull` and `push` of any of the account's sketches need nothing more, and
+ * `pull` and `push` of any of the account's carts need nothing more, and
  * the helper does not depend on where npx happened to unpack this package.
  */
 import { randomBytes } from "node:crypto"
@@ -37,7 +37,7 @@ export function deviceName(env = process.env, host = os.hostname()) {
 
 /**
  * This install's id, made once and kept beside the token: home, or the
- * sketch's .oj/ where home cannot be written, the same rule as the token.
+ * cart's .oj/ where home cannot be written, the same rule as the token.
  * Sent with each login, so logging in again replaces this install's previous
  * login on the site and never another agent's on the same machine, which
  * shares its name ("claude on mac"). Null when neither place can be written;

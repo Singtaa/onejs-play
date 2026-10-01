@@ -1,9 +1,9 @@
 // One idea: load a sound once, play it on an event.
 //
-// audio.load resolves a file that ships with the sketch, and the Sound it
+// audio.load resolves a file that ships with the cart, and the Sound it
 // hands back plays as often as you ask. There is one clip here, a single
 // plucked A. The other four pads are that same clip played at a different
-// pitch, which is why this sketch carries 24 KB of audio and not five times
+// pitch, which is why this cart carries 24 KB of audio and not five times
 // that.
 import { useEffect, useRef, useState } from "react"
 import { View, Text, mount, audio, type Sound } from "oj"
@@ -28,7 +28,7 @@ function OneNote() {
             if (live) note.current = sound
             else sound.unload()
         })
-        // The sketch can be closed mid-ring, and a voice outlives the view.
+        // The cart can be closed mid-ring, and a voice outlives the view.
         return () => { live = false; audio.stopAll() }
     }, [])
 

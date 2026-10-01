@@ -6,7 +6,7 @@ import { containerBoot } from "onejs-play/host/boot"
  *
  * Unity's framework polls audioContext.resume() every 400ms until it succeeds,
  * and Chrome prints an autoplay warning for every attempt made before the page
- * has user activation. That was 47 to 60 identical lines per sketch load on the
+ * has user activation. That was 47 to 60 identical lines per cart load on the
  * live site and almost everything left in the console.
  *
  * The rule lives only inside a template string, so reading it as text would

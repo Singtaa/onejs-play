@@ -230,7 +230,7 @@ build. The container passes its origin in as `assetBase` when it creates the
 runtime; with none set, OneJS's own project convention applies, which is exactly
 what an ejected copy needs.
 
-**Where the files go.** An asset's name is its path from the sketch's root:
+**Where the files go.** An asset's name is its path from the cart's root:
 `pop.wav` beside `index.tsx`, or `sfx/pop.wav` in a folder of your own. Never in
 a folder called `assets/`: `assetUrl` strips a leading `assets/` (the habit a
 web developer arrives with), so the site stores such a file and never serves
@@ -473,28 +473,28 @@ frame sees exactly the events that arrived since the previous one.
 
 ## The command line
 
-`oj` is this package's `bin`. A game's repository is two files, `index.tsx`
+`oj` is this package's `bin`. A cart's repository is two files, `index.tsx`
 and `oj.json`, because the site builds it and the editor's tree should be the
-game and nothing else; what a terminal needs is written by `init` and
+cart and nothing else; what a terminal needs is written by `init` and
 gitignored like `node_modules`:
 
 ```bash
 npx onejs-play init   # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
 npx onejs-play init --unity   # in Assets/<Name>/~ of a Unity project: a JSRunner project and prefab, installed and built
-oj build            # bundle the game the way the site does; errors as file:line:col
+oj build            # bundle the cart the way the site does; errors as file:line:col
 oj typecheck        # tsc --noEmit
-oj run              # the game in the site's real container, in a local headless Chrome
-oj test playtest.mjs   # run, then drive the game from a script (no script: a smoke run)
+oj run              # the cart in the site's real container, in a local headless Chrome
+oj test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
 oj status           # what the site is running: head, live, buildError
-oj list             # every sketch on the account, private ones included
+oj list             # every cart on the account, private ones included
 oj login            # print a play.onejs.com link; after Allow there, this machine can push
 oj logout           # forget that login, here and on the site
 oj push             # git push, then exit 1 if the tip did not build
-oj new "Name"       # create a game on the site and clone it
+oj new "Name"       # create a cart on the site and clone it
 oj runtime          # fetch the container into ~/.onejs-play (--runtime <version>)
 ```
 
-**`init --unity` makes a clone a JSRunner project in place.** Clone the game
+**`init --unity` makes a clone a JSRunner project in place.** Clone the cart
 to `Assets/<Name>/~` in a Unity project that has OneJS (Unity ignores a folder
 named `~`, which keeps the source and `node_modules` out of the import), then
 run `npx onejs-play init --unity` there. It writes JSRunner's own default files
@@ -509,17 +509,17 @@ of git rather than assumed to be `.git/info/exclude`. The template table in
 `cli/unity.mjs` mirrors `templateMapping` in OneJS's `JSRunner.cs`, and the
 container's test holds the two together.
 
-The game's files sit at their own names in the repository, and OneJS reads a
+The cart's files sit at their own names in the repository, and OneJS reads a
 JSRunner project's files from `~/assets/`. So the build `init --unity` writes
 carries `assetsPlugin()` (`onejs-play/unity`), which copies every file the
 site would serve into `assets/` before each build, keeping its folders. The
 copies are excluded from git, the site refuses a top-level `assets` folder so
-none of the game's files can be in the way, and a copy is removed once its file
-leaves the game (only a copy the plugin wrote, never a file put there by hand).
+none of the cart's files can be in the way, and a copy is removed once its file
+leaves the cart (only a copy the plugin wrote, never a file put there by hand).
 
 **`oj run` runs what ships.** It fetches the container the site serves at
 `/runtime/<version>/` (the pin from `/api/version`, or `--runtime`) into
-`~/.onejs-play/runtime/<version>/` once, serves it with the game's bundle and
+`~/.onejs-play/runtime/<version>/` once, serves it with the cart's bundle and
 assets from a local origin, and boots it in Chrome the way the sandbox
 document does: `__ojPlay.load(source, manifest)`. A desktop build of the
 container was considered and rejected: it would be a second runtime, on
@@ -527,7 +527,7 @@ QuickJS rather than V8, and the bugs that matter (the 1.0.12 Task that never
 settled) were WebGL-only. Headless by default; `--headed --watch` opens a
 window and swaps a fresh build in on every save without reloading the
 runtime, which is the container's own hot path and takes about ten
-milliseconds. It exits 1 if the sketch logged a console error, `Property not
+milliseconds. It exits 1 if the cart logged a console error, `Property not
 found` included.
 
 **`oj test` hands a script the running game.** The script's default export
@@ -542,7 +542,7 @@ input off the row's centre line; in any row, a control within 8px of its
 neighbour, measured from a text's ink rather than its box. When the script throws,
 a screenshot lands in `.oj/failed.png`; call `shot(file)` for one otherwise.
 `examples/wordie/playtest.mjs` is the one to
-copy from. With no script, `oj test` lets the sketch run `--for` seconds
+copy from. With no script, `oj test` lets the cart run `--for` seconds
 (default 2) and applies the same checks.
 
 **A pressed key is its own press.** `press`, `hold` and `type` wait for the
@@ -574,7 +574,7 @@ so run one per four cores, and one at a time on Windows, where two at once
 ran past a 12 minute cap and four starved a four-core machine outright (key
 presses wait for frames, so a slow machine only makes a run longer). The
 first Chrome after a reboot can take half a minute to start; `oj` allows it
-90 s. Ctrl-C during `oj test` closes its browser before it exits. `oj login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the sketch where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `oj login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
+90 s. Ctrl-C during `oj test` closes its browser before it exits. `oj login` is login by link: the person opens the link it prints, signed in, and presses Allow, and the token (an agent login: create, edit, push and rebuild, main by fast forward only, 30 days) lands in `~/.onejs-play/token`, or `.oj/token` in the cart where home cannot be written, with git's credential helper for the site pointed at it. `--no-wait` prints the link and exits; `oj login --wait <code>` collects that one, and `--wait` alone collects the only one waiting. `OJ_TOKEN`, a token from the site's tokens page, is used instead when set. `OJ_SITE`
 points every command at another origin; `OJ_HOME` moves the cache.
 
 ## Testing
@@ -587,7 +587,7 @@ npm run typecheck # tsc --noEmit
 `npm test` runs `oj test` on every example and CLI fixture, in the CLI's own
 headless Chrome against the runtime the site says is live (fetched once into
 `~/.onejs-play`). One Chrome is started first, so a cold machine's slow first
-start is not charged to a sketch. Runs go one per four cores (one on a
+start is not charged to a cart. Runs go one per four cores (one on a
 four-core CI runner, always one on Windows; `OJ_SWEEP_LIMIT` overrides it), and
 a run with no result after three minutes is interrupted and fails with what it
 printed. The sweep ends by printing Chrome's start times (median, p90, worst,

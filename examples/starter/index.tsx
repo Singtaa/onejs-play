@@ -1,4 +1,4 @@
-// An OJPlay game: runs on play.onejs.com, built by the site when published.
+// An OJPlay cart: runs on play.onejs.com, built by the site when published.
 // To work on it here: npx onejs-play init && npm install, then npx oj run.
 // For AI agents: https://play.onejs.com/agents.md
 import { useRef, useState } from "react"
@@ -18,7 +18,7 @@ function Pop() {
     const dot = useRef({ u: 0.5, v: 0.5, r: 1 })
 
     // The radius is a share of the smaller side, which keeps the dot the same
-    // size relative to the sketch on a phone and on a wide monitor.
+    // size relative to the cart on a phone and on a wide monitor.
     const short = Math.min(stage.width, stage.height)
     const radius = dot.current.r * short * 0.12
     const x = dot.current.u * stage.width
