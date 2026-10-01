@@ -95,9 +95,18 @@ afterAll(async () => {
     fs.rmSync(work, { recursive: true, force: true })
 })
 
+/** What the prefix holds and where npm says its global prefix is, for when the command is not where expected. */
+function whereNpmPutIt(): string {
+    const list = (dir: string, depth: number): string[] => !fs.existsSync(dir) ? [`${dir} (missing)`]
+        : fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.name === "node_modules" ? [path.join(dir, e.name)]
+            : e.isDirectory() && depth > 0 ? list(path.join(dir, e.name), depth - 1) : [path.join(dir, e.name)])
+    const said = spawnSync(NPM, ["prefix", "-g"], { cwd: work, encoding: "utf8", env: env(), shell: WINDOWS })
+    return `${bin} is missing. npm prefix -g: ${said.stdout.trim()} ${said.stderr.trim()}\n${list(prefix, 1).join("\n")}`
+}
+
 describe(`npm install -g ${PACKAGE}`, () => {
     it("puts one command on the PATH, ojplay, and no oj", () => {
-        expect(fs.existsSync(bin)).toBe(true)
+        expect(fs.existsSync(bin), whereNpmPutIt()).toBe(true)
         expect(fs.existsSync(path.join(binDir, WINDOWS ? "oj.cmd" : "oj"))).toBe(false)
     })
 
