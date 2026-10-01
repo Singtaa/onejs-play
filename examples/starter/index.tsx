@@ -1,13 +1,13 @@
-// An OJPlay cart: runs on play.onejs.com, built by the site when published.
+// An OJPlay cart: runs on play.onejs.com, built by the site on every save.
 // To work on it here: npx ojplay init && npm install, then npx ojplay run.
 // For AI agents: https://play.onejs.com/agents.md
 import { useRef, useState } from "react"
 import { View, Text, mount, useFrame, useStage, input, random, batchedVisualContent } from "oj"
 import "onejs:tailwind"
 
-// No stage in oj.json, so the stage is the window. useStage is how big it is
-// right now, and it re-renders when that changes. Everything below is either a
-// percentage, a flex rule, or a number derived from these two.
+// The stage is the window. useStage() is how big it is right now, and the
+// cart re-renders when that changes. Everything below is a percentage, a flex
+// rule, or a number derived from these two.
 function Pop() {
     const stage = useStage()
     const [score, setScore] = useState(0)
@@ -33,8 +33,8 @@ function Pop() {
     }, [])
 
     const tap = () => {
-        // input.mouse.position is in stage units, which under a fluid stage is
-        // the window in logical pixels, so it compares directly with x and y.
+        // input.mouse.position is in the same units as useStage(): the window,
+        // in logical pixels, so it compares directly with x and y.
         const m = input.mouse.position
         if (Math.hypot(m.x - x, m.y - y) > radius) return
         setScore((n) => n + Math.round(60 - dot.current.r * 50))
