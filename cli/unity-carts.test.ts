@@ -118,7 +118,9 @@ describe("cartsPlugin, in a OneJS app's build", () => {
 
     it("fails offline in one line that names the cart and the command", async () => {
         const root = app({
-            "index.tsx": `import { said } from "@singtaa/lightning"\n`,
+            // Used, so esbuild cannot drop the import: the line has to be the
+            // only error, not the first of two.
+            "index.tsx": `import { said } from "@singtaa/lightning"\nglobalThis.out = said\n`,
             "oj.json": JSON.stringify({ dependencies: { "@singtaa/lightning": "1.2.0" } }),
         })
         process.env.OJ_SITE = "http://127.0.0.1:9"

@@ -114,9 +114,12 @@ export function cartsPlugin() {
             // /private/var) would otherwise match none of them.
             const root = fs.realpathSync(path.resolve(build.initialOptions.absWorkingDir ?? process.cwd()))
             let carts = { uses: {}, skipped: {}, carts: {} }
+            /** What oj.json lists when the fetch failed: resolved to nothing, so that failure is the build's one line. */
+            let unavailable = new Set()
 
             build.onStart(async () => {
                 const manifest = manifestOf(root)
+                unavailable = new Set()
                 try {
                     await fetchUsed(root, manifest)
                     carts = readUsedCarts(root, manifest)
@@ -125,6 +128,9 @@ export function cartsPlugin() {
                         console.log(`[${BIN}] assets/: ${[...copied.map((k) => `+${k}/`), ...removed.map((k) => `-${k}/`)].join(" ")}`)
                     }
                 } catch (e) {
+                    carts = { uses: {}, skipped: {}, carts: {} }
+                    const listed = manifest.dependencies
+                    if (typeof listed === "object" && listed !== null) for (const a of Object.keys(listed)) unavailable.add(a.toLowerCase())
                     return { errors: [{ text: `[${BIN}] ${e.message}` }] }
                 }
             })
@@ -134,6 +140,7 @@ export function cartsPlugin() {
                 const wanted = CART_IMPORT.exec(args.path)
                 const address = wanted[1].toLowerCase()
                 const owner = cartOfFile(root, args.importer)
+                if (owner === null && unavailable.has(address)) return { path: address, namespace: "ojplay-cart-missing" }
                 const scope = owner === null ? carts : carts.carts[owner]
                 const key = scope?.uses?.[address]
                 if (key === undefined) {
@@ -164,6 +171,8 @@ export function cartsPlugin() {
                 return owner === null ? undefined : { path: owner, namespace: "ojplay-cart-oj" }
             })
             build.onLoad({ filter: /.*/, namespace: "ojplay-cart-oj" }, (args) => ({ contents: scopedOj(args.path), loader: "js", resolveDir: root }))
+            // Never bundled: the build has already failed, naming the cart.
+            build.onLoad({ filter: /.*/, namespace: "ojplay-cart-missing" }, () => ({ contents: "module.exports = {}", loader: "js" }))
             build.onLoad({ filter: /.*/, namespace: "ojplay-cart-whole" }, (args) => ({
                 contents: `import ${JSON.stringify("./" + args.pluginData.entry)}\nexport {}`,
                 loader: "js",
