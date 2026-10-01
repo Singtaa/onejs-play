@@ -19,7 +19,11 @@ function packed(): string[] {
         cwd: ROOT, encoding: "utf8", shell: process.platform === "win32",
     })
     if (result.status !== 0) throw new Error(`npm pack failed: ${result.stderr}`)
-    return JSON.parse(result.stdout)[0].files.map((f: { path: string }) => f.path)
+    // npm 11 prints a list with one entry per package; npm 12 an object keyed by
+    // the package's name. publish.yml takes the newest npm, so both are read.
+    const out = JSON.parse(result.stdout)
+    const entry = Array.isArray(out) ? out[0] : out.ojplay
+    return entry.files.map((f: { path: string }) => f.path)
 }
 
 /** The packed file a relative import names, trying the extensions the package's sources leave off. */
