@@ -20,7 +20,7 @@ import path from "node:path"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
 import { git, mine, tokenOf } from "./site.mjs"
-import { NO_ONEJS, initUnity, npm as runNpm, oneJSOf, unityProjectOf } from "./unity.mjs"
+import { NO_ONEJS, initUnity, npm as runNpm, objectName, oneJSOf, unityProjectOf } from "./unity.mjs"
 import { withCartsPlugin } from "./unity-carts.mjs"
 
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
@@ -32,10 +32,13 @@ export function unityPlace(root) {
     return "inside"
 }
 
-/** A folder name made from a cart's name: what Assets shows, safe on every file system. */
-export function folderName(name) {
-    const cleaned = String(name ?? "").replace(/[\\/:*?"<>|.]/g, "").replace(/\s+/g, " ").trim()
-    return cleaned === "" ? "Cart" : cleaned
+/**
+ * The folder a cart taken whole lands in, named as its prefab is (init
+ * --unity names that after the folder): one name, with nothing to quote in a
+ * terminal. The address's name when nothing is left of the cart's.
+ */
+export function folderName(name, fallback = "Cart") {
+    return objectName(String(name ?? ""), objectName(fallback))
 }
 
 /**
@@ -56,7 +59,7 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
     let name, app, kept = null
     try {
         if (own !== undefined) {
-            name = folderName(own.name)
+            name = folderName(own.name, pinned.address.split("/")[1])
             app = path.join(project, "Assets", name, "~")
             refuseIfThere(project, app)
             fs.mkdirSync(path.dirname(app), { recursive: true })
@@ -65,7 +68,7 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
         } else {
             kept = await download(project, pinned.address, value, scratch)
             const manifest = JSON.parse(fs.readFileSync(path.join(scratch, "oj.json"), "utf8"))
-            name = folderName(manifest.name)
+            name = folderName(manifest.name, pinned.address.split("/")[1])
             app = path.join(project, "Assets", name, "~")
             refuseIfThere(project, app)
             fs.mkdirSync(path.dirname(app), { recursive: true })
@@ -80,7 +83,7 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
     // one that lists each file it wrote.
     const made = initUnity(app)
     const code = npm(app, ["install", "--no-audit", "--no-fund"]) || npm(app, ["run", "build"])
-    if (code !== 0) throw new Error(`npm in Assets/${name}/~ failed (exit ${code}); the cart is there. Fix what npm said, then: cd "Assets/${name}/~" && npm install && npm run build`)
+    if (code !== 0) throw new Error(`npm in Assets/${name}/~ failed (exit ${code}); the cart is there. Fix what npm said, then: cd Assets/${name}/~ && npm install && npm run build`)
 
     // Somebody else's is read only, which a build says when it is edited
     // (unity-carts.mjs), the moment it matters, rather than here.
@@ -96,7 +99,7 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
 function refuseIfThere(project, app) {
     const shownPath = path.relative(project, path.dirname(app)).split(path.sep).join("/")
     if (fs.existsSync(path.dirname(app))) {
-        throw new Error(`${shownPath} is already there. Move or delete it to take the cart again, or work in it: cd "${shownPath}/~"`)
+        throw new Error(`${shownPath} is already there. Move or delete it to take the cart again, or work in it: cd ${shownPath}/~`)
     }
 }
 

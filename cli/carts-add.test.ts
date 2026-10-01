@@ -5,6 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { add, remove, syncTypes, update } from "./carts.mjs"
+import { folderName } from "./carts-unity.mjs"
 import { build } from "./game.mjs"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 
@@ -397,24 +398,33 @@ describe("ojplay add at a Unity project's root", () => {
         process.env.GIT_CONFIG_GLOBAL = gitEnv.GIT_CONFIG_GLOBAL
         try {
             expect(await add(project, "@singtaa/storm", { npm })).toEqual([
-                "Took @singtaa/storm, yours, into Assets/Storm Chaser/~ as a clone: push from there and the site builds it.",
-                "Next: drag Assets/Storm Chaser/StormChaser.prefab into a scene.",
+                "Took @singtaa/storm, yours, into Assets/StormChaser/~ as a clone: push from there and the site builds it.",
+                "Next: drag Assets/StormChaser/StormChaser.prefab into a scene.",
             ])
         } finally {
             if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL
             else process.env.GIT_CONFIG_GLOBAL = saved
         }
-        const app = path.join(project, "Assets", "Storm Chaser", "~")
+        const app = path.join(project, "Assets", "StormChaser", "~")
         expect(spawnSync("git", ["remote", "get-url", "origin"], { cwd: app, encoding: "utf8", env: gitEnv }).stdout.trim()).toBe(bare)
         // init --unity's files stay out of the clone's git status.
         expect(spawnSync("git", ["status", "--porcelain"], { cwd: app, encoding: "utf8", env: gitEnv }).stdout).toBe("")
+    })
+
+    it("names the folder as the prefab is named: one name, nothing to quote in a terminal", () => {
+        expect(folderName("Fortnite HUD", "fortnite-hud")).toBe("FortniteHUD")
+        expect(folderName("Storm: Chaser 2.0!", "storm")).toBe("StormChaser20")
+        expect(folderName("dash-and_under", "x")).toBe("dash-and_under")
+        // Nothing left of the name: the address's, which is always safe.
+        expect(folderName("嵐", "storm")).toBe("storm")
+        expect(folderName(undefined, "storm")).toBe("storm")
     })
 
     it("refuses to land on a folder already there, and says where to work instead", async () => {
         carts = { "@singtaa/portal": portal() }
         const project = unityProject()
         fs.mkdirSync(path.join(project, "Assets", "portal"))
-        await expect(add(project, "@singtaa/portal", { npm })).rejects.toThrow(`Assets/portal is already there. Move or delete it to take the cart again, or work in it: cd "Assets/portal/~"`)
+        await expect(add(project, "@singtaa/portal", { npm })).rejects.toThrow(`Assets/portal is already there. Move or delete it to take the cart again, or work in it: cd Assets/portal/~`)
         expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "portal"])
     })
 
