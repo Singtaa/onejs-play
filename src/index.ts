@@ -84,7 +84,10 @@ export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contac
 
 // 3D models behind the cart's UI.
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
-export type { Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3 } from "./models"
+export type {
+    Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
+    Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions,
+} from "./models"
 
 // Gestures over `input`, so a game does not rewrite the same state machine.
 export { useSwipe, SWIPE_THRESHOLD } from "./gesture"
