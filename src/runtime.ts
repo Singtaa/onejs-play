@@ -125,6 +125,12 @@ export interface ContainerRuntime {
     beginFrame(dtSeconds: number): void
     /** Replace the stage with a newly measured viewport. */
     setViewport(width: number, height: number): void
+    /**
+     * Renders the mounted cart again, its state kept: what a host calls after
+     * swapping something a render reads, such as a live `.sl` program (the
+     * Play editor's preview). Nothing before a mount or after dispose.
+     */
+    rerender(): void
     /** Detach from the input module and drop frame callbacks. */
     dispose(): void
 }
@@ -137,6 +143,18 @@ export interface ContainerRuntime {
  * current runtime is module state. Same seam shape as the input backend.
  */
 let current: HostRuntime | null = null
+
+/**
+ * How mount() renders its cart again; see ContainerRuntime.rerender. Module
+ * state for the reason `current` is: mount() is called by the game's bundle,
+ * which cannot reach the container's object.
+ */
+let remount: (() => void) | null = null
+
+/** Called by mount() with how to render the cart again. */
+export function setRemount(next: (() => void) | null): void {
+    remount = next
+}
 
 /** The running runtime, or null outside a container. */
 export function getCurrentRuntime(): HostRuntime | null {
@@ -198,7 +216,11 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             stage = stageOf(width, height)
         },
 
+        rerender() {
+            remount?.()
+        },
         dispose() {
+            remount = null
             callbacks.clear()
             setInputBackend(null)
             setAssetBase(null)
