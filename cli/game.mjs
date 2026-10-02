@@ -7,6 +7,8 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
 import { COMMAND, INSTALL, PACKAGE } from "../build/command.mjs"
+import { CART_COMPILER_OPTIONS } from "../build/cart-types.mjs"
+import { writeHostTypes } from "./init.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -153,11 +155,28 @@ export async function build(root, options = {}) {
 }
 
 /** `tsc --noEmit` from the game's own install, with its output passed through. Returns the exit code. */
-export function typecheck(root) {
+export function typecheck(root, { quiet = false } = {}) {
     const bin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc")
     if (!fs.existsSync(bin)) {
-        throw new Error("typescript is not installed here. Run npm install first.")
+        throw new Error(`typescript is not installed here. Run ${COMMAND} init, then npm install.`)
     }
-    const result = spawnSync(bin, ["--noEmit"], { cwd: root, stdio: "inherit", shell: process.platform === "win32" })
+    // A OneJS app in a Unity project (ojplay init --unity) declares its globals in
+    // types/global.d.ts and checks by its own tsconfig, as every OneJS app does.
+    if (fs.existsSync(path.join(root, "types", "global.d.ts"))) {
+        return spawnSync(bin, ["--noEmit"], { cwd: root, stdio: quiet ? "ignore" : "inherit", shell: process.platform === "win32" }).status ?? 1
+    }
+    // A cart: its own tsconfig for paths and types, overridden by the editor's rules,
+    // so an older clone's strict, DOM-typed tsconfig checks the way the editor does.
+    writeHostTypes(root)
+    const config = path.join(root, ".oj", "tsconfig.json")
+    const extended = fs.existsSync(path.join(root, "tsconfig.json"))
+        ? { extends: "../tsconfig.json" }
+        : { include: ["../**/*"], exclude: ["../node_modules", "../.oj"] }
+    fs.writeFileSync(config, JSON.stringify({
+        ...extended,
+        compilerOptions: { ...CART_COMPILER_OPTIONS, lib: [...CART_COMPILER_OPTIONS.lib], noEmit: true },
+        files: ["host.d.ts"],
+    }, null, 4) + "\n")
+    const result = spawnSync(bin, ["-p", config], { cwd: root, stdio: quiet ? "ignore" : "inherit", shell: process.platform === "win32" })
     return result.status ?? 1
 }

@@ -64,6 +64,10 @@
       "default": "./build/game.mjs"
     },
     "./build/externals.json": "./build/externals.json",
+    "./build/cart-types": {
+      "types": "./build/cart-types.d.ts",
+      "default": "./build/cart-types.mjs"
+    },
     "./cli/game": {
       "types": "./cli/game.d.ts",
       "default": "./cli/game.mjs"

@@ -17,6 +17,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
+import { CART_COMPILER_OPTIONS, CART_HOST_TYPES } from "../build/cart-types.mjs"
 
 const SCAFFOLD = path.join(import.meta.dirname, "scaffold")
 
@@ -34,8 +35,9 @@ export function init(root) {
     pkg.name = packageName(root)
     if (!fs.existsSync(path.join(root, "playtest.mjs"))) delete pkg.scripts.test
     put("package.json", JSON.stringify(pkg, null, 2) + "\n")
-    put("tsconfig.json", fs.readFileSync(path.join(SCAFFOLD, "tsconfig.json"), "utf8"))
+    put("tsconfig.json", JSON.stringify(cartTsconfig(), null, 4) + "\n")
     put("env.d.ts", fs.readFileSync(path.join(SCAFFOLD, "env.d.ts"), "utf8"))
+    writeHostTypes(root)
 
     lines.push(ignoreLocally(root, fs.readFileSync(path.join(SCAFFOLD, "gitignore"), "utf8")))
     return lines
@@ -110,4 +112,23 @@ export function packageName(root) {
     } catch { /* no manifest, or not JSON: the folder name will do */ }
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
     return slug === "" ? "cart" : slug
+}
+
+/** The scaffold's tsconfig with the editor's rules in it (build/cart-types.mjs). */
+export function cartTsconfig() {
+    const config = JSON.parse(fs.readFileSync(path.join(SCAFFOLD, "tsconfig.json"), "utf8"))
+    Object.assign(config.compilerOptions, { ...CART_COMPILER_OPTIONS, lib: [...CART_COMPILER_OPTIONS.lib] })
+    return config
+}
+
+/**
+ * The globals a cart has instead of the DOM's, at .oj/host.d.ts, where the
+ * scaffold's tsconfig and ojplay typecheck both find them. Rewritten every time,
+ * so a newer ojplay's list replaces an older one's.
+ */
+export function writeHostTypes(root) {
+    const file = path.join(root, ".oj", "host.d.ts")
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, "// Written by ojplay from build/cart-types.mjs. Do not edit.\n" + CART_HOST_TYPES + "\n")
+    return file
 }
