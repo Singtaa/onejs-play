@@ -106,6 +106,23 @@ export async function status(sid, { bearer } = {}) {
     return body
 }
 
+/** A status from the site as the lines `ojplay status` prints. */
+export function describeStatus(s) {
+    const short = (sha) => String(sha).slice(0, 7)
+    const lines = [`${s.url} (${s.public ? "public" : "private"})`]
+    if (!s.live) lines.push("live: nothing yet")
+    else lines.push(s.head === s.live ? `live: ${short(s.live)}, the tip of main` : `live: ${short(s.live)}`)
+    if (s.head && s.head !== s.live) {
+        if (s.buildError) {
+            lines.push(`tip of main: ${short(s.head)} did not build:`)
+            for (const line of String(s.buildError).split("\n")) lines.push(`  ${line}`)
+        } else {
+            lines.push(`tip of main: ${short(s.head)} is still building`)
+        }
+    }
+    return lines
+}
+
 /** GET /api/version: what the site runs, including the runtime pin. */
 export async function version() {
     const response = await fetch(`${siteOrigin()}/api/version`)

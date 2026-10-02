@@ -23,7 +23,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
+import { create, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
 import { login, logout } from "./login.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
@@ -64,7 +64,7 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
                           --headed, --window, --for as above
-  status                head, live and buildError for this cart (--sid <id>)
+  status                what runs, the tip of main, and why they differ (--sid <id>; --json for scripts)
   list                  every cart on the account, private ones included (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
@@ -273,7 +273,8 @@ async function main() {
             const bearer = tokenOf(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const s = await status(sid, { bearer })
-            console.log(JSON.stringify(s, null, 2))
+            if (flags.json === true) console.log(JSON.stringify(s, null, 2))
+            else for (const line of describeStatus(s)) console.log(line)
             return 0
         }
         case "push": {

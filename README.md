@@ -534,7 +534,7 @@ ojplay build           # bundle the cart the way the site does; errors as file:l
 ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
 ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
-ojplay status          # what the site is running: head, live, buildError
+ojplay status          # what the site is running and why the tip differs (--json for scripts)
 ojplay list            # every cart on the account, private ones included
 ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
 ojplay logout          # forget that login, here and on the site
