@@ -8,16 +8,16 @@
  *   in a Unity project, under the project's `assets/` folder in the editor and
  *   inside `StreamingAssets/onejs/assets/` in a build.
  *
- * `assetUrl` is the one function that knows which. A game writes the bare file
- * name and gets back something the loaders can actually fetch:
+ * `assetUrl` is the one function that knows which. Every loader oj exports
+ * (Image, useTexture, loadTexture, audio.load, useModel) runs a name through it,
+ * so a game writes the bare file name everywhere:
  *
- *     <Image src={assetUrl("glow.png")} />
+ *     <Image src="glow.png" />
  *     const blip = await audio.load("blip.wav")
  *
- * Explicit at the call site on purpose. The alternative was to teach every
- * loader a hidden base, which would mean a bare "glow.png" resolving through
- * machinery a reader cannot see, and two loaders that disagreed about it would
- * be a bug with no visible cause. One call, greppable, same source everywhere.
+ * A game calls it itself only to hand one of its files to something outside
+ * oj. What matters is that every loader agrees: when Image alone resolved names
+ * its own way, the same `src` drew in Unity and 404ed on the site.
  */
 
 import { useEffect, useState } from "react"

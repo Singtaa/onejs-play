@@ -183,12 +183,13 @@ export {
     Toggle,
     Slider,
     ScrollView,
-    Image,
     ListView,
     TreeView,
     FrostedGlass,
     clearImageCache,
 } from "onejs-react"
+// Image takes a cart's file by name, like every other loader in oj.
+export { Image } from "./image"
 
 // MARK: rendering
 
