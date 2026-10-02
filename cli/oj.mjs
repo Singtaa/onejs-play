@@ -33,6 +33,7 @@ import { initUnity, npm } from "./unity.mjs"
 import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
 import { handOff, updateNotice } from "./global.mjs"
 import { BIN, COMMAND, PACKAGE } from "../build/command.mjs"
+import { meant, parse } from "./args.mjs"
 
 const OWN_VERSION = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 
@@ -84,27 +85,23 @@ Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so
 ${BIN} ${OWN_VERSION}
 `
 
-function parse(argv) {
-    const flags = {}
-    const positional = []
-    for (let i = 0; i < argv.length; i++) {
-        const a = argv[i]
-        if (a.startsWith("--")) {
-            const key = a.slice(2)
-            const next = argv[i + 1]
-            if (next !== undefined && !next.startsWith("--")) { flags[key] = next; i++ } else flags[key] = true
-        } else positional.push(a)
-    }
-    return { command: positional[0], args: positional.slice(1), flags }
-}
+const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "login", "logout", "runtime", "help"]
 
 const say = (line) => console.error(`[${BIN}] ${line}`)
 
 async function main() {
     const { command, args, flags } = parse(process.argv.slice(2))
-    if (command === undefined && flags.version === true) {
+    if (flags.version === true) {
         console.log(OWN_VERSION)
         return 0
+    }
+    // Before anything runs: `push --help` used to push, and `init --help` wrote files.
+    if (flags.help === true || command === "help") {
+        process.stdout.write(HELP)
+        return 0
+    }
+    if (command !== undefined && !COMMANDS.includes(command)) {
+        throw new Error(`unknown command ${command}${meant(command, COMMANDS, "")}. ${COMMAND} help lists them.`)
     }
     if (flags.site) process.env.OJ_SITE = String(flags.site)
     const root = path.resolve(flags.root ? String(flags.root) : ".")
@@ -133,7 +130,10 @@ async function main() {
             }
             for (const line of init(root)) say(line)
             syncTypes(root)
-            say(`now: npm install, then ${COMMAND} run`)
+            // init sets a cart up for tools; it does not write one.
+            const hasCart = ["oj.json", "index.tsx", "index.ts", "index.js"].some((f) => fs.existsSync(path.join(root, f)))
+            if (hasCart) say(`now: npm install, then ${COMMAND} run`)
+            else say(`now: npm install. There is no cart here yet: clone one, make one with ${COMMAND} new "Name", or write index.tsx and oj.json (play.onejs.com/docs/writing-a-cart)`)
             return 0
         }
         case "add": {
@@ -205,6 +205,8 @@ async function main() {
             // passes the same checks. It is what every example gets that has
             // no playtest of its own.
             const script = args[0]
+            // Found before a browser starts, not after.
+            if (script && !fs.existsSync(path.resolve(root, script))) throw new Error(`no test script at ${path.resolve(root, script)}`)
             // A signal (Ctrl-C, or a harness giving up on a run) ends the run
             // through the same cleanup as a finish. The browser sits in its
             // own process group on Mac and Linux, so an oj that simply died
@@ -315,18 +317,15 @@ async function main() {
             say(`runtime ${v} in ${runtimeDir(v)}`)
             return 0
         }
-        case undefined:
-        case "help":
-        case "--help":
-            process.stdout.write(HELP)
-            return command === undefined && flags.help !== true && flags.h !== true ? 1 : 0
         default:
-            throw new Error(`unknown command ${command}\n\n${HELP}`)
+            process.stdout.write(HELP)
+            return 1
     }
 }
 
-const rootArg = process.argv.indexOf("--root")
-const startRoot = path.resolve(rootArg === -1 ? "." : process.argv[rootArg + 1] ?? ".")
+const rootArg = process.argv.findIndex((a) => a === "--root" || a.startsWith("--root="))
+const rootValue = rootArg === -1 ? "." : process.argv[rootArg].startsWith("--root=") ? process.argv[rootArg].slice(7) : process.argv[rootArg + 1]
+const startRoot = path.resolve(rootValue ?? ".")
 // The global copy, typed bare at a terminal: the daily update line, and the
 // hand-off to the cart's own copy. Neither for npx or a package.json script,
 // which already run the copy they mean, nor for an agent reading the output.

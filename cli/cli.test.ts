@@ -155,6 +155,39 @@ describe("the command line", () => {
         expect(run.stdout).toBe(`${OWN}\n`)
         expect(run.status).toBe(0)
     })
+
+    const oj = (args: string[]) => spawnSync(process.execPath, [OJ, ...args], {
+        encoding: "utf8",
+        env: { ...process.env, OJPLAY_NO_UPDATE_CHECK: "1", OJPLAY_HANDED_OFF: "1" },
+    })
+
+    // `init --help` wrote four files, `build --help` built, and `push --help` pushed.
+    it("prints help for <command> --help and runs nothing", () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-help-"))
+        try {
+            for (const flag of ["--help", "-h"]) {
+                const run = oj(["init", flag, "--root", root])
+                expect(run.status).toBe(0)
+                expect(run.stdout).toMatch(/^usage:/)
+            }
+            expect(fs.readdirSync(root)).toEqual([])
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("names the command a typo meant, without the whole usage", () => {
+        const run = oj(["bulid"])
+        expect(run.status).toBe(1)
+        expect(run.stderr).toMatch(/unknown command bulid \(did you mean build\?\)/)
+        expect(run.stdout).toBe("")
+    })
+
+    it("refuses an unknown flag before doing anything", () => {
+        const run = oj(["test", "--hedaed"])
+        expect(run.status).toBe(1)
+        expect(run.stderr).toMatch(/unknown flag --hedaed \(did you mean --headed\?\)/)
+    })
 })
 
 describe("the site from a terminal", () => {

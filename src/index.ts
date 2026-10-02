@@ -69,6 +69,7 @@ export type { PathSink } from "./transform"
 // onejs-unity/input/backend.ts and ./input.ts.
 
 export { input, resolveKeyName, keyNameFromDomCode } from "onejs-unity/input"
+export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // Sound, over Unity's AudioSource rather than WebAudio. WebAudio exists only in
 // a browser, so a game built on it could never leave the web, which is why the
@@ -80,15 +81,23 @@ export type { Sound, Voice, PlayOptions } from "onejs-unity/audio"
 // happen in C#, so a hundred bodies cost JavaScript nothing per frame.
 export { usePhysics, createPhysicsWorld } from "./physics"
 export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contact } from "./physics"
+
+// 3D models behind the cart's UI.
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
 export type { Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3 } from "./models"
-export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // Gestures over `input`, so a game does not rewrite the same state machine.
 export { useSwipe, SWIPE_THRESHOLD } from "./gesture"
 export type { SwipeDirection, SwipeOptions } from "./gesture"
 
 // MARK: math
+
+export { Mathf } from "./mathf"
+export { Vector2 } from "./vec"
+export type { Vec2Like } from "./vec"
+export { Color } from "./color"
+export { random } from "./random"
+export type { Rng } from "./random"
 
 // MARK: a game's own files
 
@@ -166,12 +175,6 @@ export type { Room, RoomOptions, RoomMessage } from "./room"
 
 export { isOnline } from "./play"
 
-export { Mathf } from "./mathf"
-export { Vector2 } from "./vec"
-export { Color } from "./color"
-export { random } from "./random"
-export type { Rng } from "./random"
-
 // MARK: components
 
 export {
@@ -183,12 +186,13 @@ export {
     Toggle,
     Slider,
     ScrollView,
-    Image,
     ListView,
     TreeView,
     FrostedGlass,
     clearImageCache,
 } from "onejs-react"
+// Image takes a cart's file by name, like every other loader in oj.
+export { Image } from "./image"
 
 // MARK: rendering
 

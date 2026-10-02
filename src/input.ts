@@ -37,7 +37,7 @@
  *    arrived since the previous one, whenever they happened to land.
  */
 
-import { keyNameFromDomCode, resolveKeyName, type InputBackend } from "onejs-unity/input"
+import { keyNameFromDomCode, type InputBackend } from "onejs-unity/input"
 
 /** Modifier bits, matching InputBridge.GetModifiers. */
 const MOD_SHIFT = 1
@@ -68,6 +68,17 @@ interface KeyRecord {
 }
 
 const NEVER: Readonly<KeyRecord> = { down: false, downFrame: -1, upFrame: -1 }
+
+/**
+ * A misspelled key is never down, which reads as a control that does nothing.
+ * Unity's InputBridge says so; this says so too, once per name.
+ */
+const unknownKeys = new Set<string>()
+function warnUnknownKey(query: string): void {
+    if (unknownKeys.has(query)) return
+    unknownKeys.add(query)
+    console.warn(`[oj] "${query}" is not a key name. Use a letter ("W"), a Unity name ("Space", "LeftArrow") or a DOM code ("KeyW", "ArrowLeft").`)
+}
 
 /** Browser events go in here. Codes are DOM codes; buttons are DOM button indices. */
 /**
@@ -387,6 +398,21 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             // hear "none connected", which is what makes input.gamepad null.
             GetGamepadCount: () => 0,
             IsGamepadConnected: () => false,
+            GetGamepadButtons: () => 0,
+            GetGamepadButtonsPressed: () => 0,
+            GetGamepadButtonsReleased: () => 0,
+            GetLeftStickX: () => 0,
+            GetLeftStickY: () => 0,
+            GetRightStickX: () => 0,
+            GetRightStickY: () => 0,
+            GetLeftTrigger: () => 0,
+            GetRightTrigger: () => 0,
+            // Nothing to shake, which is not an error: a pause menu calls these
+            // whether or not a pad is connected.
+            SetRumble: () => {},
+            StopRumble: () => {},
+            PauseHaptics: () => {},
+            ResumeHaptics: () => {},
             GetTouchCount: () => this._touches.length,
             GetTouchFingerId: (i: number) => this._touches[i]?.fingerId ?? -1,
             GetTouchPositionX: (i: number) => this._touches[i]?.x ?? 0,
@@ -414,8 +440,13 @@ class ContainerInputImpl implements ContainerInput, InputSink {
      * any accepted alias, so they resolve through the same table InputBridge uses.
      */
     private _peek(query: string): Readonly<KeyRecord> {
-        const name = resolveKeyName(query)
-        if (name === null) return NEVER
+        // The same spellings the events arrive in, so "KeyW" and "ArrowUp" work
+        // as well as "W" and "UpArrow".
+        const name = keyNameFromDomCode(query)
+        if (name === null) {
+            warnUnknownKey(query)
+            return NEVER
+        }
         return this._keys.get(name) ?? NEVER
     }
 

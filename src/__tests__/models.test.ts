@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createScene, watchModel, SCENE_DEFAULTS, type Model } from "../models"
+import { createRuntime } from "../runtime"
+import { setInputBackend } from "onejs-unity/input"
 
 type Call = [string, ...unknown[]]
 
@@ -190,5 +192,78 @@ describe("a model that loads after its component is gone", () => {
         await new Promise((r) => setTimeout(r, 0))
         expect(error).toHaveBeenCalledOnce()
         error.mockRestore()
+    })
+})
+
+describe("the handles a cart holds", () => {
+    // Every one of these reads like ordinary JavaScript and used to do something else.
+    it("lets a cart destroy every actor in a for...of over scene.actors", () => {
+        const scene = createScene({}).scene
+        for (let i = 0; i < 4; i++) scene.spawn(MODEL)
+        for (const a of scene.actors) a.destroy()
+        expect(scene.actors).toHaveLength(0)
+        expect(of("Destroy")).toHaveLength(4)
+    })
+
+    it("keeps the camera's other settings when one is changed", () => {
+        const scene = createScene({ camera: { position: [0, 10, -3], lookAt: [0, 1, 0] } }).scene
+        scene.camera({ fov: 30 })
+        expect(last("SetCamera")).toEqual(["SetCamera", 0, 10, -3, 0, 1, 0, 30])
+    })
+
+    it("never hands out the position it moves an actor or a light by", () => {
+        const scene = createScene({}).scene
+        const boo = scene.spawn(MODEL, { position: [1, 2, 3] })
+        try { boo.position[1] = 99 } catch { /* frozen: assigning throws in strict code */ }
+        expect(boo.position).toEqual([1, 2, 3])
+        const to: [number, number, number] = [4, 5, 6]
+        boo.position = to
+        to[0] = 0
+        expect(boo.position).toEqual([4, 5, 6])
+
+        const lamp = scene.pointLight({ position: [0, 2, 0] })
+        try { lamp.position[1] = 99 } catch { /* as above */ }
+        expect(lamp.position).toEqual([0, 2, 0])
+    })
+
+    it("lifts a label by the height the actor was spawned at", () => {
+        const scene = createScene({}).scene
+        scene.spawn({ ...MODEL, height: 2 }, { scale: 1.5 }).screenPoint()
+        expect(last("PanelPoint")[3]).toBe(3)
+    })
+
+    it("keeps the defaults the same for every scene", () => {
+        expect(Object.isFrozen(SCENE_DEFAULTS)).toBe(true)
+        expect(Object.isFrozen(SCENE_DEFAULTS.camera.position)).toBe(true)
+    })
+})
+
+describe("dissolve", () => {
+    let host: ReturnType<typeof createRuntime>
+    beforeEach(() => { host = createRuntime({ root: {}, version: "0.0.0" }) })
+    afterEach(() => { host.dispose(); setInputBackend(null) })
+
+    const settled = (p: Promise<void>) => Promise.race([p.then(() => true), new Promise((r) => setTimeout(() => r(false), 20))])
+
+    it("turns back from where it is when interrupted, not from where it was going", async () => {
+        const boo = createScene({}).scene.spawn(MODEL)
+        const first = boo.dissolve(1, 1)
+        host.beginFrame(0.5)
+        expect(last("SetDissolve")[2]).toBeCloseTo(0.5)
+        boo.dissolve(0, 1)
+        expect(await settled(first)).toBe(true)
+        host.beginFrame(0.1)
+        expect(last("SetDissolve")[2]).toBeCloseTo(0.45)
+    })
+
+    it("settles when the actor is destroyed or the scene goes, so an await never hangs", async () => {
+        const { scene, dispose } = createScene({})
+        const a = scene.spawn(MODEL), b = scene.spawn(MODEL)
+        const gone = a.dissolve(1)
+        a.destroy()
+        expect(await settled(gone)).toBe(true)
+        const disposed = b.dissolve(1)
+        dispose()
+        expect(await settled(disposed)).toBe(true)
     })
 })

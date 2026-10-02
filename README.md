@@ -221,10 +221,11 @@ Now it can ship them, and `assetUrl` is the one function that knows where they
 went.
 
 ```tsx
-import { assetUrl, useTexture, audio } from "oj"
+import { Image, useTexture, audio } from "oj"
 
-const glow = useTexture("glow.png")            // a Unity texture, or null
-const pop = await audio.load("pop.wav")
+const glow = useTexture("glow.png")            // in a component: a Unity texture, or null
+audio.load("pop.wav").then((pop) => pop.play()) // a Promise; a cart has no top level await
+<Image src="logo.png" />                        // Image takes the bare name too
 ```
 
 A bare file name, resolved differently on each side of an eject: on the site to
@@ -663,12 +664,15 @@ mutates the other. Use `clone()` where C# would have copied for you.
 not `0`. `Mathf.Round` is banker's rounding, so `Mathf.Round(0.5)` is `0` and
 `Mathf.Round(2.5)` is `2`, unlike `Math.round`.
 
-**Positive vertical is DOWN**, unlike `UnityEngine.Input`. The stage is a y-down
-screen space, so `y += axis("vertical") * speed` has to move the way the player
-pressed.
+**The stage's y counts down, and the keyboard's axes count up.** Positions
+(the mouse, touches, styles) are y-down screen space, while `wasd()`,
+`arrows()` and `axis2D()` give y as +1 for up, as Unity does. Subtract the axis
+to move up the screen: `y -= input.keyboard.wasd().y * speed * dt`.
 
-**Key names are DOM `KeyboardEvent.code` values**, not Unity `KeyCode`. They are
-layout-independent, so WASD stays the same physical three-key row on AZERTY.
+**Key names are Unity's (`W`, `Space`, `LeftArrow`), and DOM `KeyboardEvent.code`
+values (`KeyW`, `ArrowLeft`) work too**, on the site and in Unity. Both name the
+physical key, so WASD stays the same three-key row on AZERTY. A name that is
+neither warns once rather than staying silently up.
 
 **`random` ranges are max-exclusive for both ints and floats**, unlike
 `UnityEngine.Random`, which is exclusive for ints and inclusive for floats.

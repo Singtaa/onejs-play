@@ -55,7 +55,9 @@ export interface SpawnOptions {
 export interface Actor {
     readonly id: number
     readonly model: Model
+    /** Where it stands. Assign a new one to move it; the array read back is frozen. */
     position: Vec3
+    /** Which way it faces, in degrees about the up axis. */
     yaw: number
     castShadows: boolean
     receiveShadows: boolean
@@ -64,9 +66,10 @@ export interface Actor {
     /** Dissolves to `amount` (1 is gone) over `seconds`, resolving when it gets there. */
     dissolve(amount: number, seconds?: number): Promise<void>
     /**
-     * Where a point `lift` units above the actor is on screen, in the root's
-     * coordinates: put a label there with position absolute. Null when it is
-     * behind the camera.
+     * Where a point `lift` units above the actor is on screen, in window pixels
+     * like a pointer event's x and y: put a label there with position absolute.
+     * `lift` defaults to the top of the model at the scale it was spawned at.
+     * Null when it is behind the camera.
      */
     screenPoint(lift?: number): { x: number, y: number } | null
     destroy(): void
@@ -109,14 +112,15 @@ export interface SceneOptions {
 export interface Scene {
     spawn(model: Model, options?: SpawnOptions): Actor
     pointLight(options: PointLightOptions): PointLight
-    /** The actor under a point in the root's coordinates (a pointer event's x and y), or null. */
+    /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
     camera(options: NonNullable<SceneOptions["camera"]>): void
+    /** The live actors, as a copy: destroying them while iterating it is fine. */
     readonly actors: readonly Actor[]
 }
 
 /** What a scene is when an option is left out. */
-export const SCENE_DEFAULTS = {
+export const SCENE_DEFAULTS = deepFreeze({
     camera: { position: [0, 4, -8] as Vec3, lookAt: [0, 0, 0] as Vec3, fov: 50 },
     // Down and away from the default camera, a little from the left: shadows fall toward the
     // back right, where they read without hiding what cast them.
@@ -125,6 +129,21 @@ export const SCENE_DEFAULTS = {
     background: "#14181d",
     fog: { near: 10, far: 40 },
     pointLight: { color: "#ffffff", intensity: 1, range: 10 },
+})
+
+// Frozen because the container's oj outlives one cart: a cart that wrote to a default
+// would otherwise change the scene every later cart gets.
+function deepFreeze<T extends object>(value: T): T {
+    for (const v of Object.values(value)) if (typeof v === "object" && v !== null) deepFreeze(v)
+    return Object.freeze(value)
+}
+
+/**
+ * A position as a handle keeps it: a copy, frozen, so `actor.position[1] += 5` cannot
+ * change what the getter reports without moving the actor. The setter is the one way to move.
+ */
+function vec3(p: Readonly<Vec3>): Vec3 {
+    return Object.freeze([p[0], p[1], p[2]]) as unknown as Vec3
 }
 
 // How many scenes are live, and who wants to know: the stage's backdrop hides while any is.
@@ -218,7 +237,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const b = bridge()
     const d = SCENE_DEFAULTS
     const actors: Actor[] = []
-    const fades = new Map<number, { from: number, to: number, t: number, seconds: number, done: () => void }>()
+    // A fade reports each value it reaches through `at`, so an interrupted one turns back
+    // from where the actor is rather than from where it was going.
+    const fades = new Map<number, { from: number, to: number, t: number, seconds: number, at: (v: number) => void, done: () => void }>()
 
     // Every colour is parsed before anything is built, so a typo fails without a half-made scene.
     const background = options.background ?? d.background
@@ -230,9 +251,15 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const fog = options.fog === undefined ? null : { ...d.fog, ...options.fog }
     const fogRgb = fog === null ? null : rgb(fog.color ?? background)
 
+    // Each call changes only what it names: `camera({ fov: 30 })` keeps the position.
+    let cam = { position: vec3(d.camera.position), lookAt: vec3(d.camera.lookAt), fov: d.camera.fov }
     const camera = (c: NonNullable<SceneOptions["camera"]>) => {
-        const position = c.position ?? d.camera.position, look = c.lookAt ?? d.camera.lookAt
-        b.SetCamera(...position, ...look, c.fov ?? d.camera.fov)
+        cam = {
+            position: c.position ? vec3(c.position) : cam.position,
+            lookAt: c.lookAt ? vec3(c.lookAt) : cam.lookAt,
+            fov: c.fov ?? cam.fov,
+        }
+        b.SetCamera(...cam.position, ...cam.lookAt, cam.fov)
     }
 
     b.BeginScene()
@@ -252,22 +279,25 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         for (const [id, f] of fades) {
             f.t = Math.min(f.seconds, f.t + dt)
             const k = f.seconds > 0 ? f.t / f.seconds : 1
-            b.SetDissolve(id, f.from + (f.to - f.from) * k)
+            const value = f.from + (f.to - f.from) * k
+            b.SetDissolve(id, value)
+            f.at(value)
             if (k >= 1) { fades.delete(id); f.done() }
         }
     })
 
     const spawn = (model: Model, o: SpawnOptions = {}): Actor => {
-        let position: Vec3 = o.position ?? [0, 0, 0]
+        let position = vec3(o.position ?? [0, 0, 0])
         let yaw = o.yaw ?? 0
+        const scale = o.scale ?? 1
         let cast = o.castShadows ?? true
         let receive = o.receiveShadows ?? true
         let dissolved = 0
-        const id: number = b.Spawn(model.id, ...position, yaw, o.scale ?? 1, cast, receive)
+        const id: number = b.Spawn(model.id, ...position, yaw, scale, cast, receive)
         const actor: Actor = {
             id, model,
             get position() { return position },
-            set position(p: Vec3) { position = p; b.Place(id, p[0], p[1], p[2], yaw) },
+            set position(p: Vec3) { position = vec3(p); b.Place(id, position[0], position[1], position[2], yaw) },
             get yaw() { return yaw },
             set yaw(y: number) { yaw = y; b.Place(id, position[0], position[1], position[2], y) },
             get castShadows() { return cast },
@@ -282,15 +312,16 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             dissolve(amount, seconds = 0.8) {
                 return new Promise<void>((done) => {
                     fades.get(id)?.done()
-                    fades.set(id, { from: dissolved, to: amount, t: 0, seconds, done: () => { dissolved = amount; done() } })
+                    fades.set(id, { from: dissolved, to: amount, t: 0, seconds, at: (v) => { dissolved = v }, done })
                 })
             },
-            screenPoint(lift = model.height) {
+            screenPoint(lift = model.height * scale) {
                 const p = b.PanelPoint(rootElement(), id, lift)
                 const x = p.x ?? p[0], y = p.y ?? p[1]
                 return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
             },
             destroy() {
+                fades.get(id)?.done()
                 fades.delete(id)
                 const i = actors.indexOf(actor)
                 if (i >= 0) actors.splice(i, 1)
@@ -303,7 +334,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     }
 
     const pointLight = (o: PointLightOptions): PointLight => {
-        let position = o.position
+        let position = vec3(o.position)
         let color = o.color ?? d.pointLight.color
         let intensity = o.intensity ?? d.pointLight.intensity
         let range = o.range ?? d.pointLight.range
@@ -312,7 +343,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return {
             id,
             get position() { return position },
-            set position(p: Vec3) { position = p; b.PlaceLight(id, ...p) },
+            set position(p: Vec3) { position = vec3(p); b.PlaceLight(id, ...position) },
             get color() { return color },
             set color(c: string) { color = c; retune() },
             get intensity() { return intensity },
@@ -331,7 +362,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             return actors.find((a) => a.id === id) ?? null
         },
         camera,
-        get actors() { return actors },
+        // A copy, so `for (const a of scene.actors) a.destroy()` reaches every actor.
+        get actors() { return actors.slice() },
     }
     let disposed = false
     return {
@@ -341,6 +373,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             disposed = true
             stopFrame?.()
             setLiveScenes(liveScenes - 1)
+            for (const f of fades.values()) f.done()
             fades.clear()
             actors.length = 0
             b.DisposeAll()

@@ -226,3 +226,23 @@ describe("Vector2", () => {
         })
     })
 })
+
+describe("points oj hands out", () => {
+    // input.mouse.position and rng.direction() are plain { x, y }, and passing
+    // one to Vector2 failed strict typecheck with "Type 'Vector2' is missing ...
+    // from type 'Vector2'", naming two different types the same.
+    it("are taken wherever a Vector2 is", () => {
+        const mouse: { readonly x: number, readonly y: number } = { x: 3, y: 4 }
+        expect(Vector2.Distance(Vector2.zero, mouse)).toBe(5)
+        expect(new Vector2(1, 1).add(mouse).equals({ x: 4, y: 5 })).toBe(true)
+        expect(Vector2.Lerp(mouse, { x: 5, y: 4 }, 0.5)).toEqual(new Vector2(4, 4))
+    })
+})
+
+describe("statics given plain points", () => {
+    it("never call a method the point does not have", () => {
+        expect(Vector2.MoveTowards({ x: 0, y: 0 }, { x: 1, y: 0 }, 5)).toEqual(new Vector2(1, 0))
+        expect(Vector2.Angle({ x: 1, y: 0 }, { x: 0, y: 1 })).toBeCloseTo(90)
+        expect(Vector2.ClampMagnitude({ x: 1, y: 0 }, 5)).toEqual(new Vector2(1, 0))
+    })
+})

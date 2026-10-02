@@ -81,10 +81,11 @@ export const scores = {
      * should be able to call this unconditionally at the end of a run.
      */
     async submit(score: number, options: SubmitOptions = {}): Promise<ScoreEntry[] | null> {
+        // Checked before the site is, so a bad score fails in a local run too.
+        if (!Number.isFinite(score)) throw new Error("[oj] a score has to be a number")
         const url = apiUrl("/scores")
         const context = getPlayContext()
         if (url === null || context === null) return null
-        if (!Number.isFinite(score)) throw new Error("[oj] a score has to be a number")
 
         const response = await fetch(url, {
             method: "POST",

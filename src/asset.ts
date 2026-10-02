@@ -8,16 +8,16 @@
  *   in a Unity project, under the project's `assets/` folder in the editor and
  *   inside `StreamingAssets/onejs/assets/` in a build.
  *
- * `assetUrl` is the one function that knows which. A game writes the bare file
- * name and gets back something the loaders can actually fetch:
+ * `assetUrl` is the one function that knows which. Every loader oj exports
+ * (Image, useTexture, loadTexture, audio.load, useModel) runs a name through it,
+ * so a game writes the bare file name everywhere:
  *
- *     <Image src={assetUrl("glow.png")} />
- *     const blip = await audio.load("blip.wav")
+ *     <Image src="glow.png" />
+ *     audio.load("blip.wav").then((blip) => blip.play())
  *
- * Explicit at the call site on purpose. The alternative was to teach every
- * loader a hidden base, which would mean a bare "glow.png" resolving through
- * machinery a reader cannot see, and two loaders that disagreed about it would
- * be a bug with no visible cause. One call, greppable, same source everywhere.
+ * A game calls it itself only to hand one of its files to something outside
+ * oj. What matters is that every loader agrees: when Image alone resolved names
+ * its own way, the same `src` drew in Unity and 404ed on the site.
  */
 
 import { useEffect, useState } from "react"
@@ -35,9 +35,14 @@ declare const globalThis: any
  */
 let base: string | null = null
 
+/** One texture load per URL for the life of a host, shared by every component that asks. */
+const textures = new Map<string, Promise<Texture>>()
+
 /** Called by the host. Games have no reason to touch this. */
 export function setAssetBase(next: string | null): void {
     base = next === null ? null : next.replace(/\/+$/, "")
+    // A new host is a new Run, and a file may have changed under its name since.
+    textures.clear()
 }
 
 export function getAssetBase(): string | null {
@@ -106,8 +111,16 @@ export function assetUrl(name: string): string {
  * A bare name, resolved the same way everywhere. SVG works too, and comes back
  * as a VectorImage rather than a texture.
  */
-export async function loadTexture(name: string): Promise<Texture> {
-    return loadImageAsync(assetUrl(name))
+export function loadTexture(name: string): Promise<Texture> {
+    const url = assetUrl(name)
+    let loading = textures.get(url)
+    if (loading === undefined) {
+        loading = loadImageAsync(url) as Promise<Texture>
+        textures.set(url, loading)
+        // Forgotten on failure, so a file added after the first ask still loads.
+        loading.catch(() => { if (textures.get(url) === loading) textures.delete(url) })
+    }
+    return loading
 }
 
 /**
@@ -115,7 +128,7 @@ export async function loadTexture(name: string): Promise<Texture> {
  *
  * Null until it arrives, so a caller renders nothing (or a placeholder) for the
  * frame or two the fetch takes. Loading is not cancelled on unmount, because
- * the underlying loader caches by URL and a second mount would otherwise pay
+ * loadTexture shares one load per URL and a second mount would otherwise pay
  * for the same bytes again; the result is simply dropped.
  */
 export function useTexture(name: string): Texture | null {

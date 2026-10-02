@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { setInputBackend, input } from "onejs-unity/input"
 import { createContainerInput, type ContainerInput } from "../input"
 
@@ -448,5 +448,40 @@ describe("through onejs-unity's public input API", () => {
         setInputBackend(c.backend)
         tick(c)
         expect(input.gamepad).toBeNull()
+    })
+})
+
+describe("key names a cart asks about", () => {
+    // Writing a Cart says key names are DOM KeyboardEvent.code values, and
+    // isKeyDown("KeyW") was false forever while "W" worked.
+    it("answers to the DOM code, the Unity name and the lowercase letter alike", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyW")
+        c.sink.keyDown("ArrowUp")
+        deliver(c)
+        for (const name of ["KeyW", "W", "w", "ArrowUp", "UpArrow"]) expect(b(c).GetKeyDown(name)).toBe(true)
+    })
+
+    it("says once when a name is no key at all, instead of staying silently up", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const c = tick(make())
+        b(c).GetKeyDown("Spcae")
+        b(c).GetKeyDown("Spcae")
+        expect(warn).toHaveBeenCalledOnce()
+        expect(String(warn.mock.calls[0][0])).toMatch(/Spcae/)
+        warn.mockRestore()
+    })
+})
+
+describe("the rest of the input contract", () => {
+    // The container answered "no gamepads" but had no haptics methods, so a
+    // pause menu calling pauseHaptics() threw on the site and worked in Unity.
+    it("answers every call an ejected game's idle input answers", async () => {
+        const { IDLE_INPUT } = await import("../hostinput")
+        const { pauseHaptics, resumeHaptics } = await import("onejs-unity/input")
+        const c = make()
+        for (const name of Object.keys(IDLE_INPUT)) expect(c.backend, name).toHaveProperty(name)
+        setInputBackend(c.backend)
+        expect(() => { pauseHaptics(); resumeHaptics() }).not.toThrow()
     })
 })

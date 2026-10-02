@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { setPlayContext, getPlayContext, isOnline, apiUrl, socketUrl } from "../play"
 import { validRoomName } from "../room"
+import { scores } from "../scores"
 
 describe("the play context", () => {
     beforeEach(() => setPlayContext(null))
@@ -69,5 +70,13 @@ describe("room names", () => {
     it("refuses something that is not a string", () => {
         expect(validRoomName(undefined as never)).toBe(false)
         expect(validRoomName(7 as never)).toBe(false)
+    })
+})
+
+describe("a score that is not a number", () => {
+    // Refused only online, so a NaN from a bug in the run reached nobody until
+    // the cart was live.
+    it("is refused the same with no site behind the game", async () => {
+        await expect(scores.submit(NaN)).rejects.toThrow(/a score has to be a number/)
     })
 })
