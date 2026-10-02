@@ -37,6 +37,7 @@ export const ASSET_TYPES = {
     ".otf": "font/otf",
     ".woff": "font/woff",
     ".woff2": "font/woff2",
+    ".glb": "model/gltf-binary",
 }
 
 /** The images the site will store: narrower than the ones it can name. PlaySite UPLOADABLE_IMAGE. */

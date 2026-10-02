@@ -6,6 +6,7 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { add, remove, syncTypes, update } from "./carts.mjs"
 import { folderName } from "./carts-unity.mjs"
+import { GLTFAST_PACKAGE, GLTFAST_VERSION } from "./unity.mjs"
 import { build } from "./game.mjs"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 
@@ -375,6 +376,57 @@ describe("ojplay add at a Unity project's root", () => {
         expect(npmCalls).toEqual(["Assets/portal/~: npm install --no-audit --no-fund", "Assets/portal/~: npm run build"])
         // Nothing left behind from the fetch.
         expect(fs.readdirSync(path.join(project, "Assets")).sort()).toEqual([".keep", "Scenes", "portal", "portal.meta"].filter((n) => exists(project, `Assets/${n}`)))
+    })
+
+    /** A cart whose art includes a binary glTF model. */
+    function haunt(): Cart {
+        const commit = COMMIT("c")
+        return {
+            versions: {}, live: commit,
+            builds: { [commit]: {
+                files: {
+                    "oj.json": JSON.stringify({ schema: 1, name: "haunt", entry: "index.tsx", runtime: "1.5.0" }),
+                    "index.tsx": "import { mount, View } from \"oj\"\nmount(<View />)\n",
+                },
+                assets: { "ghost.glb": new Uint8Array([0x67, 0x6c, 0x54, 0x46, 2, 0, 0, 0]) },
+                builtAt: Date.UTC(2026, 9, 1, 9) / 1000,
+            } },
+        }
+    }
+    const MANIFEST = JSON.stringify({ dependencies: { "com.unity.render-pipelines.universal": "17.5.0" } }, null, 2)
+
+    it("adds glTFast to the project's packages when the cart has 3D models", async () => {
+        carts = { "@singtaa/haunt": haunt() }
+        const project = unityProject()
+        fs.mkdirSync(path.join(project, "Packages"))
+        fs.writeFileSync(path.join(project, "Packages", "manifest.json"), MANIFEST)
+        const lines = await add(project, "@singtaa/haunt", { npm })
+        expect(lines[1]).toBe(`Added ${GLTFAST_PACKAGE} ${GLTFAST_VERSION} to Packages/manifest.json: this cart has 3D models, and Unity installs it when the project next opens.`)
+        expect(json(project, "Packages/manifest.json").dependencies).toEqual({
+            "com.unity.render-pipelines.universal": "17.5.0",
+            [GLTFAST_PACKAGE]: GLTFAST_VERSION,
+        })
+        expect(exists(project, "Assets/haunt/~/ghost.glb")).toBe(true)
+    })
+
+    it("leaves a glTFast the project already has alone, whatever its version", async () => {
+        carts = { "@singtaa/haunt": haunt() }
+        const project = unityProject()
+        fs.mkdirSync(path.join(project, "Packages"))
+        const mine = JSON.stringify({ dependencies: { [GLTFAST_PACKAGE]: "6.9.0" } }, null, 2)
+        fs.writeFileSync(path.join(project, "Packages", "manifest.json"), mine)
+        const lines = await add(project, "@singtaa/haunt", { npm })
+        expect(lines.join("\n")).not.toContain(GLTFAST_PACKAGE)
+        expect(read(project, "Packages/manifest.json")).toBe(mine)
+    })
+
+    it("does not touch the packages of a project taking a cart with no models", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const project = unityProject()
+        fs.mkdirSync(path.join(project, "Packages"))
+        fs.writeFileSync(path.join(project, "Packages", "manifest.json"), MANIFEST)
+        await add(project, "@singtaa/portal", { npm })
+        expect(read(project, "Packages/manifest.json")).toBe(MANIFEST)
     })
 
     it("leaves the scenes to you while Unity has the project open", async () => {

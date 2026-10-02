@@ -80,6 +80,8 @@ export type { Sound, Voice, PlayOptions } from "onejs-unity/audio"
 // happen in C#, so a hundred bodies cost JavaScript nothing per frame.
 export { usePhysics, createPhysicsWorld } from "./physics"
 export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contact } from "./physics"
+export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
+export type { Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3 } from "./models"
 export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 
 // Gestures over `input`, so a game does not rewrite the same state machine.

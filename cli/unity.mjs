@@ -299,7 +299,41 @@ export function initUnity(root) {
     put(path.join(project, `${panelPath}.meta`), `${panelPath}.meta`, meta(panelGuid, "NativeFormatImporter"))
     put(path.join(project, prefabPath), prefabPath, prefab(name, panelGuid))
     put(path.join(project, `${prefabPath}.meta`), `${prefabPath}.meta`, meta(stableGuid(prefabPath), "PrefabImporter"))
-    return { lines, prefab: prefabPath, onejs }
+    const gltf = ensureGltfast(project, root)
+    if (gltf !== null) lines.push(gltf)
+    return { lines, prefab: prefabPath, onejs, gltf }
+}
+
+/** The package a cart's .glb models need in Unity, and the version `ojplay` adds when a project has none. */
+export const GLTFAST_PACKAGE = "com.unity.cloud.gltfast"
+export const GLTFAST_VERSION = "6.20.0"
+
+/** Whether a cart holds any 3D model, anywhere a build would copy it from. */
+function hasModels(root) {
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).some((entry) => {
+        if (entry.name.startsWith(".") || entry.name === "node_modules") return false
+        if (entry.isDirectory()) return walk(path.join(dir, entry.name))
+        return entry.isFile() && entry.name.toLowerCase().endsWith(".glb")
+    })
+    return walk(root)
+}
+
+/**
+ * Adds glTFast to the project's packages when the cart has models and the
+ * project lacks it, so the cart runs on the first open instead of throwing that
+ * glTFast is missing. A version the project already names is the project's
+ * choice and stays. Returns what it did, as a line, or null.
+ */
+function ensureGltfast(project, root) {
+    if (!hasModels(root)) return null
+    const file = path.join(project, "Packages", "manifest.json")
+    if (!fs.existsSync(file)) return null
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"))
+    manifest.dependencies ??= {}
+    if (GLTFAST_PACKAGE in manifest.dependencies) return null
+    manifest.dependencies[GLTFAST_PACKAGE] = GLTFAST_VERSION
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n")
+    return `Added ${GLTFAST_PACKAGE} ${GLTFAST_VERSION} to Packages/manifest.json: this cart has 3D models, and Unity installs it when the project next opens.`
 }
 
 /** npm in `root`, output passed through. Returns the exit code. */
