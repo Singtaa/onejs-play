@@ -1,6 +1,6 @@
 {
   "name": "ojplay",
-  "version": "0.9.10",
+  "version": "0.10.0",
   "description": "OJPlay from the terminal: add carts to carts, build, run and test them like the site does. The runtime carts import as \"oj\".",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -37,9 +37,9 @@
     "esbuild": ">=0.25.0"
   },
   "peerDependencies": {
-    "onejs-react": ">=0.1.60",
-    "onejs-unity": ">=0.6.0",
-    "react": "^18.0.0 || ^19.0.0"
+    "onejs-react": ">=0.3.0",
+    "onejs-unity": ">=0.10.0",
+    "react": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

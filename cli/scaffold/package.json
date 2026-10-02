@@ -11,9 +11,9 @@
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "~0.31.0",
-    "ojplay": "^0.9.0",
-    "onejs-react": "^0.2.0",
-    "onejs-unity": "^0.9.0",
+    "ojplay": "^0.10.0",
+    "onejs-react": "^0.3.0",
+    "onejs-unity": "^0.10.0",
     "react": "^19.0.0",
     "typescript": "^5.7.0",
     "unity-types": "^6000.3.9"
