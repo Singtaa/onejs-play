@@ -124,9 +124,9 @@ export type { UvRect } from "./asset"
  *     const canvas = fx.canvas(512, 512)
  *     const flame = fx.useAnimation(canvas, (seconds) => ...)
  *
- * A namespace rather than loose exports, because fx's names (image, canvas,
- * noise) are far too general loose in oj, and its old useTexture collided with
- * oj's, which loads a file.
+ * A namespace rather than loose exports, because fx has a useTexture of its own
+ * and oj already exports one that loads a file. Two hooks with one name, doing
+ * unrelated things, is worse than one extra word at the call site.
  *
  * Everything in here is fragment blits, so it works in the browser. The compute
  * shader path it deliberately avoids does not exist on WebGL at all.
