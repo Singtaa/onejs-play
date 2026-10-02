@@ -55,10 +55,22 @@ describe("Color", () => {
         })
     })
 
+    describe("From", () => {
+        it("takes any colour oj does", () => {
+            expect(Color.From("orange").toHex()).toBe("#ffa500ff")
+            expect(Color.From("rgba(255, 0, 0, 0.5)").a).toBe(0.5)
+            expect(Color.From([0, 1, 0]).equals(Color.green)).toBe(true)
+            expect(Color.From(Color.blue).equals(Color.blue)).toBe(true)
+        })
+        it("names itself when the colour is wrong", () => {
+            expect(() => Color.From("tael")).toThrow(/Color.From: "tael" is not a colour/)
+        })
+    })
+
     describe("hex parity with the particle wire schema", () => {
-        // oj.Color and particles.ts each carry their own parser. This pins them
-        // together so a change to either shows up as a failure here rather than
-        // as a game whose particles are a different colour than its UI.
+        // Both read through onejs-react's toRGBA. This pins that, so a parser
+        // creeping back into either shows up here rather than as a game whose
+        // particles are a different colour than its UI.
         it.each(colorHexCases)("agrees on %s", (hex) => {
             const wire = toWire({ max: 1, emitters: [{ colorOverLife: [hex] }] })
             const key = wire.emitters[0]!.colorKeys[0]!

@@ -1,4 +1,4 @@
-import { batchedVisualContent, Painter } from "oj"
+import { drawing, Painter } from "oj"
 
 export const SUIT_COLOUR = ["rgb(27, 36, 48)", "rgb(200, 40, 60)", "rgb(200, 40, 60)", "rgb(27, 36, 48)"]
 
@@ -78,15 +78,15 @@ function club(p: Painter, x: number, y: number, size: number): void {
 const SHAPES = [spade, heart, diamond, club]
 
 // One callback per suit and size, cached: Painter2D has no transform stack, and each callback takes a native slot.
-const cache = new Map<string, ReturnType<typeof batchedVisualContent>>()
+const cache = new Map<string, ReturnType<typeof drawing>>()
 
-export function pipFor(suit: number, size: number): ReturnType<typeof batchedVisualContent> {
+export function pipFor(suit: number, size: number): ReturnType<typeof drawing> {
     const key = `${suit}:${size}`
     const existing = cache.get(key)
     if (existing !== undefined) return existing
     const colour = suit === 1 || suit === 2 ? RED : BLACK
     const shape = SHAPES[suit]!
-    const made = batchedVisualContent((p: Painter) => {
+    const made = drawing((p: Painter) => {
         p.fillColor(colour[0], colour[1], colour[2], 1)
         shape(p, 0, 0, size)
     })

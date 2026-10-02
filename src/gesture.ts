@@ -15,7 +15,7 @@
 
 import { useRef } from "react"
 import { input, type Mouse, type Touch } from "onejs-unity/input"
-import { useFrame } from "./frame"
+import { useFrame } from "onejs-react"
 
 export type SwipeDirection = "left" | "right" | "up" | "down"
 

@@ -22,6 +22,7 @@ import { createContainerInput, type ContainerInput } from "./input"
 import { setAssetBase } from "./asset"
 import { setPlayContext, type PlayContext } from "./play"
 import { setInputBackend } from "onejs-unity/input"
+import { setFrameClock } from "onejs-react"
 
 /** The frame clock, reused rather than reallocated each frame. */
 export interface TimeState {
@@ -188,6 +189,9 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         },
     }
     current = oj
+    // onejs-react's useFrame runs on this runtime's frames, so it pauses with
+    // the container and sees each frame's input edges.
+    setFrameClock((callback) => oj.onFrame(callback))
 
     return {
         // Only a caller that passed `api` gets the whole surface on this
@@ -225,7 +229,10 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             setInputBackend(null)
             setAssetBase(null)
             setPlayContext(null)
-            if (current === oj) current = null
+            if (current === oj) {
+                current = null
+                setFrameClock(null)
+            }
         },
     }
 }

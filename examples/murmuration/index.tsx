@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react"
-import { View, Text, mount, useFrame, useStage, input, random, Painter, batchedVisualContent } from "oj"
+import { useRef, useState } from "react"
+import { View, Text, mount, useFrame, useStage, input, random, useDrawing } from "oj"
 import { Grid, step, DEFAULTS, type Boid, type Predator } from "./flock"
 
 const FLOCK = 280
@@ -12,7 +12,6 @@ const FAST = [0.93, 0.95, 1.0] as const
 function Murmuration() {
     const stage = useStage()
     const host = useRef<any>(null)
-    const rng = useRef(random()).current
     const boids = useRef<Boid[]>([]).current
     const grid = useRef(new Grid(stage.width, stage.height, DEFAULTS.range))
     const predator = useRef<Predator | null>(null)
@@ -20,18 +19,18 @@ function Murmuration() {
 
     if (boids.length === 0) {
         for (let i = 0; i < FLOCK; i++) {
-            const angle = rng.next() * Math.PI * 2
-            const speed = DEFAULTS.minSpeed + rng.next() * (DEFAULTS.maxSpeed - DEFAULTS.minSpeed)
+            const angle = random.next() * Math.PI * 2
+            const speed = DEFAULTS.minSpeed + random.next() * (DEFAULTS.maxSpeed - DEFAULTS.minSpeed)
             boids.push({
-                x: rng.range(0, stage.width),
-                y: rng.range(0, stage.height),
+                x: random.range(0, stage.width),
+                y: random.range(0, stage.height),
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed,
             })
         }
     }
 
-    const paint = useMemo(() => batchedVisualContent((p: Painter) => {
+    useDrawing(host, (p) => {
         const span = DEFAULTS.maxSpeed - DEFAULTS.minSpeed
         for (const bird of boids) {
             const speed = Math.hypot(bird.vx, bird.vy)
@@ -59,7 +58,7 @@ function Murmuration() {
             p.closePath()
             p.fill()
         }
-    }), [])
+    }, "frame")
 
     useFrame((dt) => {
         if (grid.current.width !== stage.width || grid.current.height !== stage.height) {
@@ -79,12 +78,11 @@ function Murmuration() {
 
         // Clamped: one long frame at the real dt teleports the flock and unravels it.
         step(boids, grid.current, DEFAULTS, Math.min(dt, 1 / 30), scare)
-        host.current?.MarkDirtyRepaint()
     }, [stage.width, stage.height, scattering])
 
     return (
         <View style={{ width: "100%", height: "100%", backgroundColor: "rgb(9, 12, 20)" }}>
-            <View ref={host} onGenerateVisualContent={paint}
+            <View ref={host} 
                 style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
             <View style={{ position: "absolute", left: 22, top: 18 }} pickingMode="Ignore">

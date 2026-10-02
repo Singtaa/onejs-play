@@ -37,7 +37,6 @@ const EMPTY: Snapshot = {
 }
 
 function Quickdraw() {
-    const rng = useRef(random()).current
     const stage = useStage()
 
     const phase = useRef<Phase>("idle")
@@ -171,7 +170,7 @@ function Quickdraw() {
             room.send({ k: "set", n, s: list })
             arm(n, list)
             hostPhase.current = "hold"
-            hostTimer.current = holdFor(() => rng.next())
+            hostTimer.current = holdFor(() => random.next())
             return
         }
 

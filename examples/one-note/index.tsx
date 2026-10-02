@@ -1,12 +1,14 @@
 // One idea: load a sound once, play it on an event.
 //
-// audio.load resolves a file that ships with the cart, and the Sound it
-// hands back plays as often as you ask. There is one clip here, a single
+// useSound loads a file that ships with the cart, and the Sound it hands
+// back plays as often as you ask. It is null for the frame or two the file
+// takes, and it unloads with the component, which also stops anything still
+// ringing. There is one clip here, a single
 // plucked A. The other four pads are that same clip played at a different
 // pitch, which is why this cart carries 24 KB of audio and not five times
 // that.
-import { useEffect, useRef, useState } from "react"
-import { View, Text, mount, audio, type Sound } from "oj"
+import { useState } from "react"
+import { View, Text, mount, useSound } from "oj"
 import "onejs:tailwind"
 
 // Ratios against the note in the file, which is what pitch means here.
@@ -19,21 +21,11 @@ const PADS = [
 ]
 
 function OneNote() {
-    const note = useRef<Sound | null>(null)
+    const note = useSound("note.wav")
     const [played, setPlayed] = useState(-1)
 
-    useEffect(() => {
-        let live = true
-        audio.load("note.wav").then((sound) => {
-            if (live) note.current = sound
-            else sound.unload()
-        })
-        // The cart can be closed mid-ring, and a voice outlives the view.
-        return () => { live = false; audio.stopAll() }
-    }, [])
-
     const strike = (i: number) => {
-        note.current?.play({ pitch: PADS[i]!.pitch })
+        note?.play({ pitch: PADS[i]!.pitch })
         setPlayed(i)
     }
 

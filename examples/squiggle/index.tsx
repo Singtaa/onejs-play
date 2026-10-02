@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
     View, Text, mount, useFrame, useStage, useRoom, useLeaderboard, scores,
-    input, random, Painter, batchedVisualContent,
+    input, random, Painter, useDrawing,
 } from "oj"
 import {
     makeSnake, steer, advance, resetTrail, radiusOf, grow, hitsBody,
@@ -43,7 +43,6 @@ interface Peer extends Snake {
 function Squiggle() {
     const stage = useStage()
     const host = useRef<any>(null)
-    const rng = useRef(random()).current
 
     const field = useRef<{ home: Orb[]; orbs: Orb[] } | null>(null)
     if (field.current === null) {
@@ -54,7 +53,7 @@ function Squiggle() {
     const { home, orbs } = field.current
 
     const origin = useRef<{ x: number; y: number; angle: number } | null>(null)
-    if (origin.current === null) origin.current = spawnPoint(() => rng.next())
+    if (origin.current === null) origin.current = spawnPoint(() => random.next())
     const me = useRef<Snake>(makeSnake(origin.current.x, origin.current.y, origin.current.angle)).current
     const peers = useRef(new Map<number, Peer>()).current
     const peak = useRef(START_LENGTH)
@@ -219,7 +218,7 @@ function Squiggle() {
         const dropped: number[][] = []
         for (let i = 0; i < slots.length; i++) {
             const point = points[i]!
-            const tone = Math.floor(rng.next() * ORB_TONES.length)
+            const tone = Math.floor(random.next() * ORB_TONES.length)
             placeOrb(slots[i]!, point.x, point.y, tone)
             dropped.push([slots[i]!, Math.round(point.x), Math.round(point.y), tone])
         }
@@ -229,7 +228,7 @@ function Squiggle() {
             submit.current(Math.round(peak.current))
         }
 
-        const where = spawnPoint(() => rng.next())
+        const where = spawnPoint(() => random.next())
         me.x = where.x
         me.y = where.y
         me.angle = where.angle
@@ -336,8 +335,6 @@ function Squiggle() {
             })
             eaten.length = 0
         }
-
-        host.current?.MarkDirtyRepaint()
     }, [stage.width, stage.height])
 
     useEffect(() => {
@@ -352,7 +349,7 @@ function Squiggle() {
         return () => clearInterval(timer)
     }, [])
 
-    const paint = useMemo(() => batchedVisualContent((p: Painter) => {
+    useDrawing(host, (p) => {
         const camera = cameraAt(me, stage.width, stage.height)
 
         p.fillColor("#0b0e13")
@@ -388,7 +385,7 @@ function Squiggle() {
 
         for (const [id, peer] of peers) drawSnake(p, peer, camera, stage, toneOf(id), false, peer.boosting)
         drawSnake(p, me, camera, stage, toneOf(room.id), true, boosting.current)
-    }), [stage.width, stage.height])
+    }, "frame")
 
     const ranking = [...peers.entries()]
         .map(([id, peer]) => ({ id, length: Math.round(peer.length), me: false }))
@@ -398,7 +395,7 @@ function Squiggle() {
 
     return (
         <View style={{ width: "100%", height: "100%", backgroundColor: "rgb(8, 10, 14)" }}>
-            <View ref={host} onGenerateVisualContent={paint}
+            <View ref={host} 
                 style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
             <View style={{ position: "absolute", left: 20, top: 16 }} pickingMode="Ignore">

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
     View, Text, mount, useFrame, useStage, useRoom, useLeaderboard, scores,
-    input, random, Painter, batchedVisualContent,
+    input, random, Painter, useDrawing,
 } from "oj"
 import {
     swim, canEat, grow, contain, scatterPellets, pelletsEaten, spawnPoint,
@@ -35,9 +35,8 @@ interface Peer extends Fish {
 function BigFish() {
     const stage = useStage()
     const host = useRef<any>(null)
-    const rng = useRef(random()).current
 
-    const me = useRef<Fish>({ ...spawnPoint(() => rng.next()), size: START_SIZE }).current
+    const me = useRef<Fish>({ ...spawnPoint(() => random.next()), size: START_SIZE }).current
     const peers = useRef(new Map<number, Peer>()).current
     const food = useRef<Pellet[]>([]).current
     const peak = useRef(START_SIZE)
@@ -55,7 +54,7 @@ function BigFish() {
 
     const scatter = () => {
         food.length = 0
-        for (const pellet of scatterPellets(PELLET_COUNT, () => rng.next())) food.push(pellet)
+        for (const pellet of scatterPellets(PELLET_COUNT, () => random.next())) food.push(pellet)
     }
 
     const room = useRoom("pond", {
@@ -140,7 +139,7 @@ function BigFish() {
     const die = (toWhom: number) => {
         room.send({ k: "died", by: toWhom })
         if (scores.available && peak.current > START_SIZE + 2) submit.current(Math.round(peak.current))
-        const where = spawnPoint(() => rng.next())
+        const where = spawnPoint(() => random.next())
         me.x = where.x
         me.y = where.y
         me.size = START_SIZE
@@ -213,10 +212,10 @@ function BigFish() {
                 for (let i = 0; i < food.length && revived.length < 8; i++) {
                     const pellet = food[i]!
                     if (pellet.alive) continue
-                    const where = spawnPoint(() => rng.next())
+                    const where = spawnPoint(() => random.next())
                     pellet.x = where.x
                     pellet.y = where.y
-                    pellet.tone = Math.floor(rng.next() * PELLET_TONES.length)
+                    pellet.tone = Math.floor(random.next() * PELLET_TONES.length)
                     pellet.alive = true
                     revived.push([i, Math.round(pellet.x), Math.round(pellet.y), pellet.tone])
                 }
@@ -229,8 +228,6 @@ function BigFish() {
             sinceBroadcast.current = 1 / BROADCAST_HZ
             room.send({ k: "me", x: Math.round(me.x), y: Math.round(me.y), s: Math.round(me.size) })
         }
-
-        host.current?.MarkDirtyRepaint()
     }, [stage.width, stage.height])
 
     useEffect(() => {
@@ -244,7 +241,7 @@ function BigFish() {
         return () => clearInterval(timer)
     }, [])
 
-    const paint = useMemo(() => batchedVisualContent((p: Painter) => {
+    useDrawing(host, (p) => {
         const camera = cameraAt(me, stage.width, stage.height)
         const onScreen = (x: number, y: number, r: number) =>
             x + r > camera.x && x - r < camera.x + stage.width &&
@@ -283,7 +280,7 @@ function BigFish() {
             drawFish(p, peer.x - camera.x, peer.y - camera.y, peer.size, toneOf(id), false)
         }
         drawFish(p, me.x - camera.x, me.y - camera.y, me.size, toneOf(room.id), true)
-    }), [stage.width, stage.height])
+    }, "frame")
 
     const ranking = [...peers.entries()]
         .map(([id, peer]) => ({ id, size: Math.round(peer.size), me: false }))
@@ -293,7 +290,7 @@ function BigFish() {
 
     return (
         <View style={{ width: "100%", height: "100%", backgroundColor: "rgb(6, 12, 18)" }}>
-            <View ref={host} onGenerateVisualContent={paint}
+            <View ref={host} 
                 style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
             <View style={{ position: "absolute", left: 20, top: 16 }} pickingMode="Ignore">

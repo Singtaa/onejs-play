@@ -12,7 +12,7 @@ afterEach(() => { setInputBackend(null); vi.restoreAllMocks() })
 describe("the oj object", () => {
     it("carries the whole game-facing API, so imports from \"oj\" resolve", () => {
         const { oj } = make()
-        for (const name of ["View", "Text", "Button", "render", "Vector2", "Color", "Mathf", "random", "input", "Painter"]) {
+        for (const name of ["View", "Text", "Button", "mount", "Vector2", "Color", "Mathf", "random", "input", "Painter"]) {
             expect(oj).toHaveProperty(name)
         }
     })
@@ -27,7 +27,7 @@ describe("the oj object", () => {
         const { oj } = createRuntime({
             root: { fake: "root" }, version: "1.4.2",
         })
-        for (const name of ["View", "Text", "render", "Mathf", "input", "Painter"]) {
+        for (const name of ["View", "Text", "mount", "Mathf", "input", "Painter"]) {
             expect(oj).not.toHaveProperty(name)
         }
         // What every host provides is still there.
@@ -151,5 +151,41 @@ describe("dispose", () => {
         r.dispose()
         r.beginFrame(0.016)
         expect(seen).toHaveLength(0)
+    })
+})
+
+/**
+ * useFrame is onejs-react's, so a cart and a OneJS app share one hook. The
+ * runtime installs itself as that hook's clock, which keeps the two things a
+ * game relies on: frames stop when the container stops calling beginFrame, and
+ * a frame callback sees this frame's input edges, not last frame's.
+ */
+describe("useFrame's clock", () => {
+    it("is the runtime's beginFrame while the runtime lives", async () => {
+        const { subscribeFrame } = await import("onejs-react/src/frame")
+        const r = make()
+        const seen: number[] = []
+        const stop = subscribeFrame((dt) => seen.push(dt))
+        r.beginFrame(0.02)
+        r.beginFrame(0.03)
+        expect(seen).toEqual([0.02, 0.03])
+        stop()
+        r.beginFrame(0.04)
+        expect(seen).toEqual([0.02, 0.03])
+        r.dispose()
+    })
+
+    it("goes back to onejs-react's own once the runtime is disposed", async () => {
+        const { subscribeFrame } = await import("onejs-react/src/frame")
+        vi.stubGlobal("requestAnimationFrame", () => 1)
+        vi.stubGlobal("cancelAnimationFrame", () => {})
+        const r = make()
+        r.dispose()
+        const seen: number[] = []
+        const stop = subscribeFrame((dt) => seen.push(dt))
+        r.beginFrame(0.02)
+        expect(seen).toEqual([])
+        stop()
+        vi.unstubAllGlobals()
     })
 })

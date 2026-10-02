@@ -22,11 +22,11 @@
  *   Painter2D,
  *   MeshGenerationContext          raw painter interop types. Use the batched
  *                                  Painter, which takes plain numbers.
- *   useVectorContent               the raw painter path. onejs-react's
- *                                  Transform2D belongs here too: its point()
- *                                  returns new CS.UnityEngine.Vector2 and would
- *                                  throw. oj exports its own JS-only
- *                                  Transform2D under the same name instead.
+ *   useVectorContent               the raw painter path. oj's Transform2D
+ *                                  is onejs-react's with point() returning
+ *                                  oj's Vector2 instead of a CS one.
+ *   render, unmount                mount is a cart's entry point, and a cart
+ *                                  cannot reach the root these need.
  *   registerElement,
  *   createComponent                register arbitrary C# types as elements.
  *   useFrameSync, useEventSync,
@@ -55,7 +55,7 @@ export type { Stage } from "./stage"
 // MARK: entry point and frame clock
 
 export { mount, useStage } from "./mount"
-export { useFrame } from "./frame"
+export { useFrame } from "onejs-react"
 
 // MARK: transforms
 
@@ -121,11 +121,12 @@ export type { UvRect } from "./asset"
  * The texture pipeline: build and process images on the GPU.
  *
  *     import { fx } from "oj"
- *     const flame = fx.useAnimatedTexture(512, 512, (t) => ...)
+ *     const canvas = fx.canvas(512, 512)
+ *     const flame = fx.useAnimation(canvas, (seconds) => ...)
  *
- * A namespace rather than loose exports, because fx has a useTexture of its own
- * and oj already exports one that loads a game asset. Two hooks with one name,
- * doing unrelated things, is worse than one extra word at the call site.
+ * A namespace rather than loose exports, because fx's names (image, canvas,
+ * noise) are far too general loose in oj, and its old useTexture collided with
+ * oj's, which loads a file.
  *
  * Everything in here is fragment blits, so it works in the browser. The compute
  * shader path it deliberately avoids does not exist on WebGL at all.
@@ -154,19 +155,15 @@ export * as fx from "onejs-unity/fx"
  * Compiled wherever it runs. On this site the browser compiles the program on
  * Unity's own device, as WGSL or GLSL; eject the game and the same program
  * becomes HLSL that Unity compiles, with no edit to your source.
- *
- * `encode` is `compile` under the name it had before, so a game written
- * against it still builds.
  */
 // `sl` is already a namespace inside onejs-unity/sl, so re-export the binding
 // rather than star-exporting the module. `export * as sl` would have nested it
 // one level deeper and given every author `sl.sl.program`, which type checks
 // against `any` and fails at the first call.
-export { sl, compile, encode, manifest } from "onejs-unity/sl"
-export type { Program, Compiled, Encoded, ProgramManifest } from "onejs-unity/sl"
-// What a `.sl` import resolves to, so a game can name the type of one.
-// `EncodedProgram` is its old name, kept for games written against it.
-export type { CompiledProgram, EncodedProgram } from "onejs-react"
+export { sl, compile } from "onejs-unity/sl"
+export type { Program } from "onejs-unity/sl"
+// What compile returns and a `.sl` import resolves to, so a game can name it.
+export type { CompiledProgram } from "onejs-react"
 
 // MARK: the site behind the game
 
@@ -199,7 +196,7 @@ export { Image } from "./image"
 
 // MARK: rendering
 
-export { render, unmount, createPortal, flushSync, batchedUpdates } from "onejs-react"
+export { createPortal, flushSync, batchedUpdates } from "onejs-react"
 export { Portal } from "onejs-react"
 export type { PortalProps } from "onejs-react"
 export { ErrorBoundary, formatError } from "onejs-react"
@@ -217,9 +214,9 @@ export {
 } from "onejs-react"
 export type { ScreenContextValue, ScreenProviderProps, BreakpointName } from "onejs-react"
 
-// MARK: vector drawing (batched only; the raw painter path needs CS.*)
+// MARK: drawing (the Painter only; the raw Painter2D path needs CS.*)
 
-export { Painter, batchedVisualContent, useBatchedVectorContent } from "onejs-react"
+export { Painter, drawing, useDrawing } from "onejs-react"
 
 // MARK: particles
 
@@ -249,9 +246,11 @@ export type {
     ShaderProgramProps,
     TextureFXBuild,
     LayerHandle,
-    NoiseOptions,
+    TextureFXNoise,
+    TextureFXBlend,
+    TextureFXStop,
+    TextureFXStops,
     ShapeOptions,
-    BlendMode,
     ShapeKind,
 } from "onejs-react"
 
@@ -261,26 +260,20 @@ export type {
     Texture,
     ViewStyle,
     PointerEventData,
-    MouseEventData,
     WheelEventData,
     KeyEventData,
     ChangeEventData,
     FocusEventData,
-    DragEventData,
     GeometryEventData,
     NavigationEventData,
     NavigationDirection,
-    TransitionEventData,
     PointerEventHandler,
-    MouseEventHandler,
     WheelEventHandler,
     KeyEventHandler,
     ChangeEventHandler,
     FocusEventHandler,
-    DragEventHandler,
     GeometryEventHandler,
     NavigationEventHandler,
-    TransitionEventHandler,
     BaseProps,
     ViewProps,
     TextProps,

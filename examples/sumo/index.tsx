@@ -1,6 +1,6 @@
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { View, Text, mount, useStage, useFrame, useRoom, usePhysics, input, isOnline, Painter, batchedVisualContent, type BodyConfig } from "oj"
+import { useEffect, useRef, useState } from "react"
+import { View, Text, mount, useStage, useFrame, useRoom, usePhysics, input, isOnline, useDrawing, type BodyConfig } from "oj"
 import {
     platformRadius, isOff, spawnAt, steer, advance, leashVelocity, leashDelta,
     beginRound, applyFall, standing, isOver, winnerOf, credit,
@@ -420,7 +420,7 @@ function Sumo() {
         return () => clearInterval(timer)
     }, [])
 
-    const paint = useMemo(() => batchedVisualContent((p: Painter) => {
+    useDrawing(canvas, (p) => {
         const ring = platformRadius(elapsed.current)
 
         p.fillColor("#090b11")
@@ -458,7 +458,7 @@ function Sumo() {
             p.circle(CENTER_X, CENTER_Y, ring * fraction)
             p.stroke()
         }
-    }), [])
+    })
 
     const board = Object.entries(snap.tally)
         .map(([id, wins]) => ({ id: Number(id), wins }))
@@ -479,7 +479,7 @@ function Sumo() {
 
     return (
         <View style={{ width: ARENA_W, height: ARENA_H, backgroundColor: "rgb(9, 11, 16)" }}>
-            <View ref={canvas} onGenerateVisualContent={paint} pickingMode="Ignore"
+            <View ref={canvas}  pickingMode="Ignore"
                 style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
             <View ref={field} pickingMode="Ignore"

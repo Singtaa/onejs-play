@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createScene as createSceneRaw, loadModel, watchModel, SCENE_DEFAULTS, type Model, type SceneOptions } from "../models"
 import { createRuntime } from "../runtime"
 import { setInputBackend } from "onejs-unity/input"
+import { Color } from "../color"
 
 type Call = [string, ...unknown[]]
 
@@ -105,8 +106,16 @@ describe("colours", () => {
         expect(last("SetAmbient").slice(1, 7)).toEqual([1, 1, 1, 0, 0, 0])
     })
 
+    it("take any colour the rest of oj does: names, rgb() and a Color", () => {
+        createScene({ background: "orange", sun: { color: "rgb(0, 255, 0)" }, ambient: { sky: new Color(0, 0, 1) } })
+        expect(last("SetBackground")).toEqual(["SetBackground", 1, 0.647, 0])
+        expect(last("SetSun").slice(5, 8)).toEqual([0, 1, 0])
+        expect(last("SetAmbient").slice(1, 4)).toEqual([0, 0, 1])
+    })
+
     it("name the option a cart got wrong", () => {
-        expect(() => createScene({ background: "teal" })).toThrow(/invalid color "teal"/)
+        expect(() => createScene({ background: "tael" })).toThrow(/scene background: "tael" is not a colour/)
+        expect(() => createScene({ sun: { color: "#12" } })).toThrow(/sun color: "#12"/)
     })
 })
 
@@ -432,7 +441,7 @@ describe("changing the scene while it runs", () => {
     it("refuses a bad colour before changing anything", () => {
         const scene = createScene().scene
         const before = calls.length
-        expect(() => scene.background("teal")).toThrow(/invalid color "teal"/)
+        expect(() => scene.background("tael")).toThrow(/"tael" is not a colour/)
         expect(calls.length).toBe(before)
     })
 })

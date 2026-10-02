@@ -74,7 +74,6 @@ interface Lane {
 }
 
 function Wayfinder() {
-    const rng = useRef(random()).current
     const maze = useRef<Maze | null>(null)
     const lanes = useRef<Lane[]>([]).current
     const [running, setRunning] = useState(true)
@@ -107,7 +106,7 @@ function Wayfinder() {
     }
 
     const reset = () => {
-        const built = generate(COLS, ROWS, () => rng.next())
+        const built = generate(COLS, ROWS, () => random.next())
         clearAround(built, START)
         clearAround(built, GOAL)
         maze.current = built

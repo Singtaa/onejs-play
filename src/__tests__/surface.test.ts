@@ -86,10 +86,13 @@ describe("container surface", () => {
         expect("createInput" in oj).toBe(false)
     })
 
-    it("exposes the batched painter rather than the raw one", () => {
-        expect(typeof oj.batchedVisualContent).toBe("function")
+    it("exposes the Painter under one pair of names, drawing and useDrawing", () => {
+        expect(typeof oj.drawing).toBe("function")
+        expect(typeof oj.useDrawing).toBe("function")
         expect(typeof oj.Painter).toBe("function")
-        expect("useVectorContent" in oj).toBe(false)
+        for (const name of ["batchedVisualContent", "useBatchedVectorContent", "useVectorContent"]) {
+            expect(name in oj).toBe(false)
+        }
     })
 
     // The stage is the window. A fixed board is a scaled View in the game's
@@ -107,21 +110,24 @@ describe("container surface", () => {
         }
     })
 
-    it("exposes render as the entry point", () => {
-        expect(typeof oj.render).toBe("function")
+    it("has mount as the one entry point", () => {
+        expect(typeof oj.mount).toBe("function")
+        for (const name of ["render", "unmount"]) {
+            expect(name in oj).toBe(false)
+        }
     })
 })
 
 describe("the shader language is reachable from oj", () => {
-    it("exposes sl, compile, encode and ShaderProgram", () => {
+    it("exposes sl, compile and ShaderProgram, and none of the old names", () => {
         // Every phase of this could be finished and a Play author still unable
         // to reach any of it. That gap is invisible from inside the packages
         // that built it, which is why it is a test rather than a note.
         expect(typeof (oj as any).sl).toBe("object")
         expect(typeof (oj as any).sl.program).toBe("function")
         expect(typeof (oj as any).compile).toBe("function")
-        // The name games were written against, kept for them.
-        expect((oj as any).encode).toBe((oj as any).compile)
+        expect("encode" in oj).toBe(false)
+        expect("manifest" in oj).toBe(false)
         expect((oj as any).ShaderProgram).toBeDefined()
     })
 
@@ -137,13 +143,5 @@ describe("the shader language is reachable from oj", () => {
         expect(c.glsl).toContain("sin(")
         // No instruction buffer: OneJS draws every program compiled.
         expect(c.data).toBeUndefined()
-    })
-
-    it("can build the manifest an ejected project compiles from", () => {
-        const sl = (oj as any).sl
-        const p = sl.program(({ uv }: any) => sl.vec4(uv, 0, 1))
-        const m = (oj as any).manifest([p])
-        expect(m.programs[0].hash).toBe(p.hash)
-        expect(m.programs[0].hlsl).toContain("Shader ")
     })
 })

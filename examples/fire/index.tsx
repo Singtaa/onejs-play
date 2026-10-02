@@ -22,7 +22,7 @@ const embers = [
 
 function Fire() {
     const stage = useStage()
-    const flame = fx.useAnimatedTexture(canvas, () => {
+    const flame = fx.useAnimation(canvas, () => {
         const heat = canvas.noise(body).multiply(canvas.noise(detail)).multiply(2).multiply(mask)
         return heat.threshold(0, 0.2).ramp(embers)
     })

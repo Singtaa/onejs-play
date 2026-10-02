@@ -5,12 +5,13 @@
  * 0-255 bytes of Color32. Statics are lowercase value properties and Lerp is
  * PascalCase, mirroring Unity so snippets paste in unchanged.
  *
- * Hex parsing accepts #RGB, #RGBA, #RRGGBB and #RRGGBBAA, with or without the
- * leading hash, which is the same set the particle wire schema accepts. That
- * parser currently lives privately in onejs-react/src/particles.ts; the two are
- * kept identical by colorHexCases in the tests, and should collapse into one
- * shared export the next time particles.ts is touched.
+ * Parsing is onejs-react's toRGBA, the one parser behind style, Painter,
+ * particles and the 3D scene, so a colour means the same thing everywhere.
  */
+
+import { toRGBA, type ColorInput } from "onejs-react"
+
+const HEX = /^#?([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
 
 export class Color {
     r: number
@@ -76,17 +77,16 @@ export class Color {
         )
     }
 
+    /** Any colour oj takes: hex, `rgb()`, a CSS name, `[r, g, b, a]` or another Color. */
+    static From(c: ColorInput): Color {
+        const [r, g, b, a] = toRGBA(c, "[oj] Color.From")
+        return new Color(r, g, b, a)
+    }
+
     /** Parses #RGB, #RGBA, #RRGGBB or #RRGGBBAA. Throws on anything else. */
     static FromHex(hex: string): Color {
-        let h = hex.startsWith("#") ? hex.slice(1) : hex
-        if (h.length === 3 || h.length === 4) {
-            h = h.split("").map((d) => d + d).join("")
-        }
-        if ((h.length !== 6 && h.length !== 8) || !/^[0-9a-fA-F]+$/.test(h)) {
-            throw new Error(`[oj] invalid color "${hex}"`)
-        }
-        const n = (i: number) => parseInt(h.slice(i, i + 2), 16) / 255
-        return new Color(n(0), n(2), n(4), h.length === 8 ? n(6) : 1)
+        if (!HEX.test(hex)) throw new Error(`[oj] invalid color "${hex}"`)
+        return Color.From(hex)
     }
 
     /** Builds from 0-255 bytes, the Color32 range. */

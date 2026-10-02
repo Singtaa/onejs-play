@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { View, Text, mount, useStage, useFrame, useRoom, useLeaderboard, scores, input, random, Painter, batchedVisualContent } from "oj"
+import { useEffect, useRef, useState } from "react"
+import { View, Text, mount, useStage, useFrame, useRoom, useLeaderboard, scores, input, random, Painter, useDrawing } from "oj"
 import {
     beginGesture, advanceGesture, releaseGesture, isSoftDropping, spendDrop, type Gesture,
 } from "./gestures"
@@ -89,8 +89,7 @@ interface Rival {
 
 function BlockParty() {
     const host = useRef<any>(null)
-    const rng = useRef(random()).current
-    const bag = useRef(sevenBag(() => rng.next())).current
+    const bag = useRef(sevenBag(() => random.next())).current
 
     const well = useRef<Well>({
         board: emptyBoard(),
@@ -233,7 +232,7 @@ function BlockParty() {
                 die(blameFor())
                 return
             }
-            well.hole = nextHole(well.hole, rng.next())
+            well.hole = nextHole(well.hole, random.next())
             well.board = addGarbage(well.board, taken, well.hole)
             well.pending = left
         }
@@ -349,8 +348,6 @@ function BlockParty() {
             }
             askers.length = 0
         }
-
-        host.current?.MarkDirtyRepaint()
     }, [])
 
     useEffect(() => {
@@ -362,7 +359,7 @@ function BlockParty() {
         [...rivals].map(([id, rival]) => ({ id, rival }))
             .sort((a, b) => b.rival.score - a.rival.score || a.id - b.id)
 
-    const paint = useMemo(() => batchedVisualContent((p: Painter) => {
+    useDrawing(host, (p) => {
         p.fillColor("#0e0f13")
         p.beginPath()
         box(p, 0, 0, 900, 560)
@@ -408,14 +405,14 @@ function BlockParty() {
                 p.fill()
             }
         }
-    }), [])
+    }, "frame")
 
     const others = standings()
     const shown = others.slice(0, MINI_COLS * 4)
 
     return (
         <View style={{ width: 900, height: 560, backgroundColor: "rgb(14, 15, 19)" }}>
-            <View ref={host} onGenerateVisualContent={paint}
+            <View ref={host} 
                 style={{ position: "absolute", left: 0, top: 0, width: 900, height: 560 }} />
 
             <View style={{ position: "absolute", left: PANEL_X, top: 20, width: PANEL_W }} pickingMode="Ignore">

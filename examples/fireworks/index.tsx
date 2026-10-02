@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import {
-    View, Text, mount, useFrame, useStage, useParticles, input, random, audio,
-    type ParticlesHandle, type EmitterConfig, type Sound,
+    View, Text, mount, useFrame, useStage, useParticles, useSound, input, random,
+    type ParticlesHandle, type EmitterConfig,
 } from "oj"
 
 import { aim, advance, wander, type Rocket } from "./flight"
@@ -66,39 +66,21 @@ const HEAVY_SPARKS = 320
 function Fireworks() {
     const stage = useStage()
     const host = useRef(null)
-    const rng = useRef(random()).current
     const rockets = useRef<Rocket[]>([]).current
     const [launched, setLaunched] = useState(0)
 
     const fx = useParticles(host, { max: 4000, emitters: EMITTERS }, [])
 
-    const sounds = useRef<{ launch?: Sound; pop?: Sound; crackle?: Sound }>({}).current
-    useEffect(() => {
-        let live = true
-        const load = async (name: string) => {
-            const sound = await audio.load(name)
-            return live ? sound : (sound.unload(), undefined)
-        }
-        Promise.all([load("launch.wav"), load("pop.wav"), load("crackle.wav")]).then(
-            ([launch, pop, crackle]) => {
-                if (!live) return
-                sounds.launch = launch
-                sounds.pop = pop
-                sounds.crackle = crackle
-            },
-            (error) => console.warn("[fireworks] no sound:", error),
-        )
-        return () => {
-            live = false
-            audio.stopAll()
-        }
-    }, [])
+    // Each is null until its file arrives, so a rocket fired before then is silent.
+    const launchSound = useSound("launch.wav")
+    const popSound = useSound("pop.wav")
+    const crackleSound = useSound("crackle.wav")
 
     const launch = (targetX: number, targetY: number) => {
-        const fromX = targetX + rng.range(-stage.width * 0.08, stage.width * 0.08)
-        const heavy = rng.bool(0.28)
-        rockets.push(aim(fromX, stage.height + 12, targetX, targetY, rng.int(0, SHELLS.length), heavy))
-        sounds.launch?.play({ volume: 0.5, pitch: heavy ? 0.86 : 1 + rng.range(-0.06, 0.06) })
+        const fromX = targetX + random.range(-stage.width * 0.08, stage.width * 0.08)
+        const heavy = random.bool(0.28)
+        rockets.push(aim(fromX, stage.height + 12, targetX, targetY, random.int(0, SHELLS.length), heavy))
+        launchSound?.play({ volume: 0.5, pitch: heavy ? 0.86 : 1 + random.range(-0.06, 0.06) })
         setLaunched((n) => n + 1)
     }
 
@@ -106,8 +88,8 @@ function Fireworks() {
         const count = rocket.heavy ? HEAVY_SPARKS : SHELL_SPARKS
         handle.burst({ x: rocket.x, y: rocket.y, count, emitter: rocket.shell })
         handle.burst({ x: rocket.x, y: rocket.y, count: Math.round(count / 5), emitter: SPARK })
-        sounds.pop?.play({ volume: rocket.heavy ? 0.9 : 0.62, pitch: rocket.heavy ? 0.85 : 1.05 })
-        if (rocket.heavy) sounds.crackle?.play({ volume: 0.45 })
+        popSound?.play({ volume: rocket.heavy ? 0.9 : 0.62, pitch: rocket.heavy ? 0.85 : 1.05 })
+        if (rocket.heavy) crackleSound?.play({ volume: 0.45 })
     }
 
     const untilNextAuto = useRef(1.2)
@@ -121,8 +103,8 @@ function Fireworks() {
 
         untilNextAuto.current -= dt
         if (untilNextAuto.current <= 0) {
-            untilNextAuto.current = rng.range(0.7, 2.1)
-            const where = wander(stage.width, stage.height, () => rng.next())
+            untilNextAuto.current = random.range(0.7, 2.1)
+            const where = wander(stage.width, stage.height, () => random.next())
             launch(where.x, where.y)
         }
 

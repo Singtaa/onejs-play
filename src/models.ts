@@ -23,7 +23,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetUrl } from "./asset"
-import { Color } from "./color"
+import { toRGBA, type ColorInput } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
@@ -115,8 +115,8 @@ export interface Actor {
 
 export interface PointLightOptions {
     position: Vec3
-    /** Hex, like every colour in oj. White by default. */
-    color?: string
+    /** White by default. */
+    color?: ColorInput
     intensity?: number
     /** How far it reaches, in world units. */
     range?: number
@@ -126,7 +126,7 @@ export interface PointLightOptions {
 export interface PointLight {
     readonly id: number
     position: Vec3
-    color: string
+    color: ColorInput
     intensity: number
     range: number
     destroy(): void
@@ -142,21 +142,21 @@ export interface CameraOptions {
 /** The sun: a directional light shining along `direction`, casting soft shadows unless `shadows` is false. */
 export interface SunOptions {
     direction?: Vec3
-    color?: string
+    color?: ColorInput
     intensity?: number
     shadows?: boolean
 }
 
 /** Light from everywhere: `sky` from above fading to `ground` from below, like three.js's HemisphereLight. */
 export interface AmbientOptions {
-    sky?: string
-    ground?: string
+    sky?: ColorInput
+    ground?: ColorInput
     intensity?: number
 }
 
 /** Fog that thickens from `near` to `far`, in the background colour unless given one. */
 export interface FogOptions {
-    color?: string
+    color?: ColorInput
     near?: number
     far?: number
 }
@@ -167,7 +167,7 @@ export interface SceneOptions {
     sun?: SunOptions | false
     ambient?: AmbientOptions
     /** The colour behind the world. */
-    background?: string
+    background?: ColorInput
     /** Off unless asked for. */
     fog?: FogOptions | false
 }
@@ -184,7 +184,7 @@ export interface Scene {
     /** Changes the ambient light, only what it names. */
     ambient(options: AmbientOptions): void
     /** Changes the colour behind the world, and the fog's unless the fog has its own. */
-    background(color: string): void
+    background(color: ColorInput): void
     /** Changes the fog, only what it names, or `false` to clear it. */
     fog(options: FogOptions | false): void
     /**
@@ -272,10 +272,10 @@ function rootElement(): any {
     return getCurrentRuntime()?.root ?? globalThis.__root
 }
 
-/** A hex colour as the three sRGB floats the bridge takes. */
-function rgb(hex: string): [number, number, number] {
-    const c = Color.FromHex(hex)
-    return [c.r, c.g, c.b]
+/** Any colour oj takes as the three sRGB floats the bridge takes. `what` names it in the error. */
+function rgb(c: ColorInput, what = "colour"): [number, number, number] {
+    const [r, g, b] = toRGBA(c, `[oj] scene ${what}`)
+    return [r, g, b]
 }
 
 // MARK: models
@@ -376,11 +376,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     let sunNow = options.sun === false ? null : { ...d.sun, ...options.sun }
     let ambientNow = { ...d.ambient, ...options.ambient }
     let fogNow = options.fog === undefined || options.fog === false ? null : { ...d.fog, ...options.fog }
-    rgb(backgroundColor)
-    if (sunNow !== null) rgb(sunNow.color)
-    rgb(ambientNow.sky)
-    rgb(ambientNow.ground)
-    if (fogNow?.color !== undefined) rgb(fogNow.color)
+    rgb(backgroundColor, "background")
+    if (sunNow !== null) rgb(sunNow.color, "sun color")
+    rgb(ambientNow.sky, "ambient sky")
+    rgb(ambientNow.ground, "ambient ground")
+    if (fogNow?.color !== undefined) rgb(fogNow.color, "fog color")
 
     let cam = { position: vec3(d.camera.position), lookAt: vec3(d.camera.lookAt), fov: d.camera.fov as number }
     const camera = (c: CameraOptions) => {
@@ -491,14 +491,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let color = o.color ?? d.pointLight.color
         let intensity = o.intensity ?? d.pointLight.intensity
         let range = o.range ?? d.pointLight.range
-        const id: number = b.AddPointLight(...position, ...rgb(color), intensity, range)
+        const id: number = b.AddPointLight(...position, ...rgb(color, "point light color"), intensity, range)
         const retune = () => b.SetLight(id, ...rgb(color), intensity, range)
         return {
             id,
             get position() { return position },
             set position(p: Vec3) { position = vec3(p); b.PlaceLight(id, ...position) },
             get color() { return color },
-            set color(c: string) { color = c; retune() },
+            set color(c: ColorInput) { rgb(c, "point light color"); color = c; retune() },
             get intensity() { return intensity },
             set intensity(i: number) { intensity = i; retune() },
             get range() { return range },
@@ -517,19 +517,19 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         camera,
         sun(o) {
             const next = o === false ? null : { ...(sunNow ?? d.sun), ...o }
-            if (next !== null) rgb(next.color)
+            if (next !== null) rgb(next.color, "sun color")
             sunNow = next
             applySun()
         },
         ambient(o) {
             const next = { ...ambientNow, ...o }
-            rgb(next.sky)
-            rgb(next.ground)
+            rgb(next.sky, "ambient sky")
+            rgb(next.ground, "ambient ground")
             ambientNow = next
             applyAmbient()
         },
         background(color) {
-            const parsed = rgb(color)
+            const parsed = rgb(color, "background")
             backgroundColor = color
             b.SetBackground(...parsed)
             // Fog with no colour of its own is the background's, so it follows.
@@ -537,7 +537,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         },
         fog(o) {
             const next = o === false ? null : { ...(fogNow ?? d.fog), ...o }
-            if (next?.color !== undefined) rgb(next.color)
+            if (next?.color !== undefined) rgb(next.color, "fog color")
             fogNow = next
             applyFog()
         },

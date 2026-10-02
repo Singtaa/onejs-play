@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react"
-import { View, Text, mount, useStage, useFrame, input, random, Painter, batchedVisualContent, useLeaderboard, scores } from "oj"
+import { useRef, useState } from "react"
+import { View, Text, mount, useStage, useFrame, input, random, Painter, useDrawing, useLeaderboard, scores } from "oj"
 import {
     wrap, shortest, touching, shatter, outlineFor, edgeSpawn, SIZES, VALUES, sizeOf,
     type Rock, type Field,
@@ -172,7 +172,7 @@ function SpaceJunk() {
     }
 
     // Built once. A new delegate every render would churn a native callback slot.
-    const paint = useMemo(() => batchedVisualContent((p: Painter) => {
+    useDrawing(host, (p) => {
         p.lineWidth(1.6)
         p.lineCap(Painter.LineCap.Round)
         p.lineJoin(Painter.LineJoin.Round)
@@ -203,7 +203,7 @@ function SpaceJunk() {
             p.strokeColor("#deedff", blink ? 0.35 : 1)
             wrapped(world.ship.x, world.ship.y, 18, (x, y) => drawShip(p, x, y, world.ship.angle))
         }
-    }), [])
+    }, "frame")
 
     const fire = () => {
         if (world.reload > 0 || world.respawnIn > 0 || world.over) return
@@ -370,12 +370,11 @@ function SpaceJunk() {
             submitted.current = true
             submit.current(world.score)
         }
-        host.current?.MarkDirtyRepaint()
     }, [])
 
     return (
         <View style={{ width: FIELD.width, height: FIELD.height, backgroundColor: "rgb(7, 9, 14)" }}>
-            <View ref={host} onGenerateVisualContent={paint}
+            <View ref={host} 
                 style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
 
             <View style={{ position: "absolute", left: 18, top: 14, flexDirection: "row" }} pickingMode="Ignore">

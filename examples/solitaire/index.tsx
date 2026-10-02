@@ -164,8 +164,7 @@ interface Drag {
 }
 
 function Solitaire() {
-    const rng = useRef(random()).current
-    const [game, setGame] = useState<Game>(() => deal((cards) => rng.shuffle(cards)))
+    const [game, setGame] = useState<Game>(() => deal((cards) => random.shuffle(cards)))
     const drag = useRef<Drag | null>(null)
     const dragLayer = useRef<any>(null)
     // The position is state as well, because the ref does not exist yet on the frame a drag starts.
@@ -174,7 +173,7 @@ function Solitaire() {
     const restart = () => {
         drag.current = null
         setDragging(null)
-        setGame(deal((cards) => rng.shuffle(cards)))
+        setGame(deal((cards) => random.shuffle(cards)))
     }
 
     const finish = () => {
