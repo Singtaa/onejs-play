@@ -1,4 +1,4 @@
-// An OJPlay cart: runs on play.onejs.com, built by the site on every save.
+// An OJPlay cart: runs on play.onejs.com, built by the site on every push.
 // To work on it here: npx ojplay init && npm install, then npx ojplay run.
 // For AI agents: https://play.onejs.com/agents.md
 import { useRef, useState } from "react"

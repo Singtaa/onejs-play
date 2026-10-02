@@ -165,6 +165,15 @@ describe("the site from a terminal", () => {
         expect(sidFromRemote("")).toBeNull()
     })
 
+    // The site's short address moved from /g/ to /c/ (1 Oct 2026), and /g/
+    // still answers git, so a clone can carry either.
+    it("reads the sid out of a /c/ clone URL as well as an old /g/ one", () => {
+        expect(sidFromRemote("https://play.onejs.com/c/a5x3a2uwh5gb.git")).toBe("a5x3a2uwh5gb")
+        expect(sidFromRemote("https://x:tok@play.onejs.com/c/a5x3a2uwh5gb.git/")).toBe("a5x3a2uwh5gb")
+        expect(sidFromRemote("https://play.onejs.com/x/a5x3a2uwh5gb.git")).toBeNull()
+        expect(addressFromRemote("https://play.onejs.com/c/a5x3a2uwh5gb.git")).toBeNull()
+    })
+
     // The address bar plus .git is the first URL a person tries, and the site
     // serves it, so push and status have to know which cart it is.
     it("reads the address out of a clone URL made from the address bar", () => {
@@ -190,8 +199,9 @@ describe("the site from a terminal", () => {
 
         afterEach(() => vi.unstubAllGlobals())
 
-        it("reads a /g/ clone's sid without asking the site", async () => {
+        it("reads a /c/ or /g/ clone's sid without asking the site", async () => {
             const fetch = account([])
+            expect(await sidOf(clone("https://play.onejs.com/c/a5x3a2uwh5gb.git"), null)).toBe("a5x3a2uwh5gb")
             expect(await sidOf(clone("https://play.onejs.com/g/a5x3a2uwh5gb.git"), null)).toBe("a5x3a2uwh5gb")
             expect(fetch).not.toHaveBeenCalled()
         })
