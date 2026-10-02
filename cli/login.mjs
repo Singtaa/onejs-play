@@ -22,7 +22,7 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { home } from "./local.mjs"
 import { ignoreLocally } from "./init.mjs"
-import { siteOrigin, storedToken, tokenPaths } from "./site.mjs"
+import { mine, siteOrigin, storedToken, tokenPaths } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -184,6 +184,7 @@ function pick(code, say) {
  * case `ojplay login --wait` collects it later. Returns an exit code.
  */
 export async function login(root, { name, wait = true, resume = false, code, say = console.error, print = console.log } = {}) {
+    if (!resume && await stillLoggedIn(root, say, print)) return 0
     let pending
     if (resume) {
         pending = pick(code, say)
@@ -223,6 +224,27 @@ export async function login(root, { name, wait = true, resume = false, code, say
     fs.rmSync(pendingFile(pending.code), { force: true })
     say(`the link expired; run ${COMMAND} login again`)
     return 1
+}
+
+/**
+ * Whether the login stored here still works, said when it does. An agent on a
+ * machine its person already logged in runs `login` when it meets a private
+ * cart's 404; a new link there is a second Allow for nothing. The site is
+ * asked, since a stored token can be replaced, revoked or expired; one it
+ * refuses starts the new link as before. The git helper goes back in, in case
+ * the git config lost it.
+ */
+async function stillLoggedIn(root, say, print) {
+    const file = tokenPaths(root).find((f) => {
+        try { return fs.readFileSync(f, "utf8").trim() !== "" } catch { return false }
+    })
+    if (file === undefined) return false
+    let handle
+    try { handle = (await mine(fs.readFileSync(file, "utf8").trim())).handle } catch { return false }
+    configureGit(root, file)
+    print(`Already logged in as ${handle}. git clone, pull and push work for its carts.`)
+    say(`To log in as someone else: ${COMMAND} logout, then ${COMMAND} login`)
+    return true
 }
 
 /** `ojplay logout`: the site forgets the token, then this machine does. */
