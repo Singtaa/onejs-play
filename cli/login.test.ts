@@ -159,6 +159,30 @@ describe("ojplay login", () => {
         expect(storedToken(cart)).toBe(TOKEN)
     })
 
+    it("says who is logged in, and starts no new link, when the stored login still works", async () => {
+        await login(dir, quiet)
+        fs.rmSync(path.join(dir, "gitconfig"), { force: true })
+        started = 0
+        const printed: string[] = []
+        const said: string[] = []
+        expect(await login(dir, { wait: false, say: (l: string) => said.push(l), print: (l: string) => printed.push(l) })).toBe(0)
+        expect(started).toBe(0)
+        expect(seen.at(-1)).toMatchObject({ path: "/api/me/carts", auth: `Bearer ${TOKEN}` })
+        expect(printed).toEqual(["Already logged in as owner. git clone, pull and push work for its carts."])
+        expect(said).toEqual([`To log in as someone else: ${COMMAND} logout, then ${COMMAND} login`])
+        // The git helper is put back if it went missing.
+        expect(gitPassword(process.env.OJ_SITE!)).toBe(TOKEN)
+    })
+
+    it("starts a new link when the stored login is refused", async () => {
+        fs.mkdirSync(path.join(dir, "home"), { recursive: true })
+        fs.writeFileSync(path.join(dir, "home", "token"), "oja_" + "b".repeat(32) + "\n")
+        const printed: string[] = []
+        expect(await login(dir, { say: () => {}, print: (l: string) => printed.push(l) })).toBe(0)
+        expect(printed).toEqual(["Open http://site/device?code=WDJB-MJHT and press Allow (code WDJB-MJHT)."])
+        expect(storedToken(dir)).toBe(TOKEN)
+    })
+
     it("logs out on the site and here", async () => {
         await login(dir, quiet)
         expect(await logout(dir, { say: () => {} })).toBe(0)
@@ -171,6 +195,8 @@ describe("ojplay login", () => {
 describe("which install this is", () => {
     it("sends one id per install with every login, kept beside the token", async () => {
         await login(dir, quiet)
+        // A working login answers "already logged in"; one that is gone logs in again.
+        fs.rmSync(path.join(dir, "home", "token"))
         await login(dir, quiet)
         const sent = seen.filter((s) => s.path === "/api/login").map((s) => s.body.install)
         expect(sent).toHaveLength(2)
