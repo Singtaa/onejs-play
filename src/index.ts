@@ -100,7 +100,7 @@ export { Vector2 } from "./vec"
 export type { Vec2Like } from "./vec"
 export { Color } from "./color"
 export { random } from "./random"
-export type { Rng } from "./random"
+export type { Rng, Random } from "./random"
 
 // MARK: a game's own files
 

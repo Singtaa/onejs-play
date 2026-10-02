@@ -6,7 +6,8 @@
  * gives every game a deterministic stream instead: the same seed always
  * produces the same sequence, on every platform and every runtime version.
  *
- *     const rng = random("daily-2026-08-21")
+ *     const roll = random.int(1, 7)              // a shared, unseeded generator
+ *     const rng = random("daily-2026-08-21")     // a seeded one of your own
  *     const level = rng.int(0, 12)
  *
  * The generator is mulberry32 with an xmur3 string hash for the seed. Both are
@@ -80,10 +81,20 @@ function mulberry32(seedInt: number): () => number {
 }
 
 /**
+ * Makes a generator, or draws from a shared one: `random("seed")` is a seeded
+ * stream of your own, and `random.int(0, 10)` uses a shared generator with a
+ * random seed, for when nothing needs to be reproduced.
+ */
+export interface Random extends Rng {
+    /** A generator of your own. The same seed gives the same stream; no seed picks a random one. */
+    (seed?: string | number): Rng
+}
+
+/**
  * Creates a seeded generator. Omitting the seed picks a random one, which means
  * the stream is not reproducible; pass a seed whenever you want it to be.
  */
-export function random(seed?: string | number): Rng {
+function createRng(seed?: string | number): Rng {
     const seedInt = toSeedInt(seed)
     const next = mulberry32(seedInt)
 
@@ -130,9 +141,13 @@ export function random(seed?: string | number): Rng {
         },
 
         fork(label: string): Rng {
-            return random(xmur3(`${seedInt}:${label}`))
+            return createRng(xmur3(`${seedInt}:${label}`))
         },
     }
 
     return rng
 }
+
+// The methods are closures over their own stream, so copying them onto the factory
+// gives random.int(...) a shared generator without any `this` to lose.
+export const random: Random = Object.assign((seed?: string | number) => createRng(seed), createRng())

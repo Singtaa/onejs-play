@@ -189,3 +189,18 @@ describe("random", () => {
         })
     })
 })
+
+describe("random used directly", () => {
+    // random.int(0, 10) is the Unity habit and how the name reads aloud; it was
+    // "not a function", since random was only the factory.
+    it("draws from a shared generator without a seed", () => {
+        const n = random.int(0, 10)
+        expect(Number.isInteger(n) && n >= 0 && n < 10).toBe(true)
+        expect(["a", "b"]).toContain(random.pick(["a", "b"]))
+        expect(random.next()).toBeLessThan(1)
+    })
+
+    it("still makes a seeded generator when called", () => {
+        expect(random("x").int(0, 1000)).toBe(random("x").int(0, 1000))
+    })
+})
