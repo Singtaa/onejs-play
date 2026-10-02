@@ -116,6 +116,13 @@ export function buildGame(
         carts?: UsedCarts
         /** Also return a source map (`map`). Off by default; the code is the same either way. */
         sourcemap?: boolean
+        /**
+         * Make each `.sl` program swappable while the cart runs, registered
+         * under its file's name on `globalThis.__ojLiveShaders`. For an
+         * editor's preview only; off by default, and the code is then what it
+         * always was.
+         */
+        liveShaders?: boolean
     },
 ): Promise<GameBuild>
 

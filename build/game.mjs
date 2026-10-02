@@ -393,6 +393,9 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                 generateTypes: false,
                 compiler: options.slCompiler ?? null,
                 onManifest: (m) => { slManifest = m },
+                // An editor's preview: each program swappable while the cart
+                // runs, under its file's name (onejs-unity's liveModule).
+                live: options.liveShaders === true,
             }),
             resolver,
         ],

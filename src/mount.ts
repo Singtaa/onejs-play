@@ -13,9 +13,9 @@
  * transform on an element would magnify them.
  */
 
-import { createElement, useEffect, useState, type ReactNode } from "react"
+import { cloneElement, createElement, isValidElement, useEffect, useState, type ReactNode } from "react"
 import { render, ScreenProvider, View } from "onejs-react"
-import { getCurrentRuntime } from "./runtime"
+import { getCurrentRuntime, setRemount } from "./runtime"
 import { startStandalone } from "./standalone"
 import { stageOf, type Stage } from "./stage"
 import { applyTheme } from "./theme"
@@ -61,7 +61,12 @@ export function mount(element: ReactNode, options: { theme?: boolean } = {}): vo
     const runtime = getCurrentRuntime() ?? startStandalone().oj
     // Before the render, so the first frame a player sees is already themed.
     if (options.theme !== false) applyTheme()
-    render(createElement(StagePresenter, null, element) as never, runtime.root as never)
+    const draw = (cart: ReactNode) =>
+        render(createElement(StagePresenter, null, cart) as never, runtime.root as never)
+    draw(element)
+    // A fresh element of the same type, so React keeps the state and renders
+    // every child again (ContainerRuntime.rerender).
+    setRemount(() => draw(isValidElement(element) ? cloneElement(element) : element))
 }
 
 /**
