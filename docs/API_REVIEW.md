@@ -98,7 +98,7 @@ The onejs-play README had the same top level await and key name text, and a gotc
 
 ### F4. A particle texture that arrives late (high, docs half)
 
-`onejs-react/src/particles.ts:485` reads its config once, on mount (`deps = []`). Shipping Files' example passes `texture: useTexture("glow.png")`, which is null on that first render, so the particles draw the plain dot forever, silently. Tonight the docs pass `[glow]` as deps and say why. The code fix (re-apply emitter textures in place through `SetEmitterTexture` when they change) is onejs-react's and was handed over (O1). Effects also called the particle handle `fx`, shadowing the namespace; it is `sparks` now.
+`onejs-react/src/particles.ts:485` reads its config once, on mount (`deps = []`). Shipping Files' example passes `texture: useTexture("glow.png")`, which is null on that first render, so the particles draw the plain dot forever, silently. Tonight the docs pass `[glow]` as deps and say why. The code fix, re-applying emitter textures in place when they change, is onejs-react 322b481 (O1); once it ships, the `[glow]` is harmless rather than needed. Effects also called the particle handle `fx`, shadowing the namespace; it is `sparks` now.
 
 ### F5. Key names both ways (high)
 
@@ -290,15 +290,15 @@ Non-breaking, and left either for time or because the right fix needs its owner.
 
 ## Handed to the OneJS side
 
-These live in onejs-react or onejs-unity and were sent to the OneJS review with file and line.
+These live in onejs-react or onejs-unity and were sent to the OneJS review with file and line. What is still open is recorded in the container's `Specs/API_REVIEW_ONEJS.md` section 10.
 
-- **O1** (high) `useParticles` never applies a texture that arrives after mount (`particles.ts:485`).
+- **O1** (high) `useParticles` never applies a texture that arrives after mount (`particles.ts:485`). Fixed in onejs-react 322b481.
 - **O2** (high) `onMouseDown`, `onDrag*`, `onTransitionEnd`, `onInput`, `onContextClick` and `onTooltip` typecheck on every element and never fire (`types.ts:479`).
-- **O3** (medium) An inline array uniform resends every uniform on every render (`host-config.ts:1724`).
-- **O4** (medium) The `uniforms` type takes only a number or four numbers, though the runtime pads and `.sl` defaults are hex (`types.ts:1085`).
-- **O5** (medium) Each `createParticles` leaves a teardown closure behind (`particles.ts:466`).
+- **O3** (medium) An inline array uniform resends every uniform on every render (`host-config.ts:1724`). Fixed in onejs-react 5967c08.
+- **O4** (medium) The `uniforms` type takes only a number or four numbers, though the runtime pads and `.sl` defaults are hex (`types.ts:1085`). Short arrays typed in onejs-react 5967c08.
+- **O5** (medium) Each `createParticles` leaves a teardown closure behind (`particles.ts:466`). Fixed in onejs-react aa0a957.
 - **O6** (medium) `fx.image.load` reads Resources, so a cart cannot start an fx chain from its own file (`FxBridge.cs:103`).
-- **O7** (low) `encode` and `Encoded` lack `@deprecated`; `resolveKeyName("KeyW")` is null; a throwing `useAnimatedTexture` build logs every frame; the unknown uniform warning names `sl.uniform` to a `.sl` author.
+- **O7** (low) `encode` and `Encoded` lack `@deprecated` (marked in onejs-unity 3c4e1df); `resolveKeyName("KeyW")` is null; a throwing `useAnimatedTexture` build logs every frame; the unknown uniform warning names `sl.uniform` to a `.sl` author.
 
 ## oj and OneJS names side by side
 
