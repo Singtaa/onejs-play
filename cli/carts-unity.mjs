@@ -93,15 +93,16 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
         ? `Took ${pinned.address}, yours, into Assets/${name}/~ as a clone: push from there and the site builds it.`
         : `Took ${shown(kept)} into Assets/${name}/~.`
     const took = what + (fetched.length > 0 ? ` It uses ${fetched.join(", ")}, fetched into ~/.oj/carts.` : "")
+    const said = made.gltf === null ? [took] : [took, made.gltf]
 
     // Into a scene, unless an editor has the project open (unity-scene.mjs).
     const prefabName = path.basename(made.prefab, ".prefab")
     const placed = placePrefab(project, made.prefab, prefabName)
-    if (placed === null) return [took, `Next: drag ${made.prefab} into a scene.`]
+    if (placed === null) return [...said, `Next: drag ${made.prefab} into a scene.`]
     const where = placed.already ? `${prefabName} is already in ${placed.scene}.`
         : placed.made ? `Made ${placed.scene} with ${prefabName} in it${placed.listed ? ", and added it to the build list" : ""}.`
             : `Put ${prefabName} in ${placed.scene}${placed.listed ? ", and added that to the build list" : ""}.`
-    return [took, where, `Next: open ${placed.scene} and press Play.`]
+    return [...said, where, `Next: open ${placed.scene} and press Play.`]
 }
 
 function refuseIfThere(project, app) {

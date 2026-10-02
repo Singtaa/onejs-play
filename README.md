@@ -33,7 +33,8 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
 | `physics.ts` | `usePhysics`, with the per-frame pumping done |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
-| `vec.ts` | `Vector2`. No `Vector3`: the container is 2D only |
+| `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
+| `models.ts` | `useScene`, `useModel`: `.glb` models behind the panel, with a sun, shadows and lights |
 | `color.ts` | `Color`, hex parsing shared in behaviour with the particle wire schema |
 | `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
 | `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
@@ -267,6 +268,41 @@ both were invisible from the outside:
   `<Image src="http...">` never resolved and never rejected, in every web build,
   with nothing logged. It is settled from `TickSystems()` now, which is the one
   thing Update does still call.
+
+## 3D models
+
+A game loads a `.glb` with `useModel`, gets a scene with `useScene`, and spawns
+copies of the model into it. Every call is a handle into
+`OneJS.Models.ModelBridge` (OneJS `Runtime/Models/`), which glTFast backs; the
+game never touches a GameObject.
+
+The rule for the API is that a game opts out, never in. A scene with no options
+has a camera, a sun casting soft shadows, a hemisphere ambient, and models that
+cast and receive shadows. `SCENE_DEFAULTS` is that list, and each option on
+`useScene` and `spawn` turns one entry off or tunes it, named as three.js and
+Unity name them. The user page is PlaySite's `docs/3d.md`.
+
+Three things that are not obvious from the code:
+
+- **One shader in both hosts.** Every glTF material is built on OneJS's
+  `ModelLit`, a URP PBR shader, by `ModelMaterialGenerator`. The site's
+  container and a Unity project after `ojplay add` therefore draw the same
+  pixels from the same file, which glTFast's own materials would not
+  guarantee. The shader has a SubShader only where glTFast is installed, so a
+  project without it builds nothing extra.
+- **Play mode takes over, the preview does not.** In play mode and in players
+  the bridge switches off the scene's screen cameras and suns and sets the
+  ambient and fog, then restores all of it when the scene is disposed. In the
+  edit-mode preview it only adds objects of its own and leaves the user's scene
+  and `RenderSettings` alone, so the preview is lit by the scene's own sun.
+- **The panel goes transparent while a scene is live.** `mount` reads its
+  backdrop through `useBackdrop`, which is an external store rather than an
+  effect, because a scene is created in a child's effect, which React runs
+  before the stage's.
+
+`ojplay add` of a cart with a `.glb` adds `com.unity.cloud.gltfast` to the
+project's `Packages/manifest.json` (`ensureGltfast` in `cli/unity.mjs`), so the
+project runs on its next open.
 
 ## Other people
 

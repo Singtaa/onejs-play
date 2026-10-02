@@ -1,21 +1,26 @@
 /**
  * 3D models from a game's own .glb files, with no C# in the game.
  *
- *     const scene = useScene({ camera: { position: [0, 9, -11], lookAt: [0, 0, 0] } })
+ *     const scene = useScene()
  *     const ghost = useModel("ghost.glb")
  *     useEffect(() => {
- *         if (!scene || !ghost) return
- *         const g = scene.spawn(ghost, { position: [0, 0, 0], play: "ghost_idle" })
+ *         if (scene && ghost) scene.spawn(ghost, { play: "ghost_idle" })
  *     }, [scene, ghost])
+ *
+ * A scene with no options already looks right: a camera looking at the origin, a
+ * sun that casts soft shadows, light from the sky and the ground, and models
+ * that cast and receive shadows. Every option turns one of those off or tunes
+ * it, named as three.js and Unity name them.
  *
  * Files resolve through assetUrl, so the name means the same thing on the site and
  * after `ojplay add`. Everything is a handle into OneJS.Models.ModelBridge, which
  * glTFast backs; a host without glTFast gets an error naming the package instead
- * of a missing-type crash. Actors die with the scene that spawned them.
+ * of a missing-type crash. Actors and lights die with the scene that made them.
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetUrl } from "./asset"
+import { Color } from "./color"
 import { getCurrentRuntime } from "./runtime"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
@@ -40,6 +45,10 @@ export interface SpawnOptions {
     scale?: number
     /** A clip to start looping straight away. */
     play?: string
+    /** Whether it casts a shadow. On by default. */
+    castShadows?: boolean
+    /** Whether shadows fall on it. On by default. */
+    receiveShadows?: boolean
 }
 
 /** One copy of a model in the world. */
@@ -48,6 +57,8 @@ export interface Actor {
     readonly model: Model
     position: Vec3
     yaw: number
+    castShadows: boolean
+    receiveShadows: boolean
     /** Plays a clip, crossfading over `fade` seconds (0.15 by default). Loops unless told not to. */
     play(clip: string, options?: { loop?: boolean, fade?: number }): void
     /** Dissolves to `amount` (1 is gone) over `seconds`, resolving when it gets there. */
@@ -61,20 +72,59 @@ export interface Actor {
     destroy(): void
 }
 
+export interface PointLightOptions {
+    position: Vec3
+    /** Hex, like every colour in oj. White by default. */
+    color?: string
+    intensity?: number
+    /** How far it reaches, in world units. */
+    range?: number
+}
+
+/** A light shining in every direction from one point. */
+export interface PointLight {
+    readonly id: number
+    position: Vec3
+    color: string
+    intensity: number
+    range: number
+    destroy(): void
+}
+
 export interface SceneOptions {
-    camera?: { position: Vec3, lookAt?: Vec3, fov?: number }
-    /** The direction the light shines along, its intensity, and a flat ambient level. */
-    light?: { direction?: Vec3, intensity?: number, ambient?: number }
-    /** The colour behind the world, as three 0 to 1 channels. */
-    background?: Vec3
+    camera?: { position?: Vec3, lookAt?: Vec3, fov?: number }
+    /**
+     * The sun: a directional light shining along `direction`, casting soft
+     * shadows unless `shadows` is false. `false` is a scene with no sun.
+     */
+    sun?: { direction?: Vec3, color?: string, intensity?: number, shadows?: boolean } | false
+    /** Light from everywhere: `sky` from above fading to `ground` from below, like three.js's HemisphereLight. */
+    ambient?: { sky?: string, ground?: string, intensity?: number }
+    /** The colour behind the world. */
+    background?: string
+    /** Fog that thickens from `near` to `far`, in the background colour unless given one. Off unless asked for. */
+    fog?: { color?: string, near?: number, far?: number }
 }
 
 export interface Scene {
     spawn(model: Model, options?: SpawnOptions): Actor
+    pointLight(options: PointLightOptions): PointLight
     /** The actor under a point in the root's coordinates (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
     camera(options: NonNullable<SceneOptions["camera"]>): void
     readonly actors: readonly Actor[]
+}
+
+/** What a scene is when an option is left out. */
+export const SCENE_DEFAULTS = {
+    camera: { position: [0, 4, -8] as Vec3, lookAt: [0, 0, 0] as Vec3, fov: 50 },
+    // Down and away from the default camera, a little from the left: shadows fall toward the
+    // back right, where they read without hiding what cast them.
+    sun: { direction: [-0.32, -0.77, 0.56] as Vec3, color: "#fff4d6", intensity: 1.2 },
+    ambient: { sky: "#b8c6d9", ground: "#4a443d", intensity: 0.9 },
+    background: "#14181d",
+    fog: { near: 10, far: 40 },
+    pointLight: { color: "#ffffff", intensity: 1, range: 10 },
 }
 
 // How many scenes are live, and who wants to know: the stage's backdrop hides while any is.
@@ -111,6 +161,12 @@ function rootElement(): any {
     return getCurrentRuntime()?.root ?? globalThis.__root
 }
 
+/** A hex colour as the three sRGB floats the bridge takes. */
+function rgb(hex: string): [number, number, number] {
+    const c = Color.FromHex(hex)
+    return [c.r, c.g, c.b]
+}
+
 /** Loads one of this game's .glb files by name, or any URL. */
 export async function loadModel(name: string): Promise<Model> {
     const b = bridge()
@@ -122,21 +178,28 @@ export async function loadModel(name: string): Promise<Model> {
 /** The hook form: null until the file has loaded. */
 export function useModel(name: string): Model | null {
     const [model, setModel] = useState<Model | null>(null)
-    useEffect(() => {
-        let live = true
-        loadModel(name).then(
-            (loaded) => { if (live) setModel(loaded) },
-            (error) => console.error(`[oj] could not load ${name}:`, error),
-        )
-        return () => { live = false }
-    }, [name])
+    useEffect(() => watchModel(name, setModel), [name])
     return model
 }
 
 /**
- * Sets up the camera and light, and owns everything spawned through it. Null on
- * the first render, a Scene from then on. Unmounting destroys every actor and
- * model, which is also what a hot reload does.
+ * useModel's effect: loads the file and hands it over unless stopped first. A
+ * stopped load stays quiet when it fails, since pressing Play or a hot reload
+ * disposes the scene mid-load and the bridge then cancels it.
+ */
+export function watchModel(name: string, loaded: (model: Model) => void): () => void {
+    let live = true
+    loadModel(name).then(
+        (model) => { if (live) loaded(model) },
+        (error) => { if (live) console.error(`[oj] could not load ${name}:`, error) },
+    )
+    return () => { live = false }
+}
+
+/**
+ * Sets up the camera and lights, and owns everything spawned through it. Null on
+ * the first render, a Scene from then on. Unmounting destroys every actor, light
+ * and model, which is also what a hot reload does.
  */
 export function useScene(options: SceneOptions = {}): Scene | null {
     const [scene, setScene] = useState<Scene | null>(null)
@@ -150,21 +213,36 @@ export function useScene(options: SceneOptions = {}): Scene | null {
     return scene
 }
 
-function createScene(options: SceneOptions): { scene: Scene, dispose: () => void } {
+/** The scene without React: what useScene makes on mount and disposes on unmount. */
+export function createScene(options: SceneOptions = {}): { scene: Scene, dispose: () => void } {
     const b = bridge()
+    const d = SCENE_DEFAULTS
     const actors: Actor[] = []
     const fades = new Map<number, { from: number, to: number, t: number, seconds: number, done: () => void }>()
 
+    // Every colour is parsed before anything is built, so a typo fails without a half-made scene.
+    const background = options.background ?? d.background
+    const backgroundRgb = rgb(background)
+    const sun = options.sun === false ? null : { ...d.sun, shadows: true, ...options.sun }
+    const sunRgb = rgb(sun?.color ?? d.sun.color)
+    const ambient = { ...d.ambient, ...options.ambient }
+    const skyRgb = rgb(ambient.sky), groundRgb = rgb(ambient.ground)
+    const fog = options.fog === undefined ? null : { ...d.fog, ...options.fog }
+    const fogRgb = fog === null ? null : rgb(fog.color ?? background)
+
     const camera = (c: NonNullable<SceneOptions["camera"]>) => {
-        const look = c.lookAt ?? [0, 0, 0]
-        b.SetCamera(c.position[0], c.position[1], c.position[2], look[0], look[1], look[2], c.fov ?? 0)
+        const position = c.position ?? d.camera.position, look = c.lookAt ?? d.camera.lookAt
+        b.SetCamera(...position, ...look, c.fov ?? d.camera.fov)
     }
-    if (options.camera) camera(options.camera)
-    const light = options.light ?? {}
-    const dir = light.direction ?? [-0.4, -1, 0.35]
-    b.SetLight(dir[0], dir[1], dir[2], light.intensity ?? 1.1, light.ambient ?? 0.45)
-    const bg = options.background ?? [0.078, 0.094, 0.114]
-    b.SetBackground(bg[0], bg[1], bg[2])
+
+    b.BeginScene()
+    camera(options.camera ?? {})
+    if (sun === null) b.SetSun(false, 0, -1, 0, 1, 1, 1, 0, false)
+    else b.SetSun(true, ...sun.direction, ...sunRgb, sun.intensity, sun.shadows)
+    b.SetAmbient(...skyRgb, ...groundRgb, ambient.intensity)
+    b.SetBackground(...backgroundRgb)
+    if (fog === null || fogRgb === null) b.SetFog(false, 0, 0, 0, 0, 0)
+    else b.SetFog(true, ...fogRgb, fog.near, fog.far)
     setLiveScenes(liveScenes + 1)
 
     // Animation updates itself in play mode; the edit-mode preview has to step it.
@@ -182,14 +260,20 @@ function createScene(options: SceneOptions): { scene: Scene, dispose: () => void
     const spawn = (model: Model, o: SpawnOptions = {}): Actor => {
         let position: Vec3 = o.position ?? [0, 0, 0]
         let yaw = o.yaw ?? 0
+        let cast = o.castShadows ?? true
+        let receive = o.receiveShadows ?? true
         let dissolved = 0
-        const id: number = b.Spawn(model.id, position[0], position[1], position[2], yaw, o.scale ?? 1)
+        const id: number = b.Spawn(model.id, ...position, yaw, o.scale ?? 1, cast, receive)
         const actor: Actor = {
             id, model,
             get position() { return position },
             set position(p: Vec3) { position = p; b.Place(id, p[0], p[1], p[2], yaw) },
             get yaw() { return yaw },
             set yaw(y: number) { yaw = y; b.Place(id, position[0], position[1], position[2], y) },
+            get castShadows() { return cast },
+            set castShadows(on: boolean) { cast = on; b.SetShadows(id, cast, receive) },
+            get receiveShadows() { return receive },
+            set receiveShadows(on: boolean) { receive = on; b.SetShadows(id, cast, receive) },
             play(clip, po = {}) {
                 if (!b.Play(id, clip, po.loop ?? true, po.fade ?? 0.15)) {
                     console.warn(`[oj] ${clip} is not one of this model's clips: ${model.clips.join(", ")}`)
@@ -218,8 +302,30 @@ function createScene(options: SceneOptions): { scene: Scene, dispose: () => void
         return actor
     }
 
+    const pointLight = (o: PointLightOptions): PointLight => {
+        let position = o.position
+        let color = o.color ?? d.pointLight.color
+        let intensity = o.intensity ?? d.pointLight.intensity
+        let range = o.range ?? d.pointLight.range
+        const id: number = b.AddPointLight(...position, ...rgb(color), intensity, range)
+        const retune = () => b.SetLight(id, ...rgb(color), intensity, range)
+        return {
+            id,
+            get position() { return position },
+            set position(p: Vec3) { position = p; b.PlaceLight(id, ...p) },
+            get color() { return color },
+            set color(c: string) { color = c; retune() },
+            get intensity() { return intensity },
+            set intensity(i: number) { intensity = i; retune() },
+            get range() { return range },
+            set range(r: number) { range = r; retune() },
+            destroy() { b.DestroyLight(id) },
+        }
+    }
+
     const scene: Scene = {
         spawn,
+        pointLight,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
             return actors.find((a) => a.id === id) ?? null
@@ -227,9 +333,12 @@ function createScene(options: SceneOptions): { scene: Scene, dispose: () => void
         camera,
         get actors() { return actors },
     }
+    let disposed = false
     return {
         scene,
         dispose() {
+            if (disposed) return
+            disposed = true
             stopFrame?.()
             setLiveScenes(liveScenes - 1)
             fades.clear()
