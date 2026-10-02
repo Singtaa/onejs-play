@@ -256,6 +256,19 @@ $ ojplay status --json
 
 Touches agents.md, which tells agents to read the JSON. Effort small.
 
+### P10. Pausing a model (medium, additive)
+
+From magerie-one-004's Ghost Hunt dry run, passed on by OneJSv3Container a2. A cold agent built a pause menu that stopped the roam, the radar and catching, but the ghosts' idle clip kept swaying behind "Paused" and a running dissolve carried on. In its words: "The engine has no way to pause a model's animation."
+
+```tsx
+// A: per actor, like Unity's Animator.speed and three.js's timeScale. 0 freezes clip and dissolve.
+useEffect(() => { for (const g of ghosts) g.actor.speed = paused ? 0 : 1 }, [paused])
+// B: one switch per scene, with nothing to forget for an actor spawned while paused
+useEffect(() => { if (scene) scene.paused = paused }, [scene, paused])
+```
+
+Recommended: both, with `paused` applied on top of each actor's `speed` so unpausing restores it, and a pending `dissolve` resolving later by the time spent paused rather than rejecting. The dissolve half is JavaScript: the fade loop in `src/models.ts` advances by `dt` and would scale it. The clip half needs a ModelBridge call that sets the Animation state speed, so it ships with a runtime cut. Not breaking. Effort small to medium. OneJSv3Container a2 offers to build it once the shape is chosen.
+
 ## Found, not fixed tonight
 
 Non-breaking, and left either for time or because the right fix needs its owner.
