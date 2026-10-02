@@ -555,6 +555,14 @@ describe("a clone made into a JSRunner project", () => {
         expect(status.split("\n").filter(Boolean).sort()).toEqual(["?? game.tsx", "?? glow.png", "?? oj.json"])
     })
 
+    it("points OneJS's preset template at the cart's entry too", () => {
+        const preset = "import { oneJSConfig } from \"onejs-unity/esbuild\"\nexport default oneJSConfig({\n    entry: \"index.tsx\",\n    plugins: [\n    ],\n})\n"
+        const config = buildConfig(preset, "game.tsx")
+        expect(config).toContain("entry: \"game.tsx\",")
+        expect(config).not.toContain("index.tsx")
+        expect(config).toContain("assetsPlugin(),")
+    })
+
     it("refuses a build template it cannot add the file copy to", () => {
         expect(() => buildConfig("const config = {\n    entryPoints: [\"index.tsx\"],\n}\n", "index.tsx")).toThrow(/no plugins list/)
     })

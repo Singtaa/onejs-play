@@ -35,15 +35,19 @@ export function withCartsPlugin(text) {
  * copies the cart's files into assets/ (assetsPlugin, above).
  *
  * The template names index.tsx, which is every cart's entry unless its
- * oj.json says otherwise. A template whose entry no longer matches the
- * pattern is left naming index.tsx, which is right for nearly every cart.
+ * oj.json says otherwise: as `entry: "index.tsx"` in OneJS's oneJSConfig
+ * preset, or `entryPoints: ["index.tsx"]` in the older full config. A template
+ * whose entry matches neither is left naming index.tsx, which is right for
+ * nearly every cart.
  * One with no plugins list is refused instead: the cart would build and run
  * without its files, and nothing would say why. The container's scaffold gate
  * runs this against OneJS's real template, so a reshaped one fails there first.
  */
 export function buildConfig(template, entry) {
     let text = entry === "index.tsx" ? template
-        : template.replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
+        : template
+            .replace(/\bentry:\s*"index\.tsx"/, `entry: "${entry}"`)
+            .replace(/entryPoints:\s*\[\s*"index\.tsx"\s*\]/, `entryPoints: ["${entry}"]`)
     const plugins = /^([ \t]*)plugins:\s*\[[ \t]*\r?\n/m.exec(text)
     if (plugins === null) {
         throw new Error("OneJS's esbuild.config.mjs template has no plugins list for the step that copies the cart's files into assets/. "
