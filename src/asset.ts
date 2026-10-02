@@ -13,7 +13,7 @@
  * so a game writes the bare file name everywhere:
  *
  *     <Image src="glow.png" />
- *     const blip = await audio.load("blip.wav")
+ *     audio.load("blip.wav").then((blip) => blip.play())
  *
  * A game calls it itself only to hand one of its files to something outside
  * oj. What matters is that every loader agrees: when Image alone resolved names
