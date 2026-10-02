@@ -19,6 +19,7 @@ import { getCurrentRuntime, setRemount } from "./runtime"
 import { startStandalone } from "./standalone"
 import { stageOf, type Stage } from "./stage"
 import { applyTheme } from "./theme"
+import { useBackdrop } from "./models"
 
 /**
  * What shows behind a game that paints nothing: dark enough to sit behind
@@ -36,13 +37,15 @@ const BACKDROP = "#14181d"
 /** Fills the window behind the game and provides its size to the responsive hooks. */
 function StagePresenter({ children }: { children: ReactNode }) {
     const stage = useStage()
+    // A 3D scene draws behind the panel, so the backdrop steps aside while one is live.
+    const backdrop = useBackdrop(BACKDROP)
     return createElement(
         View,
         {
             style: {
                 position: "absolute", left: 0, top: 0, width: "100%", height: "100%",
                 overflow: "hidden",
-                backgroundColor: BACKDROP,
+                backgroundColor: backdrop,
             },
         },
         // Provided here so useBreakpoint and friends work in a game with no setup.
