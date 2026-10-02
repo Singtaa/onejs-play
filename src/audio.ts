@@ -28,10 +28,14 @@ export function loadableUrl(resolved: string): string {
     return resolved
 }
 
-export const audio = {
-    ...unityAudio,
-    /** Loads one of this game's sounds by name, or any URL. */
-    load(name: string): Promise<Sound> {
-        return unityAudio.load(loadableUrl(assetUrl(name)))
-    },
+/** Loads one of this game's sounds by name, or any URL. */
+function load(name: string): Promise<Sound> {
+    return unityAudio.load(loadableUrl(assetUrl(name)))
 }
+
+// Built on onejs-unity's object rather than spread from it: a spread reads its
+// `voices` and `activeVoices` getters once, at import, so they froze there, and
+// a host with no audio bridge threw from `import "oj"` before a sound was made.
+export const audio: typeof unityAudio = Object.create(unityAudio, {
+    load: { value: load, enumerable: true },
+})
