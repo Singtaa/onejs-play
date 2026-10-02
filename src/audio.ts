@@ -11,10 +11,27 @@
 import { audio as unityAudio, type Sound } from "onejs-unity/audio"
 import { assetUrl } from "./asset"
 
+/**
+ * What the bridge's UnityWebRequest can fetch.
+ *
+ * In a Unity project assetUrl resolves to a file path, which the image loader
+ * reads from disk. UnityWebRequest instead reads a path with no scheme as an
+ * address and asks https://localhost for it, so in a built player every sound
+ * failed with "Cannot connect to destination host" and the game played silent
+ * (the Ghost Hunt dry run, 1 Oct 2026). A path becomes a file URL; a URL,
+ * Android's jar:file:// included, is already one.
+ */
+export function loadableUrl(resolved: string): string {
+    if (resolved.includes("://")) return resolved
+    if (resolved.startsWith("/")) return "file://" + encodeURI(resolved)
+    if (/^[A-Za-z]:[\\/]/.test(resolved)) return "file:///" + encodeURI(resolved.replace(/\\/g, "/"))
+    return resolved
+}
+
 export const audio = {
     ...unityAudio,
     /** Loads one of this game's sounds by name, or any URL. */
     load(name: string): Promise<Sound> {
-        return unityAudio.load(assetUrl(name))
+        return unityAudio.load(loadableUrl(assetUrl(name)))
     },
 }
