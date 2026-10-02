@@ -8,6 +8,7 @@
  * untouched. Everything else is onejs-unity's audio, unchanged.
  */
 
+import { useEffect, useState } from "react"
 import { audio as unityAudio, type Sound } from "onejs-unity/audio"
 import { assetUrl } from "./asset"
 
@@ -39,3 +40,40 @@ function load(name: string): Promise<Sound> {
 export const audio: typeof unityAudio = Object.create(unityAudio, {
     load: { value: load, enumerable: true },
 })
+
+/**
+ * A sound by name, loaded with the component and unloaded with it. Null for the
+ * frame or two the load takes, which is why playing it reads `pop?.play()`.
+ *
+ *     const pop = useSound("pop.wav")
+ *     <Button text="Pop" onClick={() => pop?.play()} />
+ */
+export function useSound(name: string): Sound | null {
+    const [sound, setSound] = useState<Sound | null>(null)
+    useEffect(() => {
+        setSound(null)
+        return watchSound(name, setSound)
+    }, [name])
+    return sound
+}
+
+/**
+ * useSound's effect: loads the file and hands it over unless stopped first, and
+ * unloads it when stopped, including a sound that arrives after the component
+ * has gone.
+ */
+export function watchSound(name: string, loaded: (sound: Sound) => void): () => void {
+    let watching = true
+    let held: Sound | null = null
+    audio.load(name).then(
+        (sound) => {
+            if (watching) { held = sound; loaded(sound) } else sound.unload()
+        },
+        (error) => { if (watching) console.error(`[oj] could not load ${name}:`, error) },
+    )
+    return () => {
+        watching = false
+        held?.unload()
+        held = null
+    }
+}
