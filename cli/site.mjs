@@ -53,9 +53,9 @@ export async function mine(bearer) {
     return body
 }
 
-/** The sid in a clone URL, or null. */
+/** The sid in a clone URL, or null: /c/<sid>.git, or /g/<sid>.git from before 1 Oct 2026. */
 export function sidFromRemote(url) {
-    const match = /\/g\/([a-z0-9]{12})\.git\/?$/.exec(url ?? "")
+    const match = /\/[cg]\/([a-z0-9]{12})\.git\/?$/.exec(url ?? "")
     return match ? match[1] : null
 }
 
@@ -66,7 +66,7 @@ export function addressFromRemote(url) {
 }
 
 /**
- * This folder's game, read from its origin remote. A /g/<sid>.git clone names
+ * This folder's game, read from its origin remote. A /c/<sid>.git clone names
  * its sid; one made from the address bar names an address, which the account's
  * own list turns into a sid, so that form needs `bearer`.
  */
