@@ -27,7 +27,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
 | `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
-| `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name |
+| `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name, and `useSound` |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
@@ -35,9 +35,9 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
 | `models.ts` | `useScene`, `useModel`: `.glb` models behind the panel, with a sun, shadows and lights |
-| `color.ts` | `Color`, hex parsing shared in behaviour with the particle wire schema |
-| `transform.ts` | `Transform2D` and the transformed path wrapper for the batched painter |
-| `random.ts` | Seeded generators for daily challenges, replays, reproducible bugs |
+| `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
+| `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
+| `random.ts` | `random`: a shared generator, and called with a seed, a seeded one |
 | `theme.ts` | The default look of the controls the runtime provides |
 | `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
 | `container.ts` | The host-facing surface, `ojplay/container` |
@@ -160,12 +160,18 @@ threshold, and ignores the mouse while a finger is down, because the container
 reports a touch as the mouse too and listening to both fires everything twice.
 Twos Company carried that state machine itself before it moved here.
 
-**Hooks read the latest render.** `useFrame` and `fx.useAnimatedTexture` call
+**Hooks read the latest render.** `useFrame` and `fx.useAnimation` call
 the callback from the most recent render on every frame, so a callback can
 read state and props directly and the dependency list only says when to
 resubscribe or restart the clock. The first version froze the first render's
 closure for the life of the component, and every game with a slider ended up
 mirroring its state into a ref to get around it.
+
+**One frame clock.** `useFrame` is onejs-react's, so a cart and a OneJS app
+share the hook. `createRuntime` installs the runtime as its clock with
+`setFrameClock`, and `dispose` puts the default back, so frames stop when the
+container stops calling `beginFrame` and a callback sees this frame's input
+edges. `useDrawing(ref, draw, "frame")` repaints on the same clock.
 
 **Breakpoints describe the stage.** `mount()` wraps the game in a
 `ScreenProvider` sized from the stage, so `useBreakpoint` and friends work in a
@@ -221,11 +227,11 @@ Now it can ship them, and `assetUrl` is the one function that knows where they
 went.
 
 ```tsx
-import { Image, useTexture, audio } from "oj"
+import { Image, useTexture, useSound } from "oj"
 
-const glow = useTexture("glow.png")            // in a component: a Unity texture, or null
-audio.load("pop.wav").then((pop) => pop.play()) // a Promise; a cart has no top level await
-<Image src="logo.png" />                        // Image takes the bare name too
+const glow = useTexture("glow.png")   // in a component: a Unity texture, or null
+const pop = useSound("pop.wav")       // a sound, or null; unloaded with the component
+<Image src="logo.png" />              // Image takes the bare name too
 ```
 
 A bare file name, resolved differently on each side of an eject: on the site to
@@ -249,9 +255,10 @@ Explicit at the call site on purpose. Teaching every loader a hidden base would
 mean a bare `"glow.png"` resolving through machinery a reader cannot see, and
 two loaders that disagreed about it would be a bug with no visible cause.
 
-`loadTexture`, `useTexture` and `audio.load` all take the bare name. oj's
-`audio` (`audio.ts`) is onejs-unity's with `load` resolving a name through
-`assetUrl`; a URL passes through untouched.
+`loadTexture`, `useTexture`, `useSound` and `audio.load` all take the bare
+name. oj's `audio` (`audio.ts`) is onejs-unity's with `load` resolving a name
+through `assetUrl`; a URL passes through untouched. `useSound` unloads its
+sound with the component, a sound that arrives after the unmount included.
 
 **Two things had to be fixed in the runtime before any of this worked**, and
 both were invisible from the outside:
@@ -282,6 +289,14 @@ has a camera, a sun casting soft shadows, a hemisphere ambient, and models that
 cast and receive shadows. `SCENE_DEFAULTS` is that list, and each option on
 `useScene` and `spawn` turns one entry off or tunes it, named as three.js and
 Unity name them. The user page is PlaySite's `docs/3d.md`.
+
+A cart has one scene: a second `createScene` in the same runtime throws and
+names the fix, while a scene left behind by an earlier runtime is disposed,
+because the container tears a cart down before it disposes the runtime. Each
+model file loads once per scene and is shared, frozen, by every spawn; a model
+loaded for a scene that is gone refuses to spawn rather than spawn into the
+next cart's world. Every actor's fade runs at its `speed`, and at 0 while
+`scene.paused`, which is also what `ModelBridge.SetSpeed` applies to clips.
 
 Three things that are not obvious from the code:
 
@@ -365,10 +380,11 @@ game sixty times a second.
 
 ## Transforms
 
-Painter2D has no transform stack, so coordinates are transformed as they are
-recorded. `t.path(painter)` wraps only the ops that take coordinates; colours,
+`Transform2D` is onejs-react's; oj's subclass only overrides `makePoint`, so
+`point()` returns oj's `Vector2` instead of a CS one. Painter2D has no transform
+stack, so coordinates are transformed as they are recorded. `t.path(painter)` wraps only the ops that take coordinates; colours,
 widths, fill and stroke stay on the painter. Mirroring Painter's whole surface
-would mean editing `transform.ts` every time Painter grows a feature.
+would mean editing the transform every time Painter grows a feature.
 
 `arc` is never silently wrong. Under translation, rotation and uniform scale it
 is forwarded natively, so behaviour matches an untransformed arc exactly. Under
@@ -382,9 +398,9 @@ a compile error, which beats a runtime surprise.
 **Filtering the export surface.** Anything in onejs-react whose public API requires building or
 receiving a C# object is left out of `oj` rather than shipped as a landmine.
 (A game may still name C# itself; see below.)
-onejs-react's `Transform2D` is the sharp one: its `point()` returns
-`new CS.UnityEngine.Vector2` and would throw here, so oj exports its own JS
-version under the same name. The full list with reasons is the header comment in
+onejs-react's `Transform2D` was the sharp one: its `point()` returns
+`new CS.UnityEngine.Vector2`, so oj exports a subclass whose points are oj's
+`Vector2`. The full list with reasons is the header comment in
 `src/index.ts`, and `surface.test.ts` enforces it, so a future
 `export * from "onejs-react"` fails the suite instead of silently reintroducing
 the landmines.
@@ -454,7 +470,7 @@ way, and they typecheck against `oj` exactly as a published game does:
 | `falling-blocks` | 9.8 KB | Real-time gravity and key repeat off the frame delta |
 | `twos-company` | 9.2 KB | USS transitions animating a board, stable ids across a move |
 | `fireworks` | 3.7 KB | Particles, and sounds shipped as the game's own files |
-| `space-junk` | 8.9 KB | The batched painter drawing a whole arcade game in one path |
+| `space-junk` | 8.9 KB | `useDrawing` drawing a whole arcade game in one path, every frame |
 | `murmuration` | 5.1 KB | A spatial grid, and a simulation that has to stay order-independent |
 | `wayfinder` | 8.0 KB | Retained-mode elements where almost nothing changes per frame |
 | `drop-everything` | 4.5 KB | The physics world, and a pool because bodies cannot be added |
@@ -651,8 +667,8 @@ bundle is evaluated, which is also a constraint on the host's `setCode` hot
 swap: the bootstrap globals have to survive the soft reset, not just the initial
 load.
 
-`color.test.ts` runs a real cross-package parity check against onejs-react's
-`toWire`, so the two hex parsers cannot drift.
+`color.test.ts` runs a cross-package parity check against onejs-react's
+`toWire`, so `Color` and particles keep reading colours the same way.
 
 ## Gotchas
 
@@ -681,8 +697,6 @@ neither warns once rather than staying silently up.
 
 - Have onejs-react capture `CS` at module scope, so the container can `delete`
   the globals outright instead of only shadowing them.
-- Export `parseColor` from onejs-react and have `Color.FromHex` use it, so the
-  two parsers become one.
 - Gamepad, via a browser Gamepad API adapter pushing into `InputSink`.
 - Axis smoothing, as an option on the axis binding rather than a second method.
 - `oj.storage`. `oj.audio`, `assetUrl`, `useFrame` and the `oj` namespace object
