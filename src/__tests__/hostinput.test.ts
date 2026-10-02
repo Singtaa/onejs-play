@@ -53,6 +53,18 @@ describe("createHostInputBackend", () => {
         expect(bridge.calls).toEqual(["GetKeyDown:Space", "GetKeyDown:Escape"])
     })
 
+    // A cart that plays on the site with ArrowUp or KeyW lost those keys in
+    // Unity: the DOM spellings were known only to the browser's backend, and
+    // InputBridge warned and answered Key.None.
+    it("hands Unity its own name for a key spelled the DOM way", () => {
+        const bridge = fakeBridge()
+        const backend = make(bridge) as any
+        backend.GetKeyDown("ArrowUp")
+        backend.GetKeyDown("KeyW")
+        backend.GetKeyDown("Space")
+        expect(bridge.calls).toEqual(["GetKeyDown:UpArrow", "GetKeyDown:W", "GetKeyDown:Space"])
+    })
+
     it("passes several arguments through in order", () => {
         const bridge = fakeBridge()
         const backend = make(bridge) as any

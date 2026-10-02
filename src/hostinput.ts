@@ -35,8 +35,11 @@
  * and it is written down rather than papered over.
  */
 
-import type { InputBackend, InputBackendMethods } from "onejs-unity/input"
+import { keyNameFromDomCode, type InputBackend, type InputBackendMethods } from "onejs-unity/input"
 import { screenToStage, screenDeltaToStage, type Stage } from "./stage"
+
+/** The bridge methods that take a key name. */
+const KEY_METHODS = new Set(["GetKeyDown", "GetKeyPressed", "GetKeyReleased"])
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
 // no runtime binding is created.
@@ -168,6 +171,12 @@ export function createHostInputBackend(options: HostInputOptions): Record<string
 
             const value = source[property]
             if (typeof value !== "function") return value
+            // DOM spellings ("ArrowUp", "KeyW") are the browser backend's; Unity
+            // knows "UpArrow" and "W". A name neither knows goes through as it is,
+            // so InputBridge's own warning names it.
+            if (KEY_METHODS.has(property)) {
+                return (key: string) => source[property](keyNameFromDomCode(key) ?? key)
+            }
             // Called through the source rather than bound to it: a CS proxy's
             // methods are not ordinary functions and do not always survive
             // Function.prototype.bind.
