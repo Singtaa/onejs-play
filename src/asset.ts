@@ -35,9 +35,14 @@ declare const globalThis: any
  */
 let base: string | null = null
 
+/** One texture load per URL for the life of a host, shared by every component that asks. */
+const textures = new Map<string, Promise<Texture>>()
+
 /** Called by the host. Games have no reason to touch this. */
 export function setAssetBase(next: string | null): void {
     base = next === null ? null : next.replace(/\/+$/, "")
+    // A new host is a new Run, and a file may have changed under its name since.
+    textures.clear()
 }
 
 export function getAssetBase(): string | null {
@@ -106,8 +111,16 @@ export function assetUrl(name: string): string {
  * A bare name, resolved the same way everywhere. SVG works too, and comes back
  * as a VectorImage rather than a texture.
  */
-export async function loadTexture(name: string): Promise<Texture> {
-    return loadImageAsync(assetUrl(name))
+export function loadTexture(name: string): Promise<Texture> {
+    const url = assetUrl(name)
+    let loading = textures.get(url)
+    if (loading === undefined) {
+        loading = loadImageAsync(url) as Promise<Texture>
+        textures.set(url, loading)
+        // Forgotten on failure, so a file added after the first ask still loads.
+        loading.catch(() => { if (textures.get(url) === loading) textures.delete(url) })
+    }
+    return loading
 }
 
 /**
@@ -115,7 +128,7 @@ export async function loadTexture(name: string): Promise<Texture> {
  *
  * Null until it arrives, so a caller renders nothing (or a placeholder) for the
  * frame or two the fetch takes. Loading is not cancelled on unmount, because
- * the underlying loader caches by URL and a second mount would otherwise pay
+ * loadTexture shares one load per URL and a second mount would otherwise pay
  * for the same bytes again; the result is simply dropped.
  */
 export function useTexture(name: string): Texture | null {
