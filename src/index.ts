@@ -168,6 +168,7 @@ export { isOnline } from "./play"
 
 export { Mathf } from "./mathf"
 export { Vector2 } from "./vec"
+export type { Vec2Like } from "./vec"
 export { Color } from "./color"
 export { random } from "./random"
 export type { Rng } from "./random"

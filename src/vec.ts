@@ -1,8 +1,10 @@
 /**
  * Unity-shaped Vector2, implemented in JavaScript.
  *
- * There is no Vector3. The container is 2D only, so shipping one would be 90
- * lines of code no game can use.
+ * There is no Vector3: the 3D scene takes plain [x, y, z] arrays.
+ *
+ * Every parameter takes a Vec2Like, so the plain { x, y } points oj hands out
+ * (input.mouse.position, a touch, rng.direction()) pass straight in.
  *
  * These never cross into C#. A container game's math runs entirely in JS, which
  * is both faster than bridging (no reflection crossing, no handle-table entry)
@@ -25,6 +27,9 @@
  * exactly (Vector2.Distance, Vector2.zero) so snippets paste in unchanged.
  */
 
+/** Anything with an x and a y: a Vector2, or a point oj hands out. */
+export type Vec2Like = Readonly<{ x: number, y: number }>
+
 /** Unity's Vector2.kEpsilon: at or below this magnitude, normalized returns zero. */
 const K_EPSILON = 1e-5
 
@@ -46,7 +51,9 @@ export class Vector2 {
 
     static get zero(): Vector2 { return new Vector2(0, 0) }
     static get one(): Vector2 { return new Vector2(1, 1) }
+    /** (0, 1), Unity's up. The stage counts y downward, so on screen this points down. */
     static get up(): Vector2 { return new Vector2(0, 1) }
+    /** (0, -1), Unity's down. The stage counts y downward, so on screen this points up. */
     static get down(): Vector2 { return new Vector2(0, -1) }
     static get left(): Vector2 { return new Vector2(-1, 0) }
     static get right(): Vector2 { return new Vector2(1, 0) }
@@ -72,8 +79,8 @@ export class Vector2 {
         return new Vector2(this.x / m, this.y / m)
     }
 
-    add(v: Vector2): Vector2 { return new Vector2(this.x + v.x, this.y + v.y) }
-    sub(v: Vector2): Vector2 { return new Vector2(this.x - v.x, this.y - v.y) }
+    add(v: Vec2Like): Vector2 { return new Vector2(this.x + v.x, this.y + v.y) }
+    sub(v: Vec2Like): Vector2 { return new Vector2(this.x - v.x, this.y - v.y) }
     mul(s: number): Vector2 { return new Vector2(this.x * s, this.y * s) }
     div(s: number): Vector2 { return new Vector2(this.x / s, this.y / s) }
     negate(): Vector2 { return new Vector2(-this.x, -this.y) }
@@ -86,7 +93,7 @@ export class Vector2 {
     }
 
     /** Mutates in place. The explicit form of what C# assignment does implicitly. */
-    copyFrom(v: Vector2): this {
+    copyFrom(v: Vec2Like): this {
         this.x = v.x
         this.y = v.y
         return this
@@ -95,53 +102,53 @@ export class Vector2 {
     clone(): Vector2 { return new Vector2(this.x, this.y) }
 
     /** Exact component equality. Use Vector2.Approximately for float-tolerant comparison. */
-    equals(v: Vector2): boolean { return this.x === v.x && this.y === v.y }
+    equals(v: Vec2Like): boolean { return this.x === v.x && this.y === v.y }
 
     toString(): string { return `(${this.x}, ${this.y})` }
 
-    static Dot(a: Vector2, b: Vector2): number {
+    static Dot(a: Vec2Like, b: Vec2Like): number {
         return a.x * b.x + a.y * b.y
     }
 
     /** The z component of the 3D cross product. Positive when b is counter-clockwise of a. */
-    static Cross(a: Vector2, b: Vector2): number {
+    static Cross(a: Vec2Like, b: Vec2Like): number {
         return a.x * b.y - a.y * b.x
     }
 
-    static Distance(a: Vector2, b: Vector2): number {
+    static Distance(a: Vec2Like, b: Vec2Like): number {
         const dx = a.x - b.x
         const dy = a.y - b.y
         return Math.sqrt(dx * dx + dy * dy)
     }
 
-    static SqrDistance(a: Vector2, b: Vector2): number {
+    static SqrDistance(a: Vec2Like, b: Vec2Like): number {
         const dx = a.x - b.x
         const dy = a.y - b.y
         return dx * dx + dy * dy
     }
 
-    static Lerp(a: Vector2, b: Vector2, t: number): Vector2 {
+    static Lerp(a: Vec2Like, b: Vec2Like, t: number): Vector2 {
         const c = t < 0 ? 0 : t > 1 ? 1 : t
         return new Vector2(a.x + (b.x - a.x) * c, a.y + (b.y - a.y) * c)
     }
 
-    static LerpUnclamped(a: Vector2, b: Vector2, t: number): Vector2 {
+    static LerpUnclamped(a: Vec2Like, b: Vec2Like, t: number): Vector2 {
         return new Vector2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
     }
 
-    static MoveTowards(current: Vector2, target: Vector2, maxDistanceDelta: number): Vector2 {
+    static MoveTowards(current: Vec2Like, target: Vec2Like, maxDistanceDelta: number): Vector2 {
         const dx = target.x - current.x
         const dy = target.y - current.y
         const sqr = dx * dx + dy * dy
         if (sqr === 0 || (maxDistanceDelta >= 0 && sqr <= maxDistanceDelta * maxDistanceDelta)) {
-            return target.clone()
+            return new Vector2(target.x, target.y)
         }
         const d = Math.sqrt(sqr)
         return new Vector2(current.x + (dx / d) * maxDistanceDelta, current.y + (dy / d) * maxDistanceDelta)
     }
 
     /** Component-wise multiply, matching Unity's Vector2.Scale. */
-    static Scale(a: Vector2, b: Vector2): Vector2 {
+    static Scale(a: Vec2Like, b: Vec2Like): Vector2 {
         return new Vector2(a.x * b.x, a.y * b.y)
     }
 
@@ -154,8 +161,8 @@ export class Vector2 {
      * 1e-3 have a product of 1e-6, which is under kEpsilon, so that version
      * returns 0 for a perfectly well-defined angle.
      */
-    static Angle(from: Vector2, to: Vector2): number {
-        const sqr = from.sqrMagnitude * to.sqrMagnitude
+    static Angle(from: Vec2Like, to: Vec2Like): number {
+        const sqr = (from.x * from.x + from.y * from.y) * (to.x * to.x + to.y * to.y)
         if (sqr < K_ANGLE_SQR_GUARD) return 0
         const denom = Math.sqrt(sqr)
         const cos = Math.min(1, Math.max(-1, Vector2.Dot(from, to) / denom))
@@ -163,39 +170,39 @@ export class Vector2 {
     }
 
     /** Signed angle between two vectors in degrees, in [-180, 180]. */
-    static SignedAngle(from: Vector2, to: Vector2): number {
+    static SignedAngle(from: Vec2Like, to: Vec2Like): number {
         const unsigned = Vector2.Angle(from, to)
         const sign = from.x * to.y - from.y * to.x >= 0 ? 1 : -1
         return unsigned * sign
     }
 
     /** Rotates 90 degrees counter-clockwise, matching Unity. */
-    static Perpendicular(v: Vector2): Vector2 {
+    static Perpendicular(v: Vec2Like): Vector2 {
         return new Vector2(-v.y, v.x)
     }
 
-    static Reflect(direction: Vector2, normal: Vector2): Vector2 {
+    static Reflect(direction: Vec2Like, normal: Vec2Like): Vector2 {
         const f = -2 * Vector2.Dot(normal, direction)
         return new Vector2(f * normal.x + direction.x, f * normal.y + direction.y)
     }
 
-    static ClampMagnitude(v: Vector2, maxLength: number): Vector2 {
-        const sqr = v.sqrMagnitude
-        if (sqr <= maxLength * maxLength) return v.clone()
+    static ClampMagnitude(v: Vec2Like, maxLength: number): Vector2 {
+        const sqr = v.x * v.x + v.y * v.y
+        if (sqr <= maxLength * maxLength) return new Vector2(v.x, v.y)
         const m = Math.sqrt(sqr)
         return new Vector2((v.x / m) * maxLength, (v.y / m) * maxLength)
     }
 
-    static Min(a: Vector2, b: Vector2): Vector2 {
+    static Min(a: Vec2Like, b: Vec2Like): Vector2 {
         return new Vector2(Math.min(a.x, b.x), Math.min(a.y, b.y))
     }
 
-    static Max(a: Vector2, b: Vector2): Vector2 {
+    static Max(a: Vec2Like, b: Vec2Like): Vector2 {
         return new Vector2(Math.max(a.x, b.x), Math.max(a.y, b.y))
     }
 
     /** Float-tolerant equality, using the same relative rule as Mathf.Approximately. */
-    static Approximately(a: Vector2, b: Vector2): boolean {
+    static Approximately(a: Vec2Like, b: Vec2Like): boolean {
         return Vector2.SqrDistance(a, b) < K_EPSILON * K_EPSILON
     }
 
