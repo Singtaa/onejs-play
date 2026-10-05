@@ -12,7 +12,7 @@
  *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
  *   ojplay status           what the site is running: head, live, and why they differ
  *   ojplay list             every cart on the account, private ones included
- *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build
+ *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed
  *   ojplay new <name>       create a cart on the site and clone it here
  *   ojplay login            print a link; once the person presses Allow, this machine can push
  *   ojplay logout           forget that login, here and on the site
@@ -23,7 +23,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
+import { create, describePush, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
 import { login, logout } from "./login.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
@@ -70,7 +70,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
-  push                  git push origin main; exits 1 if the tip failed to build
+  push                  git push origin main; exits 1 if the tip failed to build, or if
+                          nothing was pushed because the changes are not committed
   new <name>            create a cart on the site and clone it into ./<name>
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
@@ -280,16 +281,13 @@ async function main() {
         case "push": {
             const bearer = token(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
+            const left = uncommitted(root)
+            const { head } = await status(sid, { bearer })
             const code = git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
-            const s = await status(sid, { bearer })
-            if (s.buildError !== null && s.head !== s.live) {
-                say(`the tip did not build; ${s.live ? "still running " + s.live.slice(0, 7) : "nothing is running"}`)
-                console.error(s.buildError)
-                return 1
-            }
-            say(`live: ${s.live?.slice(0, 7)} at ${s.url}`)
-            return 0
+            const said = describePush(head, await status(sid, { bearer }), left)
+            for (const line of said.lines) say(line)
+            return said.code
         }
         case "new": {
             const name = args.join(" ").trim()

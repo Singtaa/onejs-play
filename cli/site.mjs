@@ -123,6 +123,44 @@ export function describeStatus(s) {
     return lines
 }
 
+/**
+ * The changes in a clone that are not committed, as `git status --porcelain`
+ * names them. Ignored files are not changes, so what `init` writes never
+ * shows up here.
+ */
+export function uncommitted(root) {
+    const result = spawnSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" })
+    if (result.status !== 0) return []
+    return result.stdout.split("\n").filter((line) => line !== "").map((line) => line.slice(3))
+}
+
+/**
+ * What `ojplay push` says once git has pushed: `head` is the tip of main on
+ * the site before the push, `s` the status after it, `left` what
+ * uncommitted() found. Returns the lines and the exit code.
+ *
+ * `git push` with nothing new answers "Everything up-to-date" and exits 0,
+ * so pushing edits nobody had committed looked like it worked while the
+ * site went on serving the old commit (Ghost Hunt test, 5 Oct 2026).
+ */
+export function describePush(head, s, left) {
+    const short = (sha) => String(sha).slice(0, 7)
+    const shown = left.length > 8 ? [...left.slice(0, 8), `and ${left.length - 8} more`] : left
+    const notCommitted = left.length === 0 ? [] : [
+        `not committed, so not pushed: ${shown.join(", ")}`,
+        `commit them, then push again: git add -A && git commit -m "<what changed>"`,
+    ]
+    if (s.head === head) {
+        if (left.length > 0) return { lines: ["nothing was pushed", ...notCommitted], code: 1 }
+        return { lines: [`nothing new to push; live: ${short(s.live)} at ${s.url}`], code: 0 }
+    }
+    if (s.buildError !== null && s.head !== s.live) {
+        const running = s.live ? "still running " + short(s.live) : "nothing is running"
+        return { lines: [`the tip did not build; ${running}`, ...String(s.buildError).split("\n"), ...notCommitted], code: 1 }
+    }
+    return { lines: [`live: ${short(s.live)} at ${s.url}`, ...notCommitted], code: 0 }
+}
+
 /** GET /api/version: what the site runs, including the runtime pin. */
 export async function version() {
     const response = await fetch(`${siteOrigin()}/api/version`)
