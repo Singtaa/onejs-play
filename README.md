@@ -596,7 +596,8 @@ milliseconds. It exits 1 if the cart logged a console error, `Property not
 found` included.
 
 **`ojplay test` hands a script the running game.** The script's default export
-gets a `Game`: `read()` (the text on screen, top to bottom), `click(x, y)`,
+gets a `Game`: `read()` (the text on screen, top to bottom), `find(text)` (where
+it is, `{ x, y, width, height }`, once laid out), `click(x, y)`,
 `drag()`, `move()` in stage pixels (page CSS pixels), `press("KeyA")`,
 `hold("KeyA")` (returns a release function), `type("crane")`, `wait(ms)`,
 `until(predicate)`, `stage()`, `eval(js)` in the page, `shot(file)`, `reload()`,

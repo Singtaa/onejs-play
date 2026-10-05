@@ -110,6 +110,24 @@ export class Game {
     }
 
     /**
+     * Where `match` is on screen: `{ x, y, width, height }` in stage pixels,
+     * the rectangle of the first element in screen order whose text is
+     * `match` (a string, exactly, or a RegExp). Its middle is the point to
+     * click. Waits until such an element has been laid out, and throws after
+     * `timeoutMs`.
+     *
+     * An element is laid out on a frame after it mounts, and its worldBound
+     * reads 0, 0 until then. A test that read five nameplates as they
+     * appeared got that one point for all five and concluded element
+     * positions could not be trusted (Ghost Hunt test, 5 Oct 2026).
+     */
+    async find(match, { timeoutMs = 10000 } = {}) {
+        const spec = match instanceof RegExp ? { source: match.source, flags: match.flags } : { text: String(match) }
+        const what = `${match instanceof RegExp ? match : JSON.stringify(match)} on screen`
+        return this.until(async () => JSON.parse(await this.eval(findExpression(spec))), { timeoutMs, every: 50, what })
+    }
+
+    /**
      * Rows whose children's visible parts do not line up within `tolerance`
      * pixels, or sit closer than `minGap` pixels (see rows.mjs). Empty when
      * every row is fine.
@@ -240,6 +258,35 @@ export class Game {
     shot(file = path.join(".oj", `shot-${Date.now()}.png`)) {
         return this.browser.screenshot(path.resolve(this.root, file))
     }
+}
+
+/**
+ * The page expression `find` polls: the rectangle of the first laid out
+ * element, in the order `read()` walks, whose text matches, or null.
+ * `spec` is `{ text }` or a RegExp's `{ source, flags }`.
+ */
+function findExpression(spec) {
+    return `(() => {
+        const spec = ${JSON.stringify(spec)}
+        const re = spec.source === undefined ? null : new RegExp(spec.source, spec.flags)
+        const hit = (t) => re ? re.test(t) : t === spec.text
+        const textual = (el) => { try { return /Text|Label|Button/.test(String(el.__csType)) } catch { return false } }
+        let found = null
+        const walk = (el, d) => {
+            if (!el || d > 16 || found) return
+            try {
+                if (textual(el) && typeof el.text === "string" && hit(el.text)) {
+                    const b = el.worldBound
+                    if (Number.isFinite(b.width) && b.width > 0 && b.height > 0) found = { x: b.x, y: b.y, width: b.width, height: b.height }
+                }
+            } catch {}
+            let n = 0
+            try { n = el.childCount || 0 } catch {}
+            for (let i = 0; i < n; i++) { try { walk(el.hierarchy.ElementAt(i), d + 1) } catch {} }
+        }
+        walk(globalThis.__root, 0)
+        return JSON.stringify(found)
+    })()`
 }
 
 /**
