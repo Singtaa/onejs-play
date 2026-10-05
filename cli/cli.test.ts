@@ -280,7 +280,7 @@ describe("the site from a terminal", () => {
         expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt", "gh").url).toBe("https://play.onejs.com/@singtaa/ghost-hunt.git")
         expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt.git").dir).toBe(path.resolve("ghost-hunt"))
         expect(cloneSource("lrk9g7sstpu3")).toEqual({ url: `${site}/c/lrk9g7sstpu3.git`, dir: path.resolve("lrk9g7sstpu3") })
-        expect(cloneSource("https://play.onejs.com/c/lrk9g7sstpu3.git", "/tmp/x")).toEqual({ url: "https://play.onejs.com/c/lrk9g7sstpu3.git", dir: "/tmp/x" })
+        expect(cloneSource("https://play.onejs.com/c/lrk9g7sstpu3.git", "/tmp/x")).toEqual({ url: "https://play.onejs.com/c/lrk9g7sstpu3.git", dir: path.resolve("/tmp/x") })
         expect(() => cloneSource("ghost hunt")).toThrow(/@handle\/name, its sid or its clone URL/)
         expect(() => cloneSource(undefined)).toThrow(/clone takes/)
     })
