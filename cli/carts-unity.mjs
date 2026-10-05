@@ -20,7 +20,8 @@ import fs from "node:fs"
 import path from "node:path"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
-import { git, mine, tokenOf } from "./site.mjs"
+import { mine, tokenOf } from "./site.mjs"
+import { cloneCart } from "./login.mjs"
 import { NO_ONEJS, initUnity, npm as runNpm, objectName, oneJSOf, unityProjectOf } from "./unity.mjs"
 import { withCartsPlugin } from "./unity-config.mjs"
 import { placePrefab } from "./unity-scene.mjs"
@@ -65,7 +66,7 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
             app = path.join(project, "Assets", name, "~")
             refuseIfThere(project, app)
             fs.mkdirSync(path.dirname(app), { recursive: true })
-            const code = git(["clone", "-q", own.clone, app], { bearer })
+            const code = cloneCart(own.clone, app, { bearer, quiet: true })
             if (code !== 0) throw new Error(`git clone of ${pinned.address} failed (exit ${code}). Check ${COMMAND} login, then run it again.`)
         } else {
             kept = await download(project, pinned.address, value, scratch)

@@ -12,8 +12,9 @@
  *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
  *   ojplay status           what the site is running: head, live, and why they differ
  *   ojplay list             every cart on the account, private ones included
- *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build
+ *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed
  *   ojplay new <name>       create a cart on the site and clone it here
+ *   ojplay clone <address>  clone a cart so that git pull and push work in it with OJ_TOKEN or a login
  *   ojplay login            print a link; once the person presses Allow, this machine can push
  *   ojplay logout           forget that login, here and on the site
  *   ojplay runtime          fetch the container the site serves into the local cache
@@ -23,8 +24,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, version } from "./site.mjs"
-import { login, logout } from "./login.mjs"
+import { cloneSource, create, describePush, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
+import { cloneCart, login, logout } from "./login.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
@@ -70,8 +71,11 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
-  push                  git push origin main; exits 1 if the tip failed to build
+  push                  git push origin main; exits 1 if the tip failed to build, or if
+                          nothing was pushed because the changes are not committed
   new <name>            create a cart on the site and clone it into ./<name>
+  clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
+                          work in it with OJ_TOKEN set or after login, and no token is stored
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
   --root <dir>          the cart folder (default: the current folder)
@@ -85,7 +89,7 @@ Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so
 ${BIN} ${OWN_VERSION}
 `
 
-const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "login", "logout", "runtime", "help"]
+const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help"]
 
 const say = (line) => console.error(`[${BIN}] ${line}`)
 
@@ -280,16 +284,13 @@ async function main() {
         case "push": {
             const bearer = token(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
+            const left = uncommitted(root)
+            const { head } = await status(sid, { bearer })
             const code = git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
-            const s = await status(sid, { bearer })
-            if (s.buildError !== null && s.head !== s.live) {
-                say(`the tip did not build; ${s.live ? "still running " + s.live.slice(0, 7) : "nothing is running"}`)
-                console.error(s.buildError)
-                return 1
-            }
-            say(`live: ${s.live?.slice(0, 7)} at ${s.url}`)
-            return 0
+            const said = describePush(head, await status(sid, { bearer }), left)
+            for (const line of said.lines) say(line)
+            return said.code
         }
         case "new": {
             const name = args.join(" ").trim()
@@ -298,9 +299,20 @@ async function main() {
             const made = await create(name, bearer)
             const dir = folderFor(name)
             say(`created ${made.sid} at ${siteOrigin()}${made.url}`)
-            const code = git(["clone", made.clone, dir], { bearer })
+            const code = cloneCart(made.clone, dir, { bearer })
             if (code !== 0) return code
             say(`cloned into ${dir}`)
+            return 0
+        }
+        case "clone": {
+            const { url, dir } = cloneSource(args[0], args[1])
+            const bearer = tokenOf(root)
+            const code = cloneCart(url, dir, { bearer })
+            if (code !== 0) {
+                if (!bearer) say(`a private cart needs a login first: ${COMMAND} login, or set OJ_TOKEN`)
+                return code
+            }
+            say(`cloned into ${dir}; git pull and git push there use OJ_TOKEN when it is set, else this machine's login`)
             return 0
         }
         case "login":

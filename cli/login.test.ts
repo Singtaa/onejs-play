@@ -4,8 +4,8 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { deviceName, helperFor, installId, login, logout } from "./login.mjs"
-import { mine, storedToken, tokenOf } from "./site.mjs"
+import { cloneCart, deviceName, helperFor, installId, login, logout } from "./login.mjs"
+import { mine, storedToken, tokenOf, tokenPaths } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
 
 /**
@@ -70,12 +70,12 @@ afterEach(() => {
 
 const quiet = { say: () => {}, print: () => {} }
 
-/** What git would send the site for a URL on it, asked the way git asks. */
-function gitPassword(url: string): string | null {
+/** What git would send the site for a URL on it, asked the way git asks, from `cwd` with `env` on top. */
+function gitPassword(url: string, { cwd, env = {} }: { cwd?: string, env?: Record<string, string> } = {}): string | null {
     const u = new URL(url)
     const out = spawnSync("git", ["credential", "fill"], {
         input: `protocol=${u.protocol.replace(":", "")}\nhost=${u.host}\npath=g/abcdefabcdef.git\n\n`,
-        encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
     })
     return /^password=(.*)$/m.exec(out.stdout ?? "")?.[1] ?? null
 }
@@ -92,12 +92,15 @@ describe("ojplay login", () => {
         if (process.platform !== "win32") expect(fs.statSync(file).mode & 0o777).toBe(0o600)
         expect(storedToken(dir)).toBe(TOKEN)
         expect(tokenOf(dir)).toBe(TOKEN)
-        vi.stubEnv("OJ_TOKEN", "ojplay_env")
-        expect(tokenOf(dir)).toBe("ojplay_env")
 
         // git asks the helper for this site, and nobody else gets the token.
         expect(gitPassword(process.env.OJ_SITE!)).toBe(TOKEN)
         expect(gitPassword("https://github.com")).not.toBe(TOKEN)
+
+        // OJ_TOKEN, when set, is what ojplay uses, and git uses the same.
+        vi.stubEnv("OJ_TOKEN", "ojplay_env")
+        expect(tokenOf(dir)).toBe("ojplay_env")
+        expect(gitPassword(process.env.OJ_SITE!)).toBe("ojplay_env")
     })
 
     it("can print and exit, and collect later with --wait", async () => {
@@ -257,5 +260,53 @@ describe("what the Allow page shows", () => {
 
     it("quotes the token file's path for the shell git runs the helper in", () => {
         expect(helperFor("/Users/o'neil/.onejs-play/token")).toContain(`'/Users/o'\\''neil/.onejs-play/token'`)
+    })
+})
+
+/**
+ * A clone made with OJ_TOKEN alone could not `git pull`: git knew nothing of
+ * the token, and the agent that hit that wrote it into the clone's
+ * .git/config in the clear (Ghost Hunt test, 5 Oct 2026). A clone ojplay
+ * makes carries a helper that reads OJ_TOKEN or the login's file whenever
+ * git asks, and stores neither.
+ */
+describe("a clone ojplay makes", () => {
+    let remote = ""
+    let clone = ""
+    beforeEach(() => {
+        const src = path.join(dir, "src")
+        const run = (...args: string[]) => expect(spawnSync("git", args, { cwd: dir }).status).toBe(0)
+        run("init", "-q", src)
+        fs.writeFileSync(path.join(src, "index.tsx"), "mount()\n")
+        run("-C", src, "add", "-A")
+        run("-C", src, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "start")
+        remote = path.join(dir, "remote.git")
+        run("clone", "-q", "--bare", src, remote)
+        clone = path.join(dir, "clone")
+        expect(cloneCart(remote, clone, { quiet: true })).toBe(0)
+    })
+
+    it("keeps the site's helper in its own config, after a reset, and no token", () => {
+        const helpers = spawnSync("git", ["-C", clone, "config", "--get-all", `credential.${process.env.OJ_SITE}.helper`], { encoding: "utf8" })
+        expect(helpers.stdout.split("\n").slice(0, 2)).toEqual(["", helperFor(tokenPaths(clone))])
+        expect(fs.readFileSync(path.join(clone, ".git", "config"), "utf8")).not.toMatch(/oja_|password=[^%]/)
+    })
+
+    it("hands git OJ_TOKEN when it is set, then the login's file", () => {
+        expect(gitPassword(process.env.OJ_SITE!, { cwd: clone, env: { OJ_TOKEN: "oja_from_env" } })).toBe("oja_from_env")
+        fs.mkdirSync(path.join(dir, "home"), { recursive: true })
+        fs.writeFileSync(path.join(dir, "home", "token"), TOKEN + "\n")
+        expect(gitPassword(process.env.OJ_SITE!, { cwd: clone })).toBe(TOKEN)
+        expect(gitPassword(process.env.OJ_SITE!, { cwd: clone, env: { OJ_TOKEN: "oja_from_env" } })).toBe("oja_from_env")
+    })
+
+    it("says how to get a token when there is none", () => {
+        const u = new URL(process.env.OJ_SITE!)
+        const out = spawnSync("git", ["credential", "fill"], {
+            input: `protocol=http\nhost=${u.host}\n\n`, cwd: clone, encoding: "utf8",
+            env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        })
+        expect(out.stdout).not.toMatch(/^password=/m)
+        expect(out.stderr).toContain(`no token for ${process.env.OJ_SITE}: run npx ojplay login, or set OJ_TOKEN`)
     })
 })
