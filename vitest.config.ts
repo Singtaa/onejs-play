@@ -10,6 +10,10 @@ export default defineConfig({
     test: {
         globals: true,
         environment: "node",
+        // The build tests run whole esbuild builds, and the first in a file pays for
+        // esbuild starting: 6.2 to 6.4 s on the Windows runner (5 Oct 2026), past
+        // the default of 5 s. A test that needs longer still sets its own.
+        testTimeout: 30_000,
         setupFiles: ["./src/__tests__/pre-setup.ts"],
         include: ["src/**/*.test.ts", "src/**/*.test.tsx", "examples/**/*.test.ts", "cli/**/*.test.ts", "build/**/*.test.ts"],
         coverage: {

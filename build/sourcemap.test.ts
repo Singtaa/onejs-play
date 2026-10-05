@@ -22,9 +22,7 @@ const FILES = [
 ]
 
 describe("buildGame's source map", () => {
-    // Two whole builds, and the first in the file pays for esbuild starting:
-    // 6.3 s on the Windows runner (5 Oct 2026), past vitest's default of 5.
-    it("is not made unless asked for, and the code is what it always was", { timeout: 30_000 }, async () => {
+    it("is not made unless asked for, and the code is what it always was", async () => {
         const plain = await buildGame(esbuild, FILES, "index.tsx", { workingDir: WORKING_DIR })
         expect((plain as { map?: unknown }).map).toBeUndefined()
         expect(plain.code).not.toContain("sourceMappingURL")
