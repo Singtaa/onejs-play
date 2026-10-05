@@ -205,6 +205,21 @@ export function git(args, { cwd, bearer } = {}) {
     return result.status ?? 1
 }
 
+/**
+ * What `ojplay clone` clones, and into which folder: a cart's address
+ * (@handle/name, or its page's URL), its sid, or its clone URL. The folder
+ * is `into`, else the cart's name or sid.
+ */
+export function cloneSource(what, into) {
+    const text = String(what ?? "").trim()
+    const origin = /^https?:\/\//.test(text) ? new URL(text).origin : siteOrigin()
+    const address = /^(?:https?:\/\/[^/]+\/)?(@[A-Za-z0-9-]+)\/([A-Za-z0-9-]+?)(?:\.git)?\/?$/.exec(text)
+    const sid = /^(?:https?:\/\/[^/]+\/[cg]\/)?([a-z0-9]{12})(?:\.git)?\/?$/.exec(text)
+    if (address) return { url: `${origin}/${address[1]}/${address[2]}.git`, dir: path.resolve(into ?? address[2]) }
+    if (sid) return { url: `${origin}/c/${sid[1]}.git`, dir: path.resolve(into ?? sid[1]) }
+    throw new Error(`${COMMAND} clone takes a cart's @handle/name, its sid or its clone URL, not "${text}"`)
+}
+
 /** Where `ojplay new` clones to: the name as a folder, made safe. */
 export function folderFor(name) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")

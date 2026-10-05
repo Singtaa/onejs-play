@@ -11,7 +11,7 @@
  * working folder, it goes to .oj/token in the cart, which git ignores.
  *
  * git gets it through a credential helper for the site's origin only, a
- * one-line shell function that reads the file, so a plain `git clone`,
+ * one-line shell function that reads OJ_TOKEN, else the file, so a plain `git clone`,
  * `pull` and `push` of any of the account's carts need nothing more, and
  * the helper does not depend on where npx happened to unpack this package.
  */
@@ -22,8 +22,8 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { home } from "./local.mjs"
 import { ignoreLocally } from "./init.mjs"
-import { mine, siteOrigin, storedToken, tokenPaths } from "./site.mjs"
-import { COMMAND } from "../build/command.mjs"
+import { git, mine, siteOrigin, storedToken, tokenPaths } from "./site.mjs"
+import { ANYWHERE, COMMAND } from "../build/command.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -80,13 +80,36 @@ function store(root, token) {
 }
 
 /**
- * The helper line git runs for the site's origin: the account name is
- * ignored by the site, the password is the file's contents. Single quotes
- * around the path, with any in it escaped, since git runs it through sh.
+ * The helper line git runs for the site's origin. The account name is
+ * ignored by the site; the password is OJ_TOKEN when the environment has
+ * it, else the first of `files` that holds a token, the order tokenOf reads
+ * them in, so git and ojplay always present the same one. The line holds no
+ * secret itself. Single quotes around each path, with any in it escaped,
+ * since git runs it through sh.
  */
-export function helperFor(file) {
-    const quoted = `'${file.split(path.sep).join("/").replace(/'/g, `'\\''`)}'`
-    return `!f() { test "$1" = get && echo username=oj && printf 'password=%s\\n' "$(cat ${quoted})"; }; f`
+export function helperFor(files) {
+    const quoted = [files].flat().map((file) => `'${file.split(path.sep).join("/").replace(/'/g, `'\\''`)}'`)
+    const none = `no token for ${siteOrigin()}: run ${ANYWHERE} login, or set OJ_TOKEN`
+    return `!f() { test "$1" = get || return 0; t="$OJ_TOKEN"; for p in ${quoted.join(" ")}; do [ -n "$t" ] || t="$(cat "$p" 2>/dev/null)"; done; `
+        + `if [ -n "$t" ]; then echo username=oj; printf 'password=%s\\n' "$t"; else echo "${none}" >&2; fi; }; f`
+}
+
+/**
+ * Clones a cart and leaves the clone able to pull and push by itself: its
+ * own config gets helperFor for the site's origin, reading OJ_TOKEN or this
+ * machine's login whenever git asks. A clone made with OJ_TOKEN alone could
+ * not `git pull`, and the agent that hit that wrote the token into the
+ * clone's .git/config in the clear (Ghost Hunt test, 5 Oct 2026). The empty
+ * helper first resets the list, as configureGit's does. Answers git's exit
+ * code.
+ */
+export function cloneCart(url, dir, { bearer, quiet = false } = {}) {
+    const code = git(["clone", ...(quiet ? ["-q"] : []), url, dir], { bearer })
+    if (code !== 0) return code
+    const key = `credential.${siteOrigin()}.helper`
+    spawnSync("git", ["-C", dir, "config", "--replace-all", key, ""], { encoding: "utf8" })
+    spawnSync("git", ["-C", dir, "config", "--add", key, helperFor(tokenPaths(dir))], { encoding: "utf8" })
+    return 0
 }
 
 /**

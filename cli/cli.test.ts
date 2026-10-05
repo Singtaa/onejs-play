@@ -5,7 +5,7 @@ import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
 import { build, entryOf, manifestOf, readTree } from "./game.mjs"
-import { addressFromRemote, sidFromRemote, sidOf, siteOrigin, folderFor, credentialArgs } from "./site.mjs"
+import { addressFromRemote, cloneSource, sidFromRemote, sidOf, siteOrigin, folderFor, credentialArgs } from "./site.mjs"
 import { chromeArgs, keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
@@ -270,6 +270,19 @@ describe("the site from a terminal", () => {
         const args = credentialArgs("tok")
         expect(args.slice(0, 2)).toEqual(["-c", "credential.helper="])
         expect(args[3]).toMatch(/^credential\.helper=!f\(\) \{ echo username=oj; echo password=tok; \}; f$/)
+    })
+
+    // The H agent was handed the cart's page, play.onejs.com/@handle/name,
+    // which is the first thing a person pastes.
+    it("clones a cart named by its address, its page, its sid or its clone URL", () => {
+        const site = siteOrigin()
+        expect(cloneSource("@singtaa/ghost-hunt")).toEqual({ url: `${site}/@singtaa/ghost-hunt.git`, dir: path.resolve("ghost-hunt") })
+        expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt", "gh").url).toBe("https://play.onejs.com/@singtaa/ghost-hunt.git")
+        expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt.git").dir).toBe(path.resolve("ghost-hunt"))
+        expect(cloneSource("lrk9g7sstpu3")).toEqual({ url: `${site}/c/lrk9g7sstpu3.git`, dir: path.resolve("lrk9g7sstpu3") })
+        expect(cloneSource("https://play.onejs.com/c/lrk9g7sstpu3.git", "/tmp/x")).toEqual({ url: "https://play.onejs.com/c/lrk9g7sstpu3.git", dir: "/tmp/x" })
+        expect(() => cloneSource("ghost hunt")).toThrow(/@handle\/name, its sid or its clone URL/)
+        expect(() => cloneSource(undefined)).toThrow(/clone takes/)
     })
 
     it("names a folder after the cart without punctuation", () => {

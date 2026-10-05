@@ -14,6 +14,7 @@
  *   ojplay list             every cart on the account, private ones included
  *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed
  *   ojplay new <name>       create a cart on the site and clone it here
+ *   ojplay clone <address>  clone a cart so that git pull and push work in it with OJ_TOKEN or a login
  *   ojplay login            print a link; once the person presses Allow, this machine can push
  *   ojplay logout           forget that login, here and on the site
  *   ojplay runtime          fetch the container the site serves into the local cache
@@ -23,8 +24,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { create, describePush, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
-import { login, logout } from "./login.mjs"
+import { cloneSource, create, describePush, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
+import { cloneCart, login, logout } from "./login.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
@@ -73,6 +74,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
   push                  git push origin main; exits 1 if the tip failed to build, or if
                           nothing was pushed because the changes are not committed
   new <name>            create a cart on the site and clone it into ./<name>
+  clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
+                          work in it with OJ_TOKEN set or after login, and no token is stored
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
   --root <dir>          the cart folder (default: the current folder)
@@ -86,7 +89,7 @@ Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so
 ${BIN} ${OWN_VERSION}
 `
 
-const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "login", "logout", "runtime", "help"]
+const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help"]
 
 const say = (line) => console.error(`[${BIN}] ${line}`)
 
@@ -296,9 +299,20 @@ async function main() {
             const made = await create(name, bearer)
             const dir = folderFor(name)
             say(`created ${made.sid} at ${siteOrigin()}${made.url}`)
-            const code = git(["clone", made.clone, dir], { bearer })
+            const code = cloneCart(made.clone, dir, { bearer })
             if (code !== 0) return code
             say(`cloned into ${dir}`)
+            return 0
+        }
+        case "clone": {
+            const { url, dir } = cloneSource(args[0], args[1])
+            const bearer = tokenOf(root)
+            const code = cloneCart(url, dir, { bearer })
+            if (code !== 0) {
+                if (!bearer) say(`a private cart needs a login first: ${COMMAND} login, or set OJ_TOKEN`)
+                return code
+            }
+            say(`cloned into ${dir}; git pull and git push there use OJ_TOKEN when it is set, else this machine's login`)
             return 0
         }
         case "login":
