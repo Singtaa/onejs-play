@@ -15,7 +15,7 @@
  *     // adapter pushes browser events into container.sink
  *     // game calls input.keyboard.wasKeyPressed("Space")
  *
- * THREE THINGS WORTH KNOWING
+ * FIVE THINGS WORTH KNOWING
  *
  * 1. Edges are frame numbers, not booleans cleared each frame. A key pressed
  *    and released inside one frame reports both pressed and released, and OS
@@ -35,6 +35,11 @@
  *    so by the time game logic runs it reads as last frame's press and
  *    wasKeyPressed is false. Queuing makes a frame see exactly the events that
  *    arrived since the previous one, whenever they happened to land.
+ *
+ * 5. The drain keeps the order. Every key that goes down in it is also listed,
+ *    in arrival order, for GetKeysPressed: the per-key records say only that a
+ *    key went down this frame, so letters typed inside one slow frame would
+ *    otherwise reach a game in whatever order it asked about them.
  */
 
 import { keyNameFromDomCode, type InputBackend } from "onejs-unity/input"
@@ -152,6 +157,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _downCount = 0
     private _lastPressFrame = -1
     private _modifiers = 0
+    /** Keys that went down this frame, in the order they did. See note 5. */
+    private _pressedInOrder: string[] = []
 
     private _buttons = 0
     private _buttonDownFrame = new Int32Array(5).fill(-1)
@@ -231,6 +238,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         if (key.down) return
         key.down = true
         key.downFrame = this._frame
+        this._pressedInOrder.push(name)
         this._downCount++
         this._lastPressFrame = this._frame
         const bit = MODIFIER_KEYS[name]
@@ -333,6 +341,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     beginFrame(): void {
         this._frame++
+        this._pressedInOrder = []
         // Drain first, so everything that arrived since the last boundary is
         // stamped with the frame about to run rather than the one just ended.
         if (this._queue.length > 0) {
@@ -355,6 +364,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._queue = []
         this._touches = []
         this._keys.clear()
+        this._pressedInOrder = []
         this._downCount = 0
         this._lastPressFrame = -1
         this._modifiers = 0
@@ -382,6 +392,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             GetKeyReleased: (key: string) => this._peek(key).upFrame === this._frame,
             GetAnyKeyDown: () => this._downCount > 0,
             GetAnyKeyPressed: () => this._lastPressFrame === this._frame,
+            GetKeysPressed: () => this._pressedInOrder.join(","),
             GetModifiers: () => this._modifiers,
 
             GetMousePositionX: () => this._pointerX,

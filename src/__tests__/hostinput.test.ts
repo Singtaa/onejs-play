@@ -182,7 +182,7 @@ describe("finding the bridge", () => {
 
     it("has an idle input that reports nothing for every method", () => {
         for (const [name, fn] of Object.entries(IDLE_INPUT)) {
-            expect([0, false, undefined], name).toContain((fn as (...a: number[]) => unknown)(0, 0, 0, 0))
+            expect([0, false, undefined, ""], name).toContain((fn as (...a: number[]) => unknown)(0, 0, 0, 0))
         }
     })
 })

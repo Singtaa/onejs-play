@@ -123,6 +123,63 @@ describe("touches", () => {
     })
 })
 
+describe("keys pressed in order", () => {
+    // Typing faster than the frame rate puts several letters in one frame.
+    // The per-key edges report them all pressed and nothing about order, so a
+    // game spelling a word from them used to get its own list's order (#4).
+    it("keeps two keys pressed within one frame in the order they went down", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyR")
+        c.sink.keyDown("KeyC")
+        deliver(c)
+        expect(b(c).GetKeysPressed()).toBe("R,C")
+
+        // What a game reads, through onejs-unity's keyboard as after an eject
+        setInputBackend(c.backend)
+        expect(input.keyboard.keysPressed).toEqual(["R", "C"])
+    })
+
+    it("spells a word typed into one slow frame as it was typed", () => {
+        const c = tick(make())
+        for (const code of ["KeyC", "KeyR", "KeyA", "KeyN", "KeyE"]) {
+            c.sink.keyDown(code)
+            c.sink.keyUp(code)
+        }
+        deliver(c)
+        expect(b(c).GetKeysPressed()).toBe("C,R,A,N,E")
+    })
+
+    it("lists a key tapped twice within one frame twice", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyE")
+        c.sink.keyUp("KeyE")
+        c.sink.keyDown("KeyE")
+        deliver(c)
+        expect(b(c).GetKeysPressed()).toBe("E,E")
+    })
+
+    it("starts empty each frame, and leaves out a held key and auto-repeat", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyC")
+        deliver(c)
+        expect(b(c).GetKeysPressed()).toBe("C")
+        tick(c)
+        expect(b(c).GetKeysPressed()).toBe("")
+        c.sink.keyDown("KeyC")
+        c.sink.keyDown("KeyR")
+        deliver(c)
+        expect(b(c).GetKeysPressed()).toBe("R")
+    })
+
+    it("forgets the frame's keys on reset", () => {
+        const c = tick(make())
+        c.sink.keyDown("KeyC")
+        deliver(c)
+        c.reset()
+        expect(b(c).GetKeysPressed()).toBe("")
+    })
+})
+
 describe("key edges", () => {
     it("reports pressed only on the frame the key went down", () => {
         const c = tick(make())
