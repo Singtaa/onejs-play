@@ -89,7 +89,7 @@ function realBridge(): any | null {
  */
 export const IDLE_INPUT: InputBackend = {
     GetKeyDown: () => false, GetKeyPressed: () => false, GetKeyReleased: () => false,
-    GetAnyKeyDown: () => false, GetAnyKeyPressed: () => false, GetModifiers: () => 0,
+    GetAnyKeyDown: () => false, GetAnyKeyPressed: () => false, GetKeysPressed: () => "", GetModifiers: () => 0,
     GetMousePositionX: () => 0, GetMousePositionY: () => 0, GetMouseDeltaX: () => 0, GetMouseDeltaY: () => 0,
     GetScrollX: () => 0, GetScrollY: () => 0,
     GetMouseButtons: () => 0, GetMouseButtonsPressed: () => 0, GetMouseButtonsReleased: () => 0,
