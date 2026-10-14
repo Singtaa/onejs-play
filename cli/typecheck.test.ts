@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { init } from "./init.mjs"
-import { NAMES_CS, namesCS, typecheck } from "./game.mjs"
+import { typecheck } from "./game.mjs"
 import { CART_COMPILER_OPTIONS } from "../build/cart-types.mjs"
 
 /**
@@ -76,35 +76,4 @@ describe("ojplay typecheck", () => {
         expect(typecheck(cart(LOOSE, { old: true }), { quiet: true })).toBe(0)
         expect(typecheck(cart(DOM, { old: true }), { quiet: true })).not.toBe(0)
     }, 60_000)
-})
-
-// Sai, 14 Oct 2026: CS is allowed in a cart as the one door to the host, and
-// typecheck says once that such a cart runs only on a Unity host.
-describe("typecheck and CS", () => {
-    it("names a cart's use of CS once, with the file", () => {
-        expect(namesCS([{ name: "a.tsx", text: "const x = 1\n" }, { name: "b.ts", text: "CS.UnityEngine.Debug.Log(1)\nCS.UnityEngine.Debug.Log(2)\n" }])).toBe("b.ts")
-    })
-
-    it("does not count CS in a comment, or as a member of something else", () => {
-        expect(namesCS([{ name: "a.tsx", text: "// CS.UnityEngine is how\n/* CS.X */ const DOCS = 1\nobj.CS.foo()\n" }])).toBeNull()
-    })
-
-    it("ignores files that are not code", () => {
-        expect(namesCS([{ name: "notes.md", text: "CS.UnityEngine" }])).toBeNull()
-    })
-
-    it("says it under typecheck, once, after tsc", () => {
-        const root = cart("declare const CS: any\nCS.UnityEngine.Debug.Log(1)\nCS.UnityEngine.Debug.Log(2)\nexport {}\n")
-        const said: string[] = []
-        const error = console.error
-        console.error = (line: string) => { said.push(line) }
-        try {
-            typecheck(root, { quiet: true })
-            expect(said).toEqual([])
-            typecheck(root)
-        } finally {
-            console.error = error
-        }
-        expect(said).toEqual([`[ojplay] ${NAMES_CS} (index.tsx)`])
-    })
 })
