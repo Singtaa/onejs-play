@@ -9,6 +9,7 @@
     "build",
     "cli",
     "host",
+    "examples/starter",
     "!**/__tests__",
     "!**/*.test.ts",
     "!cli/fixtures"
@@ -67,6 +68,10 @@
     "./build/cart-types": {
       "types": "./build/cart-types.d.ts",
       "default": "./build/cart-types.mjs"
+    },
+    "./build/starter": {
+      "types": "./build/starter.d.ts",
+      "default": "./build/starter.mjs"
     },
     "./cli/game": {
       "types": "./cli/game.d.ts",

@@ -32,7 +32,7 @@ import { BIN } from "../build/command.mjs"
 const RECORD = path.join("node_modules", ".cache", "onejs-play", "unity-assets.json")
 
 /** The cart's files the site would serve, by name, walked the way a push is. */
-function cartAssets(root) {
+export function cartAssets(root) {
     const names = []
     const walk = (dir, prefix) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

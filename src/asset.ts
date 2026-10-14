@@ -35,12 +35,22 @@ declare const globalThis: any
  */
 let base: string | null = null
 
+/**
+ * Where, under the base, the carts this one uses keep their files. Empty when
+ * they sit straight under it, as on the site and in a player, where a used
+ * cart's `@handle/name@1.2.0/glow.png` is served or copied under its key. A
+ * Unity editor reads a cart where it sits, so there they are under `.oj/carts`,
+ * where `ojplay add` put them (`ojplay run` maps them the same way).
+ */
+let usedCarts = ""
+
 /** One texture load per URL for the life of a host, shared by every component that asks. */
 const textures = new Map<string, Promise<Texture>>()
 
 /** Called by the host. Games have no reason to touch this. */
-export function setAssetBase(next: string | null): void {
+export function setAssetBase(next: string | null, options: { usedCarts?: string } = {}): void {
     base = next === null ? null : next.replace(/\/+$/, "")
+    usedCarts = next === null ? "" : (options.usedCarts ?? "").replace(/^\/+|\/+$/g, "")
     // A new host is a new Run, and a file may have changed under its name since.
     textures.clear()
 }
@@ -72,7 +82,7 @@ export function assetUrl(name: string): string {
     // and removes a class of "why is my sprite missing".
     const clean = name.replace(/^\.\//, "").replace(/^assets\//, "")
 
-    if (base !== null) return `${base}/${clean}`
+    if (base !== null) return usedCarts !== "" && clean.startsWith("@") ? `${base}/${usedCarts}/${clean}` : `${base}/${clean}`
 
     // No container, so this is a real Unity project and OneJS's own convention
     // applies. Editor and player put the same file in different places, which

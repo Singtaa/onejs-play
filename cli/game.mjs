@@ -6,7 +6,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../build/game.mjs"
-import { COMMAND, INSTALL, PACKAGE } from "../build/command.mjs"
+import { BIN, COMMAND, INSTALL, PACKAGE } from "../build/command.mjs"
 import { CART_COMPILER_OPTIONS } from "../build/cart-types.mjs"
 import { writeHostTypes } from "./init.mjs"
 
@@ -154,6 +154,24 @@ export async function build(root, options = {}) {
     }
 }
 
+/**
+ * What `ojplay typecheck` says, once, about a cart that names `CS`: Unity's C#
+ * API is the one door from a cart to its host, allowed, and it means the cart
+ * runs only where C# is (Sai, 14 Oct 2026; Specs/ROOT_CARTS.md §10 in the
+ * OneJS container).
+ */
+export const NAMES_CS = `This cart names CS, Unity's C# API, so it runs only on a Unity host: play.onejs.com's container or a Unity project.`
+
+/** The first of the cart's own source files that names `CS.` in code, or null. */
+export function namesCS(files) {
+    for (const file of files) {
+        if (!/\.(tsx?|jsx?)$/i.test(file.name)) continue
+        const code = file.text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
+        if (/(^|[^\w.$])CS\./.test(code)) return file.name
+    }
+    return null
+}
+
 /** `tsc --noEmit` from the game's own install, with its output passed through. Returns the exit code. */
 export function typecheck(root, { quiet = false } = {}) {
     const bin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc")
@@ -178,5 +196,7 @@ export function typecheck(root, { quiet = false } = {}) {
         files: ["host.d.ts"],
     }, null, 4) + "\n")
     const result = spawnSync(bin, ["-p", config], { cwd: root, stdio: quiet ? "ignore" : "inherit", shell: process.platform === "win32" })
+    const host = namesCS(readTree(root))
+    if (host !== null && !quiet) console.error(`[${BIN}] ${NAMES_CS} (${host})`)
     return result.status ?? 1
 }

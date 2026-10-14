@@ -18,11 +18,13 @@
  */
 import fs from "node:fs"
 import path from "node:path"
+import { spawnSync } from "node:child_process"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 import { download, fetchUsed, pinOf, pinText, shown } from "./carts.mjs"
 import { mine, tokenOf } from "./site.mjs"
-import { cloneCart } from "./login.mjs"
-import { NO_ONEJS, initUnity, npm as runNpm, objectName, oneJSOf, unityProjectOf } from "./unity.mjs"
+import { cloneCart, submoduleCart } from "./login.mjs"
+import { init } from "./init.mjs"
+import { NO_ONEJS, ensureGltfast, initUnity, npm as runNpm, objectName, oneJSOf, rootCartRunner, runsRootCarts, unityProjectOf } from "./unity.mjs"
 import { withCartsPlugin } from "./unity-config.mjs"
 import { placePrefab } from "./unity-scene.mjs"
 
@@ -49,7 +51,11 @@ export function folderName(name, fallback = "Cart") {
  * folder and answers its exit code; tests pass a stand-in.
  */
 export async function addWhole(project, address, { npm = runNpm } = {}) {
-    if (oneJSOf(project) === null) throw new Error(NO_ONEJS)
+    const onejs = oneJSOf(project)
+    if (onejs === null) throw new Error(NO_ONEJS)
+    // A OneJS with cart runners keeps the cart beside Assets; an older one
+    // gets it in Assets/<Name>/~, exactly as before.
+    if (runsRootCarts(onejs)) return addAtRoot(project, address, { npm })
     const pinned = await pinOf(project, address)
     const value = pinText(pinned.version, pinned.commit)
     const bearer = tokenOf(project)
@@ -104,6 +110,100 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
         : placed.made ? `Made ${placed.scene} with ${prefabName} in it${placed.listed ? ", and added it to the build list" : ""}.`
             : `Put ${prefabName} in ${placed.scene}${placed.listed ? ", and added that to the build list" : ""}.`
     return [...said, where, `Next: open ${placed.scene} and press Play.`]
+}
+
+/**
+ * `ojplay add` at the root of a Unity project whose OneJS runs carts from
+ * there (Specs/ROOT_CARTS.md §5.8 in the OneJS container): the cart lands in
+ * `<Name>/` beside Assets, set up as any cart is (ojplay init, npm install),
+ * with nothing of Unity's inside it. Your own cart is a submodule when the
+ * project is a git repository, else a clone; somebody else's is its pinned
+ * build, downloaded, since a submodule pins a commit a force push can remove
+ * (Sai, 14 Oct 2026). Unity's half is Assets/<Name>/: a PanelSettings and a
+ * prefab whose JSRunner links the cart by its oj.json name. OneJS builds it
+ * when the project opens.
+ */
+async function addAtRoot(project, address, { npm }) {
+    const pinned = await pinOf(project, address)
+    const value = pinText(pinned.version, pinned.commit)
+    const bearer = tokenOf(project)
+    const own = bearer ? (await mine(bearer)).carts.find((c) => c.url.toLowerCase().endsWith("/" + pinned.address.toLowerCase())) : undefined
+    const inRepository = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: project, encoding: "utf8" }).stdout?.trim() === "true"
+
+    const scratch = path.join(project, `.ojplay-${process.pid}`)
+    let name, root, kept = null, how = "clone"
+    try {
+        if (own !== undefined) {
+            name = folderName(own.name, pinned.address.split("/")[1])
+            root = path.join(project, name)
+            refuseIfAtRoot(project, name)
+            how = inRepository ? "submodule" : "clone"
+            const code = inRepository ? submoduleCart(own.clone, project, name, { bearer }) : cloneCart(own.clone, root, { bearer, quiet: true })
+            if (code !== 0) throw new Error(`git ${inRepository ? "submodule add" : "clone"} of ${pinned.address} failed (exit ${code}). Check ${COMMAND} login, then run it again.`)
+        } else {
+            kept = await download(project, pinned.address, value, scratch)
+            const manifest = JSON.parse(fs.readFileSync(path.join(scratch, "oj.json"), "utf8"))
+            name = folderName(manifest.name, pinned.address.split("/")[1])
+            root = path.join(project, name)
+            refuseIfAtRoot(project, name)
+            fs.renameSync(scratch, root)
+        }
+    } finally {
+        fs.rmSync(scratch, { recursive: true, force: true })
+    }
+
+    const fetched = await fetchUsed(root)
+    init(root)
+    raiseOwnVersion(root)
+    const code = npm(root, ["install", "--no-audit", "--no-fund"])
+    if (code !== 0) throw new Error(`npm install in ${name}/ failed (exit ${code}); the cart is there. Fix what npm said, then: cd ${name} && npm install`)
+
+    const cartName = readName(root) ?? name
+    const prefabPath = rootCartRunner(project, name, cartName)
+    const gltf = ensureGltfast(project, root)
+
+    const what = own !== undefined
+        ? `Took ${pinned.address}, yours, into ${name}/ as a ${how}: push from there and the site builds it.`
+        : `Took ${shown(kept)} into ${name}/.`
+    const took = what + (fetched.length > 0 ? ` It uses ${fetched.join(", ")}, fetched into ${name}/.oj/carts.` : "")
+    const said = gltf === null ? [took] : [took, gltf]
+    const prefabName = path.basename(prefabPath, ".prefab")
+    const placed = placePrefab(project, prefabPath, prefabName)
+    if (placed === null) return [...said, `Next: drag ${prefabPath} into a scene.`]
+    const where = placed.already ? `${prefabName} is already in ${placed.scene}.`
+        : placed.made ? `Made ${placed.scene} with ${prefabName} in it${placed.listed ? ", and added it to the build list" : ""}.`
+            : `Put ${prefabName} in ${placed.scene}${placed.listed ? ", and added that to the build list" : ""}.`
+    return [...said, where, `Next: open ${placed.scene} and press Play.`]
+}
+
+/** The cart's oj.json name, trimmed, or null: what its runner links by. */
+function readName(root) {
+    try {
+        const name = JSON.parse(fs.readFileSync(path.join(root, "oj.json"), "utf8")).name
+        return typeof name === "string" && name.trim() !== "" ? name.trim() : null
+    } catch {
+        return null
+    }
+}
+
+/**
+ * The cart's ojplay at least this one, which has the build OneJS runs (build
+ * --unity): the scaffold's range may predate it.
+ */
+function raiseOwnVersion(root) {
+    const file = path.join(root, "package.json")
+    const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+    const deps = [pkg.devDependencies, pkg.dependencies].find((d) => d !== undefined && PACKAGE in d) ?? (pkg.devDependencies ??= {})
+    const floor = floorOf(deps[PACKAGE] ?? "")
+    if (floor !== null && below(floor, floorOf(OWN_VERSION)) >= 0) return
+    deps[PACKAGE] = `^${OWN_VERSION}`
+    fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n")
+}
+
+function refuseIfAtRoot(project, name) {
+    for (const there of [name, `Assets/${name}`]) {
+        if (fs.existsSync(path.join(project, there))) throw new Error(`${there} is already there. Move or delete it to take the cart again, or work in it: cd ${name}`)
+    }
 }
 
 function refuseIfThere(project, app) {
