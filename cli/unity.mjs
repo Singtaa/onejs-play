@@ -206,7 +206,7 @@ MonoBehaviour:
  * Only the fields that differ from JSRunner's defaults are written; Unity
  * fills in the rest, so a JSRunner that gains a field needs nothing here.
  */
-function prefab(name, panelGuid) {
+function prefab(name, panelGuid, cart = null) {
     return `%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
 --- !u!1 &1000000000000000000
@@ -241,7 +241,52 @@ MonoBehaviour:
   m_EditorClassIdentifier: OneJS.Runtime::JSRunner
   _panelSettings: {fileID: 11400000, guid: ${panelGuid}, type: 2}
   _defaultThemeStylesheet: {fileID: -4733365628477956816, guid: ${DEFAULT_THEME}, type: 3}
-`
+${cart === null ? "" : `  _cart: ${yamlScalar(cart)}\n`}`
+}
+
+/**
+ * A string as Unity's YAML holds it: bare when it reads back as itself, else
+ * double quoted, which YAML reads with JSON's escapes.
+ */
+export function yamlScalar(text) {
+    return /^[A-Za-z0-9_][A-Za-z0-9 _.()-]*$/.test(text) && !text.endsWith(" ") ? text : JSON.stringify(text)
+}
+
+/**
+ * Whether the installed OneJS runs carts from the project's root: its
+ * JSRunner declares the link by name, `string _cart` (Specs/ROOT_CARTS.md
+ * §5.3 in the OneJS container). Read from the source the project has, so a
+ * project on an older OneJS keeps getting carts in Assets/<Name>/~.
+ */
+export function runsRootCarts(onejs) {
+    try {
+        return /\bstring\s+_cart\b/.test(fs.readFileSync(path.join(onejs, "Runtime", "JSRunner.cs"), "utf8"))
+    } catch {
+        return false
+    }
+}
+
+/**
+ * The Unity half of a cart at the project's root: Assets/<folder>/ with a
+ * PanelSettings, which is only panel settings now, and a prefab whose
+ * JSRunner names the cart by its oj.json name. Stable GUIDs, as initUnity
+ * writes them. Answers the prefab's asset path. Throws when either is there.
+ */
+export function rootCartRunner(project, folder, cartName) {
+    const relative = `Assets/${folder}`
+    if (fs.existsSync(path.join(project, relative))) throw new Error(`${relative} is already there. Move or delete it to take the cart again.`)
+    const panelPath = `${relative}/PanelSettings.asset`
+    const prefabPath = `${relative}/${folder}.prefab`
+    const panelGuid = stableGuid(panelPath)
+    const files = [
+        [panelPath, panelSettings(folder)],
+        [`${panelPath}.meta`, meta(panelGuid, "NativeFormatImporter")],
+        [prefabPath, prefab(folder, panelGuid, cartName)],
+        [`${prefabPath}.meta`, meta(stableGuid(prefabPath), "PrefabImporter")],
+    ]
+    fs.mkdirSync(path.join(project, relative), { recursive: true })
+    for (const [file, text] of files) fs.writeFileSync(path.join(project, file), text)
+    return prefabPath
 }
 
 /**
@@ -324,7 +369,7 @@ function hasModels(root) {
  * glTFast is missing. A version the project already names is the project's
  * choice and stays. Returns what it did, as a line, or null.
  */
-function ensureGltfast(project, root) {
+export function ensureGltfast(project, root) {
     if (!hasModels(root)) return null
     const file = path.join(project, "Packages", "manifest.json")
     if (!fs.existsSync(file)) return null

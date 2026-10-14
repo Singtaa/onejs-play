@@ -547,6 +547,7 @@ ojplay remove @singtaa/lightning   # stop using it; names the files that still i
 ojplay init            # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
 ojplay init --unity    # in Assets/<Name>/~ of a Unity project: a JSRunner project and prefab, installed and built
 ojplay build           # bundle the cart the way the site does; errors as file:line:col
+ojplay build --unity --out <dir>   # for OneJS, a cart at a Unity project's root (--watch, --production)
 ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
 ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
@@ -582,6 +583,23 @@ site would serve into `assets/` before each build, keeping its folders. The
 copies are excluded from git, the site refuses a top-level `assets` folder so
 none of the cart's files can be in the way, and a copy is removed once its file
 leaves the cart (only a copy the plugin wrote, never a file put there by hand).
+
+**A cart at a Unity project's root needs nothing of Unity's inside it.** With a
+OneJS whose JSRunner links carts by name, `ojplay add @handle/name` at a Unity
+project's root puts the cart in `<Name>/` beside `Assets` (a submodule when the
+project is a git repository and the cart is yours, its pinned build when it is
+somebody else's), sets it up as any cart is set up (`ojplay init`, then `npm
+install`), and writes `Assets/<Name>/` with a PanelSettings and a prefab whose
+JSRunner names the cart. With an older OneJS it takes the cart into
+`Assets/<Name>/~` as above. OneJS builds the cart with `ojplay build --unity
+--out <dir>`, which writes `app.js.map.txt`, `app.sl.json` and `files.json`,
+then `app.js.txt` last, and nothing inside the cart: the cart builds by the
+site's rules from its own `node_modules`, and a prologue tells oj and the
+loaders where its files are (the cart's folder in the editor, used carts under
+`.oj/carts`; `StreamingAssets/onejs/carts/<folder>` in a player). The contract
+is `Specs/ROOT_CARTS.md` §5.4a in the OneJS container, and changes there first.
+`ojplay typecheck` says once when a cart names `CS`, Unity's C# API: such a cart
+runs only on a Unity host.
 
 **`ojplay run` runs what ships.** It fetches the container the site serves at
 `/runtime/<version>/` (the pin from `/api/version`, or `--runtime`) into

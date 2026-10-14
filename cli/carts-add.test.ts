@@ -531,3 +531,130 @@ describe("ojplay add at a Unity project's root", () => {
         await expect(add(path.join(project, "Assets", "Art"), "@singtaa/portal", { npm })).rejects.toThrow(`Run ${COMMAND} add at the Unity project's root, where Assets and ProjectSettings are`)
     })
 })
+
+// Specs/ROOT_CARTS.md §5.8 in the OneJS container: with a OneJS whose
+// JSRunner links carts by name, the cart lands beside Assets, set up as any
+// cart is, and Unity's half is a PanelSettings and a prefab in Assets/<Name>.
+describe("ojplay add at the root of a Unity project whose OneJS runs root carts", () => {
+    const EMPTY_BUILD_LIST = "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!1045 &1\nEditorBuildSettings:\n  m_ObjectHideFlags: 0\n  serializedVersion: 2\n  m_Scenes: []\n  m_configObjects: {}\n"
+    const OWN = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
+
+    /** A Unity project with OneJS in the package cache; `runner` is its JSRunner.cs. */
+    function project(runner: string | null = "    [SerializeField] string _cart;\n"): string {
+        const root = folder("Game", {
+            "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n",
+            "ProjectSettings/EditorBuildSettings.asset": EMPTY_BUILD_LIST,
+            "Assets/.keep": "",
+        })
+        const onejs = path.join(root, "Library", "PackageCache", "com.singtaa.onejs@abc123")
+        fs.mkdirSync(path.join(onejs, "Editor", "Templates"), { recursive: true })
+        fs.writeFileSync(path.join(onejs, "package.json"), JSON.stringify({ name: "com.singtaa.onejs" }))
+        for (const t of ["package.json.txt", "tsconfig.json.txt", "esbuild.config.mjs.txt", "index.tsx.txt", "global.d.ts.txt", "main.uss.txt", "gitignore.txt", "AGENTS.md.txt"]) {
+            fs.writeFileSync(path.join(onejs, "Editor", "Templates", t), t === "package.json.txt" ? JSON.stringify({ name: "onejs-app", dependencies: { "ojplay": "^0.10.0" } })
+                : t === "esbuild.config.mjs.txt" ? "const config = {\n    entryPoints: [\"index.tsx\"],\n    plugins: [\n    ],\n}\n" : "")
+        }
+        if (runner !== null) {
+            fs.mkdirSync(path.join(onejs, "Runtime"))
+            fs.writeFileSync(path.join(onejs, "Runtime", "JSRunner.cs"), `public class JSRunner {\n${runner}}\n`)
+        }
+        return root
+    }
+    const npmCalls: string[] = []
+    const npm = (dir: string, args: string[]) => { npmCalls.push(`${path.basename(dir)}: npm ${args.join(" ")}`); return 0 }
+
+    it("takes somebody else's cart into <Name>/ beside Assets, with nothing of Unity's inside it", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const root = project()
+        npmCalls.length = 0
+        expect(await add(root, "@singtaa/portal", { npm })).toEqual([
+            "Took @singtaa/portal (1 Oct) into portal/.",
+            "Made Assets/Scenes/Main.unity with portal in it, and added it to the build list.",
+            "Next: open Assets/Scenes/Main.unity and press Play.",
+        ])
+        const cart = path.join(root, "portal")
+        expect(read(cart, "main.tsx")).toContain("portal two")
+        // ojplay init's files, as on any machine, and none of OneJS's.
+        expect(json(cart, "package.json").devDependencies[PACKAGE]).toBe(`^${OWN}`)
+        for (const file of ["tsconfig.json", "env.d.ts", ".gitignore"]) expect(exists(cart, file)).toBe(true)
+        for (const file of ["esbuild.config.mjs", "AGENTS.md", "types", "styles", "assets", ".onejs"]) expect(exists(cart, file)).toBe(false)
+        expect(npmCalls).toEqual(["portal: npm install --no-audit --no-fund"])
+        expect(exists(root, "Assets/portal/~")).toBe(false)
+        expect(exists(root, "Assets/portal/PanelSettings.asset")).toBe(true)
+        const prefab = read(root, "Assets/portal/portal.prefab")
+        expect(prefab).toContain("  _cart: portal\n")
+        expect(prefab).toMatch(/ {2}_panelSettings: \{fileID: 11400000, guid: [0-9a-f]{32}, type: 2\}\n/)
+        expect(read(root, "Assets/Scenes/Main.unity")).toContain("      value: portal\n")
+        // Nothing left from the fetch.
+        expect(fs.readdirSync(root).filter((n) => n.startsWith(".ojplay"))).toEqual([])
+    })
+
+    it("links the runner by the cart's oj.json name, quoted when YAML would read it otherwise", async () => {
+        const commit = COMMIT("e")
+        carts = { "@singtaa/storm": { versions: {}, live: commit, builds: { [commit]: { files: {
+            "oj.json": JSON.stringify({ name: "Storm: Chaser #2", entry: "index.tsx" }),
+            "index.tsx": "import { mount, View } from \"oj\"\nmount(<View />)\n",
+        } } } } }
+        const root = project()
+        await add(root, "@singtaa/storm", { npm })
+        expect(read(root, "Assets/StormChaser2/StormChaser2.prefab")).toContain(`  _cart: "Storm: Chaser #2"\n`)
+        expect(exists(root, "StormChaser2/oj.json")).toBe(true)
+    })
+
+    it("takes your own cart as a submodule when the project is a git repository", async () => {
+        const home = path.join(path.dirname(folder("unused")), "git")
+        fs.mkdirSync(home, { recursive: true })
+        const gitEnv = { ...process.env, HOME: home, GIT_CONFIG_GLOBAL: path.join(home, "gitconfig"), GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" }
+        fs.writeFileSync(gitEnv.GIT_CONFIG_GLOBAL, "[protocol \"file\"]\n\tallow = always\n")
+        const work = path.join(home, "work"), bare = path.join(home, "storm.git")
+        fs.mkdirSync(work)
+        fs.writeFileSync(path.join(work, "index.tsx"), "import { mount, View } from \"oj\"\nmount(<View />)\n")
+        fs.writeFileSync(path.join(work, "oj.json"), JSON.stringify({ name: "Storm Chaser", entry: "index.tsx" }))
+        for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "first"], ["clone", "-q", "--bare", work, bare]]) {
+            expect(spawnSync("git", args, { cwd: work, env: gitEnv }).status).toBe(0)
+        }
+        carts = { "@singtaa/storm": { versions: {}, live: COMMIT("d"), builds: { [COMMIT("d")]: { files: { "oj.json": "{}" } } } } }
+        mineList = [{ sid: "storm1234567", name: "Storm Chaser", public: false, url: `${origin}/@singtaa/storm`, clone: bare }]
+        const root = project()
+        expect(spawnSync("git", ["init", "-q", "-b", "main"], { cwd: root, env: gitEnv }).status).toBe(0)
+        process.env.OJ_TOKEN = "the-owner"
+        const saved = process.env.GIT_CONFIG_GLOBAL
+        process.env.GIT_CONFIG_GLOBAL = gitEnv.GIT_CONFIG_GLOBAL
+        try {
+            expect(await add(root, "@singtaa/storm", { npm })).toEqual([
+                "Took @singtaa/storm, yours, into StormChaser/ as a submodule: push from there and the site builds it.",
+                "Made Assets/Scenes/Main.unity with StormChaser in it, and added it to the build list.",
+                "Next: open Assets/Scenes/Main.unity and press Play.",
+            ])
+        } finally {
+            if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL
+            else process.env.GIT_CONFIG_GLOBAL = saved
+        }
+        const cart = path.join(root, "StormChaser")
+        expect(read(root, ".gitmodules")).toContain("path = StormChaser")
+        expect(spawnSync("git", ["remote", "get-url", "origin"], { cwd: cart, encoding: "utf8", env: gitEnv }).stdout.trim()).toBe(bare)
+        // ojplay init's files stay out of the cart's git status; the token stays out of its config.
+        expect(spawnSync("git", ["status", "--porcelain"], { cwd: cart, encoding: "utf8", env: gitEnv }).stdout).toBe("")
+        expect(spawnSync("git", ["config", "--list"], { cwd: cart, encoding: "utf8", env: gitEnv }).stdout).not.toContain("the-owner")
+        expect(read(root, "Assets/StormChaser/StormChaser.prefab")).toContain("  _cart: Storm Chaser\n")
+    })
+
+    it("refuses to land on a folder already there, at the root or in Assets", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const root = project()
+        fs.mkdirSync(path.join(root, "portal"))
+        await expect(add(root, "@singtaa/portal", { npm })).rejects.toThrow("portal is already there.")
+        fs.rmSync(path.join(root, "portal"), { recursive: true })
+        fs.mkdirSync(path.join(root, "Assets", "portal"))
+        await expect(add(root, "@singtaa/portal", { npm })).rejects.toThrow("Assets/portal is already there.")
+        expect(exists(root, "portal")).toBe(false)
+    })
+
+    it("takes the cart into Assets/<Name>/~ as before when the installed OneJS has no cart runners", async () => {
+        carts = { "@singtaa/portal": portal() }
+        const root = project("    [SerializeField] PanelSettings _panelSettings;\n")
+        expect((await add(root, "@singtaa/portal", { npm }))[0]).toBe("Took @singtaa/portal (1 Oct) into Assets/portal/~.")
+        expect(exists(root, "Assets/portal/~/esbuild.config.mjs")).toBe(true)
+        expect(read(root, "Assets/portal/portal.prefab")).not.toContain("_cart")
+        expect(exists(root, "portal")).toBe(false)
+    })
+})

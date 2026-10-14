@@ -106,10 +106,29 @@ export function helperFor(files) {
 export function cloneCart(url, dir, { bearer, quiet = false } = {}) {
     const code = git(["clone", ...(quiet ? ["-q"] : []), url, dir], { bearer })
     if (code !== 0) return code
+    pointAtLogin(dir)
+    return 0
+}
+
+/**
+ * The same, as a submodule of the git repository `project` is in, at
+ * `folder` inside it: how a cart lands at a Unity project's root when the
+ * project is itself a repository (Sai: "submodules always worked well for
+ * me"). The token stays out of .gitmodules and the submodule's config, as it
+ * does for a clone.
+ */
+export function submoduleCart(url, project, folder, { bearer } = {}) {
+    const code = git(["-C", project, "submodule", "--quiet", "add", url, folder], { bearer })
+    if (code !== 0) return code
+    pointAtLogin(path.join(project, folder))
+    return 0
+}
+
+/** Points the clone at `dir` at this machine's login for the site, never storing the token itself. */
+function pointAtLogin(dir) {
     const key = `credential.${siteOrigin()}.helper`
     spawnSync("git", ["-C", dir, "config", "--replace-all", key, ""], { encoding: "utf8" })
     spawnSync("git", ["-C", dir, "config", "--add", key, helperFor(tokenPaths(dir))], { encoding: "utf8" })
-    return 0
 }
 
 /**
