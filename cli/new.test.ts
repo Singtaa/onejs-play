@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { firstPush, newCart, starterFiles } from "./new.mjs"
 import { starterWithName } from "../build/starter.mjs"
 import { COMMAND } from "../build/command.mjs"
@@ -27,6 +28,9 @@ const created: Array<{ body: any, auth?: string }> = []
 
 const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8" })
 const bare = () => path.join(dir, "c", `${SID}.git`)
+// The clone URL the stand-in answers with: a file URL, so it ends in /c/<sid>.git
+// on Windows too, as the site's https one does.
+const cloneUrl = () => pathToFileURL(bare()).href
 const mainOf = (repo: string) => { const r = git(repo, "rev-parse", "--verify", "-q", "refs/heads/main"); return r.status === 0 ? r.stdout.trim() : null }
 
 beforeEach(async () => {
@@ -43,7 +47,7 @@ beforeEach(async () => {
         if (req.method === "POST" && req.url === "/api/games") {
             created.push({ body: JSON.parse(text), auth: req.headers.authorization })
             if (taken) return send(409, { error: "You already have a cart called \"Pop Rocks\".", name: "Pop Rocks", sid: "bbbbbbbbbbbb", url: "/@owner/pop-rocks" })
-            return send(200, { sid: SID, url: "/@owner/pop-rocks", clone: bare() })
+            return send(200, { sid: SID, url: "/@owner/pop-rocks", clone: cloneUrl() })
         }
         if (req.url === `/api/games/${SID}`) {
             const head = mainOf(bare())
@@ -153,7 +157,7 @@ describe("the first ojplay push makes the cart on the site", () => {
         expect(said.at(-1)).toBe(`live: ${mainOf(cart)!.slice(0, 7)} at ${site}/@owner/pop-rocks`)
         expect(mainOf(bare())).toBe(mainOf(cart))
         expect(git(bare(), "log", "--format=%s", "main").stdout.trim().split("\n")).toEqual(["Faster dot", "New cart"])
-        expect(git(cart, "remote", "get-url", "origin").stdout.trim()).toBe(bare())
+        expect(git(cart, "remote", "get-url", "origin").stdout.trim()).toBe(cloneUrl())
         expect(git(cart, "rev-parse", "--abbrev-ref", "main@{upstream}").stdout.trim()).toBe("origin/main")
         // git pull and push work there without ojplay, from the login, never a stored token.
         expect(git(cart, "config", "--local", "--get-all", `credential.${site}.helper`).stdout).toContain("OJ_TOKEN")
