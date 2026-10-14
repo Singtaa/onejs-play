@@ -76,6 +76,9 @@ export async function sidOf(root, bearer) {
     const sid = sidFromRemote(remote)
     if (sid !== null) return sid
     const address = addressFromRemote(remote)
+    if (address === null && remote === "" && fs.existsSync(path.join(root, "oj.json"))) {
+        throw new Error(`This cart is not on ${siteOrigin()} yet: ${COMMAND} push puts it there.`)
+    }
     if (address === null) {
         throw new Error("This folder is not a clone of a cart on " + siteOrigin() + ". Pass --sid, or clone one first.")
     }
@@ -110,7 +113,7 @@ export async function status(sid, { bearer } = {}) {
 export function describeStatus(s) {
     const short = (sha) => String(sha).slice(0, 7)
     const lines = [`${s.url} (${s.public ? "public" : "private"})`]
-    if (!s.live) lines.push("live: nothing yet")
+    if (!s.live) lines.push(s.head ? "live: nothing yet" : `live: nothing yet; nothing pushed yet, ${COMMAND} push sends main`)
     else lines.push(s.head === s.live ? `live: ${short(s.live)}, the tip of main` : `live: ${short(s.live)}`)
     if (s.head && s.head !== s.live) {
         if (s.buildError) {
@@ -167,18 +170,6 @@ export async function version() {
     return json(response)
 }
 
-/** POST /api/games: a new game from the starter, answered with its sid and clone URL. */
-export async function create(name, bearer) {
-    const response = await fetch(`${siteOrigin()}/api/games`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-    })
-    const body = await json(response)
-    if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
-    return body
-}
-
 /**
  * The git options that supply the token through a one-shot credential helper.
  *
@@ -220,8 +211,8 @@ export function cloneSource(what, into) {
     throw new Error(`${COMMAND} clone takes a cart's @handle/name, its sid or its clone URL, not "${text}"`)
 }
 
-/** Where `ojplay new` clones to: the name as a folder, made safe. */
-export function folderFor(name) {
+/** Where `ojplay new` makes a cart: the name as a folder under `parent`, made safe. */
+export function folderFor(name, parent = process.cwd()) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    return path.resolve(slug === "" ? "cart" : slug)
+    return path.resolve(parent, slug === "" ? "cart" : slug)
 }

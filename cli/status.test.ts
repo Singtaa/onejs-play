@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { describe, it, expect } from "vitest"
 import { describePush, describeStatus, uncommitted } from "./site.mjs"
+import { COMMAND } from "../build/command.mjs"
 
 /**
  * `ojplay status` printed the site's raw JSON. It now says it in sentences, and
@@ -31,6 +32,10 @@ describe("ojplay status, read aloud", () => {
     it("says when a newer tip is still building, and when nothing has built yet", () => {
         expect(describeStatus({ ...base, head: "4b1c0de111", live: "3f2a91c0aa", buildError: null })[2]).toBe("tip of main: 4b1c0de is still building")
         expect(describeStatus({ ...base, head: "4b1c0de111", live: null, buildError: null })[1]).toBe("live: nothing yet")
+    })
+
+    it("says when nothing was ever pushed: a cart made empty for a first push from ojplay new", () => {
+        expect(describeStatus({ ...base, head: null, live: null, buildError: null })[1]).toBe(`live: nothing yet; nothing pushed yet, ${COMMAND} push sends main`)
     })
 })
 

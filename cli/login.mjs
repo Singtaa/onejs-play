@@ -125,7 +125,7 @@ export function submoduleCart(url, project, folder, { bearer } = {}) {
 }
 
 /** Points the clone at `dir` at this machine's login for the site, never storing the token itself. */
-function pointAtLogin(dir) {
+export function pointAtLogin(dir) {
     const key = `credential.${siteOrigin()}.helper`
     spawnSync("git", ["-C", dir, "config", "--replace-all", key, ""], { encoding: "utf8" })
     spawnSync("git", ["-C", dir, "config", "--add", key, helperFor(tokenPaths(dir))], { encoding: "utf8" })

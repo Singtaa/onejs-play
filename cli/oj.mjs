@@ -12,8 +12,9 @@
  *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
  *   ojplay status           what the site is running: head, live, and why they differ
  *   ojplay list             every cart on the account, private ones included
- *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed
- *   ojplay new <name>       create a cart on the site and clone it here
+ *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed;
+ *                           the first push of a cart made here makes it on the site
+ *   ojplay new <name>       start a cart on this machine: the starter in a new git repository
  *   ojplay clone <address>  clone a cart so that git pull and push work in it with OJ_TOKEN or a login
  *   ojplay login            print a link; once the person presses Allow, this machine can push
  *   ojplay logout           forget that login, here and on the site
@@ -24,8 +25,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { cloneSource, create, describePush, describeStatus, folderFor, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
+import { cloneSource, describePush, describeStatus, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
 import { cloneCart, login, logout } from "./login.mjs"
+import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
@@ -77,8 +79,11 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
   push                  git push origin main; exits 1 if the tip failed to build, or if
-                          nothing was pushed because the changes are not committed
-  new <name>            create a cart on the site and clone it into ./<name>
+                          nothing was pushed because the changes are not committed. The
+                          first push of a cart made with new makes it on the site, private,
+                          after a login if there is none
+  new <name>            start a cart in ./<name>: the starter, a git repository and init's
+                          tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
                           work in it with OJ_TOKEN set or after login, and no token is stored
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
@@ -301,6 +306,8 @@ async function main() {
             return 0
         }
         case "push": {
+            const first = await firstPush(root, { say })
+            if (first !== null) return first
             const bearer = token(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const left = uncommitted(root)
@@ -311,18 +318,8 @@ async function main() {
             for (const line of said.lines) say(line)
             return said.code
         }
-        case "new": {
-            const name = args.join(" ").trim()
-            if (!name) throw new Error(`${COMMAND} new <name>`)
-            const bearer = token(root)
-            const made = await create(name, bearer)
-            const dir = folderFor(name)
-            say(`created ${made.sid} at ${siteOrigin()}${made.url}`)
-            const code = cloneCart(made.clone, dir, { bearer })
-            if (code !== 0) return code
-            say(`cloned into ${dir}`)
-            return 0
-        }
+        case "new":
+            return newCart(root, args.join(" ").trim(), { say })
         case "clone": {
             const { url, dir } = cloneSource(args[0], args[1])
             const bearer = tokenOf(root)
