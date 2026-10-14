@@ -52,7 +52,7 @@ function cartOfFile(root, file) {
 }
 
 /** Every file a used cart ships that the site would serve, relative to its folder. */
-function servable(dir, prefix = "") {
+export function servable(dir, prefix = "") {
     const out = []
     for (const entry of fs.readdirSync(path.join(dir, prefix), { withFileTypes: true })) {
         if (entry.name.startsWith(".") || entry.name === "node_modules") continue
@@ -132,8 +132,12 @@ export function readOnlyNotice(root) {
  * (failing in one line naming the cart and the command, when offline),
  * reads the used carts, and copies their files into assets/; then it
  * resolves their imports as the site's builder does.
+ *
+ * `copyAssets: false` leaves assets/ alone: a cart at a Unity project's root
+ * reads its used carts' files where they sit (cli/unity-build.mjs), and
+ * nothing is written inside it.
  */
-export function cartsPlugin() {
+export function cartsPlugin({ copyAssets = true } = {}) {
     return {
         name: "ojplay-carts",
         setup(build) {
@@ -153,7 +157,7 @@ export function cartsPlugin() {
                 try {
                     await fetchUsed(root, manifest, { again: "build again" })
                     carts = readUsedCarts(root, manifest)
-                    const { copied, removed } = syncCartAssets(root, Object.keys(carts.carts))
+                    const { copied, removed } = copyAssets ? syncCartAssets(root, Object.keys(carts.carts)) : { copied: [], removed: [] }
                     if (copied.length + removed.length > 0) {
                         console.log(`[${BIN}] assets/: ${[...copied.map((k) => `+${k}/`), ...removed.map((k) => `-${k}/`)].join(" ")}`)
                     }

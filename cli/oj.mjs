@@ -31,6 +31,7 @@ import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
 import { initUnity, npm } from "./unity.mjs"
+import { buildUnity, UsageError } from "./unity-build.mjs"
 import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
 import { handOff, updateNotice } from "./global.mjs"
 import { BIN, COMMAND, PACKAGE } from "../build/command.mjs"
@@ -52,6 +53,10 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           --unity         in a clone at Assets/<Name>/~ of a Unity project with OneJS:
                                           make it a JSRunner project, install and build it
   build                 bundle the cart as the site does, to .oj/bundle.js (--out <file>)
+                          --unity --out <dir>  for OneJS, when the cart is at a Unity project's
+                                          root: app.js.txt, its map, app.sl.json and files.json
+                                          in <dir> (--watch rebuilds on save; --production
+                                          for a player)
   typecheck             tsc --noEmit
   run                   run the cart in the site's container in a local Chrome; exits 1 on a
                           console error
@@ -154,6 +159,20 @@ async function main() {
             return 0
         }
         case "build": {
+            if (flags.unity === true) {
+                try {
+                    return await buildUnity(root, {
+                        out: typeof flags.out === "string" ? flags.out : undefined,
+                        production: flags.production === true,
+                        watch: flags.watch === true,
+                    })
+                } catch (error) {
+                    if (!(error instanceof UsageError)) throw error
+                    console.error(`[${BIN}] ${error.message}`)
+                    return 2
+                }
+            }
+            if (flags.production === true) throw new Error(`--production goes with build --unity, for a player.`)
             const built = await build(root)
             const out = path.resolve(root, flags.out ? String(flags.out) : ".oj/bundle.js")
             fs.mkdirSync(path.dirname(out), { recursive: true })

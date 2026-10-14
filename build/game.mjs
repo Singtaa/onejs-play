@@ -138,6 +138,16 @@ export const audio = { ...oj.audio, load: (name) => oj.audio.load(scope(name)) }
 `
 }
 
+/**
+ * What a cart is told when it imports a package the platform does not
+ * provide. One sentence for every builder: the site's, and the Unity target's
+ * (cli/unity-build.mjs), so a cart refused in one is refused in the same words
+ * in the other.
+ */
+export function notAvailable(specifier, externals = EXTERNALS) {
+    return `"${specifier}" is not available here. A game may import only its own files, plus ${externals.filter((e) => !e.includes("/")).join(", ")}.`
+}
+
 /** Resolves "." and ".." inside a POSIX path, so a relative import cannot escape. */
 export function normalize(path) {
     const out = []
@@ -292,7 +302,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                 // the platform does not provide, and saying so beats a build
                 // that silently omits it.
                 if (!args.path.startsWith(".")) {
-                    return { errors: [{ text: `"${args.path}" is not available here. A game may import only its own files, plus ${externals.filter((e) => !e.includes("/")).join(", ")}.` }] }
+                    return { errors: [{ text: notAvailable(args.path, externals) }] }
                 }
                 // The base arrives however esbuild chose to express it. With a
                 // non-"/" absWorkingDir it rejoins our virtual resolveDir onto

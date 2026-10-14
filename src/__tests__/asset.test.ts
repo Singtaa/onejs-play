@@ -98,6 +98,27 @@ describe("assetUrl", () => {
         })
     })
 
+    describe("a cart at a Unity project's root (Specs/ROOT_CARTS.md 5.4a)", () => {
+        it("reads a used cart's files from .oj/carts in the editor, its own files where they sit", () => {
+            globals.CS = unityHost({ editor: true })
+            setAssetBase("/Project/Lightning", { usedCarts: ".oj/carts" })
+            expect(assetUrl("glow.png")).toBe("/Project/Lightning/glow.png")
+            expect(assetUrl("@singtaa/bolt@1.2.0/spark.png")).toBe("/Project/Lightning/.oj/carts/@singtaa/bolt@1.2.0/spark.png")
+        })
+
+        it("reads a used cart's files straight under the base when no folder is named, as on the site", () => {
+            setAssetBase("https://abc123.onejsusercontent.com/assets")
+            expect(assetUrl("@singtaa/bolt@1.2.0/spark.png")).toBe("https://abc123.onejsusercontent.com/assets/@singtaa/bolt@1.2.0/spark.png")
+        })
+
+        it("forgets the used carts folder when the base is cleared", () => {
+            setAssetBase("/Project/Lightning", { usedCarts: ".oj/carts" })
+            setAssetBase(null)
+            setAssetBase("https://abc123.onejsusercontent.com/assets")
+            expect(assetUrl("@singtaa/bolt@1.2.0/spark.png")).toBe("https://abc123.onejsusercontent.com/assets/@singtaa/bolt@1.2.0/spark.png")
+        })
+    })
+
     describe("things that already resolve", () => {
         it("passes a remote URL through untouched", () => {
             setAssetBase("https://abc123.onejsusercontent.com/assets")
