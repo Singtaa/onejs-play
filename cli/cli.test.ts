@@ -590,6 +590,8 @@ describe("a clone made into a JSRunner project", () => {
         const folder = path.join(project, "Assets", "Tinder")
         const panelGuid = /guid: ([0-9a-f]{32})/.exec(fs.readFileSync(path.join(folder, "PanelSettings.asset.meta"), "utf8"))![1]
         expect(panelGuid).toBe(stableGuid("Assets/Tinder/PanelSettings.asset"))
+        // Named after its file, or Unity warns on every import that the two differ.
+        expect(fs.readFileSync(path.join(folder, "PanelSettings.asset"), "utf8")).toContain("\n  m_Name: PanelSettings\n")
         const prefab = fs.readFileSync(path.join(folder, "Tinder.prefab"), "utf8")
         expect(prefab).toContain(`_panelSettings: {fileID: 11400000, guid: ${panelGuid}, type: 2}`)
         expect(prefab).toContain("m_Script: {fileID: 11500000, guid: 35e89416e424048d08fdc44af24ad1b8, type: 3}")

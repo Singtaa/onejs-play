@@ -204,7 +204,12 @@ export function objectName(name, fallback = "Cart") {
 export const meta = (guid, importer) => `fileFormatVersion: 2\nguid: ${guid}\n${importer}:\n  externalObjects: {}\n${
     importer === "NativeFormatImporter" ? "  mainObjectFileID: 11400000\n" : ""}  userData: \n  assetBundleName: \n  assetBundleVariant: \n`
 
-function panelSettings(name) {
+/**
+ * A PanelSettings asset. Named PanelSettings, after its file, as Unity names
+ * the main object of an asset it creates: named after the folder, every import
+ * warned "Main Object Name 'Tinder' does not match filename 'PanelSettings'".
+ */
+function panelSettings() {
     return `%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
 --- !u!114 &11400000
@@ -217,7 +222,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 19101, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ${name}
+  m_Name: PanelSettings
   m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.PanelSettings
   themeUss: {fileID: -4733365628477956816, guid: ${DEFAULT_THEME}, type: 3}
   m_ScaleMode: 0
@@ -306,7 +311,7 @@ export function rootCartRunner(project, folder, cartName) {
     const prefabPath = `${relative}/${folder}.prefab`
     const panelGuid = stableGuid(panelPath)
     const files = [
-        [panelPath, panelSettings(folder)],
+        [panelPath, panelSettings()],
         [`${panelPath}.meta`, meta(panelGuid, "NativeFormatImporter")],
         [prefabPath, prefab(folder, panelGuid, cartName)],
         [`${prefabPath}.meta`, meta(stableGuid(prefabPath), "PrefabImporter")],
@@ -353,7 +358,7 @@ export function initUnity(root) {
     const panelPath = `${relative}/PanelSettings.asset`
     const prefabPath = `${relative}/${name}.prefab`
     const panelGuid = stableGuid(panelPath)
-    put(path.join(project, panelPath), panelPath, panelSettings(name))
+    put(path.join(project, panelPath), panelPath, panelSettings())
     put(path.join(project, `${panelPath}.meta`), `${panelPath}.meta`, meta(panelGuid, "NativeFormatImporter"))
     put(path.join(project, prefabPath), prefabPath, prefab(name, panelGuid))
     put(path.join(project, `${prefabPath}.meta`), `${prefabPath}.meta`, meta(stableGuid(prefabPath), "PrefabImporter"))
