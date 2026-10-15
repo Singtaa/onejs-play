@@ -32,7 +32,7 @@ import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
-import { initUnity, npm } from "./unity.mjs"
+import { initUnity, npm, undoUnity } from "./unity.mjs"
 import { buildUnity, UsageError } from "./unity-build.mjs"
 import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
 import { handOff, updateNotice } from "./global.mjs"
@@ -54,6 +54,9 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           or .git/info/exclude in a clone); run npm install after
                           --unity         in a clone at Assets/<Name>/~ of a Unity project with OneJS:
                                           make it a JSRunner project, install and build it
+                          --from-unity    in a cart moved from Assets/<Name>/~ to a Unity project's
+                                          root: take out what --unity put in it (a file changed
+                                          since is left and listed), then init
   build                 bundle the cart as the site does, to .oj/bundle.js (--out <file>)
                           --unity --out <dir>  for OneJS, when the cart is at a Unity project's
                                           root: app.js.txt, its map, app.sl.json and files.json
@@ -133,6 +136,16 @@ async function main() {
 
     switch (command) {
         case "init": {
+            if (flags.unity && flags["from-unity"]) throw new Error("--unity makes a cart a JSRunner project in Assets/<Name>/~ and --from-unity undoes that at the project root: one or the other.")
+            if (flags["from-unity"]) {
+                const undone = undoUnity(root)
+                for (const line of undone.lines) say(line)
+                for (const line of init(root)) say(line)
+                syncTypes(root)
+                if (undone.left.length > 0) say(`left, because they are not what init --unity wrote: ${undone.left.join(", ")}`)
+                say("now: npm install")
+                return 0
+            }
             if (flags.unity) {
                 const made = initUnity(root)
                 say(`OneJS templates from ${made.onejs}`)

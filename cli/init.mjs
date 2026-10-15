@@ -56,17 +56,50 @@ export function ignoreLocally(root, wanted) {
     const excludes = excludeFile(root)
     const ignore = excludes ?? path.join(root, ".gitignore")
     const shown = path.relative(root, ignore).split(path.sep).join("/")
-    // Lines are compared with their line endings stripped: a Windows checkout
-    // or a Windows-authored .gitignore is CRLF, and comparing raw lines there
-    // matched nothing and appended every entry twice.
-    const linesOf = (text) => text.split(/\r?\n/).map((l) => l.trim())
     const have = fs.existsSync(ignore) ? fs.readFileSync(ignore, "utf8") : ""
-    const present = new Set(linesOf(have))
-    const missing = linesOf(wanted).filter((l) => l !== "" && !l.startsWith("#") && !present.has(l))
+    const { text, missing } = withRules(have, wanted)
     if (missing.length === 0) return `${shown}: already covers the tooling`
     if (excludes !== null) fs.mkdirSync(path.dirname(excludes), { recursive: true })
-    fs.writeFileSync(ignore, (have === "" ? wanted : have.replace(/\n?$/, "\n") + missing.join("\n") + "\n"))
+    fs.writeFileSync(ignore, text)
     return `${shown}: ${have === "" ? "written" : "added " + missing.join(", ")}`
+}
+
+/**
+ * Lines are compared with their line endings stripped: a Windows checkout or a
+ * Windows-authored .gitignore is CRLF, and comparing raw lines there matched
+ * nothing and appended every entry twice.
+ */
+const linesOf = (text) => text.split(/\r?\n/).map((l) => l.trim())
+
+/**
+ * An ignore file's text with `wanted`'s rules in it, and the rules it lacked.
+ * Text in, text out, so `ojplay init --from-unity` can tell what ignoreLocally
+ * would have made of a template without writing anything.
+ */
+export function withRules(have, wanted) {
+    const present = new Set(linesOf(have))
+    const missing = linesOf(wanted).filter((l) => l !== "" && !l.startsWith("#") && !present.has(l))
+    if (missing.length === 0) return { text: have, missing }
+    return { text: have === "" ? wanted : have.replace(/\n?$/, "\n") + missing.join("\n") + "\n", missing }
+}
+
+/**
+ * Takes `rules` back out of the repository's info/exclude, the opposite of
+ * ignoreLocally, for the rules `init --unity` added. Only info/exclude: a
+ * .gitignore is a file of the cart's, and whether to keep it is decided by
+ * comparing it with what was written. Returns the line to report, or null
+ * when there was nothing to take out.
+ */
+export function unignoreLocally(root, rules) {
+    const excludes = excludeFile(root)
+    if (excludes === null || !fs.existsSync(excludes)) return null
+    const drop = new Set(rules)
+    const have = fs.readFileSync(excludes, "utf8")
+    const lines = have.split(/\r?\n/)
+    const removed = lines.filter((l) => drop.has(l.trim())).map((l) => l.trim())
+    if (removed.length === 0) return null
+    fs.writeFileSync(excludes, lines.filter((l) => !drop.has(l.trim())).join(have.includes("\r\n") ? "\r\n" : "\n"))
+    return `${path.relative(root, excludes).split(path.sep).join("/")}: took out ${removed.join(", ")}`
 }
 
 /**

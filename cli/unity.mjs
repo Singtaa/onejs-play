@@ -25,10 +25,11 @@ import fs from "node:fs"
 import path from "node:path"
 import crypto from "node:crypto"
 import { spawnSync } from "node:child_process"
-import { ignoreLocally, packageName } from "./init.mjs"
+import { ignoreLocally, packageName, unignoreLocally, withRules } from "./init.mjs"
 import { entryOf, manifestOf, readTree } from "./game.mjs"
 import { buildConfig } from "./unity-config.mjs"
 import { FORMER_PACKAGE, PACKAGE } from "../build/command.mjs"
+import { RESERVED_ASSET_FOLDER } from "./assets.mjs"
 
 /**
  * JSRunner's default files: the OneJS template, and where it lands in the
@@ -54,6 +55,31 @@ export const TEMPLATE_MAPPING = [
  * own output folder, and the copies of the cart's files in `assets/`.
  */
 const GROWN = ["node_modules", "package-lock.json", ".onejs", ".oj", "*.sl.d.ts", "*.module.uss.d.ts", "/assets/"]
+
+/** The scaffold's paths in the working directory: the cart brings its own entry, so not index.tsx. */
+const SCAFFOLD = TEMPLATE_MAPPING.map(([, target]) => target).filter((t) => t !== "index.tsx")
+
+/** What init --unity puts in the clone's info/exclude, and init --from-unity takes back out. */
+const IGNORED = [...SCAFFOLD, ...GROWN]
+
+/**
+ * The scaffold files init --unity writes into the clone at `root`, as
+ * [path, text], from the templates of the OneJS at `onejs`. One function for
+ * both directions, so what --from-unity recognises is what --unity writes.
+ */
+export function scaffoldFiles(root, onejs) {
+    const files = readTree(root)
+    const entry = entryOf(files, manifestOf(files))
+    const templates = path.join(onejs, "Editor", "Templates")
+    return TEMPLATE_MAPPING.filter(([, target]) => SCAFFOLD.includes(target)).map(([template, target]) => {
+        let text = fs.readFileSync(path.join(templates, template), "utf8")
+        if (target === "package.json") text = packageJson(text, packageName(root), manifestOf(files)?.version)
+        if (target === "esbuild.config.mjs") text = buildConfig(text, entry)
+        // The oj alias, in the build and in tsconfig, follows the package.
+        if (target === "esbuild.config.mjs" || target === "tsconfig.json") text = text.replaceAll(`node_modules/${FORMER_PACKAGE}/`, `node_modules/${PACKAGE}/`)
+        return [target, text]
+    })
+}
 
 /** What a Unity project without OneJS is told, by `init --unity` and by `add` before it fetches anything. */
 export const NO_ONEJS = "This Unity project does not have OneJS installed yet. Install it from the Package Manager "
@@ -317,24 +343,10 @@ export function initUnity(root) {
         lines.push(`${shown}: written`)
     }
 
-    const files = readTree(root)
-    const entry = entryOf(files, manifestOf(files))
-    const templates = path.join(onejs, "Editor", "Templates")
-    for (const [template, target] of TEMPLATE_MAPPING) {
-        // The cart brings its own entry. JSRunner's index.tsx would only be
-        // a second one beside it.
-        if (target === "index.tsx") continue
-        let text = fs.readFileSync(path.join(templates, template), "utf8")
-        if (target === "package.json") text = packageJson(text, packageName(root), manifestOf(files)?.version)
-        if (target === "esbuild.config.mjs") text = buildConfig(text, entry)
-        // The oj alias, in the build and in tsconfig, follows the package.
-        if (target === "esbuild.config.mjs" || target === "tsconfig.json") text = text.replaceAll(`node_modules/${FORMER_PACKAGE}/`, `node_modules/${PACKAGE}/`)
-        put(path.join(root, target), target, text)
-    }
+    for (const [target, text] of scaffoldFiles(root, onejs)) put(path.join(root, target), target, text)
     // Every scaffold path, whether written now or already there: a file this
     // run left alone is still not the cart's.
-    const scaffold = TEMPLATE_MAPPING.map(([, target]) => target).filter((t) => t !== "index.tsx")
-    lines.push(ignoreLocally(root, [...scaffold, ...GROWN].join("\n") + "\n"))
+    lines.push(ignoreLocally(root, IGNORED.join("\n") + "\n"))
 
     const name = objectName(path.basename(folder))
     const panelPath = `${relative}/PanelSettings.asset`
@@ -347,6 +359,153 @@ export function initUnity(root) {
     const gltf = ensureGltfast(project, root)
     if (gltf !== null) lines.push(gltf)
     return { lines, prefab: prefabPath, onejs, gltf }
+}
+
+/**
+ * `ojplay init --from-unity`, first half: takes out of a cart what init --unity
+ * put in it, once the cart has moved from `Assets/<Name>/~` to the Unity
+ * project's root, where it builds with this package and needs none of it
+ * (Specs/ROOT_CARTS.md §5.9 in the OneJS container). OneJS's Move to Project
+ * Root runs it in the moved folder, after the move.
+ *
+ * Only what init --unity would write today is removed, compared after line
+ * endings: a file somebody changed, or one an older OneJS template wrote, is
+ * left and listed, and so is anything in assets/ that is not a copy of the
+ * cart's own file. The ojplay range in package.json is not compared, since it
+ * names whichever version ran init --unity. The install goes only with the
+ * package.json it installed. `.oj/` stays: it holds the carts this one uses
+ * and the catalog's cover art.
+ *
+ * Returns the lines to report and the paths left, relative to the cart.
+ */
+export function undoUnity(root) {
+    root = path.resolve(root)
+    const project = unityProjectOf(path.dirname(root))
+    if (project === null || fs.realpathSync(project) !== fs.realpathSync(path.dirname(root))) {
+        throw new Error("Run this in a cart at a Unity project's root, after it has moved there from Assets/<Name>/~: "
+            + "it takes out what init --unity put in the cart there.")
+    }
+    const onejs = oneJSOf(project)
+    if (onejs === null) throw new Error(NO_ONEJS)
+
+    const lines = []
+    const left = []
+    const remove = (rel) => {
+        fs.rmSync(path.join(root, ...rel.split("/")), { recursive: true, force: true })
+        removeEmptyParents(root, path.dirname(path.join(root, ...rel.split("/"))))
+    }
+    for (const [target, written] of scaffoldFiles(root, onejs)) {
+        const file = path.join(root, ...target.split("/"))
+        if (!fs.existsSync(file)) continue
+        if (sameAsWritten(target, fs.readFileSync(file, "utf8"), written)) {
+            remove(target)
+            lines.push(`${target}: removed`)
+        } else {
+            left.push(target)
+            lines.push(`${target}: changed since init --unity wrote it, left`)
+        }
+    }
+    if (!fs.existsSync(path.join(root, "package.json"))) {
+        for (const rel of ["node_modules", "package-lock.json"]) {
+            if (fs.existsSync(path.join(root, rel))) { remove(rel); lines.push(`${rel}: removed, with the package.json it installed`) }
+        }
+    }
+    if (fs.existsSync(path.join(root, ".onejs"))) { remove(".onejs"); lines.push(".onejs: removed") }
+    const declarations = generatedDeclarations(root)
+    for (const rel of declarations) remove(rel)
+    if (declarations.length > 0) lines.push(`${declarations.length} generated declaration${declarations.length === 1 ? "" : "s"} (*.sl.d.ts, *.module.uss.d.ts): removed`)
+    const assets = undoAssets(root)
+    if (assets.removed > 0) lines.push(`assets/: ${assets.removed} cop${assets.removed === 1 ? "y" : "ies"} of the cart's files removed`)
+    for (const rel of assets.left) {
+        left.push(rel)
+        lines.push(`${rel}: not a copy of a file of the cart's, left`)
+    }
+    const exclude = unignoreLocally(root, IGNORED)
+    if (exclude !== null) lines.push(exclude)
+    return { lines, left }
+}
+
+/**
+ * Whether a scaffold file is what init --unity wrote. Line endings aside, and
+ * for .gitignore also as ignoreLocally appends to it in a clone that is not a
+ * repository. package.json is compared as JSON with the ojplay range set
+ * aside.
+ */
+function sameAsWritten(target, have, written) {
+    const lf = (text) => text.replace(/\r\n/g, "\n")
+    if (target === "package.json") {
+        const ranged = (text) => {
+            try {
+                const pkg = JSON.parse(text)
+                for (const deps of [pkg.dependencies, pkg.devDependencies]) if (deps && PACKAGE in deps) deps[PACKAGE] = "*"
+                return JSON.stringify(pkg)
+            } catch {
+                return null
+            }
+        }
+        const a = ranged(have)
+        return a !== null && a === ranged(written)
+    }
+    if (lf(have) === lf(written)) return true
+    return target === ".gitignore" && lf(have) === lf(withRules(written, IGNORED.join("\n") + "\n").text)
+}
+
+/** The declarations the OneJS build writes beside .sl and .module.uss files, outside node_modules and dot folders. */
+function generatedDeclarations(root) {
+    const found = []
+    const walk = (dir, prefix) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+            const rel = prefix + entry.name
+            if (entry.isDirectory()) walk(path.join(dir, entry.name), rel + "/")
+            else if (entry.name.endsWith(".sl.d.ts") || entry.name.endsWith(".module.uss.d.ts")) found.push(rel)
+        }
+    }
+    walk(root, "")
+    return found
+}
+
+/**
+ * assets/ is where the build copied the cart's files for OneJS (assetsPlugin).
+ * A file there that is byte for byte the cart's file of the same name is a
+ * copy and goes; anything else was put there some other way and stays.
+ */
+function undoAssets(root) {
+    const into = path.join(root, RESERVED_ASSET_FOLDER)
+    const result = { removed: 0, left: [] }
+    if (!fs.existsSync(into)) return result
+    const walk = (dir, prefix) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const rel = prefix + entry.name
+            const at = path.join(dir, entry.name)
+            if (entry.isDirectory()) { walk(at, rel + "/"); continue }
+            const source = path.join(root, ...rel.split("/"))
+            if (entry.isFile() && fs.existsSync(source) && fs.readFileSync(source).equals(fs.readFileSync(at))) {
+                fs.rmSync(at)
+                result.removed++
+            } else {
+                result.left.push(`${RESERVED_ASSET_FOLDER}/${rel}`)
+            }
+        }
+    }
+    walk(into, "")
+    removeEmptyFolders(into)
+    return result
+}
+
+/** Removes `dir` and the folders under it that are empty once their empty folders are gone. */
+function removeEmptyFolders(dir) {
+    if (!fs.existsSync(dir)) return
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) if (entry.isDirectory()) removeEmptyFolders(path.join(dir, entry.name))
+    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir)
+}
+
+/** Removes empty folders from `dir` up to, and not including, `root`: types/ once global.d.ts has gone. */
+function removeEmptyParents(root, dir) {
+    for (let at = dir; at !== root && at.startsWith(root + path.sep); at = path.dirname(at)) {
+        if (!fs.existsSync(at) || fs.readdirSync(at).length > 0) return
+        fs.rmdirSync(at)
+    }
 }
 
 /** The package a cart's .glb models need in Unity, and the version `ojplay` adds when a project has none. */

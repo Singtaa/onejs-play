@@ -9,7 +9,7 @@ import { addressFromRemote, cloneSource, sidFromRemote, sidOf, siteOrigin, folde
 import { chromeArgs, keyOf, keyEvent, launch } from "./chrome.mjs"
 import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
-import { initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING } from "./unity.mjs"
+import { initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING, undoUnity } from "./unity.mjs"
 import { assetsPlugin, buildConfig, syncAssets } from "./unity-assets.mjs"
 import { spawnSync } from "node:child_process"
 import { Game } from "./run.mjs"
@@ -615,6 +615,105 @@ describe("a clone made into a JSRunner project", () => {
         expect(() => initUnity(path.join(outside, "Game", "~"))).toThrow(/not inside a Unity project's Assets folder/)
         const bare = scratch({ "ProjectSettings/ProjectVersion.txt": "", "Assets/Game/~/index.tsx": "" })
         expect(() => initUnity(path.join(bare, "Assets", "Game", "~"))).toThrow(/does not have OneJS installed/)
+    })
+})
+
+describe("a cart moved from Assets/<Name>/~ to the project root (init --from-unity)", () => {
+    function unityProject(): string {
+        const project = scratch({ "ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 6000.5.2f1\n", "Assets/.keep": "" })
+        const onejs = path.join(project, "Library", "PackageCache", "com.singtaa.onejs@abc123")
+        fs.mkdirSync(path.join(onejs, "Editor", "Templates"), { recursive: true })
+        fs.writeFileSync(path.join(onejs, "package.json"), JSON.stringify({ name: "com.singtaa.onejs" }))
+        for (const [template] of TEMPLATE_MAPPING) {
+            const text = template === "package.json.txt"
+                ? JSON.stringify({ name: "onejs-app", dependencies: { [PACKAGE]: "^0.10.0", "onejs-unity": "^0.11.0" } })
+                : template === "esbuild.config.mjs.txt" ? ESBUILD_TEMPLATE
+                : `template ${template}\n`
+            fs.writeFileSync(path.join(onejs, "Editor", "Templates", template), text)
+        }
+        return project
+    }
+
+    /** A cart taken into Assets/<folder>/~ and grown the way a JSRunner project grows, then moved to the root. */
+    function moved(project: string, folder: string, { git = true } = {}): string {
+        const tilde = path.join(project, "Assets", folder, "~")
+        for (const [name, text] of Object.entries({ "game.tsx": "", "oj.json": "{\"name\":\"Big Fish\",\"entry\":\"game.tsx\"}", "glow.png": "png", "art/bg.png": "bg", ".oj/carts/@a/b@1.0.0/x.png": "used", ".oj/covers/1.png": "cover", "fx/ring.sl": "" })) {
+            fs.mkdirSync(path.dirname(path.join(tilde, name)), { recursive: true })
+            fs.writeFileSync(path.join(tilde, name), text)
+        }
+        if (git) expect(spawnSync("git", ["init", "-q", tilde]).status).toBe(0)
+        initUnity(tilde)
+        // What the install, JSRunner and the OneJS build add beside it.
+        for (const [name, text] of Object.entries({ "node_modules/x/index.js": "", "package-lock.json": "{}", ".onejs/scaffold": "", "fx/ring.sl.d.ts": "", "styles/a.module.uss.d.ts": "" })) {
+            fs.mkdirSync(path.dirname(path.join(tilde, name)), { recursive: true })
+            fs.writeFileSync(path.join(tilde, name), text)
+        }
+        expect(syncAssets(tilde).copied).toEqual(["art/bg.png", "glow.png"])
+        const root = path.join(project, folder)
+        fs.renameSync(tilde, root)
+        return root
+    }
+
+    const listed = (root: string) => {
+        const out: string[] = []
+        const walk = (dir: string, prefix: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (e.name === ".git") continue
+                if (e.isDirectory()) walk(path.join(dir, e.name), prefix + e.name + "/")
+                else out.push(prefix + e.name)
+            }
+        }
+        walk(root, "")
+        return out.sort()
+    }
+
+    it("takes out everything init --unity and the build put there, and nothing of the cart's", () => {
+        const project = unityProject()
+        const root = moved(project, "BigFish")
+        const undone = undoUnity(root)
+        expect(undone.left).toEqual([])
+        expect(listed(root)).toEqual([".oj/carts/@a/b@1.0.0/x.png", ".oj/covers/1.png", "art/bg.png", "fx/ring.sl", "game.tsx", "glow.png", "oj.json"])
+        expect(undone.lines).toContain("package.json: removed")
+        expect(undone.lines).toContain("node_modules: removed, with the package.json it installed")
+        const exclude = fs.readFileSync(path.join(root, ".git", "info", "exclude"), "utf8")
+        for (const rule of ["package.json", "esbuild.config.mjs", "/assets/", ".oj", "node_modules"]) expect(exclude.split("\n")).not.toContain(rule)
+    })
+
+    it("leaves and lists a file that is not what init --unity wrote, and keeps the install of a package.json it leaves", () => {
+        const project = unityProject()
+        const root = moved(project, "BigFish")
+        fs.writeFileSync(path.join(root, "styles", "main.uss"), "template main.uss.txt\n.mine { color: red; }\n")
+        const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+        pkg.dependencies["three"] = "^0.170.0"
+        fs.writeFileSync(path.join(root, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
+        fs.writeFileSync(path.join(root, "assets", "mine.txt"), "put here by hand")
+        const undone = undoUnity(root)
+        expect(undone.left).toEqual(["package.json", "styles/main.uss", "assets/mine.txt"])
+        expect(undone.lines).toContain("styles/main.uss: changed since init --unity wrote it, left")
+        for (const kept of ["package.json", "package-lock.json", "node_modules/x/index.js", "styles/main.uss", "assets/mine.txt"]) expect(fs.existsSync(path.join(root, kept))).toBe(true)
+        for (const gone of ["tsconfig.json", "esbuild.config.mjs", "types", "assets/glow.png"]) expect(fs.existsSync(path.join(root, gone))).toBe(false)
+    })
+
+    it("does not compare the ojplay range, line endings, or the rules a clone with no repository got in its .gitignore", () => {
+        const project = unityProject()
+        const root = moved(project, "BigFish", { git: false })
+        const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+        pkg.dependencies[PACKAGE] = "^0.11.1"
+        fs.writeFileSync(path.join(root, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
+        const global = path.join(root, "types", "global.d.ts")
+        fs.writeFileSync(global, fs.readFileSync(global, "utf8").replace(/\n/g, "\r\n"))
+        expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toContain("/assets/")
+        const undone = undoUnity(root)
+        expect(undone.left).toEqual([])
+        expect(listed(root)).toEqual([".oj/carts/@a/b@1.0.0/x.png", ".oj/covers/1.png", "art/bg.png", "fx/ring.sl", "game.tsx", "glow.png", "oj.json"])
+    })
+
+    it("refuses a cart that has not moved to the project root", () => {
+        const project = unityProject()
+        const tilde = path.join(project, "Assets", "BigFish", "~")
+        fs.mkdirSync(tilde, { recursive: true })
+        fs.writeFileSync(path.join(tilde, "oj.json"), "{\"name\":\"Big Fish\"}")
+        expect(() => undoUnity(tilde)).toThrow(/at a Unity project's root, after it has moved there/)
     })
 })
 
