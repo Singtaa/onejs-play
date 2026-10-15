@@ -279,6 +279,9 @@ describe("the site from a terminal", () => {
         expect(cloneSource("@singtaa/ghost-hunt")).toEqual({ url: `${site}/@singtaa/ghost-hunt.git`, dir: path.resolve("ghost-hunt") })
         expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt", "gh").url).toBe("https://play.onejs.com/@singtaa/ghost-hunt.git")
         expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt.git").dir).toBe(path.resolve("ghost-hunt"))
+        // The editor's address, which is what a reader of the code copies.
+        expect(cloneSource("https://play.onejs.com/@singtaa/ghost-hunt/edit")).toEqual({ url: "https://play.onejs.com/@singtaa/ghost-hunt.git", dir: path.resolve("ghost-hunt") })
+        expect(cloneSource("https://play.onejs.com/c/lrk9g7sstpu3/edit").url).toBe("https://play.onejs.com/c/lrk9g7sstpu3.git")
         expect(cloneSource("lrk9g7sstpu3")).toEqual({ url: `${site}/c/lrk9g7sstpu3.git`, dir: path.resolve("lrk9g7sstpu3") })
         expect(cloneSource("https://play.onejs.com/c/lrk9g7sstpu3.git", "/tmp/x")).toEqual({ url: "https://play.onejs.com/c/lrk9g7sstpu3.git", dir: path.resolve("/tmp/x") })
         expect(() => cloneSource("ghost hunt")).toThrow(/@handle\/name, its sid or its clone URL/)

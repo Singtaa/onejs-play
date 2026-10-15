@@ -199,13 +199,16 @@ export function git(args, { cwd, bearer } = {}) {
 /**
  * What `ojplay clone` clones, and into which folder: a cart's address
  * (@handle/name, or its page's URL), its sid, or its clone URL. The folder
- * is `into`, else the cart's name or sid.
+ * is `into`, else the cart's name or sid. A cart's page is its game and its
+ * editor is that address plus /edit (play.onejs.com, 14 Oct 2026), and the
+ * editor is where somebody reading the code copies the URL from, so both are
+ * taken.
  */
 export function cloneSource(what, into) {
     const text = String(what ?? "").trim()
     const origin = /^https?:\/\//.test(text) ? new URL(text).origin : siteOrigin()
-    const address = /^(?:https?:\/\/[^/]+\/)?(@[A-Za-z0-9-]+)\/([A-Za-z0-9-]+?)(?:\.git)?\/?$/.exec(text)
-    const sid = /^(?:https?:\/\/[^/]+\/[cg]\/)?([a-z0-9]{12})(?:\.git)?\/?$/.exec(text)
+    const address = /^(?:https?:\/\/[^/]+\/)?(@[A-Za-z0-9-]+)\/([A-Za-z0-9-]+?)(?:\.git|\/edit)?\/?$/.exec(text)
+    const sid = /^(?:https?:\/\/[^/]+\/[cg]\/)?([a-z0-9]{12})(?:\.git|\/edit)?\/?$/.exec(text)
     if (address) return { url: `${origin}/${address[1]}/${address[2]}.git`, dir: path.resolve(into ?? address[2]) }
     if (sid) return { url: `${origin}/c/${sid[1]}.git`, dir: path.resolve(into ?? sid[1]) }
     throw new Error(`${COMMAND} clone takes a cart's @handle/name, its sid or its clone URL, not "${text}"`)
