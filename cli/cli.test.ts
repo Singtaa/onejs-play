@@ -675,8 +675,10 @@ describe("a cart moved from Assets/<Name>/~ to the project root (init --from-uni
         expect(listed(root)).toEqual([".oj/carts/@a/b@1.0.0/x.png", ".oj/covers/1.png", "art/bg.png", "fx/ring.sl", "game.tsx", "glow.png", "oj.json"])
         expect(undone.lines).toContain("package.json: removed")
         expect(undone.lines).toContain("node_modules: removed, with the package.json it installed")
-        const exclude = fs.readFileSync(path.join(root, ".git", "info", "exclude"), "utf8")
-        for (const rule of ["package.json", "esbuild.config.mjs", "/assets/", ".oj", "node_modules"]) expect(exclude.split("\n")).not.toContain(rule)
+        const exclude = fs.readFileSync(path.join(root, ".git", "info", "exclude"), "utf8").split("\n")
+        for (const rule of ["esbuild.config.mjs", "AGENTS.md", "/assets/", ".onejs", "*.sl.d.ts"]) expect(exclude).not.toContain(rule)
+        // The rules ojplay init has git ignore stay, since init would only add them back.
+        for (const rule of ["package.json", "node_modules", ".oj"]) expect(exclude).toContain(rule)
     })
 
     it("leaves and lists a file that is not what init --unity wrote, and keeps the install of a package.json it leaves", () => {
@@ -707,6 +709,44 @@ describe("a cart moved from Assets/<Name>/~ to the project root (init --from-uni
         expect(undone.left).toEqual([])
         expect(listed(root)).toEqual([".oj/carts/@a/b@1.0.0/x.png", ".oj/covers/1.png", "art/bg.png", "fx/ring.sl", "game.tsx", "glow.png", "oj.json"])
     })
+
+    const OJ = path.resolve(import.meta.dirname, "oj.mjs")
+    const fromUnity = (root: string) => spawnSync(process.execPath, [OJ, "init", "--from-unity", "--root", root], {
+        encoding: "utf8",
+        env: { ...process.env, OJPLAY_NO_UPDATE_CHECK: "1", OJPLAY_HANDED_OFF: "1" },
+    })
+    const snapshot = (root: string) => Object.fromEntries(
+        [...listed(root), ...(fs.existsSync(path.join(root, ".git")) ? [".git/info/exclude"] : [])]
+            .map((rel) => [rel, fs.readFileSync(path.join(root, rel), "utf8")]))
+
+    // OneJS's Set Up runs it again after a failed first try, and on a cart cleaned by hand it
+    // listed the cart's own package.json and tsconfig.json as changes somebody made (Win 002).
+    for (const git of [true, false]) {
+        it(`changes nothing, and says so, on a cart it already cleaned (${git ? "a repository" : "no repository, so a .gitignore"})`, () => {
+            const project = unityProject()
+            const root = moved(project, "BigFish", { git })
+            const first = fromUnity(root)
+            expect(first.status, first.stderr).toBe(0)
+            expect(first.stderr).toContain("package.json: removed")
+            expect(first.stderr).not.toContain("left, because")
+            // What happens to a cart between the two: Set Up moves ojplay on, and syncTypes
+            // maps a cart this one imports.
+            const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+            pkg.devDependencies[PACKAGE] = "^0.12.0"
+            fs.writeFileSync(path.join(root, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
+            const tsconfig = JSON.parse(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8"))
+            tsconfig.compilerOptions.paths["@a/b"] = ["./.oj/carts/@a/b@1.0.0/index.tsx"]
+            fs.writeFileSync(path.join(root, "tsconfig.json"), JSON.stringify(tsconfig, null, 4) + "\n")
+            const before = snapshot(root)
+
+            const second = fromUnity(root)
+            expect(second.status, second.stderr).toBe(0)
+            // oj reports on stderr, as every [ojplay] line does.
+            expect(second.stderr).toContain("nothing of init --unity's is left here, so nothing was changed")
+            expect(second.stderr).not.toContain("changed since init --unity wrote it")
+            expect(snapshot(root)).toEqual(before)
+        })
+    }
 
     it("refuses a cart that has not moved to the project root", () => {
         const project = unityProject()

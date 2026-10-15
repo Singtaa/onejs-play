@@ -139,6 +139,10 @@ async function main() {
             if (flags.unity && flags["from-unity"]) throw new Error("--unity makes a cart a JSRunner project in Assets/<Name>/~ and --from-unity undoes that at the project root: one or the other.")
             if (flags["from-unity"]) {
                 const undone = undoUnity(root)
+                if (undone.lines.length === 0 && undone.left.length === 0) {
+                    say("nothing of init --unity's is left here, so nothing was changed")
+                    return 0
+                }
                 for (const line of undone.lines) say(line)
                 for (const line of init(root)) say(line)
                 syncTypes(root)

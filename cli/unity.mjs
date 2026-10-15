@@ -25,11 +25,12 @@ import fs from "node:fs"
 import path from "node:path"
 import crypto from "node:crypto"
 import { spawnSync } from "node:child_process"
-import { ignoreLocally, packageName, unignoreLocally, withRules } from "./init.mjs"
+import { cartFiles, cartIgnoreRules, ignoreLocally, packageName, unignoreLocally, withRules } from "./init.mjs"
 import { entryOf, manifestOf, readTree } from "./game.mjs"
 import { buildConfig } from "./unity-config.mjs"
 import { FORMER_PACKAGE, PACKAGE } from "../build/command.mjs"
 import { RESERVED_ASSET_FOLDER } from "./assets.mjs"
+import { withoutSyncedTypes } from "./carts.mjs"
 
 /**
  * JSRunner's default files: the OneJS template, and where it lands in the
@@ -397,9 +398,13 @@ export function undoUnity(root) {
     for (const [target, written] of scaffoldFiles(root, onejs)) {
         const file = path.join(root, ...target.split("/"))
         if (!fs.existsSync(file)) continue
-        if (sameAsWritten(target, fs.readFileSync(file, "utf8"), written)) {
+        const have = fs.readFileSync(file, "utf8")
+        if (sameAsWritten(target, have, written)) {
             remove(target)
             lines.push(`${target}: removed`)
+        } else if (isCartTooling(root, target, have)) {
+            // ojplay init's file for this cart, from an earlier init --from-unity: the cart's own.
+            continue
         } else {
             left.push(target)
             lines.push(`${target}: changed since init --unity wrote it, left`)
@@ -420,9 +425,39 @@ export function undoUnity(root) {
         left.push(rel)
         lines.push(`${rel}: not a copy of a file of the cart's, left`)
     }
-    const exclude = unignoreLocally(root, IGNORED)
+    // init's own rules stay: init would only add them back, and a cart cleaned before has
+    // nothing else of these to take out.
+    const own = new Set(cartIgnoreRules().split(/\r?\n/).map((l) => l.trim()))
+    const exclude = unignoreLocally(root, IGNORED.filter((rule) => !own.has(rule)))
     if (exclude !== null) lines.push(exclude)
     return { lines, left }
+}
+
+/**
+ * Whether a file at one of init --unity's paths is what ojplay init writes for
+ * this cart instead: what a second init --from-unity finds in a cart the first
+ * one cleaned, and no change of anybody's. package.json is compared as
+ * sameAsWritten compares it, tsconfig.json without the paths syncTypes adds for
+ * the carts this one imports, and .gitignore as init writes it in a clone with
+ * no repository.
+ */
+function isCartTooling(root, target, have) {
+    const lf = (text) => text.replace(/\r\n/g, "\n")
+    const own = new Map(cartFiles(root))
+    if (target === "package.json") return sameAsWritten(target, have, own.get(target))
+    if (target === "tsconfig.json") {
+        const unsynced = (text) => {
+            try {
+                return JSON.stringify(withoutSyncedTypes(JSON.parse(text)))
+            } catch {
+                return null
+            }
+        }
+        const a = unsynced(have)
+        return a !== null && a === unsynced(own.get(target))
+    }
+    if (target === ".gitignore") return lf(have) === lf(cartIgnoreRules())
+    return false
 }
 
 /**

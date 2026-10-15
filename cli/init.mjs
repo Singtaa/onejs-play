@@ -31,16 +31,28 @@ export function init(root) {
         lines.push(`${name}: written`)
     }
 
+    for (const [name, text] of cartFiles(root)) put(name, text)
+    writeHostTypes(root)
+
+    lines.push(ignoreLocally(root, cartIgnoreRules()))
+    return lines
+}
+
+/** The files init writes in the cart at `root`, as [name, text]. */
+export function cartFiles(root) {
     const pkg = JSON.parse(fs.readFileSync(path.join(SCAFFOLD, "package.json"), "utf8"))
     pkg.name = packageName(root)
     if (!fs.existsSync(path.join(root, "playtest.mjs"))) delete pkg.scripts.test
-    put("package.json", JSON.stringify(pkg, null, 2) + "\n")
-    put("tsconfig.json", JSON.stringify(cartTsconfig(), null, 4) + "\n")
-    put("env.d.ts", fs.readFileSync(path.join(SCAFFOLD, "env.d.ts"), "utf8"))
-    writeHostTypes(root)
+    return [
+        ["package.json", JSON.stringify(pkg, null, 2) + "\n"],
+        ["tsconfig.json", JSON.stringify(cartTsconfig(), null, 4) + "\n"],
+        ["env.d.ts", fs.readFileSync(path.join(SCAFFOLD, "env.d.ts"), "utf8")],
+    ]
+}
 
-    lines.push(ignoreLocally(root, fs.readFileSync(path.join(SCAFFOLD, "gitignore"), "utf8")))
-    return lines
+/** The rules init has git ignore, as the text of a .gitignore. */
+export function cartIgnoreRules() {
+    return fs.readFileSync(path.join(SCAFFOLD, "gitignore"), "utf8")
 }
 
 /**
