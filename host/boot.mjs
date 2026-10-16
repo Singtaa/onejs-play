@@ -110,9 +110,22 @@ function load(src) {
 ${bundle}
 ${report}
 
-/** Hands a bundle to the container. Negative means it did not start. */
+/*
+ * Hands a bundle to the container. Negative means it did not start.
+ *
+ * Inside flushSync, so the cart's first render has committed when this
+ * returns. load() clears the stage and mounts the cart in one call, but React
+ * renders a new root concurrently, and a first render that yields leaves Unity
+ * a frame of the cleared stage: on a swap into a running container (the
+ * editor's Run, ojplay run --watch) that is the old picture blinking out
+ * before the new one arrives. Committed in the same call, the next frame Unity
+ * draws is the new cart's. A container whose oj surface has no flushSync loads
+ * the way it always did.
+ */
 function startGame(source) {
-    const ms = globalThis.__ojPlay.load(source, manifest)
+    const flush = globalThis.__ojApi && globalThis.__ojApi.flushSync
+    const hand = () => globalThis.__ojPlay.load(source, manifest)
+    const ms = typeof flush === "function" ? flush(hand) : hand()
     if (ms >= 0) loadedSource = source
     return ms
 }

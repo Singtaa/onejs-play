@@ -622,7 +622,9 @@ QuickJS rather than V8, and the bugs that matter (the 1.0.12 Task that never
 settled) were WebGL-only. Headless by default; `--headed --watch` opens a
 window and swaps a fresh build in on every save without reloading the
 runtime, which is the container's own hot path and takes about ten
-milliseconds. It exits 1 if the cart logged a console error, `Property not
+milliseconds. The boot's `startGame` commits the new cart's first render
+inside that call (`flushSync`), so the old picture stays until the new one
+replaces it; the Play editor's Run swaps the same way. It exits 1 if the cart logged a console error, `Property not
 found` included.
 
 **`ojplay test` hands a script the running game.** The script's default export
