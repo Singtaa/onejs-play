@@ -225,6 +225,23 @@ export function syncTypes(root, manifest = manifestOf(root) ?? {}) {
     fs.writeFileSync(file, JSON.stringify(config, null, 4) + "\n")
 }
 
+/**
+ * A tsconfig with what syncTypes adds taken back out: the paths of the carts
+ * this one imports, and .oj in exclude. For telling whether a tsconfig is the
+ * one init wrote, whatever syncTypes has done to it since. Kept beside
+ * syncTypes so the two change together.
+ */
+export function withoutSyncedTypes(config) {
+    const copy = structuredClone(config)
+    const paths = copy?.compilerOptions?.paths
+    if (paths) for (const name of Object.keys(paths)) if (name.startsWith("@")) delete paths[name]
+    if (Array.isArray(copy?.exclude)) {
+        copy.exclude = copy.exclude.filter((rule) => rule !== ".oj")
+        if (copy.exclude.length === 0) delete copy.exclude
+    }
+    return copy
+}
+
 /** "Use it: import { Bolt, Glow } from ...", or the bare import that runs a whole cart. */
 function howToUse(root, key) {
     const { own } = fetchedOf(root, key)

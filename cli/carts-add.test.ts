@@ -579,7 +579,7 @@ describe("ojplay add at the root of a Unity project whose OneJS runs root carts"
         for (const file of ["esbuild.config.mjs", "AGENTS.md", "types", "styles", "assets", ".onejs"]) expect(exists(cart, file)).toBe(false)
         expect(npmCalls).toEqual(["portal: npm install --no-audit --no-fund"])
         expect(exists(root, "Assets/portal/~")).toBe(false)
-        expect(exists(root, "Assets/portal/PanelSettings.asset")).toBe(true)
+        expect(read(root, "Assets/portal/PanelSettings.asset")).toContain("\n  m_Name: PanelSettings\n")
         const prefab = read(root, "Assets/portal/portal.prefab")
         expect(prefab).toContain("  _cart: portal\n")
         expect(prefab).toMatch(/ {2}_panelSettings: \{fileID: 11400000, guid: [0-9a-f]{32}, type: 2\}\n/)

@@ -13,6 +13,7 @@ const FLAGS = {
     headed: "switch",
     watch: "switch",
     unity: "switch",
+    "from-unity": "switch",
     production: "switch",
     json: "switch",
     help: "switch",
