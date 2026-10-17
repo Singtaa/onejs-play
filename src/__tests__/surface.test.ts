@@ -131,6 +131,11 @@ describe("the shader language is reachable from oj", () => {
         expect((oj as any).ShaderProgram).toBeDefined()
     })
 
+    it("exposes usePass, so one program can read what another drew", () => {
+        expect(typeof (oj as any).usePass).toBe("function")
+        expect(typeof (oj as any).Pass).toBe("function")
+    })
+
     it("records and compiles a program end to end", () => {
         const sl = (oj as any).sl
         const p = sl.program(({ uv, time }: any) => {

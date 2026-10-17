@@ -239,11 +239,14 @@ export type {
 // MARK: shader effects
 
 export { ShaderEffect, ShaderProgram, TextureFX, Flame, TextureFXBuilder, buildTextureFX, MAX_TEXTUREFX_LAYERS } from "onejs-react"
+// A pass: one program drawn into a texture each frame for another to read.
+export { usePass, Pass } from "onejs-react"
 export type {
     FlameProps,
     TextureFXProps,
     ShaderEffectProps,
     ShaderProgramProps,
+    PassOptions,
     TextureFXBuild,
     LayerHandle,
     TextureFXNoise,
