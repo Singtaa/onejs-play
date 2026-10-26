@@ -15,7 +15,8 @@
  *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed;
  *                           the first push of a cart made here makes it on the site
  *   ojplay new <name>       start a cart on this machine: the starter in a new git repository
- *   ojplay clone <address>  clone a cart so that git pull and push work in it with OJ_TOKEN or a login
+ *   ojplay clone <address>  clone a cart so that git pull and push work in it with OJ_TOKEN or a login,
+ *                           committing as the account's no-reply address (author.mjs)
  *   ojplay login            print a link; once the person presses Allow, this machine can push
  *   ojplay logout           forget that login, here and on the site
  *   ojplay runtime          fetch the container the site serves into the local cache
@@ -27,6 +28,7 @@ import path from "node:path"
 import { build, typecheck } from "./game.mjs"
 import { cloneSource, describePush, describeStatus, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
 import { cloneCart, login, logout } from "./login.mjs"
+import { authorLines } from "./author.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
@@ -51,7 +53,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
   remove <@handle/name> stop using a cart, and say which files still import it
 
   init                  write package.json, tsconfig.json and env.d.ts and ignore them (.gitignore,
-                          or .git/info/exclude in a clone); run npm install after
+                          or .git/info/exclude in a clone); run npm install after. In a clone,
+                          commits are by your handle's no-reply address, not this machine's
                           --unity         in a clone at Assets/<Name>/~ of a Unity project with OneJS:
                                           make it a JSRunner project, install and build it
                           --from-unity    in a cart moved from Assets/<Name>/~ to a Unity project's
@@ -88,7 +91,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
   new <name>            start a cart in ./<name>: the starter, a git repository and init's
                           tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
-                          work in it with OJ_TOKEN set or after login, and no token is stored
+                          work in it with OJ_TOKEN set or after login, and no token is stored;
+                          its commits are by your handle's no-reply address, not this machine's
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
   --root <dir>          the cart folder (default: the current folder)
@@ -145,6 +149,7 @@ async function main() {
                 }
                 for (const line of undone.lines) say(line)
                 for (const line of init(root)) say(line)
+                for (const line of await authorLines(root, tokenOf(root))) say(line)
                 syncTypes(root)
                 if (undone.left.length > 0) say(`left, because they are not what init --unity wrote: ${undone.left.join(", ")}`)
                 say("now: npm install")
@@ -154,12 +159,14 @@ async function main() {
                 const made = initUnity(root)
                 say(`OneJS templates from ${made.onejs}`)
                 for (const line of made.lines) say(line)
+                for (const line of await authorLines(root, tokenOf(root))) say(line)
                 const code = npm(root, ["install", "--no-audit", "--no-fund"]) || npm(root, ["run", "build"])
                 if (code !== 0) return code
                 say(`now drag ${made.prefab} into a scene`)
                 return 0
             }
             for (const line of init(root)) say(line)
+            for (const line of await authorLines(root, tokenOf(root))) say(line)
             syncTypes(root)
             // init sets a cart up for tools; it does not write one.
             const hasCart = ["oj.json", "index.tsx", "index.ts", "index.js"].some((f) => fs.existsSync(path.join(root, f)))
@@ -346,6 +353,7 @@ async function main() {
                 return code
             }
             say(`cloned into ${dir}; git pull and git push there use OJ_TOKEN when it is set, else this machine's login`)
+            for (const line of await authorLines(dir, bearer)) say(line)
             return 0
         }
         case "login":

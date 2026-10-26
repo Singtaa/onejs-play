@@ -545,7 +545,7 @@ ojplay add @singtaa/lightning   # use another cart: oj.json gets its newest vers
                              #   (in an empty folder, starts a cart that uses it; no account needed)
 ojplay update          # the carts this one uses, to their newest in the same major (--major: newest of all)
 ojplay remove @singtaa/lightning   # stop using it; names the files that still import it
-ojplay init            # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone); then npm install
+ojplay init            # package.json, tsconfig.json, env.d.ts, ignore rules (.git/info/exclude in a clone), the no-reply author; then npm install
 ojplay init --unity    # in Assets/<Name>/~ of a Unity project: a JSRunner project and prefab, installed and built
 ojplay build           # bundle the cart the way the site does; errors as file:line:col
 ojplay build --unity --out <dir>   # for OneJS, a cart at a Unity project's root (--watch, --production)
@@ -558,7 +558,7 @@ ojplay login           # print a play.onejs.com link; after Allow there, this ma
 ojplay logout          # forget that login, here and on the site
 ojplay push            # git push, then exit 1 if the tip did not build or nothing was committed
 ojplay new "Name"      # start a cart here: the starter in a new git repo, no account; its first push makes it on the site
-ojplay clone @h/name   # clone a cart; git pull and push in it work with OJ_TOKEN or the login
+ojplay clone @h/name   # clone a cart; git pull and push in it work with OJ_TOKEN or the login, committing as the no-reply author
 ojplay runtime         # fetch the container into ~/.onejs-play (--runtime <version>)
 ```
 
@@ -572,6 +572,16 @@ there is no login), sets `origin` and pushes `main` with its upstream. The
 site makes it empty because its usual create commits the starter, which a
 history begun here could never fast forward onto. A name the account already
 has is refused there, with that cart's address, and nothing is made.
+
+**A clone commits as the account, not as this machine.** `clone` and `init`
+set the clone's own `user.name` and `user.email` to the account's handle at
+`<handle>@users.noreply.<site's host>`, so a cart's history never carries the
+machine's personal email, which `git clone` would hand to anyone once the cart
+is public (`cli/author.mjs`). Only a folder that is its own repository gets
+it, never git's global config or a Unity project's repository around a cart,
+and an address set in the clone by hand is left alone. With no login there is
+no handle to use, so nothing is set and `init` says so; run it again after
+`login`.
 
 **`init --unity` makes a clone a JSRunner project in place.** Clone the cart
 to `Assets/<Name>/~` in a Unity project that has OneJS (Unity ignores a folder
