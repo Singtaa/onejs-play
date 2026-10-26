@@ -48,21 +48,21 @@
  * safe. These keep it changeable.
  */
 
-// MARK: stage
+// stage
 
 export type { Stage } from "./stage"
 
-// MARK: entry point and frame clock
+// entry point and frame clock
 
 export { mount, useStage } from "./mount"
 export { useFrame } from "onejs-react"
 
-// MARK: transforms
+// transforms
 
 export { Transform2D, TransformedPath } from "./transform"
 export type { PathSink } from "./transform"
 
-// MARK: input
+// input
 //
 // onejs-unity's input module, unchanged. A container game and a normal OneJS
 // project call the same API; only the backend behind it differs. See
@@ -93,7 +93,7 @@ export type {
 export { useSwipe, SWIPE_THRESHOLD } from "./gesture"
 export type { SwipeDirection, SwipeOptions } from "./gesture"
 
-// MARK: math
+// math
 
 export { Mathf } from "./mathf"
 export { Vector2 } from "./vec"
@@ -102,7 +102,7 @@ export { Color } from "./color"
 export { random } from "./random"
 export type { Rng, Random } from "./random"
 
-// MARK: a game's own files
+// a game's own files
 
 export { assetUrl, loadTexture, useTexture, useFlipbook, loadSheet } from "./asset"
 /**
@@ -165,7 +165,7 @@ export type { Program } from "onejs-unity/sl"
 // What compile returns and a `.sl` import resolves to, so a game can name it.
 export type { CompiledProgram } from "onejs-react"
 
-// MARK: the site behind the game
+// the site behind the game
 
 export { scores, useLeaderboard } from "./scores"
 export type { ScoreEntry, ScoreWindow, TopOptions, SubmitOptions, Leaderboard } from "./scores"
@@ -175,12 +175,12 @@ export type { Room, RoomOptions, RoomMessage } from "./room"
 
 export { isOnline } from "./play"
 
-// MARK: the editor
+// the editor
 
 // A value beside the line that made it, drawn in the OJPlay editor (show.ts).
 export { show } from "./show"
 
-// MARK: components
+// components
 
 export {
     View,
@@ -199,7 +199,7 @@ export {
 // Image takes a cart's file by name, like every other loader in oj.
 export { Image } from "./image"
 
-// MARK: rendering
+// rendering
 
 export { createPortal, flushSync, batchedUpdates } from "onejs-react"
 export { Portal } from "onejs-react"
@@ -207,7 +207,7 @@ export type { PortalProps } from "onejs-react"
 export { ErrorBoundary, formatError } from "onejs-react"
 export type { ErrorBoundaryProps } from "onejs-react"
 
-// MARK: responsive
+// responsive
 
 export {
     ScreenProvider,
@@ -219,11 +219,11 @@ export {
 } from "onejs-react"
 export type { ScreenContextValue, ScreenProviderProps, BreakpointName } from "onejs-react"
 
-// MARK: drawing (the Painter only; the raw Painter2D path needs CS.*)
+// drawing (the Painter only; the raw Painter2D path needs CS.*)
 
 export { Painter, drawing, useDrawing } from "onejs-react"
 
-// MARK: particles
+// particles
 
 export { createParticles, useParticles } from "onejs-react"
 export type {
@@ -241,7 +241,7 @@ export type {
     SheetConfig,
 } from "onejs-react"
 
-// MARK: shader effects
+// shader effects
 
 export { ShaderEffect, ShaderProgram, TextureFX, Flame, TextureFXBuilder, buildTextureFX, MAX_TEXTUREFX_LAYERS } from "onejs-react"
 // A pass: one program drawn into a texture each frame for another to read.
@@ -262,7 +262,7 @@ export type {
     ShapeKind,
 } from "onejs-react"
 
-// MARK: types
+// types
 
 export type {
     Texture,

@@ -157,7 +157,7 @@ export function useTexture(name: string): Texture | null {
     return texture
 }
 
-// MARK: flipbook
+// flipbook
 
 /**
  * One flipbook contract on the site, not two: the sidecar reuses the particle

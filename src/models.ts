@@ -224,7 +224,7 @@ function vec3(p: Readonly<Vec3>): Vec3 {
     return Object.freeze([p[0], p[1], p[2]]) as unknown as Vec3
 }
 
-// MARK: the one live scene
+// the one live scene
 
 /**
  * The scene that is live, and the runtime that made it. ModelBridge holds one
@@ -278,7 +278,7 @@ function rgb(c: ColorInput, what = "colour"): [number, number, number] {
     return [r, g, b]
 }
 
-// MARK: models
+// models
 
 /**
  * Loads one of this game's .glb files by name, or any URL. A file asked for again
@@ -327,7 +327,7 @@ export function watchModel(name: string, loaded: (model: Model) => void): () => 
     return () => { watching = false }
 }
 
-// MARK: the scene
+// the scene
 
 /**
  * Sets up the camera and lights, and owns everything spawned through it. Null on

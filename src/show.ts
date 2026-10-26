@@ -62,7 +62,7 @@ export interface ShowHost {
     later(fn: () => void, ms: number): void
 }
 
-// MARK: caps
+// caps
 //
 // A show inside a loop runs every frame, so a snapshot is bounded whatever it
 // is handed: a 10,000 node graph costs what a 60 node one does, plus a count.
@@ -79,7 +79,7 @@ const MAX_CELL = 40
 /** The least time between two log lines from one line, where there is no editor. */
 const LOG_EVERY_MS = 1000
 
-// MARK: text
+// text
 
 /** A number as a console would print it, to six significant figures. */
 function formatNumber(n: number): string {
@@ -162,7 +162,7 @@ function inline(v: unknown, nested = false): string {
     return `{ ${shown.join(", ")} }`
 }
 
-// MARK: tables
+// tables
 
 /** The entries a table draws: an array's or a Set's items, a Map's or an object's keys. */
 function entriesOf(v: object): Array<[string, unknown]> | null {
@@ -217,7 +217,7 @@ function tableOf(v: object): ShowTable | null {
     }
 }
 
-// MARK: graphs
+// graphs
 
 /** Each node once, the value first, its inputs after it in the order it names them. */
 function graphOf(root: object): ShowGraph {
@@ -248,7 +248,7 @@ function graphOf(root: object): ShowGraph {
     return { nodes, more: counted - nodes.length }
 }
 
-// MARK: snapshot
+// snapshot
 
 /**
  * What a call's values look like now. Never throws: a value that refuses to
@@ -271,7 +271,7 @@ export function snapshot(values: readonly unknown[]): Shown {
     }
 }
 
-// MARK: delivery
+// delivery
 
 export function createShow(host: ShowHost) {
     /** This frame's latest per line, for the editor. */

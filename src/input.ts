@@ -186,7 +186,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         return this
     }
 
-    // MARK: ingestion
+    // ingestion
 
     keyDown(code: string): void {
         this._queue.push(() => this._applyKeyDown(code))
@@ -228,7 +228,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._queue.push(() => this._applyBlur())
     }
 
-    // MARK: applied at the frame boundary
+    // applied at the frame boundary
 
     private _applyKeyDown(code: string): void {
         const name = keyNameFromDomCode(code)
@@ -337,7 +337,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._buttons = 0
     }
 
-    // MARK: driving
+    // driving
 
     beginFrame(): void {
         this._frame++
@@ -383,7 +383,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._scrollY = 0
     }
 
-    // MARK: the backend onejs-unity reads
+    // the backend onejs-unity reads
 
     get backend(): InputBackend {
         return {
@@ -434,7 +434,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         }
     }
 
-    // MARK: internals
+    // internals
 
     private _record(name: string): KeyRecord {
         let key = this._keys.get(name)
