@@ -14,19 +14,35 @@ class Value {
     mul(o: Value) { return new Value(this.data * o.data, "", [this, o], "*") }
 }
 
-/** A host whose frames are stepped by hand, recording what reached the editor or the log. */
+/** A host whose frames and clock are stepped by hand, recording what reached the editor or the log. */
 function host(withSink = true) {
     const batches: ShowBatch[] = []
     const lines: string[] = []
     let pending: (() => void) | null = null
     let scheduled = 0
+    let now = 1000
+    const timers: Array<{ at: number, fn: () => void }> = []
     const recorder = createShow({
         sink: () => (withSink ? (batch) => { batches.push(batch) } : null),
         schedule: (flush) => { scheduled++; pending = flush },
         log: (line) => { lines.push(line) },
+        now: () => now,
+        later: (fn, ms) => { timers.push({ at: now + ms, fn }) },
     })
     const frame = () => { const f = pending; pending = null; f?.() }
-    return { recorder, batches, lines, frame, scheduled: () => scheduled }
+    /** Moves the clock on, running each timer that comes due, in order. */
+    const advance = (ms: number) => {
+        const until = now + ms
+        for (;;) {
+            timers.sort((a, b) => a.at - b.at)
+            if (timers.length === 0 || timers[0]!.at > until) break
+            const t = timers.shift()!
+            now = t.at
+            t.fn()
+        }
+        now = until
+    }
+    return { recorder, batches, lines, frame, advance, scheduled: () => scheduled }
 }
 
 describe("show: what a value looks like", () => {
@@ -133,6 +149,22 @@ describe("show: where it goes", () => {
         recorder.record(undefined, [3])
         frame()
         expect(lines).toEqual(["A.ts:9 1", "A.ts:9 2", "3"])
+    })
+
+    /*
+     * A show left in a frame loop on a value that changes every frame. In
+     * Unity each line is a Debug.Log, which is the expensive part of a frame,
+     * so a line logs at most once a second, and always ends on its latest.
+     */
+    it("with no editor, logs a changing line at most once a second, ending on its latest", () => {
+        const { recorder, lines, advance } = host(false)
+        for (let i = 0; i < 120; i++) {
+            recorder.record("A.ts:9", [i])
+            recorder.record("A.ts:10", ["steady"])
+            advance(20)
+        }
+        advance(2000)
+        expect(lines).toEqual(["A.ts:9 0", "A.ts:10 steady", "A.ts:9 49", "A.ts:9 99", "A.ts:9 119"])
     })
 })
 
