@@ -65,6 +65,45 @@ describe("show sites", () => {
         ])
     })
 
+    it("tags a call the minifier writes straight after a keyword: return(, else(, throw(", async () => {
+        const files = [
+            { name: "index.tsx", text: [
+                `import { show } from "oj"`,
+                `export function back(n: number) {`,
+                `    return show(n)`,
+                `}`,
+                `export function pick(n: number) {`,
+                `    if (n > 1) show("big")`,
+                `    else show("small")`,
+                `}`,
+                `export function choose(n: number) {`,
+                `    if (n > 1) { for (const k of [n]) show(k) } else show("none")`,
+                `}`,
+                `export function fail(n: number) {`,
+                `    throw show(n)`,
+                `}`,
+                ``,
+            ].join("\n") },
+        ]
+        const built = await buildGame(esbuild, files, "index.tsx", { workingDir: WORKING_DIR, showSites: true })
+        // The shapes this is about, as the minifier writes them.
+        for (const keyword of ["return", "else", "throw"]) expect(built.code).toMatch(new RegExp(`${keyword}\\(0,`))
+        const { calls, exports } = run(built.code)
+        const cart = exports as Record<string, (n: number) => unknown>
+        cart.back!(1)
+        cart.pick!(2)
+        cart.pick!(0)
+        cart.choose!(0)
+        expect(() => cart.fail!(5)).toThrow()
+        expect(calls).toEqual([
+            { site: "index.tsx:3", values: [1] },
+            { site: "index.tsx:6", values: ["big"] },
+            { site: "index.tsx:7", values: ["small"] },
+            { site: "index.tsx:10", values: ["none"] },
+            { site: "index.tsx:13", values: [5] },
+        ])
+    })
+
     it("leaves a cart's own function named show alone", async () => {
         const files = [
             { name: "index.tsx", text: `import { show } from "oj"\nimport { mine } from "./mine"\nshow(mine())\n` },
