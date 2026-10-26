@@ -73,9 +73,9 @@ describe("show: what a value looks like", () => {
         const shown = snapshot([twice])
         const graph = shown.graph!
         expect(graph.more).toBe(0)
-        expect(graph.nodes.map((n) => n.label)).toEqual(["twice", "d", "e", "a", "b", "c"])
+        expect(graph.nodes.map((n) => n.label)).toEqual(["twice", "d", "e", "c", "a", "b"])
         expect(graph.nodes[0]).toEqual({ label: "twice", op: "+", fields: [["grad", "0"], ["data", "8"]], inputs: [1, 1] })
-        expect(graph.nodes[2]!.inputs).toEqual([3, 4])
+        expect(graph.nodes[2]!.inputs).toEqual([4, 5])
         expect(shown.text).toBe("twice  grad=0  data=8")
     })
 
