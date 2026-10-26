@@ -175,6 +175,11 @@ export type { Room, RoomOptions, RoomMessage } from "./room"
 
 export { isOnline } from "./play"
 
+// MARK: the editor
+
+// A value beside the line that made it, drawn in the OJPlay editor (show.ts).
+export { show } from "./show"
+
 // MARK: components
 
 export {

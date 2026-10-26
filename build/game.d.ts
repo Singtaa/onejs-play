@@ -123,6 +123,12 @@ export function buildGame(
          * always was.
          */
         liveShaders?: boolean
+        /**
+         * Tag each call to oj's show with its file and line, for an editor
+         * that draws the value beside it (show-sites.mjs). A cart whose own
+         * files never import show from oj builds exactly as without it.
+         */
+        showSites?: boolean
     },
 ): Promise<GameBuild>
 

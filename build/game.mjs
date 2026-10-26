@@ -28,6 +28,7 @@ import { tailwindPlugin } from "onejs-unity/esbuild/tailwind"
 import { slPlugin } from "onejs-unity/esbuild/sl"
 import DEFAULT_EXTERNALS from "./externals.json" with { type: "json" }
 import { ANYWHERE } from "./command.mjs"
+import { mentionsShow, tagShowSites } from "./show-sites.mjs"
 
 /**
  * Modules the container provides, which must not be bundled into a game.
@@ -366,6 +367,15 @@ export async function buildGame(esbuild, files, entry, options = {}) {
      */
     let slManifest = null
 
+    /*
+     * Each call to oj's show tagged with its line, for an editor that draws
+     * the value there (show-sites.mjs). Only for a cart whose own files can
+     * call it: every other cart builds exactly as it did. The tagging reads
+     * esbuild's map, so one is made for it even when nobody asked for one.
+     */
+    const showSites = options.showSites === true && mentionsShow(files)
+    const sourcemap = options.sourcemap === true || showSites
+
     const result = await esbuild.build({
         stdin: { contents: tree["/" + entry], resolveDir: "/", sourcefile: entry, loader: "tsx" },
         bundle: true,
@@ -375,7 +385,9 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         globalName: "__exports",
         jsx: "automatic",
         absWorkingDir: workingDir,
-        minify: true,
+        // Identifiers unminified only where show is tagged: that is what lets
+        // the tagging read which variable holds oj (show-sites.mjs).
+        ...(showSites ? { minifyWhitespace: true, minifySyntax: true } : { minify: true }),
         target: "es2022",
         /*
          * A map only on request (PlaySite's editor, to read a runtime error's
@@ -385,7 +397,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
          * sourcesContent, because whoever asked already holds the sources.
          * esbuild wants an output path to name the map; nothing is written.
          */
-        ...(options.sourcemap ? { sourcemap: "external", sourcesContent: false, outfile: "bundle.js" } : {}),
+        ...(sourcemap ? { sourcemap: "external", sourcesContent: false, outfile: "bundle.js" } : {}),
         // Errors are returned, not printed: each caller reports them in its
         // own voice (a 422 body, a remote: line, a terminal).
         logLevel: "silent",
@@ -411,11 +423,14 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         ],
     }).catch((error) => { throw finishErrors(error) })
 
-    const code = result.outputFiles.find((f) => !f.path.endsWith(".map")) ?? result.outputFiles[0]
-    const map = result.outputFiles.find((f) => f.path.endsWith(".map"))
+    const output = result.outputFiles.find((f) => !f.path.endsWith(".map")) ?? result.outputFiles[0]
+    const mapFile = result.outputFiles.find((f) => f.path.endsWith(".map"))
+    let code = output.text
+    let map = mapFile?.text
+    if (showSites && map !== undefined) ({ code, map } = tagShowSites(code, map))
     return {
-        code: code.text,
-        ...(map === undefined ? {} : { map: cartSources(map.text) }),
+        code,
+        ...(map === undefined || options.sourcemap !== true ? {} : { map: cartSources(map) }),
         slManifest,
         warnings: result.warnings.map((w) => w.text),
     }

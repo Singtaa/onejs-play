@@ -40,6 +40,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one |
 | `theme.ts` | The default look of the controls the runtime provides |
 | `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
+| `show.ts` | `show`: a value, a table or a graph beside the line that made it, in the OJPlay editor; a log line on change anywhere else |
 | `container.ts` | The host-facing surface, `ojplay/container` |
 | `runtime.ts` | Container-side: builds the `oj` object a game receives |
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
@@ -53,7 +54,7 @@ Beside `src/`, two folders that are not the runtime:
 
 | Folder | Contents |
 |---|---|
-| `build/` | `game.mjs`, the one builder every game is built with (the site on publish and on Run, `ojplay build`, the shipped-games script), and `externals.json`, the modules the container provides. The esbuild instance is a parameter, wasm in the Worker and native here. |
+| `build/` | `game.mjs`, the one builder every game is built with (the site on publish and on Run, `ojplay build`, the shipped-games script), and `externals.json`, the modules the container provides. The esbuild instance is a parameter, wasm in the Worker and native here. `show-sites.mjs` tags each call to oj's `show` with its line, for the site's builds only. |
 | `cli/` | The `oj` command line, the package's `bin`. |
 | `host/` | `boot.mjs`, the script that boots the container and hands it a game, inlined by the site's sandbox document and by the page `ojplay run` serves. One copy of the contract with `__ojPlay.load`; the two documents differ only in where the runtime is, how the bundle arrives and whom they tell. |
 
