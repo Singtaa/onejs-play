@@ -104,6 +104,24 @@ describe("show sites", () => {
         ])
     })
 
+    it("leaves show passed to a call alone, which minified reads like one after a keyword", async () => {
+        const files = [
+            { name: "index.tsx", text: [
+                `import { show } from "oj"`,
+                `export function pair(a: number, f: (n: number) => void) { return a > 0 ? null : f }`,
+                `export function use(n: number) {`,
+                `    pair(0, show)!(n)`,
+                `}`,
+                ``,
+            ].join("\n") },
+        ]
+        const built = await buildGame(esbuild, files, "index.tsx", { workingDir: WORKING_DIR, showSites: true })
+        expect(built.code).toMatch(/pair\(0,[\w$]+\.show\)\(n\)/)
+        const { calls, exports } = run(built.code)
+        ;(exports as Record<string, (n: number) => void>).use!(8)
+        expect(calls).toEqual([{ site: null, values: [8] }])
+    })
+
     it("leaves a cart's own function named show alone", async () => {
         const files = [
             { name: "index.tsx", text: `import { show } from "oj"\nimport { mine } from "./mine"\nshow(mine())\n` },

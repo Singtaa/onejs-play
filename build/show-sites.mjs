@@ -106,6 +106,9 @@ function encode(lines) {
 
 const escape = (name) => name.replace(/\$/g, "\\$")
 
+/** The words minified code writes an expression straight after, with no space before a parenthesis. */
+const KEYWORDS = new Set(["return", "throw", "else", "case", "do", "typeof", "void", "delete", "await", "yield", "in", "of", "instanceof"])
+
 /**
  * The bundle with each call to oj's show tagged, and its map moved to match.
  * `mapText` is esbuild's own map, with its `src:` sources; untouched when
@@ -121,7 +124,15 @@ export function tagShowSites(code, mapText) {
     const names = holders.map(escape).join("|")
     // A call, plain or optional: `(0,import_oj.show)(` from a named import,
     // `oj.show(` from a namespace one. A read that is not called is left.
-    const call = new RegExp(`(?<![\\w$.])(?:\\(0,(?:${names})\\.show\\)|(?:${names})\\.show)(?:\\?\\.)?\\(`, "g")
+    // The namespace form is somebody else's after a dot or a name
+    // (`x.oj.show(`). The parenthesised one after a name is that name's
+    // arguments (`pair(0,import_oj.show)(n)` passes show), unless the name is
+    // a keyword: minified code writes `return(0,import_oj.show)(n)`.
+    const call = new RegExp(`(?:\\(0,(?:${names})\\.show\\)|(?<![\\w$.])(?:${names})\\.show)(?:\\?\\.)?\\(`, "g")
+    const called = (at) => {
+        const word = /[\w$]+$/.exec(code.slice(Math.max(0, at - 12), at))
+        return word === null || KEYWORDS.has(word[0])
+    }
 
     const map = JSON.parse(mapText)
     const lines = decode(map.mappings)
@@ -140,6 +151,7 @@ export function tagShowSites(code, mapText) {
     /** Insertions, in the order they appear: [offset, text]. */
     const inserts = []
     for (const m of code.matchAll(call)) {
+        if (m[0][0] === "(" && !called(m.index)) continue
         const open = m.index + m[0].length - 1
         const line = lineOf(open)
         const column = open - starts[line]
