@@ -24,8 +24,11 @@
  * message a frame with one entry per line, however many times each line ran.
  *
  * OUTSIDE THE EDITOR (a published page, or the cart in Unity) nothing is
- * drawn: each line logs one console line when what it shows changes, so a
- * show left in a loop does not flood the log.
+ * drawn: each line logs a console line when what it shows changes, at most
+ * once a second and always ending on its latest, so a show left in a loop
+ * does not flood the log. Measured before the cap: a bench changing its
+ * values every frame wrote 72,057 lines in four seconds, and in Unity each
+ * line is a Debug.Log, the expensive part of a frame.
  */
 
 /** A value drawn as a table: rows of cells already formatted as text. */
@@ -53,6 +56,10 @@ export interface ShowHost {
     /** Runs `flush` once, at the end of this frame. */
     schedule(flush: () => void): void
     log(line: string): void
+    /** Milliseconds, for the log's once-a-second cap. */
+    now(): number
+    /** Runs `fn` once, `ms` from now. */
+    later(fn: () => void, ms: number): void
 }
 
 // MARK: caps
@@ -69,6 +76,8 @@ const MAX_COUNTED = 5000
 const MAX_FIELDS = 4
 const MAX_INLINE = 8
 const MAX_CELL = 40
+/** The least time between two log lines from one line, where there is no editor. */
+const LOG_EVERY_MS = 1000
 
 // MARK: text
 
@@ -268,8 +277,40 @@ export function createShow(host: ShowHost) {
     /** This frame's latest per line, for the editor. */
     const pending = new Map<string, Shown>()
     let scheduled = false
-    /** What each line last logged, where there is no editor. */
-    const logged = new Map<string, string>()
+    /**
+     * Where there is no editor: what each line last logged and when, and the
+     * latest it was handed since, waiting for its second to come round.
+     */
+    const logged = new Map<string, { text: string, at: number, waiting: string | null }>()
+
+    function logLine(site: string | undefined, text: string) {
+        host.log(site === undefined ? text : `${site} ${text}`)
+    }
+
+    function logChange(site: string | undefined, text: string) {
+        const key = site ?? ""
+        const now = host.now()
+        const last = logged.get(key)
+        if (last === undefined || (last.waiting === null && now - last.at >= LOG_EVERY_MS)) {
+            if (last !== undefined && last.text === text) return
+            logged.set(key, { text, at: now, waiting: null })
+            logLine(site, text)
+            return
+        }
+        if (last.waiting === null && last.text === text) return
+        // Within the second: keep the latest, and say it when the second is up.
+        if (last.waiting === null) {
+            host.later(() => {
+                const said = last.waiting
+                last.waiting = null
+                if (said === null || said === last.text) return
+                last.text = said
+                last.at = host.now()
+                logLine(site, said)
+            }, LOG_EVERY_MS - (now - last.at))
+        }
+        last.waiting = text
+    }
 
     function flush() {
         scheduled = false
@@ -285,9 +326,7 @@ export function createShow(host: ShowHost) {
             const shown = snapshot(values)
             const key = site ?? ""
             if (host.sink() === null) {
-                if (logged.get(key) === shown.text) return
-                logged.set(key, shown.text)
-                host.log(site === undefined ? shown.text : `${site} ${shown.text}`)
+                logChange(site, shown.text)
                 return
             }
             // Deleted first so the line moves to the end: the batch is in the
@@ -318,6 +357,8 @@ const defaultHost: ShowHost = {
         else setTimeout(flush, 0)
     },
     log(line) { console.log(line) },
+    now: () => Date.now(),
+    later(fn, ms) { setTimeout(fn, ms) },
 }
 
 const shown = createShow(defaultHost)
@@ -331,8 +372,8 @@ const shown = createShow(defaultHost)
  * graph, showing every number property on each node. Only the latest value
  * per line is kept, so a call in a loop is cheap.
  *
- * Outside the editor, and in Unity, it logs one line when what it shows
- * changes, and draws nothing.
+ * Outside the editor, and in Unity, it draws nothing: it logs a line when
+ * what it shows changes, at most once a second per line.
  *
  *     import { show } from "oj"
  *     show(f(3.0))              // 20, at the end of this line

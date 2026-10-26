@@ -142,13 +142,15 @@ describe("show: where it goes", () => {
     })
 
     it("with no editor, logs a line when what it shows changes", () => {
-        const { recorder, lines, frame } = host(false)
+        const { recorder, lines, frame, advance } = host(false)
         recorder.record("A.ts:9", [1])
         recorder.record("A.ts:9", [1])
-        recorder.record("A.ts:9", [2])
         recorder.record(undefined, [3])
         frame()
-        expect(lines).toEqual(["A.ts:9 1", "A.ts:9 2", "3"])
+        advance(1000)
+        recorder.record("A.ts:9", [1])
+        recorder.record("A.ts:9", [2])
+        expect(lines).toEqual(["A.ts:9 1", "3", "A.ts:9 2"])
     })
 
     /*
