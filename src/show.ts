@@ -21,7 +21,8 @@
  * WHAT IT COSTS. A call snapshots its values (so `show(o)` followed by
  * `o.backward()` shows o before the backward pass, as it would read in a
  * notebook) and keeps only the latest snapshot per line. The editor gets one
- * message a frame with one entry per line, however many times each line ran.
+ * message a task (a frame's tick, a step of a dragged number) with one entry
+ * per line, however many times each line ran.
  *
  * OUTSIDE THE EDITOR (a published page, or the cart in Unity) nothing is
  * drawn: each line logs a console line when what it shows changes, at most
@@ -53,7 +54,7 @@ export type ShowBatch = Array<[site: string, shown: Shown]>
 export interface ShowHost {
     /** The editor's receiver, or null where there is no editor. */
     sink(): ((batch: ShowBatch) => void) | null
-    /** Runs `flush` once, at the end of this frame. */
+    /** Runs `flush` once, as the task that recorded a value ends. */
     schedule(flush: () => void): void
     log(line: string): void
     /** Milliseconds, for the log's once-a-second cap. */
@@ -352,8 +353,13 @@ const defaultHost: ShowHost = {
         const sink = (globalThis as { __ojShow?: unknown }).__ojShow
         return typeof sink === "function" ? sink as (batch: ShowBatch) => void : null
     },
+    // As the task that showed ends, which batches it the same as a frame did:
+    // a frame's tick is one task, and so is a dragged number's step running
+    // the cart again. On the next frame instead, every value reached the
+    // editor a frame late, about 13 ms of a drag step's 43 at 60 Hz.
     schedule(flush) {
-        if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => flush())
+        if (typeof queueMicrotask === "function") queueMicrotask(flush)
+        else if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => flush())
         else setTimeout(flush, 0)
     },
     log(line) { console.log(line) },
