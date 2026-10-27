@@ -119,6 +119,26 @@ describe("show: what a value looks like", () => {
     })
 })
 
+describe("show: when it reaches the editor", () => {
+    type Sink = { __ojShow?: (batch: ShowBatch) => void }
+
+    it("sends a task's values as that task ends, not on the next frame", async () => {
+        const batches: ShowBatch[] = []
+        ;(globalThis as Sink).__ojShow = (batch) => { batches.push(batch) }
+        try {
+            // A drag step running the cart again: every show of the run, then the step ends.
+            const tagged = (show as unknown as { $: (site: string, ...values: unknown[]) => void }).$
+            for (let i = 0; i < 3; i++) tagged("flush.ts:4", i)
+            tagged("flush.ts:5", "h")
+            expect(batches).toEqual([])
+            await Promise.resolve()
+            expect(batches).toEqual([[["flush.ts:4", { text: "2" }], ["flush.ts:5", { text: "h" }]]])
+        } finally {
+            delete (globalThis as Sink).__ojShow
+        }
+    })
+})
+
 describe("show: where it goes", () => {
     it("sends the latest value per line, once a frame", () => {
         const { recorder, batches, frame, scheduled } = host()
