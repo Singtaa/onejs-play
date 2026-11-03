@@ -608,6 +608,41 @@ describe("a clone made into a JSRunner project", () => {
         expect(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8")).toBe("{ \"mine\": true }")
     })
 
+    /** The installed OneJS's templates folder, to give it a template or take one away. */
+    const templatesOf = (project: string) => path.join(oneJSOf(project)!, "Editor", "Templates")
+
+    it("writes the CLAUDE.md that imports AGENTS.md, and keeps it out of git", () => {
+        const project = unityProject()
+        fs.writeFileSync(path.join(templatesOf(project), "CLAUDE.md.txt"), "@AGENTS.md\n")
+        const root = clone(project, "Tinder", { "index.tsx": "" })
+        initUnity(root)
+        expect(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8")).toBe("@AGENTS.md\n")
+        const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).stdout
+        expect(status.split("\n").filter(Boolean)).toEqual(["?? index.tsx"])
+    })
+
+    it("scaffolds from a OneJS that ships no CLAUDE.md template, as releases before it do", () => {
+        const project = unityProject()
+        fs.rmSync(path.join(templatesOf(project), "CLAUDE.md.txt"), { force: true })
+        const root = clone(project, "Tinder", { "index.tsx": "" })
+        initUnity(root)
+        expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(true)
+        expect(fs.existsSync(path.join(root, "CLAUDE.md"))).toBe(false)
+    })
+
+    it("writes CLAUDE.md only where there is an AGENTS.md for it to import, as JSRunner does", () => {
+        const project = unityProject()
+        fs.writeFileSync(path.join(templatesOf(project), "CLAUDE.md.txt"), "@AGENTS.md\n")
+        fs.rmSync(path.join(templatesOf(project), "AGENTS.md.txt"))
+        const bare = clone(project, "Tinder", { "index.tsx": "" })
+        initUnity(bare)
+        expect(fs.existsSync(path.join(bare, "CLAUDE.md"))).toBe(false)
+        // A cart that brings its own AGENTS.md gets the import.
+        const own = clone(project, "Big Fish", { "index.tsx": "", "AGENTS.md": "mine" })
+        initUnity(own)
+        expect(fs.existsSync(path.join(own, "CLAUDE.md"))).toBe(true)
+    })
+
     it("says where the clone should go when it is somewhere a JSRunner project cannot be", () => {
         const project = unityProject()
         const wrongName = path.join(project, "Assets", "Tinder")

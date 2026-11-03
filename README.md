@@ -587,6 +587,9 @@ added with `git submodule add` works the same way: its exclude file is asked
 of git rather than assumed to be `.git/info/exclude`. The template table in
 `cli/unity.mjs` mirrors `templateMapping` in OneJS's `JSRunner.cs`, and the
 container's test holds the two together.
+A template the installed OneJS does not ship is skipped, so an older OneJS
+still works, and `CLAUDE.md` (the line `@AGENTS.md`) is written only where
+there is an `AGENTS.md`, as JSRunner writes it.
 
 The cart's files sit at their own names in the repository, and OneJS reads a
 JSRunner project's files from `~/assets/`. So the build `init --unity` writes

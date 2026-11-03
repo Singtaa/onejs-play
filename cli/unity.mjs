@@ -47,6 +47,7 @@ export const TEMPLATE_MAPPING = [
     ["main.uss.txt", "styles/main.uss"],
     ["gitignore.txt", ".gitignore"],
     ["AGENTS.md.txt", "AGENTS.md"],
+    ["CLAUDE.md.txt", "CLAUDE.md"],
 ]
 
 /**
@@ -67,12 +68,19 @@ const IGNORED = [...SCAFFOLD, ...GROWN]
  * The scaffold files init --unity writes into the clone at `root`, as
  * [path, text], from the templates of the OneJS at `onejs`. One function for
  * both directions, so what --from-unity recognises is what --unity writes.
+ *
+ * A template that OneJS does not ship is left out, since a release older than
+ * one of these files has no template for it. CLAUDE.md is the line
+ * `@AGENTS.md`, so it is left out where there is no AGENTS.md for it to
+ * import, as JSRunner leaves it out.
  */
 export function scaffoldFiles(root, onejs) {
     const files = readTree(root)
     const entry = entryOf(files, manifestOf(files))
     const templates = path.join(onejs, "Editor", "Templates")
-    return TEMPLATE_MAPPING.filter(([, target]) => SCAFFOLD.includes(target)).map(([template, target]) => {
+    const shipped = TEMPLATE_MAPPING.filter(([template, target]) => SCAFFOLD.includes(target) && fs.existsSync(path.join(templates, template)))
+    const agents = shipped.some(([, target]) => target === "AGENTS.md") || fs.existsSync(path.join(root, "AGENTS.md"))
+    return shipped.filter(([, target]) => target !== "CLAUDE.md" || agents).map(([template, target]) => {
         let text = fs.readFileSync(path.join(templates, template), "utf8")
         if (target === "package.json") text = packageJson(text, packageName(root), manifestOf(files)?.version)
         if (target === "esbuild.config.mjs") text = buildConfig(text, entry)
