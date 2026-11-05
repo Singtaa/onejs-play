@@ -123,7 +123,51 @@ export function describeStatus(s) {
             lines.push(`tip of main: ${short(s.head)} is still building`)
         }
     }
+    // Each pushed branch's preview (PlaySite docs/refs-and-assets.md).
+    for (const p of s.previews ?? []) {
+        if (p.built === null) lines.push(`preview ${p.branch}: has not built: ${p.buildError}`)
+        else if (p.buildError) lines.push(`preview ${p.branch}: ${short(p.head)} did not build; ${p.url} still plays ${short(p.built)}`)
+        else lines.push(`preview ${p.branch}: ${short(p.built)} at ${p.url}`)
+    }
     return lines
+}
+
+/** The branch a clone is on, or null when its HEAD is detached. */
+export function currentBranch(root) {
+    const result = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "-q", "HEAD"], { encoding: "utf8" })
+    return result.status === 0 ? result.stdout.trim() : null
+}
+
+/** The commit a clone's HEAD is at, or null. */
+export function tipOf(root) {
+    const result = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" })
+    return result.status === 0 ? result.stdout.trim() : null
+}
+
+/**
+ * What `ojplay push` says after pushing a branch other than main: `before`
+ * is that branch's tip on the site before the push (null for a new one),
+ * `tip` the commit pushed, `s` the status after it. A push that did not
+ * build exits 1, as main's does; main is never moved by it.
+ */
+export function describeBranchPush(branch, before, tip, s, left) {
+    const short = (sha) => String(sha).slice(0, 7)
+    const shown = left.length > 8 ? [...left.slice(0, 8), `and ${left.length - 8} more`] : left
+    const notCommitted = left.length === 0 ? [] : [
+        `not committed, so not pushed: ${shown.join(", ")}`,
+        `commit them, then push again: git add -A && git commit -m "<what changed>"`,
+    ]
+    const p = (s.previews ?? []).find((x) => x.branch === branch)
+    if (before === tip) {
+        if (left.length > 0) return { lines: ["nothing was pushed", ...notCommitted], code: 1 }
+        return { lines: [p?.url ? `nothing new to push; preview: ${p.url}` : `nothing new to push on ${branch}`], code: 0 }
+    }
+    if (p === undefined) return { lines: [`pushed ${branch}; it has no preview (the site said why above)`, ...notCommitted], code: 0 }
+    if (p.built !== tip) {
+        const plays = p.built === null ? "it has no preview yet" : `the preview still plays ${short(p.built)}`
+        return { lines: [`the tip of ${branch} did not build; ${plays}`, ...String(p.buildError ?? "").split("\n").filter((l) => l !== ""), ...notCommitted], code: 1 }
+    }
+    return { lines: [`preview: ${short(p.built)} at ${p.url}`, `main is unchanged; live: ${short(s.live)}`, ...notCommitted], code: 0 }
 }
 
 /**

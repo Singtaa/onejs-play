@@ -10,9 +10,10 @@
  *   ojplay typecheck        tsc --noEmit against the same oj the site builds with
  *   ojplay run              build, then run the cart in the real container in a local Chrome
  *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
- *   ojplay status           what the site is running: head, live, and why they differ
+ *   ojplay status           what the site is running: head, live, why they differ, and each branch's preview
  *   ojplay list             every cart on the account
- *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed;
+ *   ojplay push             git push the branch the clone is on with OJ_TOKEN: main goes live, any other becomes a preview;
+ *                           fail if the tip did not build or nothing was committed;
  *                           the first push of a cart made here makes it on the site
  *   ojplay new <name>       start a cart on this machine: the starter in a new git repository
  *   ojplay clone <address>  clone a cart so that git pull and push work in it with OJ_TOKEN or a login
@@ -25,7 +26,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { cloneSource, describePush, describeStatus, git, mine, sidOf, siteOrigin, status, token, tokenOf, uncommitted, version } from "./site.mjs"
+import { cloneSource, currentBranch, describeBranchPush, describePush, describeStatus, git, mine, sidOf, siteOrigin, status, tipOf, token, tokenOf, uncommitted, version } from "./site.mjs"
 import { cloneCart, login, logout } from "./login.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
@@ -75,13 +76,15 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
                           --headed, --window, --for as above
-  status                what runs, the tip of main, and why they differ (--sid <id>; --json for scripts)
+  status                what runs, the tip of main, why they differ, and each branch's preview (--sid <id>; --json for scripts)
   list                  every cart on the account (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
-  push                  git push origin main; exits 1 if the tip failed to build, or if
+  push                  git push the branch you are on: main goes live, any other branch
+                          builds as a preview with a link of its own. Exits 1 if the tip
+                          failed to build, or if
                           nothing was pushed because the changes are not committed. The
                           first push of a cart made with new makes it on the site, public,
                           after a login if there is none
@@ -329,7 +332,19 @@ async function main() {
             const bearer = token(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const left = uncommitted(root)
-            const { head } = await status(sid, { bearer })
+            const before = await status(sid, { bearer })
+            // The branch the clone is on: main goes live, any other becomes a preview.
+            const branch = currentBranch(root) ?? "main"
+            if (branch !== "main") {
+                const tip = tipOf(root)
+                const was = (before.previews ?? []).find((p) => p.branch === branch)?.head ?? null
+                const code = git(["push", "origin", branch], { cwd: root, bearer })
+                if (code !== 0) return code
+                const said = describeBranchPush(branch, was, tip, await status(sid, { bearer }), left)
+                for (const line of said.lines) say(line)
+                return said.code
+            }
+            const { head } = before
             const code = git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
             const said = describePush(head, await status(sid, { bearer }), left)

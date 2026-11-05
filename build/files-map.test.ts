@@ -43,6 +43,13 @@ describe("a build's file map", () => {
         expect(out.seen).toEqual(["/assets/glow.png", "/assets/fx/glow.png"])
     })
 
+    it("hands over the store with the map when the site names one", async () => {
+        const built = await buildGame(esbuild, FILES, "index.tsx", { workingDir: WORKING_DIR, assets, store: "https://store.example" })
+        let options: unknown = null
+        run(built.code, { setAssetMap: (_: unknown, o: unknown) => { options = o }, assetUrl: (n: string) => n })
+        expect(options).toEqual({ store: "https://store.example" })
+    })
+
     it("is not in a build that was not given one", async () => {
         const plain = await buildGame(esbuild, FILES, "index.tsx", { workingDir: WORKING_DIR })
         expect(plain.code).not.toContain("setAssetMap")

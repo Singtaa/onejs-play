@@ -57,11 +57,15 @@ export type AssetEntry = readonly [sha256: string, bytes: number]
  */
 let files: Record<string, AssetEntry> = {}
 
+/** Where the map's hashes are served from, when the build says: PlaySite's store. Null means the cart's own origin. */
+let store: string | null = null
+
 /** Called by the host. Games have no reason to touch this. */
 export function setAssetBase(next: string | null, options: { usedCarts?: string } = {}): void {
     base = next === null ? null : next.replace(/\/+$/, "")
     usedCarts = next === null ? "" : (options.usedCarts ?? "").replace(/^\/+|\/+$/g, "")
     files = {}
+    store = null
     // A new host is a new Run, and a file may have changed under its name since.
     textures.clear()
 }
@@ -74,10 +78,23 @@ export function setAssetBase(next: string | null, options: { usedCarts?: string 
  * bytes, so it is cached for good and served without looking the name up,
  * and a preview, a version and a rollback each load exactly their own
  * commit's files. A name the map lacks resolves as it always did.
+ *
+ * With `store`, a mapped name resolves there instead, to
+ * `<store>/<sha256><ext>`: the hash and the name's own extension, lowercased,
+ * which is how PlaySite's store keys a file. The extension stays in the URL
+ * because Unity's loaders choose a decoder by it (AudioBridge.AudioTypeFor).
  */
-export function setAssetMap(next: Record<string, AssetEntry> | null): void {
+export function setAssetMap(next: Record<string, AssetEntry> | null, options: { store?: string } = {}): void {
     files = next ?? {}
+    store = typeof options.store === "string" && options.store !== "" ? options.store.replace(/\/+$/, "") : null
     textures.clear()
+}
+
+/** A name's last extension, lowercased, dot included: ".png", ".json" for a sidecar. Empty when it has none. */
+function extensionOf(name: string): string {
+    const slash = name.lastIndexOf("/")
+    const dot = name.lastIndexOf(".")
+    return dot > slash ? name.slice(dot).toLowerCase() : ""
 }
 
 /** A file this build ships, or undefined: its hash and size, for a loading bar. */
@@ -120,7 +137,7 @@ export function assetUrl(name: string): string {
 
     if (base !== null) {
         const known = files[clean]
-        if (known !== undefined) return `${base}/${known[0]}/${clean}`
+        if (known !== undefined) return store !== null ? `${store}/${known[0]}${extensionOf(clean)}` : `${base}/${known[0]}/${clean}`
     }
     if (base !== null) return usedCarts !== "" && clean.startsWith("@") ? `${base}/${usedCarts}/${clean}` : `${base}/${clean}`
 

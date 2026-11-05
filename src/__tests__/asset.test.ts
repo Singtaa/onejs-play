@@ -110,6 +110,16 @@ describe("assetUrl", () => {
             expect(assetInfo("missing.png")).toBeUndefined()
         })
 
+        it("resolves to the store, by hash and extension, when the build names one", () => {
+            setAssetMap({ "glow.png": [glow, 2048], "fx/sheet.sheet.json": [sheet, 90], "@singtaa/lightning@1.2.0/Bolt.PNG": [bolt, 512] },
+                { store: "https://store.onejsusercontent.com/" })
+            expect(assetUrl("glow.png")).toBe(`https://store.onejsusercontent.com/${glow}.png`)
+            expect(assetUrl("fx/sheet.sheet.json")).toBe(`https://store.onejsusercontent.com/${sheet}.json`)
+            expect(assetUrl("@singtaa/lightning@1.2.0/Bolt.PNG")).toBe(`https://store.onejsusercontent.com/${bolt}.png`)
+            // A name the build does not ship still asks the cart's origin.
+            expect(assetUrl("missing.png")).toBe(`${base}/missing.png`)
+        })
+
         it("belongs to one build: a new host starts without it", () => {
             setAssetBase(base)
             expect(assetUrl("glow.png")).toBe(`${base}/glow.png`)

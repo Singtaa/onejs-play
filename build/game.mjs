@@ -157,9 +157,10 @@ export function notAvailable(specifier, externals = EXTERNALS) {
  */
 const FILES_MODULE = "oj:files"
 
-export function filesModule(assets) {
+export function filesModule(assets, store) {
+    const options = typeof store === "string" ? `, ${JSON.stringify({ store })}` : ""
     return `import { setAssetMap } from "oj"
-if (typeof setAssetMap === "function") setAssetMap(${JSON.stringify(assets)})
+if (typeof setAssetMap === "function") setAssetMap(${JSON.stringify(assets)}${options})
 `
 }
 
@@ -351,7 +352,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
             }))
 
             build.onLoad({ filter: /.*/, namespace: "oj-files" }, () => ({
-                contents: filesModule(options.assets),
+                contents: filesModule(options.assets, options.store),
                 loader: "js",
                 resolveDir: "/",
             }))

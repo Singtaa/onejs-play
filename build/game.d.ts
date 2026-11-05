@@ -137,6 +137,12 @@ export function buildGame(
          * code is what it always was. PlaySite passes it; nothing else does.
          */
         assets?: Record<string, readonly [string, number]>
+        /**
+         * Where `assets`' hashes are served from, handed to `setAssetMap` with
+         * the map: a name then loads `<store>/<sha256><ext>`. Omitted, from
+         * the cart's own origin, `/assets/<sha256>/<name>`.
+         */
+        store?: string
     },
 ): Promise<GameBuild>
 
