@@ -104,7 +104,7 @@ export type { Rng, Random } from "./random"
 
 // a game's own files
 
-export { assetUrl, loadTexture, useTexture, useFlipbook, loadSheet } from "./asset"
+export { assetUrl, assetInfo, setAssetMap, loadTexture, useTexture, useFlipbook, loadSheet } from "./asset"
 /**
  * Highlighted code, for any game that wants to show its own source.
  *
@@ -115,7 +115,7 @@ export { Code } from "./code-view"
 export { tokenize, tokenizeLine, CODE_THEME } from "./code"
 export type { Token, TokenKind, CodeTheme } from "./code"
 export type { CodeProps } from "./code-view"
-export type { UvRect } from "./asset"
+export type { UvRect, AssetEntry } from "./asset"
 
 /**
  * The texture pipeline: build and process images on the GPU.

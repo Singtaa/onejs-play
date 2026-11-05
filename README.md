@@ -26,7 +26,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
-| `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
+| `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
 | `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name, and `useSound` |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
@@ -241,6 +241,16 @@ project's `assets/` folder in the editor or `StreamingAssets/onejs/assets/` in a
 build. The container passes its origin in as `assetBase` when it creates the
 runtime; with none set, OneJS's own project convention applies, which is exactly
 what an ejected copy needs.
+
+**By hash, on the site.** A bundle PlaySite builds carries its files by name,
+as `[sha256, bytes]` (`buildGame`'s `assets`, injected as `oj:files` ahead of
+the game's own code), and hands them to `setAssetMap`. A name in that map
+resolves to `<assetBase>/<sha256>/<name>`, a URL that names its bytes, so it
+is cached for good and served without a lookup, and a preview, a version and a
+rollback each load their own commit's files. `assetInfo(name)` says a file's
+size for a loading bar. A new host empties the map; a name it lacks, a bundle
+built without one and a container from before it all resolve as above
+(PlaySite `docs/refs-and-assets.md`).
 
 **Where the files go.** An asset's name is its path from the cart's root:
 `pop.wav` beside `index.tsx`, or `sfx/pop.wav` in a folder of your own. Never in
