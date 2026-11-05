@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { describe, it, expect } from "vitest"
-import { describePush, describeStatus, uncommitted } from "./site.mjs"
+import { currentBranch, describeBranchPush, describePush, describeStatus, uncommitted } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
 
 /**
@@ -98,5 +98,50 @@ describe("what a push leaves behind", () => {
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
+    })
+})
+
+/**
+ * A push of any branch but main builds it as a preview and moves nothing
+ * players get (PlaySite docs/refs-and-assets.md). It reads the way main's
+ * does, and fails the same way when the tip did not build.
+ */
+describe("ojplay push on a branch, read aloud", () => {
+    const tip = "9e1d2b7aaa"
+    const url = "https://play.onejs.com/@me/tuner@night-level"
+    const site = (preview: Record<string, unknown> | null) => ({
+        ...base, head: "4b1c0de111", live: "4b1c0de111", buildError: null,
+        previews: preview === null ? [] : [{ branch: "night-level", url, ...preview }],
+    })
+
+    it("says where the preview is and that main did not move", () => {
+        expect(describeBranchPush("night-level", null, tip, site({ head: tip, built: tip, buildError: null }), [])).toEqual({
+            lines: [`preview: 9e1d2b7 at ${url}`, "main is unchanged; live: 4b1c0de"], code: 0,
+        })
+    })
+
+    it("fails when the tip did not build, and says what the preview still plays", () => {
+        const said = describeBranchPush("night-level", "1111111aaa", tip, site({ head: tip, built: "1111111aaa", buildError: "index.tsx:3:9: Expected \";\"" }), [])
+        expect(said.code).toBe(1)
+        expect(said.lines).toEqual(["the tip of night-level did not build; the preview still plays 1111111", "index.tsx:3:9: Expected \";\""])
+    })
+
+    it("fails when nothing was committed, and is quiet when nothing is new", () => {
+        expect(describeBranchPush("night-level", tip, tip, site({ head: tip, built: tip, buildError: null }), ["index.tsx"]).code).toBe(1)
+        expect(describeBranchPush("night-level", tip, tip, site({ head: tip, built: tip, buildError: null }), [])).toEqual({
+            lines: [`nothing new to push; preview: ${url}`], code: 0,
+        })
+    })
+
+    it("lists each preview in status", () => {
+        const lines = describeStatus({ ...site({ head: tip, built: tip, buildError: null }) })
+        expect(lines.at(-1)).toBe(`preview night-level: 9e1d2b7 at ${url}`)
+    })
+
+    it("knows which branch a clone is on", () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-branch-"))
+        spawnSync("git", ["init", "-q", "-b", "night-level", dir])
+        expect(currentBranch(dir)).toBe("night-level")
+        fs.rmSync(dir, { recursive: true, force: true })
     })
 })

@@ -129,6 +129,20 @@ export function buildGame(
          * files never import show from oj builds exactly as without it.
          */
         showSites?: boolean
+        /**
+         * Every file the build ships, by name, as `[sha256, bytes]`: the
+         * cart's own, and each used cart's under its key
+         * (`@h/n@1.2.0/glow.png`). Handed to the container's oj before the
+         * game runs, so a name loads `/assets/<sha256>/<name>`. Omitted, the
+         * code is what it always was. PlaySite passes it; nothing else does.
+         */
+        assets?: Record<string, readonly [string, number]>
+        /**
+         * Where `assets`' hashes are served from, handed to `setAssetMap` with
+         * the map: a name then loads `<store>/<sha256><ext>`. Omitted, from
+         * the cart's own origin, `/assets/<sha256>/<name>`.
+         */
+        store?: string
     },
 ): Promise<GameBuild>
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { assetUrl, setAssetBase, getAssetBase } from "../asset"
+import { assetUrl, assetInfo, setAssetBase, setAssetMap, getAssetBase } from "../asset"
 
 /**
  * assetUrl is the one place that knows a game's files live somewhere different
@@ -70,6 +70,60 @@ describe("assetUrl", () => {
         it("trims a trailing slash off the base rather than doubling it", () => {
             setAssetBase("https://abc123.onejsusercontent.com/assets/")
             expect(assetUrl("glow.png")).toBe("https://abc123.onejsusercontent.com/assets/glow.png")
+        })
+    })
+
+    /*
+     * A site build hands over its files by name (PlaySite's buildCommit), so a
+     * name resolves to a URL that names its bytes. A preview, a version and a
+     * rollback each load their own commit's files that way.
+     */
+    describe("with the build's file map", () => {
+        const base = "https://abc123.onejsusercontent.com/assets"
+        const glow = "a".repeat(64), bolt = "b".repeat(64), sheet = "c".repeat(64)
+        beforeEach(() => {
+            setAssetBase(base)
+            setAssetMap({
+                "glow.png": [glow, 2048],
+                "fx/sheet.sheet.json": [sheet, 90],
+                "@singtaa/lightning@1.2.0/bolt.png": [bolt, 512],
+            })
+        })
+
+        it("resolves a name to its hash, however it is written", () => {
+            for (const name of ["glow.png", "./glow.png", "assets/glow.png"]) {
+                expect(assetUrl(name)).toBe(`${base}/${glow}/glow.png`)
+            }
+        })
+
+        it("resolves a used cart's file and a sidecar the same way", () => {
+            expect(assetUrl("@singtaa/lightning@1.2.0/bolt.png")).toBe(`${base}/${bolt}/@singtaa/lightning@1.2.0/bolt.png`)
+            expect(assetUrl("fx/sheet.sheet.json")).toBe(`${base}/${sheet}/fx/sheet.sheet.json`)
+        })
+
+        it("leaves a name the build does not ship as it always was", () => {
+            expect(assetUrl("missing.png")).toBe(`${base}/missing.png`)
+        })
+
+        it("says each file's size, for a loading bar", () => {
+            expect(assetInfo("glow.png")).toEqual({ sha256: glow, bytes: 2048 })
+            expect(assetInfo("missing.png")).toBeUndefined()
+        })
+
+        it("resolves to the store, by hash and extension, when the build names one", () => {
+            setAssetMap({ "glow.png": [glow, 2048], "fx/sheet.sheet.json": [sheet, 90], "@singtaa/lightning@1.2.0/Bolt.PNG": [bolt, 512] },
+                { store: "https://store.onejsusercontent.com/" })
+            expect(assetUrl("glow.png")).toBe(`https://store.onejsusercontent.com/${glow}.png`)
+            expect(assetUrl("fx/sheet.sheet.json")).toBe(`https://store.onejsusercontent.com/${sheet}.json`)
+            expect(assetUrl("@singtaa/lightning@1.2.0/Bolt.PNG")).toBe(`https://store.onejsusercontent.com/${bolt}.png`)
+            // A name the build does not ship still asks the cart's origin.
+            expect(assetUrl("missing.png")).toBe(`${base}/missing.png`)
+        })
+
+        it("belongs to one build: a new host starts without it", () => {
+            setAssetBase(base)
+            expect(assetUrl("glow.png")).toBe(`${base}/glow.png`)
+            expect(assetInfo("glow.png")).toBeUndefined()
         })
     })
 

@@ -149,6 +149,21 @@ export function notAvailable(specifier, externals = EXTERNALS) {
     return `"${specifier}" is not available here. A game may import only its own files, plus ${externals.filter((e) => !e.includes("/")).join(", ")}.`
 }
 
+/**
+ * The module every file of a build that carries its file map imports first
+ * (esbuild's `inject`): it hands the map to the container's oj before any of
+ * the game's code runs. A container from before `setAssetMap` lacks it, and
+ * then the game's names resolve as they always did.
+ */
+const FILES_MODULE = "oj:files"
+
+export function filesModule(assets, store) {
+    const options = typeof store === "string" ? `, ${JSON.stringify({ store })}` : ""
+    return `import { setAssetMap } from "oj"
+if (typeof setAssetMap === "function") setAssetMap(${JSON.stringify(assets)}${options})
+`
+}
+
 /** Resolves "." and ".." inside a POSIX path, so a relative import cannot escape. */
 export function normalize(path) {
     const out = []
@@ -264,7 +279,10 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         name: "game-tree",
         setup(build) {
             build.onResolve({ filter: /.*/ }, (args) => {
-                // The scoped oj's own import of the real one.
+                // The build's file map, injected into every file.
+                if (args.path === FILES_MODULE && options.assets !== undefined) return { path: "map", namespace: "oj-files" }
+                // The file map's own import of oj, and the scoped oj's.
+                if (args.namespace === "oj-files" && args.path === "oj") return { path: "oj", namespace: "ext" }
                 if (args.namespace === "cart-oj") return { path: args.path, namespace: "ext" }
                 // A whole cart's stand-in importing its entry.
                 if (args.namespace === "cart-whole") {
@@ -329,6 +347,12 @@ export async function buildGame(esbuild, files, entry, options = {}) {
                 // `export {}` makes it an ES module that exports nothing, so a
                 // named import from it is an error rather than an undefined.
                 contents: `import ${JSON.stringify(`/${args.path}/${carts.carts[args.path].entry ?? "index.tsx"}`)}\nexport {}`,
+                loader: "js",
+                resolveDir: "/",
+            }))
+
+            build.onLoad({ filter: /.*/, namespace: "oj-files" }, () => ({
+                contents: filesModule(options.assets, options.store),
                 loader: "js",
                 resolveDir: "/",
             }))
@@ -398,6 +422,8 @@ export async function buildGame(esbuild, files, entry, options = {}) {
          * esbuild wants an output path to name the map; nothing is written.
          */
         ...(sourcemap ? { sourcemap: "external", sourcesContent: false, outfile: "bundle.js" } : {}),
+        // The file map, first: PlaySite's builds carry one, nobody else's do.
+        ...(options.assets !== undefined ? { inject: [FILES_MODULE] } : {}),
         // Errors are returned, not printed: each caller reports them in its
         // own voice (a 422 body, a remote: line, a terminal).
         logLevel: "silent",

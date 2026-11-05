@@ -26,7 +26,8 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
-| `asset.ts` | `assetUrl`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
+| `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
+| `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes |
 | `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name, and `useSound` |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
@@ -241,6 +242,30 @@ project's `assets/` folder in the editor or `StreamingAssets/onejs/assets/` in a
 build. The container passes its origin in as `assetBase` when it creates the
 runtime; with none set, OneJS's own project convention applies, which is exactly
 what an ejected copy needs.
+
+**By hash, on the site.** A bundle PlaySite builds carries its files by name,
+as `[sha256, bytes]` (`buildGame`'s `assets`, injected as `oj:files` ahead of
+the game's own code), and hands them to `setAssetMap`. A name in that map
+resolves to `<assetBase>/<sha256>/<name>`, a URL that names its bytes, so it
+is cached for good and served without a lookup, and a preview, a version and a
+rollback each load their own commit's files. `assetInfo(name)` says a file's
+size for a loading bar. With a `store` (`buildGame`'s option, passed on to
+`setAssetMap`), a mapped name loads `<store>/<sha256><ext>` instead: PlaySite's
+content-addressed store, keyed by the hash and the name's lowercased extension,
+which stays in the URL because Unity's loaders pick a decoder by it. A new host
+empties the map; a name it lacks, a bundle built without one and a container
+from before it all resolve as above (PlaySite `docs/refs-and-assets.md`).
+
+**Loading ahead.** Every loader fetches on first use. `preload(names,
+onProgress)` asks early, for what a game needs before it starts: pictures and
+models into the caches the loaders share, anything else fetched once so the
+browser holds it. A name ending in `/` is every file of the build under that
+folder, and progress is in bytes from the file map, so the total is known
+before the first byte.
+
+```tsx
+await preload(["models/ship.glb", "music/"], (got, total) => setBar(got / total))
+```
 
 **Where the files go.** An asset's name is its path from the cart's root:
 `pop.wav` beside `index.tsx`, or `sfx/pop.wav` in a folder of your own. Never in
@@ -584,11 +609,11 @@ ojplay build --unity --out <dir>   # for OneJS, a cart at a Unity project's root
 ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
 ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
-ojplay status          # what the site is running and why the tip differs (--json for scripts)
+ojplay status          # what the site is running, why the tip differs, and each branch's preview (--json for scripts)
 ojplay list            # every cart on the account
 ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
 ojplay logout          # forget that login, here and on the site
-ojplay push            # git push, then exit 1 if the tip did not build or nothing was committed
+ojplay push            # push the branch you are on (main goes live, any other is a preview); exit 1 if the tip did not build or nothing was committed
 ojplay new "Name"      # start a cart here: the starter in a new git repo, no account; its first push makes it on the site
 ojplay clone @h/name   # clone a cart; git pull and push in it work with OJ_TOKEN or the login
 ojplay runtime         # fetch the container into ~/.onejs-play (--runtime <version>)

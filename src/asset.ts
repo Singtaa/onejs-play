@@ -47,12 +47,70 @@ let usedCarts = ""
 /** One texture load per URL for the life of a host, shared by every component that asks. */
 const textures = new Map<string, Promise<Texture>>()
 
+/** A file a build ships: its SHA-256 and its size in bytes. */
+export type AssetEntry = readonly [sha256: string, bytes: number]
+
+/**
+ * The build's own files and its used carts' (`@h/n@1.2.0/glow.png`), by
+ * name. Empty until a bundle says otherwise, and emptied by every new host,
+ * because the map belongs to one build (docs/refs-and-assets.md, PlaySite).
+ */
+let files: Record<string, AssetEntry> = {}
+
+/** Where the map's hashes are served from, when the build says: PlaySite's store. Null means the cart's own origin. */
+let store: string | null = null
+
 /** Called by the host. Games have no reason to touch this. */
 export function setAssetBase(next: string | null, options: { usedCarts?: string } = {}): void {
     base = next === null ? null : next.replace(/\/+$/, "")
     usedCarts = next === null ? "" : (options.usedCarts ?? "").replace(/^\/+|\/+$/g, "")
+    files = {}
+    store = null
     // A new host is a new Run, and a file may have changed under its name since.
     textures.clear()
+}
+
+/**
+ * Called by a bundle the site built, before any of the game's own code runs:
+ * the first module the builder puts in it hands over the build's files.
+ *
+ * With it, a name resolves to `<base>/<sha256>/<name>`. That URL names its
+ * bytes, so it is cached for good and served without looking the name up,
+ * and a preview, a version and a rollback each load exactly their own
+ * commit's files. A name the map lacks resolves as it always did.
+ *
+ * With `store`, a mapped name resolves there instead, to
+ * `<store>/<sha256><ext>`: the hash and the name's own extension, lowercased,
+ * which is how PlaySite's store keys a file. The extension stays in the URL
+ * because Unity's loaders choose a decoder by it (AudioBridge.AudioTypeFor).
+ */
+export function setAssetMap(next: Record<string, AssetEntry> | null, options: { store?: string } = {}): void {
+    files = next ?? {}
+    store = typeof options.store === "string" && options.store !== "" ? options.store.replace(/\/+$/, "") : null
+    textures.clear()
+}
+
+/** A name's last extension, lowercased, dot included: ".png", ".json" for a sidecar. Empty when it has none. */
+function extensionOf(name: string): string {
+    const slash = name.lastIndexOf("/")
+    const dot = name.lastIndexOf(".")
+    return dot > slash ? name.slice(dot).toLowerCase() : ""
+}
+
+/** A file this build ships, or undefined: its hash and size, for a loading bar. */
+export function assetInfo(name: string): { sha256: string, bytes: number } | undefined {
+    const entry = files[cleanName(name)]
+    return entry === undefined ? undefined : { sha256: entry[0], bytes: entry[1] }
+}
+
+/** Every name this build ships, from its file map: what `preload("folder/")` opens. */
+export function assetNames(): string[] {
+    return Object.keys(files)
+}
+
+/** Leading "./" and "assets/" are what a web habit produces; both mean the name after them. */
+function cleanName(name: string): string {
+    return name.replace(/^\.\//, "").replace(/^assets\//, "")
 }
 
 export function getAssetBase(): string | null {
@@ -80,8 +138,12 @@ export function assetUrl(name: string): string {
     // Leading "./" and "assets/" are what a web habit produces, and both mean
     // the thing this function is already about. Accepting them costs one line
     // and removes a class of "why is my sprite missing".
-    const clean = name.replace(/^\.\//, "").replace(/^assets\//, "")
+    const clean = cleanName(name)
 
+    if (base !== null) {
+        const known = files[clean]
+        if (known !== undefined) return store !== null ? `${store}/${known[0]}${extensionOf(clean)}` : `${base}/${known[0]}/${clean}`
+    }
     if (base !== null) return usedCarts !== "" && clean.startsWith("@") ? `${base}/${usedCarts}/${clean}` : `${base}/${clean}`
 
     // No container, so this is a real Unity project and OneJS's own convention
