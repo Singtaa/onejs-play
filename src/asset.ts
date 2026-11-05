@@ -103,6 +103,11 @@ export function assetInfo(name: string): { sha256: string, bytes: number } | und
     return entry === undefined ? undefined : { sha256: entry[0], bytes: entry[1] }
 }
 
+/** Every name this build ships, from its file map: what `preload("folder/")` opens. */
+export function assetNames(): string[] {
+    return Object.keys(files)
+}
+
 /** Leading "./" and "assets/" are what a web habit produces; both mean the name after them. */
 function cleanName(name: string): string {
     return name.replace(/^\.\//, "").replace(/^assets\//, "")
