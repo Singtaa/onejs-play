@@ -118,10 +118,13 @@ describe("git with ojplay as its filter", () => {
         expect(fs.readFileSync(cached(sha(big))).equals(big)).toBe(true)
         expect(git(root, "status", "--porcelain").stdout).toBe("")
 
-        // A plain git clone leaves the pointer; setting the clone up puts the file there.
+        // A plain git clone leaves the pointer, with CRLF where git converts line
+        // endings as Windows' does; setting the clone up puts the file there.
         const copy = path.join(dir, "copy")
-        git(dir, "clone", "-q", root, copy)
-        expect(parsePointer(fs.readFileSync(path.join(copy, "ship.glb")))).not.toBeNull()
+        git(dir, "clone", "-q", "-c", "core.autocrlf=true", root, copy)
+        const plain = fs.readFileSync(path.join(copy, "ship.glb"), "utf8")
+        expect(plain).toContain("\r\n")
+        expect(parsePointer(plain.replace(/\r\n/g, "\n"))).not.toBeNull()
         const said = setupStore(copy)
         expect(said.join("\n")).toContain("1 of 1 fetched")
         expect(fs.readFileSync(path.join(copy, "ship.glb")).equals(big)).toBe(true)

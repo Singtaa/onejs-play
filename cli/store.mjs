@@ -495,7 +495,10 @@ function pointerFiles(root) {
         if (name === "" || !isUploadableAsset(name)) return false
         try {
             const file = path.join(root, name)
-            return fs.statSync(file).size <= MAX_POINTER_BYTES && parsePointer(fs.readFileSync(file)) !== null
+            if (fs.statSync(file).size > MAX_POINTER_BYTES) return false
+            // A clone made before these attributes existed checks a pointer out
+            // with CRLF under core.autocrlf, as Windows' git does by default.
+            return parsePointer(fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n")) !== null
         } catch {
             return false
         }
