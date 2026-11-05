@@ -143,8 +143,20 @@ export function buildGame(
          * the cart's own origin, `/assets/<sha256>/<name>`.
          */
         store?: string
+        /**
+         * Every asset file the cart has, by name, for a build with no
+         * `assets` map (ojplay's): what oj.json's preload list is checked
+         * against and its folders opened into. With `assets`, its names are used.
+         */
+        assetNames?: readonly string[]
     },
 ): Promise<GameBuild>
+
+/** The oj.json field listing the files that load before the cart appears. */
+export const PRELOAD_FIELD: "preload"
+
+/** oj.json's preload list as the files it names, folders opened, with a warning for each entry that names nothing. */
+export function startupFiles(manifest: Record<string, unknown> | null | undefined, names: readonly string[]): { files: string[], warnings: string[] }
 
 /** esbuild's failure as `file:line:column: text` lines. */
 export function formatBuildErrors(error: unknown): string[]

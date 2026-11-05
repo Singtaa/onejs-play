@@ -13,13 +13,15 @@
  * transform on an element would magnify them.
  */
 
-import { cloneElement, createElement, isValidElement, useEffect, useState, type ReactNode } from "react"
+import { cloneElement, createElement, Fragment, isValidElement, useEffect, useState, type ReactNode } from "react"
 import { render, ScreenProvider, View } from "onejs-react"
 import { getCurrentRuntime, setRemount } from "./runtime"
 import { startStandalone } from "./standalone"
 import { stageOf, type Stage } from "./stage"
 import { applyTheme } from "./theme"
 import { useBackdrop } from "./models"
+import { startupFiles } from "./asset"
+import { preload } from "./preload"
 
 /**
  * What shows behind a game that paints nothing: dark enough to sit behind
@@ -54,6 +56,35 @@ function StagePresenter({ children }: { children: ReactNode }) {
 }
 
 /**
+ * The files oj.json's preload list names, loading before the cart appears:
+ * a plain bar across the middle of the stage, filled by bytes, then the cart
+ * with them ready. Kept for the life of a host once done, so a hot reload's
+ * remount goes straight to the cart. A file that fails is logged and the cart
+ * starts anyway: it fails again where it is used, which says where.
+ */
+let startupDone: readonly string[] | null = null
+
+function LoadFirst({ files, children }: { files: readonly string[], children: ReactNode }) {
+    const [progress, setProgress] = useState<[number, number]>([0, 0])
+    const [done, setDone] = useState(startupDone === files)
+    useEffect(() => {
+        if (done) return
+        let live = true
+        preload(files, (got, total) => { if (live) setProgress([got, total]) })
+            .catch((error) => console.error("[oj] a file oj.json preloads did not load:", error))
+            .finally(() => { startupDone = files; if (live) setDone(true) })
+        return () => { live = false }
+    }, [files, done])
+    if (done) return createElement(Fragment, null, children)
+    const [got, total] = progress
+    return createElement(
+        View,
+        { style: { position: "absolute", left: "30%", width: "40%", top: "50%", height: 6, marginTop: -3, borderRadius: 3, backgroundColor: "rgba(255, 255, 255, 0.12)", overflow: "hidden" } },
+        createElement(View, { style: { width: `${total > 0 ? Math.round((got / total) * 100) : 0}%`, height: "100%", backgroundColor: "rgba(255, 255, 255, 0.7)" } }),
+    )
+}
+
+/**
  * Renders a game into the window.
  *
  * Inside the container the runtime already exists. Outside one, in an ejected
@@ -64,8 +95,9 @@ export function mount(element: ReactNode, options: { theme?: boolean } = {}): vo
     const runtime = getCurrentRuntime() ?? startStandalone().oj
     // Before the render, so the first frame a player sees is already themed.
     if (options.theme !== false) applyTheme()
-    const draw = (cart: ReactNode) =>
-        render(createElement(StagePresenter, null, cart) as never, runtime.root as never)
+    const files = startupFiles()
+    const draw = (cart: ReactNode) => render(createElement(StagePresenter, null,
+        files.length === 0 ? cart : createElement(LoadFirst, { files, children: cart })) as never, runtime.root as never)
     draw(element)
     // A fresh element of the same type, so React keeps the state and renders
     // every child again (ContainerRuntime.rerender).

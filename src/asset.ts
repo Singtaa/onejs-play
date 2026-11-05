@@ -60,12 +60,20 @@ let files: Record<string, AssetEntry> = {}
 /** Where the map's hashes are served from, when the build says: PlaySite's store. Null means the cart's own origin. */
 let store: string | null = null
 
+/** The files oj.json lists to load before the cart appears, as the builder opened them: mount waits for these. */
+let startup: readonly string[] = []
+
+/** Every file name the build ships: the map's, or the names alone when ojplay built it with no map. */
+let names: readonly string[] = []
+
 /** Called by the host. Games have no reason to touch this. */
 export function setAssetBase(next: string | null, options: { usedCarts?: string } = {}): void {
     base = next === null ? null : next.replace(/\/+$/, "")
     usedCarts = next === null ? "" : (options.usedCarts ?? "").replace(/^\/+|\/+$/g, "")
     files = {}
     store = null
+    startup = []
+    names = []
     // A new host is a new Run, and a file may have changed under its name since.
     textures.clear()
 }
@@ -84,10 +92,17 @@ export function setAssetBase(next: string | null, options: { usedCarts?: string 
  * which is how PlaySite's store keys a file. The extension stays in the URL
  * because Unity's loaders choose a decoder by it (AudioBridge.AudioTypeFor).
  */
-export function setAssetMap(next: Record<string, AssetEntry> | null, options: { store?: string } = {}): void {
+export function setAssetMap(next: Record<string, AssetEntry> | null, options: { store?: string, startup?: readonly string[], names?: readonly string[] } = {}): void {
     files = next ?? {}
+    names = next !== null ? Object.keys(next) : Array.isArray(options.names) ? options.names.filter((n) => typeof n === "string") : []
     store = typeof options.store === "string" && options.store !== "" ? options.store.replace(/\/+$/, "") : null
+    startup = Array.isArray(options.startup) ? options.startup.filter((n) => typeof n === "string") : []
     textures.clear()
+}
+
+/** The files this build loads before the cart appears (oj.json's preload list); empty for most carts. */
+export function startupFiles(): readonly string[] {
+    return startup
 }
 
 /** A name's last extension, lowercased, dot included: ".png", ".json" for a sidecar. Empty when it has none. */
@@ -103,9 +118,9 @@ export function assetInfo(name: string): { sha256: string, bytes: number } | und
     return entry === undefined ? undefined : { sha256: entry[0], bytes: entry[1] }
 }
 
-/** Every name this build ships, from its file map: what `preload("folder/")` opens. */
+/** Every name this build ships, from its file map or, built by ojplay, the cart's folder: what `preload("folder/")` opens. */
 export function assetNames(): string[] {
-    return Object.keys(files)
+    return [...names]
 }
 
 /** Leading "./" and "assets/" are what a web habit produces; both mean the name after them. */
@@ -193,6 +208,21 @@ export function loadTexture(name: string): Promise<Texture> {
         loading.catch(() => { if (textures.get(url) === loading) textures.delete(url) })
     }
     return loading
+}
+
+/**
+ * Lets go of a picture loadTexture holds, so its memory comes back: the next
+ * ask loads it again. Whatever still shows it shows nothing after this, so
+ * unload a level's art once the level has gone.
+ */
+export async function forgetTexture(name: string): Promise<void> {
+    const url = assetUrl(name)
+    const loading = textures.get(url)
+    if (loading === undefined) return
+    textures.delete(url)
+    const texture = await loading.catch(() => null)
+    const destroy = (globalThis as { CS?: any }).CS?.UnityEngine?.Object?.Destroy
+    if (texture !== null && typeof destroy === "function") destroy(texture)
 }
 
 /**

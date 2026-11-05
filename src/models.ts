@@ -306,6 +306,30 @@ export function loadModel(name: string): Promise<Model> {
     return loading
 }
 
+/**
+ * Lets go of a model loadModel holds, so its meshes and textures come back:
+ * the next ask loads it again. One with a copy still in the world is kept,
+ * since the copies share it, and says so: remove its last actor first. A
+ * host whose bridge cannot free one model keeps it until the scene goes, as
+ * every model did before.
+ */
+export async function forgetModel(name: string): Promise<void> {
+    const url = assetUrl(name)
+    const loading = loads.get(url)
+    if (loading === undefined) return
+    const model = await loading.catch(() => null)
+    if (loads.get(url) !== loading) return
+    if (model === null || generationOf.get(model) !== generation) {
+        // Failed, or its scene already went and took it along.
+        loads.delete(url)
+        return
+    }
+    const b = bridge()
+    if (typeof b.Unload !== "function") return
+    if (b.Unload(model.id)) loads.delete(url)
+    else console.warn(`[oj] ${name} is still in the scene, so it stays loaded. Unload it after its last copy is gone.`)
+}
+
 /** The hook form: null until the file has loaded. */
 export function useModel(name: string): Model | null {
     const [model, setModel] = useState<Model | null>(null)

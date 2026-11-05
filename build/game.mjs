@@ -157,11 +157,64 @@ export function notAvailable(specifier, externals = EXTERNALS) {
  */
 const FILES_MODULE = "oj:files"
 
-export function filesModule(assets, store) {
-    const options = typeof store === "string" ? `, ${JSON.stringify({ store })}` : ""
+export function filesModule(assets, store, startup = [], names = undefined) {
+    const given = {
+        ...(typeof store === "string" ? { store } : {}),
+        ...(startup.length > 0 ? { startup } : {}),
+        // With no map (ojplay's builds), the cart's file names alone, so a folder opens the same way.
+        ...((assets === undefined || assets === null) && names !== undefined ? { names } : {}),
+    }
+    const options = Object.keys(given).length > 0 ? `, ${JSON.stringify(given)}` : ""
     return `import { setAssetMap } from "oj"
-if (typeof setAssetMap === "function") setAssetMap(${JSON.stringify(assets)}${options})
+if (typeof setAssetMap === "function") setAssetMap(${JSON.stringify(assets ?? null)}${options})
 `
+}
+
+/**
+ * The oj.json field listing the files that load before the cart appears
+ * (oj's mount waits for them behind a plain bar). The one place the name is
+ * spelled: the builder reads it, and hands setAssetMap the files as `startup`,
+ * a name no cart sees, so renaming the field changes this line and the docs.
+ */
+export const PRELOAD_FIELD = "preload"
+
+/**
+ * The files oj.json's preload list names, each folder ("music/") opened into
+ * the files under it, and a warning for each entry that names nothing.
+ * `names` are the files the build ships. Warnings, not errors: a list that is
+ * wrong costs a slower first use, never a cart that will not start.
+ */
+export function startupFiles(manifest, names) {
+    const listed = manifest?.[PRELOAD_FIELD]
+    if (listed === undefined) return { files: [], warnings: [] }
+    if (!Array.isArray(listed) || !listed.every((n) => typeof n === "string")) {
+        return { files: [], warnings: [`"${PRELOAD_FIELD}" in oj.json should be a list of file names, like ["music/theme.ogg", "levels/"]`] }
+    }
+    const files = new Set()
+    const warnings = []
+    for (const entry of listed) {
+        const name = entry.replace(/^\.\//, "").replace(/^assets\//, "")
+        const found = name.endsWith("/") ? names.filter((n) => n.startsWith(name)) : names.filter((n) => n === name)
+        if (found.length === 0) {
+            warnings.push(name.endsWith("/")
+                ? `oj.json preloads ${name}, and this cart has no files in that folder`
+                : `oj.json preloads ${name}, which this cart does not have`)
+        }
+        for (const f of found) files.add(f)
+    }
+    return { files: [...files], warnings }
+}
+
+/** The tree's oj.json, or {} when it has none or it does not parse (the caller reports that in its own words). */
+function manifestIn(files) {
+    const file = files.find((f) => f.name === "oj.json")
+    if (file === undefined) return {}
+    try {
+        const parsed = JSON.parse(file.text)
+        return typeof parsed === "object" && parsed !== null ? parsed : {}
+    } catch {
+        return {}
+    }
 }
 
 /** Resolves "." and ".." inside a POSIX path, so a relative import cannot escape. */
@@ -186,6 +239,12 @@ export function normalize(path) {
  */
 export async function buildGame(esbuild, files, entry, options = {}) {
     const externals = options.externals ?? EXTERNALS
+    // What loads before the cart appears: the site knows the files from its
+    // map, ojplay from the cart's folder (assetNames); a caller that knows
+    // neither builds without the list, as before it existed.
+    const shipped = options.assets !== undefined ? Object.keys(options.assets) : options.assetNames
+    const startup = shipped === undefined ? { files: [], warnings: [] } : startupFiles(manifestIn(files), shipped)
+    const carriesFiles = options.assets !== undefined || options.assetNames !== undefined
     /**
      * What to hand esbuild as `absWorkingDir`. Never used to reach a real file:
      * the tree is virtual and rooted at "/", so this only has to satisfy
@@ -280,7 +339,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         setup(build) {
             build.onResolve({ filter: /.*/ }, (args) => {
                 // The build's file map, injected into every file.
-                if (args.path === FILES_MODULE && options.assets !== undefined) return { path: "map", namespace: "oj-files" }
+                if (args.path === FILES_MODULE && carriesFiles) return { path: "map", namespace: "oj-files" }
                 // The file map's own import of oj, and the scoped oj's.
                 if (args.namespace === "oj-files" && args.path === "oj") return { path: "oj", namespace: "ext" }
                 if (args.namespace === "cart-oj") return { path: args.path, namespace: "ext" }
@@ -352,7 +411,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
             }))
 
             build.onLoad({ filter: /.*/, namespace: "oj-files" }, () => ({
-                contents: filesModule(options.assets, options.store),
+                contents: filesModule(options.assets, options.store, startup.files, options.assetNames),
                 loader: "js",
                 resolveDir: "/",
             }))
@@ -422,8 +481,9 @@ export async function buildGame(esbuild, files, entry, options = {}) {
          * esbuild wants an output path to name the map; nothing is written.
          */
         ...(sourcemap ? { sourcemap: "external", sourcesContent: false, outfile: "bundle.js" } : {}),
-        // The file map, first: PlaySite's builds carry one, nobody else's do.
-        ...(options.assets !== undefined ? { inject: [FILES_MODULE] } : {}),
+        // The build's files and its preload list, first: PlaySite's builds carry
+        // the map, ojplay's the cart's file names; anybody else's carry neither.
+        ...(carriesFiles ? { inject: [FILES_MODULE] } : {}),
         // Errors are returned, not printed: each caller reports them in its
         // own voice (a 422 body, a remote: line, a terminal).
         logLevel: "silent",
@@ -458,7 +518,7 @@ export async function buildGame(esbuild, files, entry, options = {}) {
         code,
         ...(map === undefined || options.sourcemap !== true ? {} : { map: cartSources(map) }),
         slManifest,
-        warnings: result.warnings.map((w) => w.text),
+        warnings: [...result.warnings.map((w) => w.text), ...startup.warnings],
     }
 }
 

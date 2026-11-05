@@ -17,8 +17,8 @@
  */
 
 import { loadTextAsync } from "onejs-unity/assets"
-import { assetInfo, assetNames, assetUrl, loadTexture } from "./asset"
-import { loadModel } from "./models"
+import { assetInfo, assetNames, assetUrl, forgetTexture, loadTexture } from "./asset"
+import { forgetModel, loadModel } from "./models"
 
 const IMAGE = /\.(png|jpe?g|svg)$/i
 const MODEL = /\.glb$/i
@@ -46,5 +46,24 @@ export async function preload(names: readonly string[], onProgress?: (got: numbe
         else await loadTextAsync(assetUrl(name))
         got += size(name)
         onProgress?.(got, total)
+    }))
+}
+
+/**
+ * Lets go of files the game no longer needs, so their memory comes back:
+ * pictures and models the loaders hold are freed, and the next use loads them
+ * again. Takes the same names as preload, folders included:
+ *
+ *     unload(["levels/1/"])
+ *
+ * Unload what nothing shows any more: a picture still on screen goes blank,
+ * and a model with a copy still in the scene stays loaded (and says so).
+ * Sounds free themselves when their component goes, and other files are only
+ * the browser's cache, so neither needs this.
+ */
+export async function unload(names: readonly string[]): Promise<void> {
+    await Promise.all(preloadNames(names).map(async (name) => {
+        if (IMAGE.test(name)) await forgetTexture(name)
+        else if (MODEL.test(name)) await forgetModel(name)
     }))
 }

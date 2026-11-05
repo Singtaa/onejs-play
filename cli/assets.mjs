@@ -158,7 +158,24 @@ function exactFile(root, name) {
  * under their own key.
  */
 export function unservableAssets(root) {
-    const problems = []
+    return eachAsset(root).flatMap((rel) => {
+        const { reason } = resolveAsset(root, rel)
+        return reason === undefined ? [] : [reason]
+    })
+}
+
+/**
+ * Every asset file in the cart that a request can reach, by the name a game
+ * asks for it by: what oj.json's preload list is checked against when ojplay
+ * builds, as the site checks it against the build's file map.
+ */
+export function assetNames(root) {
+    return eachAsset(root).filter((rel) => resolveAsset(root, rel).reason === undefined)
+}
+
+/** The cart's asset files as a push carries them, by path from the root. */
+function eachAsset(root) {
+    const found = []
     const walk = (dir, prefix) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
             if (entry.name === "node_modules") continue
@@ -166,12 +183,9 @@ export function unservableAssets(root) {
             const rel = prefix + entry.name
             if (entry.isDirectory() && rel === `${OJ_FOLDER}/carts`) continue
             if (entry.isDirectory()) walk(path.join(dir, entry.name), rel + "/")
-            else if (entry.isFile() && isAssetName(rel)) {
-                const { reason } = resolveAsset(root, rel)
-                if (reason !== undefined) problems.push(reason)
-            }
+            else if (entry.isFile() && isAssetName(rel)) found.push(rel)
         }
     }
     walk(root, "")
-    return problems
+    return found
 }

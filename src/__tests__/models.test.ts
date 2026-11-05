@@ -8,7 +8,7 @@
  * from the hex a cart writes, the same convention as fx and the painter.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { createScene as createSceneRaw, loadModel, watchModel, SCENE_DEFAULTS, type Model, type SceneOptions } from "../models"
+import { createScene as createSceneRaw, forgetModel, loadModel, watchModel, SCENE_DEFAULTS, type Model, type SceneOptions } from "../models"
 import { createRuntime } from "../runtime"
 import { setInputBackend } from "onejs-unity/input"
 import { Color } from "../color"
@@ -443,5 +443,47 @@ describe("changing the scene while it runs", () => {
         const before = calls.length
         expect(() => scene.background("tael")).toThrow(/"tael" is not a colour/)
         expect(calls.length).toBe(before)
+    })
+})
+
+// oj's unload: a level's models go when the level does (ModelBridge.Unload).
+describe("forgetting a model", () => {
+    /** The bridge, answering Unload with `answer`, or lacking it as an older OneJS does. */
+    const unloadAnswers = (answer: boolean | null) => {
+        const inner = recorder()
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy({}, {
+            get(_t, name: string) {
+                if (name !== "Unload") return inner[name]
+                return answer === null ? undefined : (id: number) => { calls.push(["Unload", id]); return answer }
+            },
+        })
+    }
+
+    it("frees one nothing shows, and the next ask loads it again", async () => {
+        unloadAnswers(true)
+        const ship = await loadModel("ship-a.glb")
+        await forgetModel("ship-a.glb")
+        expect(of("Unload")).toEqual([["Unload", ship.id]])
+        await loadModel("ship-a.glb")
+        expect(of("Load")).toHaveLength(2)
+    })
+
+    it("keeps one with a copy still in the scene, and says so", async () => {
+        unloadAnswers(false)
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        await loadModel("ship-b.glb")
+        await forgetModel("ship-b.glb")
+        expect(warn.mock.calls[0]?.[0]).toBe("[oj] ship-b.glb is still in the scene, so it stays loaded. Unload it after its last copy is gone.")
+        await loadModel("ship-b.glb")
+        expect(of("Load")).toHaveLength(1)
+        warn.mockRestore()
+    })
+
+    it("keeps it until the scene goes on a host that cannot free one model", async () => {
+        unloadAnswers(null)
+        await loadModel("ship-c.glb")
+        await forgetModel("ship-c.glb")
+        await loadModel("ship-c.glb")
+        expect(of("Load")).toHaveLength(1)
     })
 })

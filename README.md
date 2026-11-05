@@ -27,7 +27,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
 | `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
-| `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes |
+| `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes; `unload`: the pictures and models it no longer needs, freed |
 | `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name, and `useSound` |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
@@ -266,6 +266,21 @@ before the first byte.
 ```tsx
 await preload(["models/ship.glb", "music/"], (got, total) => setBar(got / total))
 ```
+
+**Loading first.** oj.json's `preload` lists files the cart needs before its
+first frame. The builder reads it (`PRELOAD_FIELD` in `build/game.mjs`, the one
+place the name is spelled), opens its folders against the files the build
+ships (the site's map, or `assetNames` from the cart's folder when ojplay
+builds), warns about an entry that names nothing, and hands the files to
+`setAssetMap` as `startup`. `mount` then shows a plain bar until they have
+loaded (`LoadFirst` in `src/mount.ts`), once per host, so a hot reload's
+remount goes straight to the cart.
+
+**Letting go.** `unload(names)` takes the same names and frees what the
+loaders hold: a picture's texture is destroyed, and a model is freed through
+OneJS's `ModelBridge.Unload`, which refuses while a copy of it is still in the
+world (said once, as a warning). A host without `Unload` keeps the model until
+its scene goes, as before. Sounds free themselves with their component.
 
 **Where the files go.** An asset's name is its path from the cart's root:
 `pop.wav` beside `index.tsx`, or `sfx/pop.wav` in a folder of your own. Never in

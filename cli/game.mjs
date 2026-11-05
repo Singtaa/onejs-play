@@ -9,6 +9,7 @@ import { buildGame, formatBuildErrors, cartKey, cartLabel, cartPins } from "../b
 import { BIN, COMMAND, INSTALL, PACKAGE } from "../build/command.mjs"
 import { CART_COMPILER_OPTIONS } from "../build/cart-types.mjs"
 import { writeHostTypes } from "./init.mjs"
+import { assetNames } from "./assets.mjs"
 
 /**
  * What the site builds. The same set as ALLOWED in the site's limits.
@@ -142,6 +143,7 @@ export async function build(root, options = {}) {
         const result = await buildGame(esbuild, files, entry, {
             workingDir: path.parse(process.cwd()).root || "/",
             carts: readUsedCarts(root, manifest),
+            assetNames: assetNames(root),
         })
         // Entries that are not a cart pin are skipped; say so, as a push does.
         const warnings = [...result.warnings, ...cartPins(manifest.dependencies).problems]

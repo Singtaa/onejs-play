@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import path from "node:path"
 import * as esbuild from "esbuild"
-import { buildGame } from "./game.mjs"
+import { buildGame, startupFiles } from "./game.mjs"
 
 const WORKING_DIR = path.parse(process.cwd()).root || "/"
 
@@ -53,5 +53,53 @@ describe("a build's file map", () => {
     it("is not in a build that was not given one", async () => {
         const plain = await buildGame(esbuild, FILES, "index.tsx", { workingDir: WORKING_DIR })
         expect(plain.code).not.toContain("setAssetMap")
+    })
+})
+
+/**
+ * oj.json's preload list: the files that load before the cart appears. The
+ * builder opens its folders against what the build ships and hands the files
+ * to setAssetMap as `startup`; an entry that names nothing is a warning.
+ */
+describe("oj.json's preload list", () => {
+    const names = ["glow.png", "music/theme.ogg", "music/win.wav", "models/ship.glb"]
+    const withOj = (oj: Record<string, unknown>) => [...FILES, { name: "oj.json", text: JSON.stringify({ name: "Storm", ...oj }) }]
+
+    it("opens folders into their files, once each, and takes a web habit's ./ and assets/", () => {
+        expect(startupFiles({ preload: ["music/", "./glow.png", "assets/glow.png", "music/win.wav"] }, names))
+            .toEqual({ files: ["music/theme.ogg", "music/win.wav", "glow.png"], warnings: [] })
+    })
+
+    it("warns about an entry that names nothing, and starts the cart anyway", () => {
+        expect(startupFiles({ preload: ["ships.png", "levels/", "glow.png"] }, names)).toEqual({
+            files: ["glow.png"],
+            warnings: ["oj.json preloads ships.png, which this cart does not have", "oj.json preloads levels/, and this cart has no files in that folder"],
+        })
+        expect(startupFiles({ preload: "glow.png" }, names).warnings).toEqual(['"preload" in oj.json should be a list of file names, like ["music/theme.ogg", "levels/"]'])
+        expect(startupFiles({}, names)).toEqual({ files: [], warnings: [] })
+    })
+
+    it("reaches setAssetMap with the map on the site, and its warnings reach the push", async () => {
+        const assets = { "glow.png": ["a".repeat(64), 10], "music/theme.ogg": ["c".repeat(64), 30] } as const
+        const built = await buildGame(esbuild, withOj({ preload: ["music/", "ships.png"] }), "index.tsx", { workingDir: WORKING_DIR, assets })
+        let options: unknown = null
+        run(built.code, { setAssetMap: (_: unknown, o: unknown) => { options = o }, assetUrl: (n: string) => n })
+        expect(options).toEqual({ startup: ["music/theme.ogg"] })
+        expect(built.warnings).toEqual(["oj.json preloads ships.png, which this cart does not have"])
+    })
+
+    it("reaches setAssetMap with no map when ojplay builds, from the cart's own file names", async () => {
+        const built = await buildGame(esbuild, withOj({ preload: ["glow.png"] }), "index.tsx", { workingDir: WORKING_DIR, assetNames: names })
+        let given: unknown[] = []
+        run(built.code, { setAssetMap: (...args: unknown[]) => { given = args }, assetUrl: (n: string) => n })
+        expect(given).toEqual([null, { startup: ["glow.png"], names }])
+    })
+
+    it("hands an ojplay build with no list only the cart's file names, for a folder to open", async () => {
+        const built = await buildGame(esbuild, withOj({}), "index.tsx", { workingDir: WORKING_DIR, assetNames: names })
+        let given: unknown[] = []
+        run(built.code, { setAssetMap: (...args: unknown[]) => { given = args }, assetUrl: (n: string) => n })
+        expect(given).toEqual([null, { names }])
+        expect(built.warnings).toEqual([])
     })
 })

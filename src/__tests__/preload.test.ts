@@ -12,10 +12,11 @@ vi.mock("onejs-unity/assets", () => ({
 }))
 vi.mock("../models", () => ({
     loadModel: async (name: string) => { asked.push(`model ${name}`); return { id: 1 } },
+    forgetModel: async (name: string) => { asked.push(`forget model ${name}`) },
 }))
 
-const { setAssetBase, setAssetMap, loadTexture } = await import("../asset")
-const { preload, preloadNames } = await import("../preload")
+const { setAssetBase, setAssetMap, loadTexture, startupFiles } = await import("../asset")
+const { preload, preloadNames, unload } = await import("../preload")
 
 const h = (c: string) => c.repeat(64)
 
@@ -49,5 +50,48 @@ describe("preload", () => {
         asked.length = 0
         await loadTexture("glow.png")
         expect(asked).toEqual([])
+    })
+})
+
+describe("unload", () => {
+    const destroyed: unknown[] = []
+    beforeEach(() => {
+        asked.length = 0
+        destroyed.length = 0
+        ;(globalThis as any).CS = { UnityEngine: { Object: { Destroy: (o: unknown) => destroyed.push(o) } } }
+        setAssetBase("https://abc.onejsusercontent.com/assets")
+        setAssetMap({ "level1/sky.png": [h("a"), 100], "level1/boss.glb": [h("b"), 1000], "level1/theme.ogg": [h("c"), 400] })
+    })
+
+    it("frees a folder's pictures and models, and the next use loads them again", async () => {
+        const sky = await loadTexture("level1/sky.png")
+        asked.length = 0
+        await unload(["level1/"])
+        expect(destroyed).toEqual([sky])
+        expect(asked).toEqual(["forget model level1/boss.glb"])
+        await loadTexture("level1/sky.png")
+        expect(asked).toEqual(["forget model level1/boss.glb", `image https://abc.onejsusercontent.com/assets/${h("a")}/level1/sky.png`])
+    })
+
+    it("does nothing for a picture that was never loaded", async () => {
+        await unload(["level1/sky.png"])
+        expect(destroyed).toEqual([])
+    })
+})
+
+describe("the files a build loads first", () => {
+    it("open a folder from the names alone when ojplay built the cart with no map", () => {
+        setAssetMap(null, { names: ["level1/a.png", "level1/b.glb", "c.png"] })
+        expect(preloadNames(["level1/"])).toEqual(["level1/a.png", "level1/b.glb"])
+    })
+
+    it("come from setAssetMap and go with the host", () => {
+        setAssetMap({}, { startup: ["music/theme.ogg"] })
+        expect(startupFiles()).toEqual(["music/theme.ogg"])
+        setAssetMap({})
+        expect(startupFiles()).toEqual([])
+        setAssetMap({}, { startup: ["a.png"] })
+        setAssetBase("https://other")
+        expect(startupFiles()).toEqual([])
     })
 })
