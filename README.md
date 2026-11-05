@@ -278,6 +278,38 @@ both were invisible from the outside:
   with nothing logged. It is settled from `TickSystems()` now, which is the one
   thing Update does still call.
 
+### Big files leave git
+
+A file of an image, sound, font or model type that is 1 MB or more is stored
+outside git (the site's `docs/refs-and-assets.md`, Part 2). The commit holds
+Git LFS's three line pointer, and the bytes go to the site's store, named by
+their SHA-256 and served by Cloudflare's cache. Nothing changes in the game:
+it still asks for the file by its name.
+
+`ojplay init`, `new` and `clone` set it up in the clone itself, never in a
+committed file: `filter.oj.process` and `filter.oj.required` in `.git/config`,
+one `filter=oj` line per stored type in `.git/info/attributes`, and a
+`pre-push` hook. `cli/store.mjs` is all of it:
+
+- `git add` runs the clean filter: a stored file becomes its pointer, and its
+  bytes go to `~/.onejs-play/store/`.
+- `git push` runs the hook, which lists the pointers the push carries, asks the
+  cart's LFS batch endpoint (`/c/<sid>.git/info/lfs`) which bytes the store
+  lacks, sends those to the presigned URLs it answers with, and verifies each.
+  A refusal (too big, over the account's allowance, taken down) stops the push
+  with the site's sentence, so a pointer never lands without its bytes.
+- A checkout runs the smudge filter: the real file comes back from the cache,
+  or from the store through the same endpoint, checked against its hash. One
+  that cannot be had stays a pointer, with a line saying so, so an offline
+  clone still checks out.
+
+git runs one filter process per command, over its long-running filter
+protocol, rather than one node per file. What git runs is never handed off to
+the cart's own ojplay, which may predate it. A file committed whole before
+init is still in git, and init names it: the next commit of it stores it
+outside. The rule is the site's, copied, and PlaySite's
+`src/store-rule-parity.test.ts` holds the two to the same answers.
+
 ## 3D models
 
 A game loads a `.glb` with `useModel`, gets a scene with `useScene`, and spawns

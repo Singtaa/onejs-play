@@ -32,6 +32,7 @@ import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
+import { filterProcess, prePush, setupStore } from "./store.mjs"
 import { initUnity, npm, undoUnity } from "./unity.mjs"
 import { buildUnity, UsageError } from "./unity-build.mjs"
 import { add, fetchUsed, placeOf, remove, syncTypes, update } from "./carts.mjs"
@@ -89,6 +90,11 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
                           work in it with OJ_TOKEN set or after login, and no token is stored
+
+  A file of an image, sound, font or model type that is 1 MB or more leaves git: init and clone
+  make ${BIN} this clone's git filter and pre-push hook, so git add commits a pointer, git push
+  sends the bytes first, and a checkout puts the real file back (filter-process and pre-push
+  are what git runs for that)
   runtime               fetch the container into ~/.onejs-play (--runtime <version>)
 
   --root <dir>          the cart folder (default: the current folder)
@@ -102,7 +108,10 @@ Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so
 ${BIN} ${OWN_VERSION}
 `
 
-const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help"]
+/** What git runs, set up by init (cli/store.mjs); never typed. */
+const GIT_RUNS = ["filter-process", "pre-push"]
+
+const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help", ...GIT_RUNS]
 
 const say = (line) => console.error(`[${BIN}] ${line}`)
 
@@ -160,6 +169,7 @@ async function main() {
                 return 0
             }
             for (const line of init(root)) say(line)
+            for (const line of setupStore(root)) say(line)
             syncTypes(root)
             // init sets a cart up for tools; it does not write one.
             const hasCart = ["oj.json", "index.tsx", "index.ts", "index.js"].some((f) => fs.existsSync(path.join(root, f)))
@@ -346,6 +356,7 @@ async function main() {
                 if (!bearer) say(`a private cart needs a login first: ${COMMAND} login, or set OJ_TOKEN`)
                 return code
             }
+            for (const line of setupStore(dir)) say(line)
             say(`cloned into ${dir}; git pull and git push there use OJ_TOKEN when it is set, else this machine's login`)
             return 0
         }
@@ -358,6 +369,13 @@ async function main() {
             })
         case "logout":
             return logout(root)
+        case "filter-process":
+            return filterProcess({ cwd: root })
+        case "pre-push": {
+            const chunks = []
+            for await (const chunk of process.stdin) chunks.push(chunk)
+            return prePush(root, args[0], args[1], Buffer.concat(chunks).toString("utf8"))
+        }
         case "runtime": {
             const v = flags.runtime ? String(flags.runtime) : (await version()).runtime
             await ensureRuntime(siteOrigin(), v, say)
@@ -381,7 +399,8 @@ if (global && process.stderr.isTTY && !process.env.CI && process.env.OJPLAY_NO_U
     const notice = updateNotice(OWN_VERSION)
     process.on("exit", notice.tell)
 }
-if (!global || !await handOff(startRoot)) main().then((code) => process.exit(code), (error) => {
+// What git runs is never handed off: the cart's own copy may predate it.
+if (!global || GIT_RUNS.includes(process.argv[2]) || !await handOff(startRoot)) main().then((code) => process.exit(code), (error) => {
     console.error(error.lines ? error.lines.join("\n") : `[${BIN}] ${error.message}`)
     process.exit(1)
 })

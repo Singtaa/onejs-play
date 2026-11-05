@@ -14,6 +14,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { init } from "./init.mjs"
+import { setupStore } from "./store.mjs"
 import { login, pointAtLogin } from "./login.mjs"
 import { addressFromRemote, describePush, folderFor, git, sidFromRemote, siteOrigin, status, tokenOf, uncommitted } from "./site.mjs"
 import { isStarterFile, starterText, starterWithName } from "../build/starter.mjs"
@@ -56,6 +57,7 @@ export function newCart(parent, name, { say }) {
     if (made.status !== 0) throw new Error(`git init in ${shown} failed: ${made.stderr.trim()}`)
     run(["symbolic-ref", "HEAD", "refs/heads/main"], dir)
     init(dir)
+    setupStore(dir)
     run(["add", "--", ...files.map((f) => f.name)], dir)
     const commit = run(["commit", "-q", "-m", "New cart"], dir)
     say(`made ${shown} (a git repo), on this machine only`)
