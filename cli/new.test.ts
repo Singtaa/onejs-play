@@ -47,11 +47,11 @@ beforeEach(async () => {
         if (req.method === "POST" && req.url === "/api/games") {
             created.push({ body: JSON.parse(text), auth: req.headers.authorization })
             if (taken) return send(409, { error: "You already have a cart called \"Pop Rocks\".", name: "Pop Rocks", sid: "bbbbbbbbbbbb", url: "/@owner/pop-rocks" })
-            return send(200, { sid: SID, url: "/@owner/pop-rocks", clone: cloneUrl() })
+            return send(200, { sid: SID, url: "/@owner/pop-rocks", public: true, clone: cloneUrl() })
         }
         if (req.url === `/api/games/${SID}`) {
             const head = mainOf(bare())
-            return send(200, { sid: SID, url: `${site}/@owner/pop-rocks`, public: false, head, live: head, buildError: null })
+            return send(200, { sid: SID, url: `${site}/@owner/pop-rocks`, public: true, head, live: head, buildError: null })
         }
         if (req.url === "/api/login") return send(200, { code: "WDJB-MJHT", url: `${site}/device?code=WDJB-MJHT`, poll: "p".repeat(32), interval: 0, expiresIn: 5 })
         if (req.url === "/api/login/poll") return send(200, { token: TOKEN, handle: "owner", expiresAt: 1 })
@@ -153,7 +153,7 @@ describe("the first ojplay push makes the cart on the site", () => {
         const { code, said } = await push(cart)
         expect(code).toBe(0)
         expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true }, auth: `Bearer ${TOKEN}` }])
-        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (private)`)
+        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (public)`)
         expect(said.at(-1)).toBe(`live: ${mainOf(cart)!.slice(0, 7)} at ${site}/@owner/pop-rocks`)
         expect(mainOf(bare())).toBe(mainOf(cart))
         expect(git(bare(), "log", "--format=%s", "main").stdout.trim().split("\n")).toEqual(["Faster dot", "New cart"])
@@ -181,7 +181,7 @@ describe("the first ojplay push makes the cart on the site", () => {
             expect(code).toBe(0)
             expect(said[0]).toBe(`pop-rocks is not on ${host()} yet, and putting it there needs a login`)
             expect(print).toHaveBeenCalledWith(`Open ${site}/device?code=WDJB-MJHT and press Allow (code WDJB-MJHT).`)
-            expect(said[1]).toBe(`made @owner/pop-rocks on ${host()} (private)`)
+            expect(said[1]).toBe(`made @owner/pop-rocks on ${host()} (public)`)
             expect(created[0].auth).toBe(`Bearer ${TOKEN}`)
         } finally {
             print.mockRestore()

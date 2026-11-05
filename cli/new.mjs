@@ -125,7 +125,10 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir) }) {
         return 1
     }
     if (made.status !== 200) throw new Error(made.body.error ?? `${made.status} from the site`)
-    say(`made ${made.body.url.replace(/^\//, "")} on ${new URL(siteOrigin()).host} (private)`)
+    // Who can see it is the site's answer, not ours: every cart is public while
+    // the site's Private is off (5 Nov 2026), private when it is on.
+    const audience = typeof made.body.public === "boolean" ? ` (${made.body.public ? "public" : "private"})` : ""
+    say(`made ${made.body.url.replace(/^\//, "")} on ${new URL(siteOrigin()).host}${audience}`)
 
     // Origin before the push, so a push that fails (the network, a file the
     // site refuses) is retried by an ordinary ojplay push.

@@ -553,7 +553,7 @@ ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
 ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
 ojplay status          # what the site is running and why the tip differs (--json for scripts)
-ojplay list            # every cart on the account, private ones included
+ojplay list            # every cart on the account
 ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
 ojplay logout          # forget that login, here and on the site
 ojplay push            # git push, then exit 1 if the tip did not build or nothing was committed
@@ -567,7 +567,7 @@ files the site's New makes, from `examples/starter` through
 `build/starter.mjs`) into `./<name>`, makes it a git repository on `main`
 with one commit, and sets `init`'s tooling up beside it, ignored. No account
 and no network. The first `push` in a cart with no `origin` makes the cart on
-the site, empty and private, under oj.json's `name` (logging in first when
+the site, empty and public, under oj.json's `name` (logging in first when
 there is no login), sets `origin` and pushes `main` with its upstream. The
 site makes it empty because its usual create commits the starter, which a
 history begun here could never fast forward onto. A name the account already

@@ -11,7 +11,7 @@
  *   ojplay run              build, then run the cart in the real container in a local Chrome
  *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
  *   ojplay status           what the site is running: head, live, and why they differ
- *   ojplay list             every cart on the account, private ones included
+ *   ojplay list             every cart on the account
  *   ojplay push             git push origin main with OJ_TOKEN, then fail if the tip did not build or nothing was committed;
  *                           the first push of a cart made here makes it on the site
  *   ojplay new <name>       start a cart on this machine: the starter in a new git repository
@@ -76,14 +76,14 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           line or crowded
                           --headed, --window, --for as above
   status                what runs, the tip of main, and why they differ (--sid <id>; --json for scripts)
-  list                  every cart on the account, private ones included (--json)
+  list                  every cart on the account (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
   push                  git push origin main; exits 1 if the tip failed to build, or if
                           nothing was pushed because the changes are not committed. The
-                          first push of a cart made with new makes it on the site, private,
+                          first push of a cart made with new makes it on the site, public,
                           after a login if there is none
   new <name>            start a cart in ./<name>: the starter, a git repository and init's
                           tooling, on this machine only, with no account or network
@@ -310,7 +310,8 @@ async function main() {
                 return 0
             }
             const hidden = carts.filter((s) => !s.public).length
-            say(`${handle} has ${carts.length} cart${carts.length === 1 ? "" : "s"}, ${hidden} private`)
+            // Named only when there is one: every cart is public while the site's Private is off.
+            say(`${handle} has ${carts.length} cart${carts.length === 1 ? "" : "s"}${hidden > 0 ? `, ${hidden} private` : ""}`)
             for (const g of carts) console.log(`${g.sid}  ${g.public ? "public " : "private"}  ${g.name}  ${g.url}`)
             return 0
         }
