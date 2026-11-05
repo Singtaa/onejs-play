@@ -348,7 +348,7 @@ export function pointersToPush(cwd, updates, remoteName) {
 
 const megabytes = (n) => `${(n / (1024 * 1024)).toFixed(1)} MB`
 
-/** Sends what the store lacks of `files` through the cart's LFS endpoint. Answers how many were sent. */
+/** Sends what the store lacks of `files` through the cart's LFS endpoint, a line each. Answers how many were sent. */
 export async function sendStored(cwd, endpoint, files, { bearer, say }) {
     const answers = await lfsBatch(endpoint, "upload", files.map((f) => ({ oid: f.sha256, size: f.size, name: f.name })), bearer)
     const problems = []
@@ -357,7 +357,7 @@ export async function sendStored(cwd, endpoint, files, { bearer, say }) {
         const file = files.find((f) => f.sha256 === answer.oid && f.size === answer.size)
         const name = file?.name ?? answer.oid
         if (answer.error) { problems.push(`${name}: ${answer.error.message}`); continue }
-        if (!answer.actions?.upload) continue
+        if (!answer.actions?.upload) { say(`assets: ${name} ${megabytes(answer.size)}, already stored`); continue }
         const data = readCached(answer.oid, answer.size) ?? fromWorkingTree(cwd, file)
         if (data === null) {
             problems.push(`${name}: its bytes are not in ${storeDir()} or the working folder. Check out the commit that added it and run ${COMMAND} push again.`)
@@ -383,7 +383,7 @@ export async function sendStored(cwd, endpoint, files, { bearer, say }) {
             if (!verified.ok) { problems.push(`${name}: ${(await verified.json().catch(() => ({}))).message ?? `verify answered ${verified.status}`}`); continue }
         }
         sent++
-        say(`stored ${name} (${megabytes(answer.size)})`)
+        say(`assets: ${name} ${megabytes(answer.size)}, sent`)
     }
     if (problems.length > 0) throw new Error(problems.join("\n"))
     return sent
@@ -415,8 +415,7 @@ export async function prePush(cwd, remoteName, url, stdin, { say = (line) => pro
         return 1
     }
     try {
-        const sent = await sendStored(cwd, endpoint, files, { bearer, say })
-        if (sent === 0) say(`${files.length} stored file${files.length === 1 ? " is" : "s are"} already on the site`)
+        await sendStored(cwd, endpoint, files, { bearer, say })
         return 0
     } catch (error) {
         say(`nothing was pushed, because a stored file could not be sent:\n${error.message}`)

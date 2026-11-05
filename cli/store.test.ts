@@ -169,7 +169,7 @@ describe("the pre-push hook", () => {
         const said: string[] = []
         expect(await prePush(root, "origin", `${site}/c/${SID}.git`, stdin, { say: (l: string) => said.push(l) })).toBe(0)
         expect((await held(storeKey(sha(big), "bg.png"))).equals(big)).toBe(true)
-        expect(said).toEqual(["stored bg.png (1.0 MB)"])
+        expect(said).toEqual(["assets: bg.png 1.0 MB, sent"])
         const log = await seen()
         const batch = JSON.parse(log.find((r) => r.url.endsWith("/objects/batch"))!.body)
         expect(batch).toMatchObject({ operation: "upload", objects: [{ oid: sha(big), size: big.length, name: "bg.png" }] })
@@ -179,7 +179,7 @@ describe("the pre-push hook", () => {
 
         said.length = 0
         expect(await prePush(root, "origin", `${site}/c/${SID}.git`, stdin, { say: (l: string) => said.push(l) })).toBe(0)
-        expect(said).toEqual(["1 stored file is already on the site"])
+        expect(said).toEqual(["assets: bg.png 1.0 MB, already stored"])
     })
 
     it("stops the push when the site refuses a file, and says why", async () => {
