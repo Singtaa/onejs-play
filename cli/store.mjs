@@ -27,7 +27,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { ASSET_TYPES, isUploadableAsset } from "./assets.mjs"
 import { home } from "./local.mjs"
-import { addressFromRemote, sidFromRemote, siteOrigin, tokenOf } from "./site.mjs"
+import { addressFromRemote, sidFromRemote, tokenOf } from "./site.mjs"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
 
 /** A file of a stored type at least this big leaves git. PlaySite STORE_MIN_BYTES. */
