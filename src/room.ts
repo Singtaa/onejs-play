@@ -32,6 +32,15 @@
  * desynced completely. The room is the only party that knows who is actually
  * connected, so the room decides.
  *
+ * NAMES, SEATS AND A HIDDEN HOST (6 Nov 2026)
+ *
+ * Every player has a name the room gives it (`room.name`, `room.nameOf(id)`):
+ * the handle of whoever is signed in, otherwise a guest name like "Brisk
+ * Otter". A connection that drops and comes back from the same page gets its
+ * own id and name back for a minute, and `onJoin` says `back`, so a game keeps
+ * its score. A page that is hidden (a locked phone) stops being host, so the
+ * round clock moves to somebody who is still playing.
+ *
  *     const room = useRoom("lobby", {
  *         onMessage: (from, data) => others.set(from, data),
  *         onLeave: (id) => others.delete(id),
@@ -41,8 +50,8 @@
 
 import { useEffect, useRef, useState } from "react"
 import { EMPTY_ROOM, applyWire, isHost as roomIsHost } from "./wire"
-import type { RoomState } from "./wire"
-import { getPlayContext, socketUrl } from "./play"
+import type { RoomState, Wire } from "./wire"
+import { getPlayContext, socketUrl, isPageHidden, onPageHidden } from "./play"
 
 /** Anything JSON can carry. Messages are serialised, so functions are not. */
 export type RoomMessage = unknown
@@ -50,11 +59,21 @@ export type RoomMessage = unknown
 /** How often a client says it is still there. Well under the room's timeout. */
 const HEARTBEAT_MS = 25_000
 
+/**
+ * The protocol this client speaks. 2 reads batch frames and names; the room
+ * sends a client that does not say so one message per frame, as before.
+ */
+const PROTOCOL = 2
+
 export interface RoomOptions {
     /** Someone said something. `from` is their peer id. */
     onMessage?: (from: number, data: RoomMessage) => void
-    /** Someone arrived. Not called for the peers already present at join. */
-    onJoin?: (id: number) => void
+    /**
+     * Someone arrived. Not called for the peers already present at join.
+     * `back` is true for a player whose connection dropped and who returned
+     * to the same seat, same id and name, within a minute.
+     */
+    onJoin?: (id: number, name: string, back: boolean) => void
     /** Someone left, or their connection did. */
     onLeave?: (id: number) => void
     /** The connection opened, and this is the room as it stood. */
@@ -90,6 +109,10 @@ export interface Room {
     readonly isHost: boolean
     /** Who the host is, or null before the welcome arrives. */
     readonly hostId: number | null
+    /** What the room calls you: your handle when signed in, else a guest name. "" before the welcome. */
+    readonly name: string
+    /** What the room calls a peer, or "" for an id it has not named. */
+    nameOf(id: number): string
     /**
      * Sends to everyone else, or to one peer when `to` is given.
      *
@@ -107,18 +130,6 @@ const RETRY_MAX_MS = 8000
 /** A room name has to survive being a URL segment. */
 export function validRoomName(name: string): boolean {
     return typeof name === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$/.test(name)
-}
-
-interface Wire {
-    t: string
-    id?: number
-    from?: number
-    peers?: number[]
-    /** Who the room says owns shared state. Null when the room is empty. */
-    host?: number | null
-    d?: unknown
-    reason?: string
-    detail?: string
 }
 
 /**
@@ -157,6 +168,8 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             get id() { return live.current.id },
             get peers() { return live.current.peers },
             get hostId() { return live.current.hostId },
+            get name() { return live.current.name },
+            nameOf(id: number) { return id === live.current.id ? live.current.name : live.current.names[id] ?? "" },
             /**
              * True when alone, so a single player game still runs.
              *
@@ -197,12 +210,27 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             // stays offline and send() is a no-op rather than a crash.
             return
         }
-        const url = context.token === undefined ? base : `${base}?token=${encodeURIComponent(context.token)}`
+        // This hook's seat, kept across its own reconnects so a dropped
+        // connection comes back as the same player (same id and name).
+        const seat = Math.random().toString(36).slice(2, 12) || "s"
+        const url = `${base}?v=${PROTOCOL}&seat=${seat}${context.token === undefined ? "" : `&token=${encodeURIComponent(context.token)}`}`
 
         closed.current = false
         let retry = RETRY_MIN_MS
         let timer: ReturnType<typeof setTimeout> | null = null
         let heartbeat: ReturnType<typeof setInterval> | null = null
+
+        /** Tells the room whether this page is showing, so a hidden one is not left holding the host. */
+        const sayVisibility = (hidden: boolean) => {
+            const ws = socket.current
+            if (ws === null || ws.readyState !== 1) return
+            try {
+                ws.send(JSON.stringify({ t: "vis", hidden }))
+            } catch {
+                // The close handler deals with a socket that has gone.
+            }
+        }
+        const stopWatchingPage = onPageHidden(sayVisibility)
 
         const apply = (next: Partial<RoomState>) => {
             live.current = { ...live.current, ...next }
@@ -229,14 +257,19 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                  * player from a closed browser, which is how rooms filled with
                  * ghosts and games elected a host that was never coming back.
                  */
+                // "ping" rather than a JSON heartbeat: the room answers it
+                // without waking (an auto-response), and still counts it as
+                // the socket being alive.
                 heartbeat = setInterval(() => {
                     if (ws.readyState !== 1) return
                     try {
-                        ws.send(JSON.stringify({ t: "hb" }))
+                        ws.send("ping")
                     } catch {
                         // The close handler deals with a socket that has gone.
                     }
                 }, HEARTBEAT_MS)
+                // A room assumes a page is showing; say so only when it is not.
+                if (isPageHidden()) sayVisibility(true)
             }
 
             // Typed by what is read: OneJS's WebSocket (its global.d.ts) and the
@@ -255,7 +288,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                 }
                 for (const event of events) {
                     if (event.t === "open") handlers.current.onOpen?.(event.id, event.peers)
-                    else if (event.t === "join") handlers.current.onJoin?.(event.id)
+                    else if (event.t === "join") handlers.current.onJoin?.(event.id, event.name, event.back)
                     else if (event.t === "leave") handlers.current.onLeave?.(event.id)
                     else if (event.t === "host") handlers.current.onHost?.(event.isHost, event.hostId)
                     else if (event.t === "message") handlers.current.onMessage?.(event.from, event.data)
@@ -290,6 +323,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
 
         return () => {
             closed.current = true
+            stopWatchingPage()
             if (timer !== null) clearTimeout(timer)
             if (heartbeat !== null) clearInterval(heartbeat)
             const ws = socket.current

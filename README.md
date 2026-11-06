@@ -400,14 +400,20 @@ project runs on its next open.
 ```tsx
 const room = useRoom("lobby", {
     onOpen: (myId, peers) => {},
-    onJoin: (id) => {},
+    onJoin: (id, name, back) => {},   // back: the same player returning to its seat
     onLeave: (id) => {},
     onMessage: (from, data) => {},
 })
 room.send({ x, y })       // to everyone else
 room.send({ x, y }, id)   // to one peer
 room.id, room.peers, room.connected, room.isHost, room.hostId
+room.name, room.nameOf(id)   // the signed-in handle, or a guest name like "Brisk Otter"
 ```
+
+A dropped connection that comes back within a minute gets its own id and name
+back, so a game keeps its score; `onJoin` says `back`. A page that is hidden (a
+locked phone, a tab in the background) stops being host, so whatever the host
+runs moves to somebody still playing.
 
 **The site is a relay and runs no game logic**, because a game here is a
 JavaScript bundle and half of it living on a server would end "fork this and
@@ -428,8 +434,9 @@ by each game, and that elected sockets whose browser had already gone: only the
 relay knows who is still connected. The header of `room.ts` has the story.
 
 Budgets: 24 peers a room, 8 KB a message, 60 messages a second a socket. Send
-position at about 15 Hz and interpolate between updates rather than sending
-every frame.
+position at about 15 to 20 Hz and interpolate between updates rather than
+sending every frame. A busy room gathers what it sends you into one frame every
+33 ms; you still receive single messages, in order.
 
 `examples/big-fish` is the reference, and its `ocean.ts` header is the longer
 version of the argument above.

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { createDomInputAdapter, hasDom } from "../adapter"
 import { createContainerInput, type ContainerInput } from "../input"
+import { isPageHidden, onPageHidden, setPageHidden } from "../play"
 
 /** The backend is a Partial by design, so tests read it the way onejs-unity does. */
 const b = (c: ContainerInput) => c.backend as Record<string, (...a: any[]) => any>
@@ -149,6 +150,29 @@ describe("createDomInputAdapter", () => {
         view.fire("visibilitychange", {})
         input.beginFrame()
         expect(b(input).GetKeyDown("W")).toBe(false)
+    })
+
+    /**
+     * Rooms hand the host to a page that is showing (room.ts), and this is
+     * the only place that knows: a hidden page has to reach play.ts.
+     */
+    it("reports the page hidden and shown, for rooms", () => {
+        const input = createContainerInput()
+        const view = fakeView()
+        // Module state: the test above left the page hidden.
+        setPageHidden(false)
+        const seen: boolean[] = []
+        const stop = onPageHidden((hidden) => seen.push(hidden))
+        const detach = createDomInputAdapter(input.sink, { view })
+        view.document.hidden = true
+        view.fire("visibilitychange", {})
+        expect(isPageHidden()).toBe(true)
+        view.document.hidden = false
+        view.fire("visibilitychange", {})
+        expect(isPageHidden()).toBe(false)
+        expect(seen).toEqual([true, false])
+        stop()
+        detach()
     })
 
     it("detaches every listener it added", () => {

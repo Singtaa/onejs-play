@@ -13,6 +13,11 @@
  * A pure function of (state, message), returning the next state and what the
  * game should be told about it. The hook keeps the socket, the refs and the
  * callbacks; this keeps the protocol.
+ *
+ * Since 6 Nov 2026 a room names its players and may send a busy socket several
+ * messages in one `batch` frame, which is unpacked here, in order, so a game
+ * sees the same single messages it always did. A room only batches for a
+ * client that asked with `v=2` (PlaySite/src/play/outbox.ts).
  */
 
 /** Everything a room knows about itself. */
@@ -24,6 +29,10 @@ export interface RoomState {
     connected: boolean
     /** Who owns shared state, or null when the room has said nothing yet. */
     hostId: number | null
+    /** What the room calls this player, or "" before the welcome (or from a room too old to say). */
+    name: string
+    /** What the room calls everybody else, by id. */
+    names: Readonly<Record<number, string>>
 }
 
 /** A message off the wire. Every field optional: it came from the network. */
@@ -36,6 +45,12 @@ export interface Wire {
     d?: unknown
     reason?: string
     detail?: string
+    name?: string
+    names?: Record<number, string>
+    /** On `join`: this player had the seat before and is back in it, same id and name. */
+    back?: boolean
+    /** On `batch`: the messages, in the order they were sent. */
+    m?: Wire[]
 }
 
 /**
@@ -46,13 +61,13 @@ export interface Wire {
  */
 export type RoomEvent =
     | { t: "open"; id: number; peers: readonly number[] }
-    | { t: "join"; id: number }
+    | { t: "join"; id: number; name: string; back: boolean }
     | { t: "leave"; id: number }
     | { t: "host"; isHost: boolean; hostId: number | null }
     | { t: "message"; from: number; data: unknown }
     | { t: "dropped"; reason: string; detail: string }
 
-export const EMPTY_ROOM: RoomState = { id: 0, peers: [], connected: false, hostId: null }
+export const EMPTY_ROOM: RoomState = { id: 0, peers: [], connected: false, hostId: null, name: "", names: {} }
 
 /** True when this peer owns shared state, including when it is the only one. */
 export function isHost(state: RoomState): boolean {
@@ -88,6 +103,8 @@ export function applyWire(state: RoomState, wire: Wire): { state: RoomState; eve
                 peers: wire.peers ?? [],
                 connected: true,
                 hostId: wire.host ?? null,
+                name: typeof wire.name === "string" ? wire.name : "",
+                names: wire.names !== undefined && typeof wire.names === "object" && wire.names !== null ? { ...wire.names } : {},
             })
             // Before the host event, because a game's first frame wants to know
             // who it is before it is told what it owns.
@@ -101,14 +118,19 @@ export function applyWire(state: RoomState, wire: Wire): { state: RoomState; eve
         case "join": {
             if (wire.id === undefined) return { state, events }
             const peers = [...state.peers.filter((p) => p !== wire.id), wire.id]
-            const next = withHost({ ...state, peers, hostId: wire.host ?? null })
-            events.unshift({ t: "join", id: wire.id })
+            const name = typeof wire.name === "string" ? wire.name : ""
+            const names = name === "" ? state.names : { ...state.names, [wire.id]: name }
+            const next = withHost({ ...state, peers, names, hostId: wire.host ?? null })
+            events.unshift({ t: "join", id: wire.id, name, back: wire.back === true })
             return { state: next, events }
         }
 
         case "leave": {
             if (wire.id === undefined) return { state, events }
             const peers = state.peers.filter((p) => p !== wire.id)
+            // The name is kept: a game that shows "Brisk Otter left" after the
+            // leave, or a scoreboard row for somebody gone, still has it, and
+            // the same player coming back is named again anyway.
             // The host arrives WITH the departure, because the departure is
             // usually why it changed. Taking it here is what makes promotion
             // immediate rather than something a game waits out.
@@ -125,6 +147,20 @@ export function applyWire(state: RoomState, wire: Wire): { state: RoomState; eve
         case "dropped":
             events.push({ t: "dropped", reason: String(wire.reason), detail: String(wire.detail) })
             return { state, events }
+
+        case "batch": {
+            // Applied one by one, exactly as if they had come in separate
+            // frames. A batch inside a batch is not something a room sends,
+            // and is ignored rather than followed.
+            let current = state
+            for (const inner of Array.isArray(wire.m) ? wire.m : []) {
+                if (inner === null || typeof inner !== "object" || inner.t === "batch") continue
+                const step = applyWire(current, inner)
+                current = step.state
+                events.push(...step.events)
+            }
+            return { state: current, events }
+        }
 
         default:
             // An unknown message is not an error: a newer relay may say things

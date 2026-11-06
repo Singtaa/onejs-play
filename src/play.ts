@@ -58,3 +58,30 @@ export function socketUrl(path: string): string | null {
     if (url === null) return null
     return url.replace(/^http:/, "ws:").replace(/^https:/, "wss:")
 }
+
+/**
+ * Whether the page the game is on is hidden: a locked phone, a tab in the
+ * background. Reported by the container's DOM adapter (adapter.ts, the one file
+ * here that touches the DOM) and read by rooms, which hand the host to a page
+ * that is showing (room.ts). False wherever nobody reports it, such as the
+ * editor, which is the right answer there.
+ */
+let pageHidden = false
+const pageListeners = new Set<(hidden: boolean) => void>()
+
+/** Called by the adapter. Games have no reason to touch this. */
+export function setPageHidden(hidden: boolean): void {
+    if (hidden === pageHidden) return
+    pageHidden = hidden
+    for (const listener of pageListeners) listener(hidden)
+}
+
+export function isPageHidden(): boolean {
+    return pageHidden
+}
+
+/** Calls `listener` whenever the page is hidden or shown. Returns the unsubscribe. */
+export function onPageHidden(listener: (hidden: boolean) => void): () => void {
+    pageListeners.add(listener)
+    return () => { pageListeners.delete(listener) }
+}

@@ -30,6 +30,7 @@
  */
 
 import type { InputSink } from "./input"
+import { setPageHidden } from "./play"
 
 /**
  * Keys whose browser default would fight the game.
@@ -118,7 +119,11 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         sink.wheel(event.deltaX, event.deltaY)
     }
     const onBlur = () => { sink.blur() }
-    const onVisibility = () => { if (view.document?.hidden) sink.blur() }
+    const onVisibility = () => {
+        const hidden = view.document?.hidden === true
+        if (hidden) sink.blur()
+        setPageHidden(hidden)
+    }
 
     // Wheel must be non-passive or preventDefault is ignored and logged as a
     // console violation; the others are passive-friendly but registered the
@@ -142,6 +147,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     view.addEventListener("wheel", onWheel, wheelOptions)
     view.addEventListener("blur", onBlur)
     view.document?.addEventListener?.("visibilitychange", onVisibility)
+    if (view.document?.hidden === true) setPageHidden(true)
 
     return () => {
         view.removeEventListener("keydown", onKeyDown, capture)
