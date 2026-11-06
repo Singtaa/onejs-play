@@ -178,8 +178,11 @@ export interface Character {
      * This frame's wish, in metres: `move([dx, 0, dz])`. Slides along whatever
      * it meets, climbs steps, falls when nothing is under it. Call it once a
      * frame; gravity is added for the frame's time.
+     *
+     * `filter` is what it can bump into, as a query takes it: `{ skip:
+     * ["player"] }` walks through other players. Leave the floor in.
      */
-    move(delta: Vec3): void
+    move(delta: Vec3, filter?: Filter): void
     /** Puts its feet at `at`, pushed out of anything it would stand inside. */
     teleport(at: Vec3): void
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
@@ -400,7 +403,7 @@ class WorldImpl implements World {
         return ((this.layerBit(layer) << 16) | 0xffff) >>> 0
     }
 
-    private queryGroups(filter: Filter | undefined): number | undefined {
+    queryGroups(filter: Filter | undefined): number | undefined {
         const only = filter?.only
         let mask = 0xffff
         if (only !== undefined) {
@@ -411,7 +414,7 @@ class WorldImpl implements World {
         return mask === 0xffff ? undefined : ((0xffff << 16) | mask) >>> 0
     }
 
-    private queryPredicate(filter: Filter | undefined): ((collider: any) => boolean) | undefined {
+    queryPredicate(filter: Filter | undefined): ((collider: any) => boolean) | undefined {
         const skipped = (filter?.skip ?? []).filter((s): s is Body | Character => typeof s !== "string")
         if (skipped.length === 0) return undefined
         const handles = new Set(skipped.map((s) => (s as BodyImpl | CharacterImpl).colliderHandle))
@@ -935,14 +938,14 @@ class CharacterImpl implements Character {
         return vec3([t.x, t.y - this.height / 2, t.z])
     }
 
-    move(delta: Vec3): void {
+    move(delta: Vec3, filter?: Filter): void {
         const rb = this.rb()
         const dt = this.world.frameSeconds
         const g = this.world.raw.gravity.y
         this.fall = this.isGrounded && this.fall <= 0 ? g * dt : this.fall + g * dt
         const wish = { x: delta[0], y: delta[1] + this.fall * dt, z: delta[2] }
         const collider = this.world.raw.getCollider(this.colliderHandle)
-        this.controller.computeColliderMovement(collider, wish, this.r.QueryFilterFlags.EXCLUDE_SENSORS)
+        this.controller.computeColliderMovement(collider, wish, this.r.QueryFilterFlags.EXCLUDE_SENSORS, this.world.queryGroups(filter), this.world.queryPredicate(filter))
         const m = this.controller.computedMovement()
         this.isGrounded = this.controller.computedGrounded()
         if (this.isGrounded && this.fall < 0) this.fall = 0

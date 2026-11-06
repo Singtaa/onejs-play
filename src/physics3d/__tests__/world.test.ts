@@ -161,6 +161,22 @@ describe("a character", () => {
         }
     }
 
+    it("bumps into another character, and walks through one its filter skips", async () => {
+        const w = await floored()
+        const a = w.character({ at: [0, 0, 0], layer: "fighter" })
+        w.character({ at: [0, 0, 1.5], layer: "fighter" })
+        run(w, 2)
+        for (let i = 0; i < 60; i++) { a.move([0, 0, 4 / 60]); w.step() }
+        expect(a.position[2]).toBeLessThan(1.5 - 0.6 + 0.05)
+
+        const b = w.character({ at: [3, 0, 0], layer: "fighter" })
+        w.character({ at: [3, 0, 1.5], layer: "fighter" })
+        run(w, 2)
+        for (let i = 0; i < 60; i++) { b.move([0, 0, 4 / 60], { skip: ["fighter"] }); w.step() }
+        expect(b.position[2]).toBeGreaterThan(3.5)
+        expect(b.grounded).toBe(true)
+    })
+
     it("is stopped by a dynamic crate as by a wall, and is not moved by one landing on it", async () => {
         const { w, me } = await walking()
         run(w, 2)
