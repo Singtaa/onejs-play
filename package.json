@@ -35,6 +35,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@dimforge/rapier3d-deterministic": "0.21.0",
     "esbuild": ">=0.25.0"
   },
   "peerDependencies": {
