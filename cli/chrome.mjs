@@ -101,6 +101,15 @@ export function chromeArgs({ headless, window, profile, gpu = false }) {
         // same speed on every machine. A headed window gets whatever the
         // desktop has.
         ...(headless && !gpu ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
+        // Headless runs talk to ojplay's own server on 127.0.0.1 and nothing
+        // else, so they skip the system's proxy settings. On windows-latest's
+        // November image (6 Nov 2026) one navigate in a sweep sent its request
+        // 31 to 33 s late, the page's own timing putting the wait between
+        // connecting and requesting, while the server answered at once; five
+        // sweeps of five failed so, and with this flag a sweep ran clean. A
+        // headed `ojplay run` keeps the person's proxy, which a cart reaching
+        // out from their desktop may need.
+        ...(headless ? ["--no-proxy-server"] : []),
         `--window-size=${window[0]},${window[1]}`,
         "about:blank",
     ]

@@ -340,6 +340,13 @@ describe("the browser", () => {
         }
     })
 
+    // windows-latest's November image sent a headless page's request 31 to 33 s
+    // late through the system's proxy settings; a person's headed run keeps them.
+    it("skips the system proxy headless, and keeps it headed", () => {
+        expect(chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" })).toContain("--no-proxy-server")
+        expect(chromeArgs({ headless: false, window: [960, 540], profile: "/tmp/p" })).not.toContain("--no-proxy-server")
+    })
+
     // A 3D game's frame rate on SwiftShader says nothing about a player's:
     // --gpu is the one way to measure it headless.
     it("draws headless on the software rasteriser unless asked for the GPU", () => {
