@@ -35,7 +35,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
 | `physics/` | What 2D and 3D share: `core.ts` is the one world, body, character and shape implementation behind both, generic over a dimension adapter; `sight.ts` is `visibility`'s geometry across one plane; `use-stepped.ts` steps a world on the frame clock |
 | `physics2d/` | `useWorld2D`, `createWorld2D`, `shape2D`: 2D physics over Rapier 2D, in stage pixels, y down. `world.ts` is the API, `elements.ts` moves the elements bodies carry (one `ElementPlacer` crossing per step) |
-| `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
+| `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `car.ts` is `world.car` over Rapier's ray-cast vehicle, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
 | `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
 | `wasm.ts` | Where a WebAssembly engine comes from on each host: OneJS's native link, a module handed over, or StreamingAssets |
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
@@ -459,8 +459,10 @@ Things that are not obvious from the code:
   `step()` applies for exactly one step before the engine's, so a character
   covers the same ground at any frame rate.
 - **A snapshot is more than Rapier's.** Rapier's bytes, then oj's own JSON per
-  character (held walk, vertical speed, standing), then the engine part's
-  length, so a rewind brings a jump back mid-air. ASCII by hand, since QuickJS
+  character (held walk, vertical speed, standing, shove), per car (held drive,
+  steering, wheel spin, where it is parked) and per body that does not turn,
+  then the engine part's length, so a rewind brings a jump back mid-air. A car
+  rebuilds its vehicle controller on the restored world. ASCII by hand, since QuickJS
   has no `TextEncoder`.
 - **`slide` keeps a walker per shape.** A sensor capsule in no collision group
   on a fixed body, which no query or contact sees; `restore` drops them with
@@ -495,6 +497,28 @@ Things that are not obvious from the code:
 - **Actors follow in one crossing.** `syncActors` hands every moved body's
   placement to `ModelBridge.PlaceMany` as one `Float32Array`; an actor sits at
   its body's centre.
+- **Between steps, actors are drawn ahead.** When frames come faster than
+  steps (smoothed frame under 0.8 of a step), each frame draws every actor
+  `t` of a step past its last one along its velocity, a character along the
+  walk asked this frame (`leading`). It slides along what the engine says it
+  touches, then one sweep stops it short of what it would reach; a sweep that
+  meets something within a millimetre asks a contact query instead, since a
+  sweep from a touching start gets neither its time nor its normal right.
+  2.2 µs a moving body a frame on desktop Node, nothing under a millimetre
+  ahead. Without `fast` the engine itself puts a 6 m/s ball 8 cm into a wall
+  for a step; the drawing never goes deeper than it. `between` is the
+  interpolating alternative, one call away.
+- **A character rides what it stands on.** Only while something moves
+  (`world.moving()`), a foot sphere swept down at the start of a step finds
+  the body under it, before anything moves, and its motion over the step
+  (kinematic: next pose; dynamic: velocity at the point) carries the
+  character. Down is applied without the controller, which the body under it
+  would otherwise stop; the rest goes through it, so walls still stop it.
+- **A car is a driver.** `WorldCore` steps each driver after characters and
+  before the pipeline. Rapier's ray-cast tyres creep down a slope braked or
+  not, so a braked, stopped car is held after `updateVehicle` by its speed
+  along its length toward where it stopped (`parked`), re-anchored when
+  pushed more than 2 cm. Its wheels are placed from the chassis after the step.
 - **Rotations are Unity's.** `rotation.ts` converts yaw, pitch and roll the way
   `Quaternion.Euler` does, and `gltf.ts` mirrors glTF's x as glTFast does, so
   a mesh collider lines up with the model drawn from the same file.
@@ -502,6 +526,10 @@ Things that are not obvious from the code:
   Node, Chrome, workerd and OneJS's native QuickJS link all produce it.
 - **Recast's `detailSampleDist` is in cells.** Below about 0.9 the build reads
   out of bounds, so `nav.ts` leaves Recast's default.
+- **2D nav is Recast on its side.** A floor quad over the static bodies'
+  bounding box, every body stood up half a metre with its top facing down,
+  walker height 1 and step 0; circles become 16 sides grown to stay outside
+  the true circle. A world with gravity is refused.
 
 ## Other people
 
