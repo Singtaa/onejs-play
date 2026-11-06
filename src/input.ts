@@ -135,10 +135,10 @@ export interface InputSink {
     touchMove(pointerId: number, viewportX: number, viewportY: number): void
     touchUp(pointerId: number, viewportX: number, viewportY: number, canceled?: boolean): void
     /**
-     * A press the browser has just granted user activation for: a keydown, a
-     * mouse button going down or coming up, a finger or pen lifting
-     * (adapter.ts). Its frame is the one in which share.ts may ask the browser
-     * for the share sheet or the clipboard.
+     * A browser event that grants the page user activation: a keydown, a
+     * mouse button going down, a finger or pen lifting (adapter.ts). Its frame
+     * is the one in which share.ts may ask the browser for the share sheet or
+     * the clipboard.
      */
     activate(): void
     /**
