@@ -52,10 +52,10 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `runtime.ts` | Container-side: builds the `oj` object a game receives, and runs each frame in three phases: the frame (`useFrame`), the step (worlds), late (cameras) |
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
-| `input.ts` | Container-side: the input backend onejs-unity reads through |
-| `adapter.ts` | Container-side: browser events into that backend |
+| `input.ts` | Container-side: the input backend onejs-unity reads through, with the pointer lock's state (asked in a press's frame, else on the next press) |
+| `adapter.ts` | Container-side: browser events into that backend, and the canvas's pointer lock (movement as delta while locked) |
 | `standalone.ts` | Starting a runtime outside a container, which is what eject needs |
-| `hostinput.ts` | Outside a container: the real InputBridge with pointer reads converted to stage pixels |
+| `hostinput.ts` | Outside a container: the real InputBridge with pointer reads converted to stage pixels; the lock is Unity's Cursor, through onejs-unity |
 
 Beside `src/`, two folders that are not the runtime:
 

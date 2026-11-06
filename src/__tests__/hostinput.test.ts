@@ -186,3 +186,14 @@ describe("finding the bridge", () => {
         }
     })
 })
+
+describe("the pointer lock on an ejected cart", () => {
+    // InputBridge has no lock: onejs-unity's default sets Unity's Cursor instead.
+    it("is left to onejs-unity's default, without asking the bridge", () => {
+        const asked: string[] = []
+        const bridge = new Proxy(fakeBridge(), { get: (t, p) => { asked.push(String(p)); return (t as any)[p] } })
+        const backend = make(bridge) as any
+        for (const name of ["LockMouse", "UnlockMouse", "IsMouseLocked"]) expect(backend[name], name).toBeUndefined()
+        expect(asked).toEqual([])
+    })
+})

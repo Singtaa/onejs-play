@@ -35,7 +35,7 @@
  * and it is written down rather than papered over.
  */
 
-import { keyNameFromDomCode, type InputBackend, type InputBackendMethods } from "onejs-unity/input"
+import { isOptionalMethod, keyNameFromDomCode, type InputBackend, type InputBackendMethods } from "onejs-unity/input"
 import { screenToStage, screenDeltaToStage, type Stage } from "./stage"
 import type { PressProbe } from "./over-ui"
 
@@ -193,6 +193,10 @@ export function createHostInputBackend(options: HostInputOptions): Record<string
 
             if (property === "IsMouseOverUI") return mouseOverUI
             if (property === "GetTouchOverUI") return touchOverUI
+            // Any other optional method InputBridge lacks (the pointer lock, on
+            // Unity's Cursor) is left to onejs-unity's default: asking the
+            // bridge for it would log "Method not found".
+            if (isOptionalMethod(property)) return undefined
 
             if (POSITION_X.has(property)) {
                 return (...args: unknown[]) => positionOf(touchIndex(property, args)).x

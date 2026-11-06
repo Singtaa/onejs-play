@@ -27,9 +27,15 @@
  * blur and visibilitychange both release everything held. Without them,
  * alt-tabbing while holding a key leaves it held forever, because the matching
  * keyup is delivered to whatever took focus.
+ *
+ * Pointer lock (input.mouse.lock()) is the target's: the input asks for it
+ * inside a press through the seam installed here, and the document says when
+ * it was granted or let go. While locked, the browser holds clientX and
+ * clientY where the lock began, so a movement goes in as movementX and
+ * movementY, the only numbers that still move.
  */
 
-import type { InputSink } from "./input"
+import type { InputSink, PointerLockHost } from "./input"
 import { setPageHidden } from "./play"
 import { setShareBrowser, type ShareData } from "./share"
 
@@ -65,6 +71,10 @@ export interface DomInputOptions {
 /** Each DOM button index's bit in a pointer event's `buttons`: left, middle, right, back, forward. */
 const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
 
+/** Said once: the browser's refusal carries no reason a cart can read. */
+let lockRefusalSaid = false
+const LOCK_REFUSED = "[oj] The browser refused to lock the pointer. It grants a lock only in a press (a click or a key), and not again straight after Escape let it go."
+
 /** True when this build has a DOM to listen to at all. */
 export function hasDom(view: any = globalThis): boolean {
     return typeof view?.addEventListener === "function" && typeof view?.document !== "undefined"
@@ -83,6 +93,27 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     }
     const target = options.target ?? null
     const preventDefault = options.preventDefault !== false
+
+    // The element a lock holds the pointer to: the canvas, or the page.
+    const doc = view.document
+    const lockElement = target ?? doc?.documentElement ?? null
+    const isLocked = () => lockElement !== null && doc?.pointerLockElement === lockElement
+    const lockHost: PointerLockHost | null =
+        typeof lockElement?.requestPointerLock === "function" && typeof doc?.exitPointerLock === "function"
+            ? {
+                request: () => {
+                    // A phone has the method and nothing to lock: asking would only be refused.
+                    if (view.matchMedia?.("(any-pointer: fine)")?.matches === false) return
+                    try {
+                        // Chrome answers with a promise as well as the event; the event is what is read.
+                        lockElement.requestPointerLock()?.catch?.(() => {})
+                    } catch {
+                        onLockError()
+                    }
+                },
+                exit: () => doc.exitPointerLock(),
+            }
+            : null
 
     /** CSS pixels relative to the target's top-left corner. */
     const at = (event: any): [number, number] => {
@@ -123,7 +154,8 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     // Read from `buttons`, so "both buttons walk forward" sees the second one.
     const onPointerMove = (event: any) => {
         const [x, y] = at(event)
-        sink.pointerMove(x, y)
+        if (isLocked()) sink.pointerMoveBy(event.movementX ?? 0, event.movementY ?? 0)
+        else sink.pointerMove(x, y)
         if (isTouch(event)) sink.touchMove(event.pointerId, x, y)
         else if (event.button >= 0 && typeof event.buttons === "number" && BUTTON_BITS[event.button] !== undefined) {
             if ((event.buttons & BUTTON_BITS[event.button]) !== 0) sink.pointerDown(event.button, x, y)
@@ -150,6 +182,12 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         sink.wheel(event.deltaX, event.deltaY)
     }
     const onBlur = () => { sink.blur() }
+    const onLockChange = () => { sink.pointerLocked(isLocked()) }
+    const onLockError = () => {
+        if (lockRefusalSaid) return
+        lockRefusalSaid = true
+        console.warn(LOCK_REFUSED)
+    }
     const onVisibility = () => {
         const hidden = view.document?.hidden === true
         if (hidden) sink.blur()
@@ -180,6 +218,11 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     view.addEventListener("blur", onBlur)
     view.document?.addEventListener?.("visibilitychange", onVisibility)
     if (view.document?.hidden === true) setPageHidden(true)
+    if (lockHost !== null) {
+        doc.addEventListener("pointerlockchange", onLockChange)
+        doc.addEventListener("pointerlockerror", onLockError)
+    }
+    sink.setPointerLock(lockHost)
 
     // The share sheet and the clipboard, called by share.ts in the frame of a press.
     const nav = view.navigator
@@ -200,6 +243,13 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         view.removeEventListener("contextmenu", onContextMenu)
         view.removeEventListener("blur", onBlur)
         view.document?.removeEventListener?.("visibilitychange", onVisibility)
+        if (lockHost !== null) {
+            doc.removeEventListener("pointerlockchange", onLockChange)
+            doc.removeEventListener("pointerlockerror", onLockError)
+            // The next game starts with the pointer free.
+            if (isLocked()) doc.exitPointerLock()
+        }
+        sink.setPointerLock(null)
         setShareBrowser(null)
     }
 }

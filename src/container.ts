@@ -22,7 +22,7 @@ export type { PlayContext } from "./play"
 export type { OjRuntime, ContainerRuntime, RuntimeOptions, TimeState } from "./runtime"
 
 export { createContainerInput } from "./input"
-export type { ContainerInput, InputSink } from "./input"
+export type { ContainerInput, InputSink, PointerLockHost } from "./input"
 
 export { createDomInputAdapter, hasDom } from "./adapter"
 export type { DomInputOptions } from "./adapter"

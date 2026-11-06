@@ -115,10 +115,26 @@ interface TouchRecord {
 /** Unity's TouchPhase order, which onejs-unity maps back to names. */
 const PHASE_BEGAN = 0, PHASE_MOVED = 1, PHASE_STATIONARY = 2, PHASE_ENDED = 3, PHASE_CANCELED = 4
 
+/**
+ * How the page locks the pointer, installed by the adapter (adapter.ts) as it
+ * installs the share seam. `request` must be called inside a press, or the
+ * browser refuses; the answer arrives later, as `pointerLocked`.
+ */
+export interface PointerLockHost {
+    request(): void
+    exit(): void
+}
+
 export interface InputSink {
     keyDown(code: string): void
     keyUp(code: string): void
     pointerMove(viewportX: number, viewportY: number): void
+    /**
+     * A movement with the pointer held in place, as a locked pointer reports
+     * it (`movementX`, `movementY`): it adds to the delta and leaves the
+     * position where the lock froze it.
+     */
+    pointerMoveBy(deltaX: number, deltaY: number): void
     pointerDown(button: number, viewportX?: number, viewportY?: number): void
     pointerUp(button: number, viewportX?: number, viewportY?: number): void
     wheel(deltaX: number, deltaY: number): void
@@ -141,6 +157,10 @@ export interface InputSink {
      * for the share sheet or the clipboard.
      */
     activate(): void
+    /** The page's pointer lock, or null where it has none (a phone, a host with no DOM). */
+    setPointerLock(host: PointerLockHost | null): void
+    /** The browser said the pointer is locked to the game, or no longer is. */
+    pointerLocked(locked: boolean): void
     /**
      * Focus was lost, so release everything held.
      *
@@ -187,6 +207,11 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _pressedInOrder: string[] = []
     private _activationFrame = -1
     private _activationsQueued = 0
+
+    private _lockHost: PointerLockHost | null = null
+    /** A lock() asked for outside a press, waiting for the next one. */
+    private _lockArmed = false
+    private _locked = false
 
     private _buttons = 0
     /** Whether the press now held began on UI; meaningful while a button is down. */
@@ -248,6 +273,10 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._queue.push(() => this._applyPointerMove(viewportX, viewportY))
     }
 
+    pointerMoveBy(deltaX: number, deltaY: number): void {
+        this._queue.push(() => { this._accumDeltaX += deltaX; this._accumDeltaY += deltaY })
+    }
+
     pointerDown(button: number, viewportX?: number, viewportY?: number): void {
         this._queue.push(() => this._applyPointerButton(button, true, viewportX, viewportY))
     }
@@ -265,6 +294,9 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     }
 
     activate(): void {
+        // Now, inside the browser's own event: the one place a lock armed
+        // outside a press can be granted.
+        if (this._lockArmed) this._requestLock()
         this._activationsQueued++
         this._queue.push(() => {
             this._activationsQueued--
@@ -274,6 +306,40 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     activated(): boolean {
         return this._activationFrame === this._frame || this._activationsQueued > 0
+    }
+
+    setPointerLock(host: PointerLockHost | null): void {
+        this._lockHost = host
+        if (host === null) {
+            this._lockArmed = false
+            this._locked = false
+        }
+    }
+
+    pointerLocked(locked: boolean): void {
+        this._queue.push(() => { this._locked = locked })
+    }
+
+    /**
+     * In a press's frame the browser still grants the press's activation
+     * (share.ts has the windows measured), so the lock is asked at once;
+     * outside one it waits for the next press, which is what a cart calling
+     * lock() from a menu or on load wants.
+     */
+    private _lock(): void {
+        if (this._lockHost === null) return
+        if (this.activated()) this._requestLock()
+        else this._lockArmed = true
+    }
+
+    private _requestLock(): void {
+        this._lockArmed = false
+        this._lockHost?.request()
+    }
+
+    private _unlock(): void {
+        this._lockArmed = false
+        if (this._locked) this._lockHost?.exit()
     }
 
     // applied at the frame boundary
@@ -425,6 +491,9 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._queue = []
         this._activationFrame = -1
         this._activationsQueued = 0
+        // A restarted game starts with the pointer free, as a new page would.
+        this._unlock()
+        this._locked = false
         this._touches = []
         this._keys.clear()
         this._pressedInOrder = []
@@ -498,6 +567,9 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             // A held press answers where it began; with nothing held, where the pointer is now.
             IsMouseOverUI: () => this._buttons !== 0 ? this._pressOverUI : this._overUI(this._pointerX, this._pointerY),
             GetTouchOverUI: (i: number) => this._touches[i]?.overUI ?? false,
+            LockMouse: () => this._lock(),
+            UnlockMouse: () => this._unlock(),
+            IsMouseLocked: () => this._locked,
         }
     }
 

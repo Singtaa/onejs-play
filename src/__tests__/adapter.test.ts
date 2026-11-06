@@ -236,3 +236,155 @@ describe("createDomInputAdapter", () => {
         expect(b(input).GetKeyDown("A")).toBe(false)
     })
 })
+
+/**
+ * input.mouse.lock() in the browser (runtime-1.3.md section 10). A browser
+ * grants a lock only inside a press, so the lock is asked at once in a
+ * press's frame and otherwise inside the next press's own event.
+ */
+describe("pointer lock", () => {
+    function lockPage(options: { fine?: boolean, refuse?: boolean } = {}) {
+        const input = createContainerInput()
+        const view = fakeView({ matchMedia: () => ({ matches: options.fine !== false }) })
+        const requests: string[] = []
+        const target: any = {
+            getBoundingClientRect: () => ({ left: 0, top: 0 }),
+            requestPointerLock: () => {
+                requests.push("request")
+                if (options.refuse) view.fire("pointerlockerror", {})
+                return Promise.resolve()
+            },
+        }
+        view.document.pointerLockElement = null
+        view.document.exitPointerLock = () => {
+            requests.push("exit")
+            view.document.pointerLockElement = null
+            view.fire("pointerlockchange", {})
+        }
+        const grant = () => {
+            view.document.pointerLockElement = target
+            view.fire("pointerlockchange", {})
+        }
+        const detach = createDomInputAdapter(input.sink, { view, target })
+        const mouseDown = () => view.fire("pointerdown", { pointerType: "mouse", button: 0, clientX: 10, clientY: 10 })
+        return { input, view, target, requests, grant, detach, mouseDown }
+    }
+
+    it("asks at once in a press's frame, whether or not the frame has drained it", () => {
+        const page = lockPage()
+        page.mouseDown()
+        // A Button's onClick can run before the container's frame takes the press.
+        b(page.input).LockMouse()
+        expect(page.requests).toEqual(["request"])
+        page.input.beginFrame()
+        b(page.input).LockMouse()
+        expect(page.requests).toEqual(["request", "request"])
+    })
+
+    it("outside a press, asks inside the next press's own event", () => {
+        const page = lockPage()
+        page.input.beginFrame()
+        b(page.input).LockMouse()
+        expect(page.requests).toEqual([])
+        page.mouseDown()
+        // Before any frame: the browser's event is the only place it is granted.
+        expect(page.requests).toEqual(["request"])
+        page.mouseDown()
+        expect(page.requests).toEqual(["request"])
+    })
+
+    it("reads locked from the browser's answer, on the frame after it", () => {
+        const page = lockPage()
+        page.mouseDown()
+        b(page.input).LockMouse()
+        expect(b(page.input).IsMouseLocked()).toBe(false)
+        page.grant()
+        page.input.beginFrame()
+        expect(b(page.input).IsMouseLocked()).toBe(true)
+        // Escape: the browser lets go by itself.
+        page.view.document.pointerLockElement = null
+        page.view.fire("pointerlockchange", {})
+        page.input.beginFrame()
+        expect(b(page.input).IsMouseLocked()).toBe(false)
+    })
+
+    it("feeds movement into the delta while locked, with the position held", () => {
+        const page = lockPage()
+        page.view.fire("pointermove", { pointerType: "mouse", button: -1, clientX: 100, clientY: 50 })
+        page.input.beginFrame()
+        page.grant()
+        // The browser holds clientX and clientY where the lock began.
+        page.view.fire("pointermove", { pointerType: "mouse", button: -1, clientX: 100, clientY: 50, movementX: 7, movementY: -3 })
+        page.view.fire("pointermove", { pointerType: "mouse", button: -1, clientX: 100, clientY: 50, movementX: 5, movementY: 1 })
+        page.input.beginFrame()
+        expect([b(page.input).GetMouseDeltaX(), b(page.input).GetMouseDeltaY()]).toEqual([12, -2])
+        expect([b(page.input).GetMousePositionX(), b(page.input).GetMousePositionY()]).toEqual([100, 50])
+        page.view.document.pointerLockElement = null
+        page.view.fire("pointerlockchange", {})
+        page.view.fire("pointermove", { pointerType: "mouse", button: -1, clientX: 130, clientY: 50, movementX: 30, movementY: 0 })
+        page.input.beginFrame()
+        expect(b(page.input).GetMousePositionX()).toBe(130)
+        expect(b(page.input).GetMouseDeltaX()).toBe(30)
+    })
+
+    it("unlocks a held lock and forgets one still waiting for a press", () => {
+        const page = lockPage()
+        page.input.beginFrame()
+        b(page.input).LockMouse()
+        b(page.input).UnlockMouse()
+        page.mouseDown()
+        expect(page.requests).toEqual([])
+        b(page.input).LockMouse()
+        page.grant()
+        page.input.beginFrame()
+        b(page.input).UnlockMouse()
+        expect(page.requests).toEqual(["request", "exit"])
+        page.input.beginFrame()
+        expect(b(page.input).IsMouseLocked()).toBe(false)
+    })
+
+    it("does nothing on a phone, which has the method and nothing to lock", () => {
+        const page = lockPage({ fine: false })
+        page.mouseDown()
+        b(page.input).LockMouse()
+        page.input.beginFrame()
+        expect(page.requests).toEqual([])
+        expect(b(page.input).IsMouseLocked()).toBe(false)
+    })
+
+    it("does nothing where the page cannot lock at all", () => {
+        const input = createContainerInput()
+        const view = fakeView()
+        createDomInputAdapter(input.sink, { view, target: { getBoundingClientRect: () => ({ left: 0, top: 0 }) } })
+        view.fire("pointerdown", { pointerType: "mouse", button: 0, clientX: 1, clientY: 1 })
+        expect(() => b(input).LockMouse()).not.toThrow()
+        input.beginFrame()
+        expect(b(input).IsMouseLocked()).toBe(false)
+    })
+
+    it("says a refusal once", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const page = lockPage({ refuse: true })
+        page.mouseDown()
+        b(page.input).LockMouse()
+        b(page.input).LockMouse()
+        const said = warn.mock.calls.filter((c) => String(c[0]).includes("refused to lock the pointer"))
+        expect(said).toHaveLength(1)
+        warn.mockRestore()
+    })
+
+    it("lets go on detach and on a restart, so the next game starts free", () => {
+        const page = lockPage()
+        page.mouseDown()
+        b(page.input).LockMouse()
+        page.grant()
+        page.input.beginFrame()
+        page.input.reset()
+        expect(page.requests).toEqual(["request", "exit"])
+        expect(b(page.input).IsMouseLocked()).toBe(false)
+        page.grant()
+        page.detach()
+        expect(page.requests).toEqual(["request", "exit", "exit"])
+        expect(page.view.total()).toBe(0)
+    })
+})
