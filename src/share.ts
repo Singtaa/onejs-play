@@ -77,12 +77,18 @@ function hadPress(): boolean {
     return false
 }
 
-/** The browser's call, made now, with its rejection read as a result rather than thrown. */
-function attempt(run: () => Promise<unknown>): Promise<{ ok: true } | { ok: false, name: string }> {
+/**
+ * The browser's call, made now: null when it worked, else the name of what it
+ * threw or rejected with. A name or null rather than a union with a boolean
+ * tag, which narrows only under strictNullChecks, and PlaySite compiles oj's
+ * declarations without it (scripts/oj-types.mjs).
+ */
+function attempt(run: () => Promise<unknown>): Promise<string | null> {
+    const nameOf = (error: any): string => String(error?.name ?? "Error")
     try {
-        return run().then(() => ({ ok: true as const }), (error: any) => ({ ok: false as const, name: String(error?.name ?? "Error") }))
-    } catch (error: any) {
-        return Promise.resolve({ ok: false as const, name: String(error?.name ?? "Error") })
+        return run().then(() => null, nameOf)
+    } catch (error) {
+        return Promise.resolve(nameOf(error))
     }
 }
 
@@ -95,7 +101,7 @@ export function copy(text: string): Promise<CopyResult> {
 function copyNow(text: string): Promise<CopyResult> {
     const write = browser?.copy
     if (!write) return Promise.resolve("refused")
-    return attempt(() => write(text)).then((r) => (r.ok ? "copied" : "refused"))
+    return attempt(() => write(text)).then((failed) => (failed === null ? "copied" : "refused"))
 }
 
 /**
@@ -114,10 +120,10 @@ export function share(data: ShareData, options: ShareOptions = {}): Promise<Shar
     }
     const open = browser?.share
     if (!open || (browser?.canShare && !browser.canShare(clean))) return orCopy()
-    return attempt(() => open(clean)).then((r) => {
-        if (r.ok) return "shared"
+    return attempt(() => open(clean)).then((failed) => {
+        if (failed === null) return "shared"
         // The player closed the sheet: an answer, not a reason to copy behind their back.
-        if (r.name === "AbortError") return "cancelled"
+        if (failed === "AbortError") return "cancelled"
         return orCopy()
     })
 }
