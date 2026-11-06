@@ -181,6 +181,8 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
         if (headless) {
             await browser.send("Emulation.setDeviceMetricsOverride", { width: window[0], height: window[1], deviceScaleFactor: 1, mobile: false })
         }
+        const ready = await browser.waitForRenderer(deadline)
+        say(`renderer after ${seconds(ready - began)}`)
     } catch (e) {
         browser.close()
         throw e
@@ -283,6 +285,28 @@ export class Browser {
 
     navigate(url) {
         return this.send("Page.navigate", { url })
+    }
+
+    /**
+     * Waits until the page's renderer answers, by `deadline` (a Date.now()),
+     * and resolves to when it did.
+     *
+     * A listed page is not a live one. On windows-latest's November image
+     * (Chrome 156.0.8078.80, 6 Nov 2026) the about:blank renderer sometimes
+     * stopped answering once the viewport was set, while the browser still
+     * answered for it: its main thread waits on the GPU process, which is
+     * SwiftShader starting, and a navigate sent then waits on that renderer
+     * and timed out at 30 s with the page never asked for. So the start is
+     * not over until the renderer answers, inside the start's own deadline.
+     */
+    async waitForRenderer(deadline, askMs = 5000) {
+        for (;;) {
+            const left = deadline - Date.now()
+            if (left <= 0) throw new Error(`Chrome's page did not answer within ${STARTUP_MS / 1000}s of starting: its renderer is stuck, so nothing could load in it`)
+            const m = await this.call("Runtime.evaluate", { expression: "1", returnByValue: true }, undefined, Math.min(askMs, left)).catch(() => null)
+            if (m !== null && m.result?.result?.value === 1) return Date.now()
+            if (m !== null) await sleep(100)
+        }
     }
 
     /**

@@ -64,4 +64,23 @@ describe("the CLI's CDP calls", () => {
         await vi.advanceTimersByTimeAsync(10000)
         await expect(silent).resolves.toBe("the page did not answer either (Runtime.evaluate did not answer in 5s); its history did not answer either (Page.getNavigationHistory did not answer in 5s)")
     })
+    it("waits for a renderer that answers late, and says when it did", async () => {
+        vi.useFakeTimers()
+        const { b, sent } = browser()
+        const ready = b.waitForRenderer(Date.now() + 60000)
+        // Two questions go unanswered, as a renderer waiting on the GPU process leaves them.
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(sent.filter((m) => m.method === "Runtime.evaluate")).toHaveLength(3)
+        const asked = Date.now()
+        b.receive({ id: sent[sent.length - 1].id, result: { result: { type: "number", value: 1 } } })
+        await expect(ready).resolves.toBe(asked)
+    })
+
+    it("gives up on a renderer that never answers, at the start's deadline", async () => {
+        vi.useFakeTimers()
+        const { b } = browser()
+        const stuck = expect(b.waitForRenderer(Date.now() + 12000)).rejects.toThrow(/renderer is stuck/)
+        await vi.advanceTimersByTimeAsync(12000)
+        await stuck
+    })
 })

@@ -173,7 +173,7 @@ async function sweepOne(dir: string): Promise<{ waits: string } | { waits: null,
 const waited: string[] = []
 
 /** One run's browser start, as `oj test` printed it, and the run's own length. */
-type Start = { name: string, portS: number | null, pageS: number | null, runS: number }
+type Start = { name: string, portS: number | null, pageS: number | null, rendererS: number | null, runS: number }
 const starts: Start[] = []
 
 /**
@@ -186,11 +186,15 @@ function startSummary(): string {
     const worst = starts.filter((s) => s.pageS !== null).sort((a, b) => b.pageS! - a.pageS!)[0]
     const failed = starts.filter((s) => s.pageS === null).map((s) => s.name)
     const runs = starts.map((s) => s.runS).sort((a, b) => a - b)
+    const renderers = starts.filter((s) => s.rendererS !== null).sort((a, b) => a.rendererS! - b.rendererS!)
+    const slowRenderer = renderers[renderers.length - 1]
     const slowest = [...starts].sort((a, b) => b.runS - a.runS)[0]
     return [
         `[sweep] ${process.platform}, ${os.availableParallelism()} cores, ${LIMIT} at a time, ${starts.length} runs; cold chrome warm-up ${coldS.toFixed(1)} s`,
         `[sweep] chrome page after: median ${at(0.5)?.toFixed(1)} s, p90 ${at(0.9)?.toFixed(1)} s, worst ${worst?.pageS?.toFixed(1)} s (${worst?.name}); limit ${STARTUP_MS / 1000} s`,
         `[sweep] no page: ${failed.length === 0 ? "none" : failed.join(", ")}`,
+        // A listed page whose renderer is still waiting on the GPU process: how long that took is the windows-latest number to watch.
+        `[sweep] renderer answering after: median ${renderers[Math.floor(renderers.length / 2)]?.rendererS?.toFixed(1)} s, worst ${slowRenderer?.rendererS?.toFixed(1)} s (${slowRenderer?.name})`,
         `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${slowest?.runS.toFixed(1)} s (${slowest?.name}); limit ${RUN_MS / 1000} s`,
     ].join("\n")
 }
@@ -221,7 +225,8 @@ describe("oj test over every example", () => {
             const { code, output, runS } = result
             const port = /port after ([\d.]+) s/.exec(output)
             const page = /page after ([\d.]+) s/.exec(output)
-            starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, runS })
+            const renderer = /renderer after ([\d.]+) s/.exec(output)
+            starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, rendererS: renderer ? Number(renderer[1]) : null, runS })
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
         // The deadline that matters is RUN_MS, per run; this one also counts
         // the wait for a slot, so it allows for every run ahead in the queue.
