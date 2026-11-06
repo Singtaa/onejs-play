@@ -11,6 +11,10 @@ on:
         description: "A Chrome for Testing version to run the e2e on, instead of the runner image's Chrome"
         required: false
         default: ""
+      chrome_log:
+        description: "Chrome's own logging on the e2e: on, off, netlog (the network log only) or log (the verbose log only)"
+        required: false
+        default: "on"
       sample:
         description: "A label that keeps samples of one setup from cancelling each other"
         required: false
@@ -19,7 +23,7 @@ on:
 concurrency:
   # The Chrome a dispatched run names is part of the group, so runs on two
   # Chrome builds go side by side rather than cancelling each other.
-  group: ci-${{ github.ref }}-${{ inputs.chrome }}-${{ inputs.sample }}
+  group: ci-${{ github.ref }}-${{ inputs.chrome }}-${{ inputs.chrome_log }}-${{ inputs.sample }}
   cancel-in-progress: true
 
 jobs:
@@ -138,7 +142,8 @@ jobs:
       # network log (cli/chrome.mjs, chromeLog); every other one is deleted.
       - run: npm run test:e2e
         env:
-          OJ_CHROME_LOG: ${{ runner.temp }}/chrome-logs
+          OJ_CHROME_LOG: ${{ (inputs.chrome_log || 'on') != 'off' && format('{0}/chrome-logs', runner.temp) || '' }}
+          OJ_CHROME_LOG_ONLY: ${{ inputs.chrome_log == 'netlog' && 'netlog' || inputs.chrome_log == 'log' && 'log' || '' }}
 
       # What a failed sweep left running and lying about: a stall that grows
       # through a sweep reads very differently with forty Chromes still alive.

@@ -112,7 +112,8 @@ export function chromeArgs({ headless, window, profile, gpu = false, log = null 
         ...(headless ? ["--no-proxy-server"] : []),
         // Chrome's own account of itself, asked for with OJ_CHROME_LOG (chromeLog):
         // its verbose log and its network log, for a stall nothing else can name.
-        ...(log ? ["--enable-logging", `--log-file=${log.file}`, "--v=1", `--log-net-log=${log.netlog}`] : []),
+        ...(log && process.env.OJ_CHROME_LOG_ONLY !== "netlog" ? ["--enable-logging", `--log-file=${log.file}`, "--v=1"] : []),
+        ...(log && process.env.OJ_CHROME_LOG_ONLY !== "log" ? [`--log-net-log=${log.netlog}`] : []),
         `--window-size=${window[0]},${window[1]}`,
         "about:blank",
     ]
