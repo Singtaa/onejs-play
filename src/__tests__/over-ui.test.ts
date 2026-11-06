@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { setInputBackend, input } from "onejs-unity/input"
 import { createContainerInput } from "../input"
 import { createHostInputBackend } from "../hostinput"
-import { createPressProbe, PRESS_EVENTS } from "../over-ui"
+import { createPressProbe, PRESS_EVENTS, STAGE_SIZED_HINT, WORLD_CLASS } from "../over-ui"
 import { newStick, readPad, readStick, type PadState, type TouchPoint } from "../stick"
 import { stageOf } from "../stage"
 
@@ -13,14 +13,29 @@ import { stageOf } from "../stage"
 
 afterEach(() => setInputBackend(null))
 
-/** A panel with a stage-sized View and, inside it, a button at 10..94, 10..40 with a Text in it. */
-function scene({ listens = true } = {}) {
-    const stage = { name: "stage", parent: null as any }
-    const button = { name: "button", parent: stage }
-    const label = { name: "label", parent: button }
+/** An element as the probe reads one: its parent, its classes and its rect. */
+function element(name: string, parent: any, size: [number, number], classes: string[] = []) {
+    return {
+        name, parent,
+        worldBound: { width: size[0], height: size[1] },
+        ClassListContains: (c: string) => classes.includes(c),
+    }
+}
+
+/**
+ * A 400 by 300 panel with a stage-sized View and, inside it, a button at
+ * 10..94, 10..40 with a Text in it. With `world`, the View has a press
+ * handler of its own (a camera's drag), marked `oj-world` or not.
+ */
+function scene({ listens = true, world = "none" as "none" | "unmarked" | "marked" } = {}) {
+    const stage = element("stage", null, [400, 300], world === "marked" ? [WORLD_CLASS] : [])
+    const button = element("button", stage, [84, 30])
+    const label = element("label", button, [40, 20])
     const handlers = new Map<object, string[]>([[button, ["click"]]])
+    if (world !== "none") handlers.set(stage, ["pointerdown"])
     const asked: string[] = []
     const root = {
+        worldBound: { width: 400, height: 300 },
         panel: {
             Pick: (p: { x: number, y: number }) => {
                 asked.push(`${p.x},${p.y}`)
@@ -33,6 +48,8 @@ function scene({ listens = true } = {}) {
     return { root, cs, events, asked }
 }
 
+const args = (s: ReturnType<typeof scene>) => [s.root, s.cs, s.events] as const
+
 describe("the probe", () => {
     it("answers for a button and anything inside it, and not for the stage-sized View around them", () => {
         const s = scene()
@@ -41,6 +58,44 @@ describe("the probe", () => {
         expect(probe(20, 20)).toBe(true)   // its label, answered by the button above it
         expect(probe(300, 300)).toBe(false) // the game, inside a pickable View that answers nothing
         expect(PRESS_EVENTS).toContain("click")
+    })
+
+    // runtime-1.3.md section 10b: a camera's View that fills the stage made every press UI.
+    it("reads every press as UI under a stage-sized View with a handler, and none through one marked oj-world", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const unmarked = createPressProbe(...args(scene({ world: "unmarked" })))!
+        expect(unmarked(300, 200)).toBe(true)
+        const marked = createPressProbe(...args(scene({ world: "marked" })))!
+        expect(marked(300, 200)).toBe(false)
+        // A button inside the game's View is still the UI's.
+        expect(marked(70, 20)).toBe(true)
+        expect(marked(20, 20)).toBe(true)
+        expect(warn).toHaveBeenCalledTimes(1)
+        warn.mockRestore()
+    })
+
+    it("says how to mark a stage-sized View once, and never for a button", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const probe = createPressProbe(...args(scene({ world: "unmarked" })))!
+        probe(70, 20)
+        expect(warn).not.toHaveBeenCalled()
+        probe(300, 200)
+        probe(150, 250)
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0][0]).toBe(STAGE_SIZED_HINT)
+        expect(STAGE_SIZED_HINT).toContain(`className="${WORLD_CLASS}"`)
+        warn.mockRestore()
+    })
+
+    it("asks an element's classes only once it has a handler", () => {
+        const s = scene({ world: "marked" })
+        let classAsks = 0
+        const counting = (el: any) => { const ask = el.ClassListContains; el.ClassListContains = (c: string) => { classAsks++; return ask(c) } }
+        const label = s.root.panel.Pick({ x: 20, y: 20 })
+        for (let el = label; el != null; el = el.parent) counting(el)
+        createPressProbe(s.root, s.cs, s.events)!(20, 20)
+        // The label has no handler and is never asked; the button answers.
+        expect(classAsks).toBe(1)
     })
 
     it("is absent where the OneJS cannot say which elements listen, or there is no root", () => {

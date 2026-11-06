@@ -169,7 +169,11 @@ OneJS's `__eventAPI.listens`), so a stage-sized View around the HUD, which
 answers nothing, does not count. A game that fires on `leftButton` checks
 `!input.mouse.overUI`, and `useStick` and `usePad` leave a thumb that came down
 on UI alone. Gunyard's Invite button fired the gun before this, and the cart
-tested the button's rectangle twice to stop it.
+tested the button's rectangle twice to stop it. An element with the class
+`oj-world` is the game's: a stage-sized View with a drag handler of its own
+would otherwise make every press UI and leave a stick beside it dead, so the
+walk passes over it, and the first press such a View answers unmarked says so
+once.
 
 Reading through `input` also gets touch for free, since the same code sees
 `input.touches`. A swipe is `useSwipe(onSwipe)` from `gesture.ts`: it follows
