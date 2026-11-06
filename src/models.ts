@@ -25,9 +25,10 @@ import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetUrl } from "./asset"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
-import { setActorPlacer } from "./physics3d/actors"
+import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
+import { beginBake, ChartCache, PATHS_PER_FRAME, type BakeItem } from "./light/bake"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
 // eslint-disable-next-line no-shadow-restricted-names
@@ -149,6 +150,25 @@ export interface SpawnOptions {
     castShadows?: boolean
     /** Whether shadows fall on it. On by default. */
     receiveShadows?: boolean
+    /**
+     * Never moves: `scene.bake` bakes light into it, and its shadow and bounce
+     * onto the rest. The actor of a physics body that is neither dynamic nor
+     * kinematic is static without it. One moved anyway keeps its light until
+     * the next bake.
+     */
+    static?: boolean
+}
+
+/** A bake under way, from `scene.bake`. */
+export interface Bake {
+    /** From 0 to 1. */
+    readonly progress: number
+    /**
+     * Resolves once the light is finished, or once this bake stops: another
+     * bake replaced it, the scene went, or the scene could not be baked, which
+     * the console says.
+     */
+    readonly done: Promise<void>
 }
 
 export interface DissolveOptions {
@@ -309,6 +329,21 @@ export interface Scene {
      */
     readonly texture: SceneTexture
     pointLight(options: PointLightOptions): PointLight
+    /**
+     * Bakes the light that bounces round the scene into its static actors and
+     * scattered copies: the sky and the ground of the ambient, and the sun's
+     * bounce, so a doorway darkens and a red wall tints the floor beside it.
+     * Everything else takes that light where it stands, as it moves. The sun's
+     * own light and shadows stay live.
+     *
+     *     const light = scene.bake()
+     *     await light.done
+     *
+     * It bakes beside the game, a little each frame: moving things are lit
+     * within a few frames, the static ones from a quick draft, then finished.
+     * Bake again after changing what is static, the sun or the ambient.
+     */
+    bake(): Bake
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
     /** Moves the camera. Changes only what it names. */
@@ -474,6 +509,8 @@ function rootElement(): any {
 let saidNoSceneTexture = false
 /** Said once: a host without SetSky. */
 let saidNoSky = false
+/** Said once: a host without BeginBake. */
+let saidNoBake = false
 
 type SkyNow = { top: ColorInput, horizon: ColorInput, bottom?: ColorInput, sun: { size: number, glow: number } | false, stars: number }
 
@@ -613,6 +650,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     // A fade reports each value it reaches through `at`, so an interrupted one turns back
     // from where the actor is rather than from where it was going.
     const fades = new Map<number, { from: number, to: number, t: number, seconds: number, at: (v: number) => void, done: () => void }>()
+    // What scene.bake bakes into: actors spawned static, every live scatter, and not what is drawn as depth alone.
+    const statics = new Set<number>()
+    const scatters = new Map<number, { model: Model, data: Float32Array }>()
+    const depthOnly = new WeakSet<Model>()
+    const charts = new ChartCache()
+    let baking: { stop: () => void } | null = null
 
     // Every colour is parsed before anything is built, so a typo fails without a half-made scene.
     let backgroundColor = options.background ?? d.background
@@ -693,6 +736,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let receive = o.receiveShadows ?? true
         let dissolved = 0
         const id: number = b.Spawn(model.id, ...position, rotation.yaw, scale, cast, receive)
+        if (o.static === true) statics.add(id)
         if (rotation.pitch !== 0 || rotation.roll !== 0) b.SetRotation(id, rotation.yaw, rotation.pitch, rotation.roll)
         speeds.set(id, o.speed ?? 1)
         if (rateOf(id) !== 1) b.SetSpeed(id, rateOf(id))
@@ -736,6 +780,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 fades.get(id)?.done()
                 fades.delete(id)
                 speeds.delete(id)
+                statics.delete(id)
                 const i = actors.indexOf(actor)
                 if (i >= 0) actors.splice(i, 1)
                 b.Destroy(id)
@@ -796,6 +841,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
                 write(d, "mesh.set")
+                // Its unwrap was of the old triangles; OneJS drew it unbaked as it took the new ones.
+                charts.forget(model)
             },
             destroy() {
                 if (generationOf.get(model) !== generation) return
@@ -804,6 +851,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
         generationOf.set(model, generation)
         arrayModels.set(model, made)
+        if (draw.depthOnly === true) depthOnly.add(model)
         return model
     }
 
@@ -836,11 +884,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (id === 0) throw new Error("[oj] scene.scatter: this model has a skinned mesh, and scattered copies never move. Spawn it instead.")
         const born = generation
         let alive = true
+        // Kept as given: the copies are baked from these numbers, so a cart reusing its array cannot move them.
+        scatters.set(id, { model, data: data.slice() })
         return Object.freeze({
             count: data.length / 5,
             destroy() {
                 if (!alive || born !== generation) return
                 alive = false
+                scatters.delete(id)
                 b.DestroyScatter(id)
             },
         })
@@ -889,12 +940,90 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
     }
 
+    /** Every frame until stopped: the runtime's frames, or the host's own outside a container. */
+    const everyFrame = (callback: () => void): (() => void) => {
+        if (runtime) return runtime.onFrame(callback)
+        let on = true
+        const loop = () => {
+            if (!on) return
+            callback()
+            if (on) globalThis.requestAnimationFrame(loop)
+        }
+        globalThis.requestAnimationFrame(loop)
+        return () => { on = false }
+    }
+
+    const bakeItems = (): BakeItem[] => {
+        const still = stillActors()
+        const items: BakeItem[] = []
+        for (const a of actors) {
+            if ((statics.has(a.id) || still.has(a)) && !depthOnly.has(a.model)) {
+                items.push({ model: a.model, position: a.position, rotation: a.rotation, scale: a.scale, actor: a.id })
+            }
+        }
+        for (const [id, s] of scatters) {
+            if (depthOnly.has(s.model)) continue
+            for (let i = 0, at = 0; at < s.data.length; i++, at += 5) {
+                const d = s.data
+                items.push({ model: s.model, position: [d[at]!, d[at + 1]!, d[at + 2]!], rotation: { yaw: d[at + 3]!, pitch: 0, roll: 0 }, scale: d[at + 4]!, copy: [id, i] })
+            }
+        }
+        return items
+    }
+
+    const bake = (): Bake => {
+        baking?.stop()
+        let progress = 0
+        let finish!: () => void
+        const done = new Promise<void>((resolve) => { finish = resolve })
+        const handle: Bake = Object.freeze({ get progress() { return progress }, done })
+        if (typeof b.BeginBake !== "function") {
+            if (!saidNoBake) console.warn("[oj] scene.bake needs a newer OneJS: this host's ModelBridge cannot bake light, so the scene keeps its ambient light.")
+            saidNoBake = true
+            progress = 1
+            finish()
+            return handle
+        }
+        let stopped = false
+        let stopFrame: (() => void) | null = null
+        const me = {
+            stop() {
+                if (stopped) return
+                stopped = true
+                stopFrame?.()
+                if (baking === me) baking = null
+                finish()
+            },
+        }
+        baking = me
+        const give = (why: string) => {
+            console.warn(`[oj] scene.bake: ${why}. The scene keeps its ambient light.`)
+            progress = 1
+            me.stop()
+        }
+        beginBake(b, bakeItems(), charts, () => !stopped && !disposed).then((why) => {
+            if (stopped || disposed) return
+            if (why !== "") return give(why)
+            stopFrame = everyFrame(() => {
+                const p = Number(b.StepBake(PATHS_PER_FRAME))
+                // Below 0: the bridge's bake went, cleared by a later one or by the scene.
+                if (p < 0) return me.stop()
+                progress = p
+                if (p >= 1) me.stop()
+            })
+        }, (e: unknown) => {
+            if (!stopped && !disposed) give(e instanceof Error ? e.message.replace(/^\[oj\] (scene\.bake: )?/, "") : String(e))
+        })
+        return handle
+    }
+
     const scene: Scene = {
         spawn,
         mesh,
         scatter,
         texture,
         pointLight,
+        bake,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
             return actors.find((a) => a.id === id) ?? null
@@ -946,6 +1075,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (disposed) return
         disposed = true
         stopFrame?.()
+        baking?.stop()
+        charts.dispose()
         for (const f of fades.values()) f.done()
         fades.clear()
         actors.length = 0

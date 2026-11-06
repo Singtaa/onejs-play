@@ -8,7 +8,7 @@
  * engine.
  */
 
-import type { Rotation } from "../models"
+import type { Rotation, Vec3 } from "../models"
 
 export interface Quat { x: number, y: number, z: number, w: number }
 
@@ -48,4 +48,11 @@ export function fromQuat(q: Quat): Readonly<Rotation> {
 function tidy(deg: number): number {
     const r = Math.round(deg * 1e6) / 1e6
     return r === 0 ? 0 : r
+}
+
+/** A vector turned by a quaternion. */
+export function rotate(q: Quat, v: Readonly<Vec3>): Vec3 {
+    const { x, y, z, w } = q
+    const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0])
+    return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]
 }

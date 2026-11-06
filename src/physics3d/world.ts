@@ -23,8 +23,8 @@
 
 import type { Actor, Rotation, Vec3 } from "../models"
 import { loadRapier, type Rapier } from "./rapier"
-import { fromQuat, toQuat, type Quat } from "./rotation"
-import { placeActors, type ActorPlacement } from "./actors"
+import { fromQuat, rotate, toQuat, type Quat } from "./rotation"
+import { addStillActors, placeActors, type ActorPlacement } from "./actors"
 import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim } from "../physics/core"
 import { glbTriangles, type Triangles } from "./gltf"
 import { arrayModels, loadFileBytes, modelUrls } from "./sources"
@@ -497,8 +497,23 @@ type Body3 = BodyCore<Vec3, Partial<Rotation> | undefined, Actor>
 const meshTriangles = new WeakMap<Body3, Triangles>()
 
 class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
+    private readonly forgetStill: () => void
+
     constructor(r: Rapier, options: WorldOptions) {
         super(r, DIM3, DEFAULTS, options)
+        this.forgetStill = addStillActors(() => this.stillActors())
+    }
+
+    override dispose(): void {
+        this.forgetStill()
+        super.dispose()
+    }
+
+    /** The actors of its static bodies: what the scene bakes light into without being told. */
+    private *stillActors(): Iterable<Actor> {
+        for (const w of this.byCollider.values()) {
+            if (w instanceof BodyCore && w.alive && !w.dynamic && !w.kinematic && w.actor !== null) yield w.actor
+        }
     }
 
     box(o: BoxOptions = {}): Body3 {
@@ -598,9 +613,3 @@ async function trianglesOf(source: MeshSource): Promise<Triangles> {
     return glbTriangles(await loadFileBytes(url))
 }
 
-/** A vector turned by a quaternion. */
-function rotate(q: Quat, v: Readonly<Vec3>): Vec3 {
-    const { x, y, z, w } = q
-    const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0])
-    return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]
-}

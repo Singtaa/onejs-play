@@ -13,7 +13,7 @@
 
 import type { Rotation, Vec3 } from "../models"
 import type { BodyCore, Drawn, Driver } from "../physics/core"
-import { fromQuat, type Quat } from "./rotation"
+import { fromQuat, rotate, type Quat } from "./rotation"
 
 /** What `world.car` takes. Every number has a default that drives like a small road car. */
 export interface CarOptionsOf<A> {
@@ -315,11 +315,6 @@ export class CarCore<A> implements Driver {
     }
 }
 
-function rotate(q: Quat, v: Readonly<Vec3>): Vec3 {
-    const { x, y, z, w } = q
-    const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0])
-    return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]
-}
 
 function axisAngle(axis: Vec3, angle: number): Quat {
     const s = Math.sin(angle / 2)

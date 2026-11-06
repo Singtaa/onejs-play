@@ -33,3 +33,24 @@ export function placeActors(list: readonly ActorPlacement[]): void {
 export function setActorPlacer(next: typeof placer): void {
     placer = next
 }
+
+/**
+ * Each live world's actors carried by bodies that never move: neither dynamic
+ * nor kinematic. A static body is a promise the author already made, so its
+ * actor is static to the scene too, and `scene.bake` bakes light into it
+ * without the cart marking anything (docs/lightmapping.md §4).
+ */
+const stillSources = new Set<() => Iterable<Actor>>()
+
+/** A world adds itself as it is made, and takes itself away when it is disposed. */
+export function addStillActors(source: () => Iterable<Actor>): () => void {
+    stillSources.add(source)
+    return () => { stillSources.delete(source) }
+}
+
+/** Every actor a live world's static bodies carry, now. */
+export function stillActors(): Set<Actor> {
+    const found = new Set<Actor>()
+    for (const source of stillSources) for (const actor of source()) found.add(actor)
+    return found
+}
