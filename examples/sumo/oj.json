@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "runtime": "1.0.0",
+    "runtime": "1.2",
     "name": "Sumo",
     "author": "singtaa",
     "description": "Everyone is a blob on a platform that keeps getting smaller. Shove them off, and try not to be the one who slides.",

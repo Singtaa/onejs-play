@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "runtime": "1.0.0",
+    "runtime": "1.2",
     "name": "Drop Everything",
     "author": "singtaa",
     "description": "A box of shapes, some ramps, and real rigid body physics.",

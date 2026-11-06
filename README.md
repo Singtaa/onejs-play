@@ -894,6 +894,13 @@ against the limit) and the run lengths. About two and a half minutes on a
 four-core runner, five on Windows; `npx vitest run --exclude
 cli/examples.e2e.test.ts` skips it while iterating on something else.
 
+An example written for the next runtime line, whose API the live runtime does
+not have yet, says so in its oj.json: `"runtime": "1.2"` is the oldest line it
+runs on (`cli/runtime-line.mjs`). Against an older live runtime the sweep skips
+it, names it as waiting for that line, and counts the waits in its last line;
+once the line is live it runs again with nothing to change. A sweep in which
+every cart waited fails, since it compared nothing.
+
 `pre-setup.ts` installs a permissive `CS` stub, because onejs-react's
 `components.tsx` calls `useExtensions(CS.UnityEngine.ImageConversion)` at module
 scope. The real container has QuickJSBootstrap installed long before a game

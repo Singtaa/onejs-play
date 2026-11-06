@@ -5,6 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { STARTUP_MS, launch } from "./chrome.mjs"
 import { ensureRuntime } from "./local.mjs"
+import { waitsFor } from "./runtime-line.mjs"
 import { siteOrigin, version } from "./site.mjs"
 
 /**
@@ -147,6 +148,30 @@ async function answersOn(port: string): Promise<boolean> {
     return alive()
 }
 
+/** A cart's oj.json, or nothing for a fixture without one. */
+function manifestOf(dir: string): Record<string, unknown> {
+    const file = path.join(dir, "oj.json")
+    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {}
+}
+
+/**
+ * One cart through the sweep: run with `oj test` against the live runtime,
+ * unless its oj.json names a runtime line the live one is older than. An
+ * example written for the next line uses API the live runtime does not have,
+ * so it waits for that line, and runs by itself once the line is live.
+ */
+async function sweepOne(dir: string): Promise<{ waits: string } | { waits: null, code: number | null, output: string, runS: number }> {
+    const waits = waitsFor(manifestOf(dir), runtime)
+    if (waits !== null) return { waits }
+    return slot(async () => {
+        const began = Date.now()
+        return { waits: null, ...(await ojTest(dir, runtime)), runS: (Date.now() - began) / 1000 }
+    })
+}
+
+/** The carts that waited for a newer runtime line than the live one, and which. */
+const waited: string[] = []
+
 /** One run's browser start, as `oj test` printed it, and the run's own length. */
 type Start = { name: string, portS: number | null, pageS: number | null, runS: number }
 const starts: Start[] = []
@@ -173,6 +198,9 @@ function startSummary(): string {
 describe("oj test over every example", () => {
     afterAll(() => {
         if (starts.length > 0) console.log(startSummary())
+        console.log(`[sweep] runtime ${runtime}; ${waited.length} wait for a newer line${waited.length === 0 ? "" : `: ${waited.join(", ")}`}`)
+        // A sweep where every cart waited compared nothing, and must not read as a pass.
+        expect(starts.length, `every cart waited for a newer line than ${runtime}: nothing was run`).toBeGreaterThan(0)
     })
 
     it("finds the examples and the fixtures, so an empty sweep cannot pass", () => {
@@ -182,11 +210,15 @@ describe("oj test over every example", () => {
 
     for (const dir of CARTS) {
         const name = path.relative(ROOT, dir)
-        it.concurrent(`${name}${playtestOf(dir) ? ` (${playtestOf(dir)})` : ""}`, async () => {
-            const { code, output, runS } = await slot(async () => {
-                const began = Date.now()
-                return { ...(await ojTest(dir, runtime)), runS: (Date.now() - began) / 1000 }
-            })
+        it.concurrent(`${name}${playtestOf(dir) ? ` (${playtestOf(dir)})` : ""}`, async (ctx) => {
+            const result = await sweepOne(dir)
+            if (result.waits !== null) {
+                waited.push(`${name} (${result.waits})`)
+                console.log(`[sweep] ${name} waits for ${result.waits}; the live runtime is ${runtime}`)
+                ctx.skip()
+                return
+            }
+            const { code, output, runS } = result
             const port = /port after ([\d.]+) s/.exec(output)
             const page = /page after ([\d.]+) s/.exec(output)
             starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, runS })
@@ -195,6 +227,38 @@ describe("oj test over every example", () => {
         // the wait for a slot, so it allows for every run ahead in the queue.
         }, (RUN_MS + 30_000) * Math.ceil(CARTS.length / LIMIT))
     }
+})
+
+describe("the sweep's runtime line gate", () => {
+    /** A cart that fails on start, needing `line`, in a folder of its own. */
+    function broken(line: string): string {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-gate-"))
+        fs.writeFileSync(path.join(dir, "oj.json"), JSON.stringify({ schema: 1, name: "Broken", entry: "index.tsx", runtime: line }))
+        fs.writeFileSync(path.join(dir, "index.tsx"), `throw new Error("broken on purpose")\n`)
+        return dir
+    }
+
+    it("still runs, and fails, a broken cart the live runtime is new enough for", async () => {
+        const dir = broken("1.0")
+        try {
+            const result = await sweepOne(dir)
+            expect(result.waits).toBeNull()
+            expect(result.waits === null && result.code).not.toBe(0)
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true })
+        }
+    }, RUN_MS + 30_000)
+
+    it("names, and does not run, a cart that needs a line the live runtime is older than", async () => {
+        const dir = broken("99.0")
+        try {
+            const began = Date.now()
+            expect(await sweepOne(dir)).toEqual({ waits: "99.0" })
+            expect(Date.now() - began, "it started a browser for a cart that waits").toBeLessThan(1000)
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true })
+        }
+    })
 })
 
 describe("the CLI's own browser", () => {

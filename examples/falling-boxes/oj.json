@@ -1,5 +1,6 @@
 {
     "schema": 1,
+    "runtime": "1.2",
     "name": "Falling Boxes",
     "author": "singtaa",
     "description": "Crates rain onto a floor and pile up, in 3D physics. Space or a tap throws them all.",
