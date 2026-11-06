@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      chrome:
+        description: "A Chrome for Testing version to run the e2e on, instead of the runner image's Chrome"
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -97,6 +102,31 @@ jobs:
       # on 6 Nov 2026: a worker's report to vitest went unanswered for its
       # 60 s limit and the run went red with every test passing.
       - run: npm run test:unit
+
+      # A Chrome for Testing build when one is named, so an image update cannot
+      # change the browser under the e2e; the runner's own Chrome otherwise.
+      - name: Chrome for Testing
+        if: inputs.chrome != ''
+        shell: bash
+        env:
+          CFT: ${{ inputs.chrome }}
+        run: |
+          case "$RUNNER_OS" in
+            Windows) platform=win64; exe=chrome.exe ;;
+            Linux) platform=linux64; exe=chrome ;;
+            *) echo "no Chrome for Testing platform for $RUNNER_OS"; exit 1 ;;
+          esac
+          dir="$RUNNER_TEMP/cft-$CFT"
+          curl -fsSL -o "$RUNNER_TEMP/cft.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CFT/$platform/chrome-$platform.zip"
+          unzip -q "$RUNNER_TEMP/cft.zip" -d "$dir"
+          echo "OJ_CHROME=$dir/chrome-$platform/$exe" >> "$GITHUB_ENV"
+
+      - name: Which Chrome the e2e drives
+        shell: pwsh
+        run: |
+          $chrome = if ($env:OJ_CHROME) { $env:OJ_CHROME } elseif ($IsWindows) { "C:\Program Files\Google\Chrome\Application\chrome.exe" } else { (Get-Command google-chrome).Source }
+          if ($IsWindows) { "$chrome $((Get-Item $chrome).VersionInfo.ProductVersion)" } else { & $chrome --version }
+          if ($IsWindows) { "Windows $([System.Environment]::OSVersion.Version)" }
 
       # A browser whose page never answers keeps Chrome's own verbose log and
       # network log (cli/chrome.mjs, chromeLog); every other one is deleted.
