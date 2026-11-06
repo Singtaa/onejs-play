@@ -103,7 +103,7 @@ describe("2D riding", () => {
     })
 })
 
-describe("2D drawing between steps", () => {
+describe("2D drawing ahead of the step", () => {
     it("moves and turns an element on every frame at 120 Hz", async () => {
         const element = { style: {} }
         const seen: ElementPlacement[] = []
@@ -113,13 +113,54 @@ describe("2D drawing between steps", () => {
             const b = w.box({ dynamic: true, actor: element })
             b.velocity = [600, 0]
             raw(b).setAngvel(Math.PI, true)
-            for (let i = 0; i < 120; i++) w.frame(1 / 120)
-            const tail = seen.slice(-40)
+            const body: { x: number, degrees: number }[] = []
+            for (let i = 0; i < 120; i++) {
+                w.frame(1 / 120)
+                body.push({ x: b.position[0], degrees: b.rotation })
+            }
+            const tail = seen.slice(-40), under = body.slice(-40)
+            let ahead = 0
             for (let i = 1; i < tail.length; i++) {
                 expect(tail[i]!.at[0] - tail[i - 1]!.at[0]).toBeCloseTo(5, 1)
                 // Half a turn a second, clockwise: 1.5 degrees a frame.
                 const turn = ((tail[i]!.degrees! - tail[i - 1]!.degrees! + 540) % 360) - 180
                 expect(turn).toBeCloseTo(1.5, 1)
+                // Drawn ahead of the last step, moving and turning, never behind it.
+                const lead = tail[i]!.at[0] - under[i]!.x
+                const leadTurn = ((tail[i]!.degrees! - under[i]!.degrees + 540) % 360) - 180
+                expect(lead).toBeGreaterThanOrEqual(-1e-6)
+                expect(leadTurn).toBeGreaterThanOrEqual(-1e-4)
+                if (lead > 2) {
+                    ahead++
+                    expect(leadTurn).toBeCloseTo(1.5, 1)
+                }
+            }
+            expect(ahead).toBeGreaterThan(15)
+            w.dispose()
+        } finally {
+            setElementPlacer(null)
+        }
+    })
+})
+
+describe("2D drawing a hand turn", () => {
+    it("draws a body turned by hand at the turn, not past it", async () => {
+        const element = { style: {} }
+        const seen: number[] = []
+        setElementPlacer((list) => { for (const p of list) if (p.element === element) seen.push(p.degrees!) })
+        try {
+            const w = await createWorld2D({ gravity: [0, 0] }) as any
+            const b = w.box({ dynamic: true, actor: element })
+            b.velocity = [600, 0]
+            for (let i = 0; i < 60; i++) w.frame(1 / 120)
+            for (let turn = 0; turn < 2; turn++) {
+                // Turned on frames of both kinds, those that step and those between.
+                b.rotation = 90 * (turn + 1)
+                seen.length = 0
+                for (let i = 0; i < 6; i++) w.frame(1 / 120)
+                expect(seen.length).toBe(6)
+                for (const degrees of seen) expect(((degrees - 90 * (turn + 1) + 540) % 360) - 180).toBeCloseTo(0, 3)
+                w.frame(1 / 120)
             }
             w.dispose()
         } finally {
