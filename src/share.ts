@@ -24,7 +24,8 @@
  * desktop is the one that holds on a phone.
  *
  * Where the press counts: the container's input (input.ts `activated`) and
- * the DOM events that grant activation (adapter.ts). Outside a browser there
+ * the DOM events that grant activation, with a mouse button's release, which
+ * is when a Button's onClick fires (adapter.ts). Outside a browser there
  * is no such rule and no share sheet: an ejected cart copies through Unity's
  * clipboard (standalone.ts) and its share answers "refused", or "copied" with
  * the fallback.

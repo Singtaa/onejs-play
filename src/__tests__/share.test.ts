@@ -91,6 +91,18 @@ describe("copy", () => {
         expect(calls).toHaveLength(1)
     })
 
+    // Windows CI, 6 Nov: a 70 ms click spans frames at 60 fps, and its onClick fires on the release.
+    it("copies in the frame a mouse click is released, frames after it went down, which is when a Button's onClick fires", async () => {
+        const { nav, calls } = fakeNavigator()
+        const { runtime, view } = started(nav)
+        view.fire("pointerdown", { pointerType: "mouse" })
+        for (let i = 0; i < 4; i++) runtime.beginFrame(1 / 60)
+        view.fire("pointerup", { pointerType: "mouse" })
+        runtime.beginFrame(1 / 60)
+        expect(await copy("held")).toBe("copied")
+        expect(calls).toEqual(["copy held"])
+    })
+
     it("counts a press the frame has not drained yet, as a Button's onClick answers it before the container's frame", async () => {
         const { nav, calls } = fakeNavigator()
         const { runtime, view } = started(nav)
@@ -106,7 +118,7 @@ describe("copy", () => {
         expect(calls).toEqual(["copy x", "copy y"])
     })
 
-    it("counts what grants a page activation: a key but Escape, a mouse going down, a finger or pen lifting, not a finger going down", async () => {
+    it("counts what grants a page activation and a mouse coming up: a key but Escape, a mouse down or up, a finger or pen lifting, not a finger going down", async () => {
         vi.spyOn(console, "warn").mockImplementation(() => {})
         const { nav } = fakeNavigator()
         const { runtime, view } = started(nav)
@@ -119,6 +131,7 @@ describe("copy", () => {
         expect(await after("keydown", { code: "Space", key: " " })).toBe("copied")
         expect(await after("keydown", { code: "Escape", key: "Escape" })).toBe("refused")
         expect(await after("pointerdown", { pointerType: "mouse" })).toBe("copied")
+        expect(await after("pointerup", { pointerType: "mouse" })).toBe("copied")
         expect(await after("pointerdown", { pointerType: "touch", pointerId: 7 })).toBe("refused")
         expect(await after("pointerup", { pointerType: "touch", pointerId: 7 })).toBe("copied")
         expect(await after("pointerup", { pointerType: "pen" })).toBe("copied")
