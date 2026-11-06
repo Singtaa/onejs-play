@@ -42,6 +42,41 @@ describe("bodies", () => {
         w.dispose()
     })
 
+    it("weighs what its size and density say: wood by default", async () => {
+        const w = await createWorld()
+        expect(w.box({ dynamic: true }).mass).toBeCloseTo(500, 3)
+        expect(w.box({ dynamic: true, size: [0.5, 0.5, 0.5] }).mass).toBeCloseTo(62.5, 3)
+        expect(w.box({ dynamic: true, density: 1000 }).mass).toBeCloseTo(1000, 3)
+        expect(w.box({ dynamic: true, density: 1000, mass: 3 }).mass).toBeCloseTo(3, 3)
+        w.dispose()
+    })
+
+    it("addVelocity changes speed whatever the mass; push does not", async () => {
+        const w = await createWorld({ gravity: [0, 0, 0] })
+        const light = w.box({ dynamic: true, size: [0.2, 0.2, 0.2] }), heavy = w.box({ dynamic: true, at: [3, 0, 0], size: [2, 2, 2] })
+        light.addVelocity([0, 5, 0]); heavy.addVelocity([0, 5, 0])
+        expect(light.velocity[1]).toBeCloseTo(5, 3)
+        expect(heavy.velocity[1]).toBeCloseTo(5, 3)
+        heavy.addVelocity([1, 0, 0])
+        expect(near(heavy.velocity, [1, 5, 0])).toBe(true)
+        heavy.push([4000, 0, 0])
+        expect(heavy.velocity[0]).toBeCloseTo(2, 3)
+        w.dispose()
+    })
+
+    it("passes through a layer it ignores, which queries still see", async () => {
+        const w = await createWorld({ gravity: [0, 0, 0] })
+        w.box({ at: [0, 0, 3], size: [4, 4, 0.5], layer: "glass" })
+        const ghost = w.sphere({ radius: 0.2, dynamic: true, ignores: ["glass"] })
+        const ball = w.sphere({ at: [1, 0, 0], radius: 0.2, dynamic: true })
+        ghost.velocity = [0, 0, 5]; ball.velocity = [0, 0, 5]
+        run(w, 90)
+        expect(ghost.position[2]).toBeGreaterThan(5)
+        expect(ball.position[2]).toBeLessThan(3)
+        expect(w.raycast([0, 0, 0], [0, 0, 10])!.body!.layer).toBe("glass")
+        w.dispose()
+    })
+
     it("a destroyed body says so and leaves the world", async () => {
         const w = await floored()
         const b = w.sphere({ at: [0, 2, 0], dynamic: true })
@@ -95,11 +130,11 @@ describe("queries", () => {
         const w = await floored()
         const zone = w.box({ at: [0, 1, 3], size: [4, 2, 1], trigger: true })
         expect(w.raycast([0, 1, 0], [0, 1, 10])).toBeNull()
-        expect(w.sweep(shape.sphere(0.2), [0, 1, 0], [0, 1, 10])).toBeNull()
-        expect(w.overlap(shape.sphere(0.5), [0, 1, 3])).toEqual([zone])
+        expect(w.sweep(shape.sphere({ radius: 0.2 }), [0, 1, 0], [0, 1, 10])).toBeNull()
+        expect(w.overlap(shape.sphere({ radius: 0.5 }), [0, 1, 3])).toEqual([zone])
         w.step()
         expect(w.raycast([0, 1, 0], [0, 1, 10])).toBeNull()
-        expect(w.overlap(shape.sphere(0.5), [0, 1, 3])).toEqual([zone])
+        expect(w.overlap(shape.sphere({ radius: 0.5 }), [0, 1, 3])).toEqual([zone])
         w.dispose()
     })
 
@@ -120,9 +155,9 @@ describe("queries", () => {
     it("sweep: a fat ray stops its radius short of the wall", async () => {
         const w = await floored()
         w.box({ at: [0, 1, 5], size: [4, 2, 1], layer: "wall" })
-        const hit = w.sweep(shape.sphere(0.25), [0, 1, 0], [0, 1, 10], { only: ["wall"] })!
+        const hit = w.sweep(shape.sphere({ radius: 0.25 }), [0, 1, 0], [0, 1, 10], { only: ["wall"] })!
         expect(hit.distance).toBeCloseTo(4.25, 3)
-        expect(w.sweep(shape.sphere(0.25), [3, 1, 0], [3, 1, 10], { only: ["wall"] })).toBeNull()
+        expect(w.sweep(shape.sphere({ radius: 0.25 }), [3, 1, 0], [3, 1, 10], { only: ["wall"] })).toBeNull()
         w.dispose()
     })
 
@@ -131,16 +166,40 @@ describe("queries", () => {
         const a = w.sphere({ at: [1, 0.5, 0], radius: 0.5, layer: "player" })
         const b = w.sphere({ at: [-1, 0.5, 0], radius: 0.5, layer: "player" })
         w.sphere({ at: [9, 0.5, 0], radius: 0.5, layer: "player" })
-        const found = w.overlap(shape.sphere(1), [0, 0.5, 0], { only: ["player"] })
+        const found = w.overlap(shape.sphere({ radius: 1 }), [0, 0.5, 0], { only: ["player"] })
         expect(new Set(found)).toEqual(new Set([a, b]))
+        w.dispose()
+    })
+
+    it("clearSpot: null when nowhere within reach is clear", async () => {
+        const w = await floored()
+        w.box({ at: [0, 1, 0], size: [8, 2, 8], layer: "wall" })
+        const capsule = shape.capsule({ radius: 0.3, height: 1.6 })
+        expect(w.clearSpot(capsule, [0, 1, 0], { only: ["wall"], within: 2 })).toBeNull()
+        const far = w.clearSpot(capsule, [0, 1, 0], { only: ["wall"], within: 6 })!
+        expect(Math.max(Math.abs(far[0]), Math.abs(far[2]))).toBeGreaterThanOrEqual(4.3 - 1e-6)
+        w.dispose()
+    })
+
+    it("canSee a body: looks at its middle, and the body does not hide itself", async () => {
+        const w = await floored()
+        const me = w.character({ at: [0, 0, 0], layer: "player" })
+        const enemy = w.character({ at: [0, 0, 8], layer: "player" })
+        const crate = w.box({ at: [5, 0.5, 8], layer: "crate" })
+        expect(w.canSee([0, 1.5, 0], enemy, { skip: [me] })).toBe(true)
+        expect(w.canSee([0, 1.5, 0], crate, { skip: [me] })).toBe(true)
+        // Its far side is not hidden by its near side, and a wall in between hides it.
+        w.box({ at: [0, 1, 4], size: [2, 2, 0.2], layer: "wall" })
+        expect(w.canSee([0, 1.5, 0], enemy, { skip: [me] })).toBe(false)
+        expect(w.canSee([0, 1.5, 0], crate, { skip: [me] })).toBe(true)
         w.dispose()
     })
 
     it("clearSpot: the nearest place a shape fits, out of a box it was dropped in", async () => {
         const w = await floored()
         w.box({ at: [0, 1, 0], size: [2, 2, 2], layer: "wall" })
-        const capsule = shape.capsule(0.3, 1.6)
-        const spot = w.clearSpot(capsule, [0.2, 1, 0], { only: ["wall"] })
+        const capsule = shape.capsule({ radius: 0.3, height: 1.6 })
+        const spot = w.clearSpot(capsule, [0.2, 1, 0], { only: ["wall"] })!
         expect(Math.max(Math.abs(spot[0]), Math.abs(spot[2]))).toBeGreaterThanOrEqual(1.3 - 1e-6)
         expect(w.overlap(capsule, spot, { only: ["wall"] })).toEqual([])
         expect(w.clearSpot(capsule, [5, 1, 5], { only: ["wall"] })).toEqual([5, 1, 5])
@@ -154,25 +213,24 @@ describe("a character", () => {
         const me = w.character({ at: [0, 0, 0], radius: 0.3, height: 1.6, layer: "player" })
         return { w, me }
     }
-    const walk = (w: World, me: Character, dir: Vec3, frames: number, speed = 4) => {
-        for (let i = 0; i < frames; i++) {
-            me.move([dir[0] * speed / 60, 0, dir[2] * speed / 60])
-            w.step()
-        }
+    const walk = (w: World, me: Character, dir: Vec3, steps: number, speed = 4) => {
+        me.walk([dir[0] * speed, 0, dir[2] * speed])
+        run(w, steps)
+        me.walk([0, 0, 0])
     }
 
-    it("bumps into another character, and walks through one its filter skips", async () => {
+    it("bumps into another character, and walks through one on a layer it ignores", async () => {
         const w = await floored()
         const a = w.character({ at: [0, 0, 0], layer: "fighter" })
         w.character({ at: [0, 0, 1.5], layer: "fighter" })
         run(w, 2)
-        for (let i = 0; i < 60; i++) { a.move([0, 0, 4 / 60]); w.step() }
+        walk(w, a, [0, 0, 1], 60)
         expect(a.position[2]).toBeLessThan(1.5 - 0.6 + 0.05)
 
-        const b = w.character({ at: [3, 0, 0], layer: "fighter" })
+        const b = w.character({ at: [3, 0, 0], layer: "fighter", ignores: ["fighter"] })
         w.character({ at: [3, 0, 1.5], layer: "fighter" })
         run(w, 2)
-        for (let i = 0; i < 60; i++) { b.move([0, 0, 4 / 60], { skip: ["fighter"] }); w.step() }
+        walk(w, b, [0, 0, 1], 60)
         expect(b.position[2]).toBeGreaterThan(3.5)
         expect(b.grounded).toBe(true)
     })
@@ -189,10 +247,7 @@ describe("a character", () => {
 
         const before = me.position
         w.box({ at: [before[0], 3, before[2]], size: [0.5, 0.5, 0.5], dynamic: true })
-        for (let i = 0; i < 90; i++) {
-            me.move([0, 0, 0])
-            w.step()
-        }
+        run(w, 90)
         expect(near(me.position, before, 0.02)).toBe(true)
     })
 
@@ -215,7 +270,7 @@ describe("a character", () => {
         w.dispose()
     })
 
-    it("walks up a step lower than `step`, and not up one higher", async () => {
+    it("walks up a step lower than `stepHeight`, and not up one higher", async () => {
         const low = await walking()
         low.w.box({ at: [0, 0.1, 3], size: [4, 0.2, 2], layer: "step" })
         walk(low.w, low.me, [0, 0, 1], 60)
@@ -230,15 +285,15 @@ describe("a character", () => {
         high.w.dispose()
     })
 
-    it("climbs nothing with step 0, not even a ledge it would otherwise walk up", async () => {
+    it("climbs nothing with stepHeight 0, not even a ledge it would otherwise walk up", async () => {
         const w = await floored()
-        const me = w.character({ at: [0, 0, 0], step: 0 })
+        const me = w.character({ at: [0, 0, 0], stepHeight: 0 })
         // Off, not set to zero: a zero-height autostep still pays for its casts.
         expect((me as any).controller.autostepEnabled()).toBe(false)
         expect((w.character({ at: [5, 0, 0] }) as any).controller.autostepEnabled()).toBe(true)
         w.box({ at: [0, 0.1, 3], size: [4, 0.2, 2], layer: "step" })
         run(w, 2)
-        for (let i = 0; i < 60; i++) { me.move([0, 0, 1 / 60]); w.step() }
+        walk(w, me, [0, 0, 1], 60, 1)
         expect(me.position[2]).toBeLessThan(2)
         expect(me.position[1]).toBeCloseTo(0, 2)
         w.dispose()
@@ -253,19 +308,56 @@ describe("a character", () => {
         w.dispose()
     })
 
-    it("covers the whole distance across open floor, teleported every frame or not", async () => {
+    it("covers the whole distance across open floor", async () => {
         const { w, me } = await walking()
         run(w, 2)
-        for (let i = 0; i < 120; i++) { me.move([4 / 60, 0, 0]); w.step() }
+        walk(w, me, [1, 0, 0], 120)
         expect(me.position[0]).toBeCloseTo(8, 1)
-        // Gunyard's way: positions are the game's, so it places, then moves, every frame.
-        let at: Vec3 = [-8, 0, -4]
-        for (let i = 0; i < 120; i++) {
-            me.teleport(at)
-            me.move([4 / 60 * Math.SQRT1_2, 0, 4 / 60 * Math.SQRT1_2])
-            at = me.position
+        w.dispose()
+    })
+
+    it("walks at its speed whatever the frame rate, since it moves in the world's own steps", async () => {
+        const distance = async (frameSeconds: number) => {
+            const { w, me } = await walking()
+            run(w, 2)
+            me.walk([4, 0, 0])
+            const stepped = w as unknown as { advance(s: number): number }
+            for (let t = 0; t < 2 - 1e-9; t += frameSeconds) stepped.advance(frameSeconds)
+            const x = me.position[0]
+            w.dispose()
+            return x
         }
-        expect(Math.hypot(at[0] + 8, at[2] + 4)).toBeCloseTo(8, 1)
+        const at30 = await distance(1 / 30), at144 = await distance(1 / 144)
+        expect(at30).toBeCloseTo(8, 1)
+        expect(Math.abs(at30 - at144)).toBeLessThan(4 / 60 + 1e-6)
+    })
+
+    it("reports how it moved, and jumps as high as asked", async () => {
+        const { w, me } = await walking()
+        run(w, 2)
+        me.walk([3, 0, 0])
+        run(w, 10)
+        expect(near(me.velocity, [3, 0, 0], 0.01)).toBe(true)
+        me.walk([0, 0, 0])
+        me.jump(1.2)
+        let peak = 0
+        for (let i = 0; i < 120; i++) { w.step(); peak = Math.max(peak, me.position[1]) }
+        expect(peak).toBeGreaterThan(1.2 * 0.95)
+        expect(peak).toBeLessThan(1.2 * 1.05)
+        expect(me.grounded).toBe(true)
+        expect(me.position[1]).toBeCloseTo(0, 1)
+        w.dispose()
+    })
+
+    it("stops rising when its head meets a ceiling", async () => {
+        const { w, me } = await walking()
+        w.box({ at: [0, 2.5, 0], size: [4, 1, 4], layer: "ceiling" })
+        run(w, 2)
+        me.jump(3)
+        let peak = 0
+        for (let i = 0; i < 90; i++) { w.step(); peak = Math.max(peak, me.position[1]) }
+        expect(peak).toBeLessThan(2 - 1.6 + 0.05)
+        expect(me.grounded).toBe(true)
         w.dispose()
     })
 
@@ -275,16 +367,17 @@ describe("a character", () => {
         me.teleport([-8, 0, 2.5 - 0.3 - 0.05])
         run(w, 2)
         const a = (10 * Math.PI) / 180
-        for (let i = 0; i < 240; i++) { me.move([Math.cos(a) * 4 / 60, 0, Math.sin(a) * 4 / 60]); w.step() }
+        walk(w, me, [Math.cos(a), 0, Math.sin(a)], 240)
         expect(me.position[0]).toBeGreaterThan(-8 + 16 * Math.cos(a) - 0.3)
         w.dispose()
     })
 
-    it("teleport onto open floor lands exactly there, feet on the floor", async () => {
+    it("teleport onto open floor lands exactly there, feet on the floor, and walks off at once", async () => {
         const { w, me } = await walking()
         me.teleport([-4, 0, 3])
         expect(near(me.position, [-4, 0, 3])).toBe(true)
-        me.move([0.1, 0, 0])
+        expect(me.grounded).toBe(true)
+        walk(w, me, [1, 0, 0], 1, 6)
         expect(near(me.position, [-3.9, 0, 3], 0.02)).toBe(true)
         w.dispose()
     })
@@ -294,7 +387,7 @@ describe("a character", () => {
         w.box({ at: [5, 1, 5], size: [2, 2, 2], layer: "wall" })
         me.teleport([5, 0, 5])
         expect(near(me.position, [5, 0, 5])).toBe(true)
-        const spot = w.clearSpot(shape.capsule(0.3, 1.6), [5, 0.81, 5], { only: ["wall"] })
+        const spot = w.clearSpot(shape.capsule({ radius: 0.3, height: 1.6 }), [5, 0.81, 5], { only: ["wall"] })!
         expect(Math.max(Math.abs(spot[0] - 5), Math.abs(spot[2] - 5))).toBeGreaterThanOrEqual(1.3 - 1e-6)
         w.dispose()
     })
@@ -310,6 +403,69 @@ describe("a character", () => {
         expect(walls).toEqual([me])
         w.dispose()
     })
+
+    it("feels how hard it walked into something, and when it walks away", async () => {
+        const { w, me } = await walking()
+        const wall = w.box({ at: [0, 1, 2], size: [20, 2, 1], layer: "wall" })
+        const speeds: number[] = [], ended: unknown[] = []
+        me.onTouch((other, c) => { if (other === wall) speeds.push(c.speed) })
+        me.onTouchEnd((other) => ended.push(other))
+        run(w, 2)
+        walk(w, me, [0, 0, 1], 60, 4)
+        expect(speeds.length).toBe(1)
+        expect(speeds[0]).toBeCloseTo(4, 0)
+        expect(ended).toEqual([])
+        walk(w, me, [0, 0, -1], 30, 4)
+        expect(ended).toEqual([wall])
+        w.dispose()
+    })
+})
+
+describe("slide", () => {
+    it("moves a walker it does not keep: along a wall, up a step, standing", async () => {
+        const w = await floored()
+        w.box({ at: [0, 1, 2], size: [20, 2, 1], layer: "wall" })
+        w.box({ at: [0, 0.1, -3], size: [4, 0.2, 2], layer: "step" })
+        w.step()
+        const along = w.slide([0, 0, 1], [0.5, 0, 0.5])
+        expect(along.at[0]).toBeCloseTo(0.5, 2)
+        expect(along.at[2]).toBeLessThan(1.5 - 0.3 + 0.02)
+        expect(along.grounded).toBe(true)
+        const up = w.slide([0, 0, -1.6], [0, 0, -0.5])
+        expect(up.at[1]).toBeCloseTo(0.2, 1)
+        expect(w.bodies.length).toBe(3)
+        expect(w.raycast([0, 1, -10], [0, 1, 10], { skip: ["wall"] })).toBeNull()
+        w.dispose()
+    })
+
+    it("covers the whole distance when a game moves it from where it says, every frame", async () => {
+        const w = await floored()
+        w.step()
+        let at: Vec3 = [-8, 0, -4]
+        for (let i = 0; i < 120; i++) at = w.slide(at, [4 / 60 * Math.SQRT1_2, 0, 4 / 60 * Math.SQRT1_2]).at
+        expect(Math.hypot(at[0] + 8, at[2] + 4)).toBeCloseTo(8, 1)
+        expect(at[1]).toBeCloseTo(0, 2)
+        w.dispose()
+    })
+
+    it("takes a filter, and its own size", async () => {
+        const w = await floored()
+        w.box({ at: [0, 1, 2], size: [20, 2, 1], layer: "wall" })
+        w.step()
+        expect(w.slide([0, 0, 0], [0, 0, 4], { skip: ["wall"] }).at[2]).toBeCloseTo(4, 2)
+        expect(w.slide([0, 0, 0], [0, 0, 4], { radius: 0.5 }).at[2]).toBeLessThan(1.5 - 0.5 + 0.02)
+        w.dispose()
+    })
+
+    it("survives a restore", async () => {
+        const w = await floored()
+        w.step()
+        const snap = w.snapshot()
+        w.slide([0, 0, 0], [1, 0, 0])
+        w.restore(snap)
+        expect(w.slide([0, 0, 0], [1, 0, 0]).at[0]).toBeCloseTo(1, 2)
+        w.dispose()
+    })
 })
 
 describe("events", () => {
@@ -322,6 +478,37 @@ describe("events", () => {
         expect(touches.length).toBe(1)
         expect((touches[0]!.other as Body).layer).toBe("floor")
         expect(touches[0]!.point![1]).toBeCloseTo(0, 1)
+        w.dispose()
+    })
+
+    it("says how hard a hit was, and when a touch ends", async () => {
+        const w = await floored()
+        // Dropped 5 m: it meets the floor at the square root of 2 g h.
+        const crate = w.box({ at: [0, 5.5, 0], dynamic: true })
+        const speeds: number[] = [], ended: unknown[] = []
+        crate.onTouch((_, c) => speeds.push(c.speed))
+        crate.onTouchEnd((other) => ended.push(other))
+        run(w, 120)
+        expect(speeds.length).toBe(1)
+        expect(speeds[0]).toBeGreaterThan(Math.sqrt(2 * 9.81 * 5) * 0.85)
+        expect(speeds[0]).toBeLessThan(Math.sqrt(2 * 9.81 * 5) * 1.15)
+        expect(ended).toEqual([])
+        crate.addVelocity([0, 6, 0])
+        run(w, 10)
+        expect(ended.length).toBe(1)
+        expect((ended[0] as Body).layer).toBe("floor")
+        w.dispose()
+    })
+
+    it("a gentle touch is a slow one: a 10 cm drop lands at 1.4 m/s", async () => {
+        const w = await floored()
+        const crate = w.box({ at: [0, 0.6, 0], dynamic: true })
+        const speeds: number[] = []
+        crate.onTouch((_, c) => speeds.push(c.speed))
+        run(w, 60)
+        expect(speeds.length).toBe(1)
+        expect(speeds[0]).toBeGreaterThan(Math.sqrt(2 * 9.81 * 0.1) * 0.75)
+        expect(speeds[0]).toBeLessThan(Math.sqrt(2 * 9.81 * 0.1) * 1.25)
         w.dispose()
     })
 
@@ -345,7 +532,8 @@ describe("events", () => {
         const me = w.character({ at: [0, 0, 0] })
         let entered: unknown = null
         pad.onEnter((o) => { entered = o })
-        for (let i = 0; i < 60; i++) { me.move([0, 0, 4 / 60]); w.step() }
+        me.walk([0, 0, 4])
+        run(w, 60)
         expect(entered).toBe(me)
         w.dispose()
     })
@@ -354,28 +542,28 @@ describe("events", () => {
 describe("shapes outside any world, and rewind", () => {
     it("a capsule standing where a body was 80 ms ago answers a ray", async () => {
         await createWorld()
-        const body = shape.capsule(0.32, 1.6)
+        const body = shape.capsule({ radius: 0.32, height: 1.6 })
         const hit = body.raycast([-5, 1, 0], [5, 1, 0], { at: [2, 0.8, 0] })!
         expect(hit.distance).toBeCloseTo(5 + 2 - 0.32, 4)
         expect(hit.body).toBeNull()
         expect(body.raycast([-5, 1, 3], [5, 1, 3], { at: [2, 0.8, 0] })).toBeNull()
     })
 
-    it("sweepAgainst: two moving shapes meet at the exact time", async () => {
+    it("firstTouch: two moving shapes meet at the exact time", async () => {
         await createWorld()
         // A shot at 20 m/s along +x from x = 0, a body walking toward it at 2 m/s from x = 11.
         // Centres close at 22 m/s; they touch when 11 - 22t = 0.32 + 0.06.
-        const t = shape.sphere(0.06).sweepAgainst(shape.capsule(0.32, 1.6), {
-            from: [0, 1, 0], velocity: [20, 0, 0],
-            targetAt: [11, 0.8, 0], targetVelocity: [-2, 0, 0],
-            seconds: 1,
+        const t = shape.sphere({ radius: 0.06 }).firstTouch(shape.capsule({ radius: 0.32, height: 1.6 }), {
+            at: [0, 1, 0], velocity: [20, 0, 0],
+            otherAt: [11, 0.8, 0], otherVelocity: [-2, 0, 0],
+            within: 1,
         })!
         expect(t).toBeCloseTo((11 - 0.38) / 22, 4)
-        expect(shape.sphere(0.06).sweepAgainst(shape.capsule(0.32, 1.6), {
-            from: [0, 1, 0], velocity: [20, 0, 0], targetAt: [11, 0.8, 0], seconds: 0.3,
+        expect(shape.sphere({ radius: 0.06 }).firstTouch(shape.capsule({ radius: 0.32, height: 1.6 }), {
+            at: [0, 1, 0], velocity: [20, 0, 0], otherAt: [11, 0.8, 0], within: 0.3,
         })).toBeNull()
-        expect(shape.sphere(1).overlaps(shape.box([1, 1, 1]), { at: [0, 0, 0] }, { at: [1.2, 0, 0] })).toBe(true)
-        expect(shape.sphere(1).overlaps(shape.box([1, 1, 1]), { at: [0, 0, 0] }, { at: [1.6, 0, 0] })).toBe(false)
+        expect(shape.sphere({ radius: 1 }).overlaps(shape.box({ size: [1, 1, 1] }), { otherAt: [1.2, 0, 0] })).toBe(true)
+        expect(shape.sphere({ radius: 1 }).overlaps(shape.box({ size: [1, 1, 1] }), { at: [0, 0, 0], otherAt: [1.6, 0, 0] })).toBe(false)
     })
 
     it("restore rewinds every body, and a body made since is gone", async () => {
@@ -394,9 +582,9 @@ describe("shapes outside any world, and rewind", () => {
         expect(later.alive).toBe(false)
         expect(w.bodies.length).toBe(3)
         // And it keeps running from there, the character included.
+        me.walk([6, 0, 0])
         run(w, 60)
-        me.move([0.1, 0, 0])
-        w.step()
+        expect(me.position[0]).toBeGreaterThan(meThen[0] + 5)
         expect(crate.position[1]).toBeLessThan(then[1] - 1)
         w.dispose()
     })
@@ -430,8 +618,33 @@ describe("shapes outside any world, and rewind", () => {
         w.restore(snap)
         expect(later.alive).toBe(false)
         expect(me.alive).toBe(true)
-        for (let i = 0; i < 30; i++) { me.move([0, 0, 2 / 60]); w.step() }
+        me.walk([0, 0, 2])
+        run(w, 30)
         expect(me.position[2]).toBeGreaterThan(0.9)
+        w.dispose()
+    })
+
+    it("rewinds a character mid-jump, held walk and all, and it lands where it did", async () => {
+        const w = await floored()
+        const me = w.character({ at: [0, 0, 0] })
+        run(w, 2)
+        me.walk([2, 0, 0])
+        me.jump(1)
+        run(w, 10)
+        const snap = w.snapshot()
+        run(w, 60)
+        const landed = me.position
+        me.walk([0, 0, -3])
+        run(w, 20)
+        w.restore(snap)
+        run(w, 60)
+        expect(me.position).toEqual(landed)
+        w.dispose()
+    })
+
+    it("refuses bytes that are not a snapshot", async () => {
+        const w = await createWorld()
+        expect(() => w.restore(new Uint8Array([1, 2, 3]))).toThrow(/not one this world made/)
         w.dispose()
     })
 

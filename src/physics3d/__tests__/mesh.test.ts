@@ -119,7 +119,7 @@ describe("world.mesh", () => {
         }
         await w.mesh(floor)
         const me = w.character({ at: [0, 1, 0] })
-        for (let i = 0; i < 60; i++) { me.move([0, 0, 0]); w.step() }
+        for (let i = 0; i < 60; i++) w.step()
         expect(me.grounded).toBe(true)
         expect(me.position[1]).toBeCloseTo(0, 1)
         await expect(w.mesh(floor, { dynamic: true })).rejects.toThrow(/static or kinematic/)

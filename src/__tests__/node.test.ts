@@ -13,6 +13,6 @@ describe("ojplay/node", () => {
     })
 
     it("lets a test import oj itself", () => {
-        expect(shape.sphere(1).kind).toBe("sphere")
+        expect(shape.sphere({ radius: 1 }).kind).toBe("sphere")
     })
 })

@@ -6,7 +6,7 @@
  *     world.box({ at: [0, -0.5, 0], size: [20, 1, 20] })            // static
  *     const crate = world.box({ at: [0, 5, 0], dynamic: true })
  *     const me = world.character({ at: [0, 0, 0] })
- *     me.move([dx, 0, dz])
+ *     me.walk([x * 5, 0, z * 5])
  *     world.raycast(from, to, { only: ["wall"] })
  *
  * Metres, y up, degrees: the scene's units, so a body and an actor agree with
@@ -61,15 +61,19 @@ interface BodyOptionsBase {
     dynamic?: boolean
     /** Moved by the game, and pushes dynamic bodies out of its way. */
     kinematic?: boolean
-    /** Kilograms. A dynamic body's mass follows its size until set. */
+    /** Kilograms. Until set, a dynamic body's mass is its size at `density`. */
     mass?: number
+    /** Kilograms a cubic metre. 500 by default, like wood: a 1 m crate weighs 500 kg. */
+    density?: number
     /** 0 is ice. 0.5 by default. */
     friction?: number
-    /** 0 is dead, 1 bounces back as high. 0 by default. */
+    /** 0 is dead, 1 bounces back as high. The larger of two bodies' bounces wins. 0 by default. */
     bounce?: number
     /** Reports what enters and leaves, never blocks. */
     trigger?: boolean
     layer?: Layer
+    /** Layers it passes through: neither it nor they block the other. Queries still see it. */
+    ignores?: readonly Layer[]
     /** The actor the world moves each frame to where this body is. */
     actor?: Actor | null
     /** Anything the game wants back from a hit or a touch. */
@@ -108,13 +112,15 @@ export interface CharacterOptions {
     radius?: number
     /** Feet to the top of its head. 1.6 by default. */
     height?: number
-    /** The tallest ledge it walks up. 0.3 by default. */
-    step?: number
+    /** The tallest ledge it walks up. 0.3 by default; 0 climbs nothing, and is cheaper. */
+    stepHeight?: number
     /** The steepest slope it climbs, in degrees. 45 by default. */
     slope?: number
     /** How far down it keeps to the ground going over a crest or down a step. 0.3 by default. */
     snap?: number
     layer?: Layer
+    /** Layers it walks through: `ignores: ["player"]` passes other players. */
+    ignores?: readonly Layer[]
     actor?: Actor | null
     tag?: unknown
 }
@@ -123,6 +129,8 @@ export interface CharacterOptions {
 export interface BodyContact {
     /** One point of the touch, in the world. */
     point: Vec3 | null
+    /** How fast the two were closing when they met, metres per second: how hard the hit was. */
+    speed: number
 }
 
 type Kind = "box" | "sphere" | "capsule" | "mesh"
@@ -147,10 +155,14 @@ export interface Body {
     tag: unknown
     /** False once destroyed, or rewound out of existence by `world.restore`. */
     readonly alive: boolean
-    /** A shove, in kilogram metres per second: `push([0, 5, 0])` on a 1 kg box is 5 m/s up. */
+    /** A shove, in kilogram metres per second, so a heavy body moves less: `push([0, 500, 0])` throws a 500 kg crate up at 1 m/s. */
     push(impulse: Vec3): void
-    /** Each time something starts touching it. Returns an unsubscribe. */
+    /** A change of speed whatever the mass: `addVelocity([0, 5, 0])` throws anything up at 5 m/s more. */
+    addVelocity(velocity: Vec3): void
+    /** Each time something starts touching it, after the step. Returns an unsubscribe. */
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
+    /** Each time something stops touching it. Returns an unsubscribe. */
+    onTouchEnd(handler: (other: Body | Character) => void): () => void
     /** A trigger: each time something comes in. */
     onEnter(handler: (other: Body | Character) => void): () => void
     /** A trigger: each time something leaves. */
@@ -162,12 +174,12 @@ export interface Body {
 export interface Character {
     readonly kind: "character"
     readonly world: World
-    /** Where its feet are. Read-only: `move` and `teleport` change it. */
+    /** Where its feet are. Read-only: `walk`, `jump` and `teleport` change it. */
     readonly position: Vec3
-    /** Standing on something, as of the last move. */
+    /** Standing on something, as of the last step. */
     readonly grounded: boolean
-    /** Its speed up and down, metres per second, which gravity builds while it is off the ground. */
-    fall: number
+    /** How it moved over the last step, metres per second; up and down is its jump and its fall. */
+    readonly velocity: Vec3
     readonly radius: number
     readonly height: number
     readonly layer: Layer
@@ -175,17 +187,18 @@ export interface Character {
     tag: unknown
     readonly alive: boolean
     /**
-     * This frame's wish, in metres: `move([dx, 0, dz])`. Slides along whatever
-     * it meets, climbs steps, falls when nothing is under it. Call it once a
-     * frame; gravity is added for the frame's time.
-     *
-     * `filter` is what it can bump into, as a query takes it: `{ skip:
-     * ["player"] }` walks through other players. Leave the floor in.
+     * The speed it wants to go, metres per second, held until changed:
+     * `walk([x * 5, 0, z * 5])` from a stick, `walk([0, 0, 0])` to stop. Every
+     * step it slides along whatever it meets, climbs steps and falls when
+     * nothing is under it, whatever the screen's frame rate.
      */
-    move(delta: Vec3, filter?: Filter): void
+    walk(velocity: Vec3): void
+    /** Up, as high as `height` metres against the world's gravity. Call it while `grounded` for one jump. */
+    jump(height: number): void
     /** Puts its feet exactly at `at`. `world.clearSpot` finds somewhere it fits. */
     teleport(at: Vec3): void
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
+    onTouchEnd(handler: (other: Body | Character) => void): () => void
     destroy(): void
 }
 
@@ -194,13 +207,13 @@ export interface Shape {
     readonly kind: "box" | "sphere" | "capsule"
     /** Where a ray from `from` to `to` meets this shape standing at `at`, or null. */
     raycast(from: Vec3, to: Vec3, place?: Place): Hit | null
-    /** Whether this shape at `place` overlaps `other` at `otherPlace`. */
-    overlaps(other: Shape, place?: Place, otherPlace?: Place): boolean
+    /** Whether this shape at `at` overlaps `other` at `otherAt`. */
+    overlaps(other: Shape, places?: Places): boolean
     /**
-     * Two shapes moving in straight lines for `seconds`: when they first touch,
-     * in seconds from the start, or null. Exact, not sampled.
+     * Two shapes moving in straight lines: when they first touch, in seconds
+     * from now, or null if not `within` that many seconds. Exact, not sampled.
      */
-    sweepAgainst(target: Shape, motion: SweepMotion): number | null
+    firstTouch(other: Shape, motion: Motions): number | null
 }
 
 export interface Place {
@@ -208,16 +221,60 @@ export interface Place {
     rotation?: Partial<Rotation>
 }
 
-export interface SweepMotion {
-    from: Vec3
-    /** Metres per second. */
-    velocity: Vec3
-    targetAt: Vec3
-    /** Metres per second; still by default. */
-    targetVelocity?: Vec3
-    seconds: number
+/** This shape and another, each somewhere. Both at the origin by default. */
+export interface Places {
+    at?: Vec3
     rotation?: Partial<Rotation>
-    targetRotation?: Partial<Rotation>
+    otherAt?: Vec3
+    otherRotation?: Partial<Rotation>
+}
+
+export interface Motions extends Places {
+    /** Metres per second; still by default. */
+    velocity?: Vec3
+    /** Metres per second; still by default. */
+    otherVelocity?: Vec3
+    /** How many seconds ahead to look. */
+    within: number
+}
+
+export interface BoxShapeOptions {
+    /** Width, height, depth. [1, 1, 1] by default. */
+    size?: Vec3
+}
+export interface SphereShapeOptions {
+    /** 0.5 by default. */
+    radius?: number
+}
+export interface CapsuleShapeOptions {
+    /** 0.3 by default. */
+    radius?: number
+    /** End to end, the round ends included. 1.6 by default. */
+    height?: number
+}
+
+export interface ClearSpotOptions extends Filter {
+    /** How far from `near` to look, in metres. 10 by default. */
+    within?: number
+}
+
+/** The walker `world.slide` moves: a character's shape and limits, and what it bumps into. */
+export interface SlideOptions extends Filter {
+    /** 0.3 by default. */
+    radius?: number
+    /** Feet to the top of its head. 1.6 by default. */
+    height?: number
+    /** The tallest ledge it walks up. 0.3 by default. */
+    stepHeight?: number
+    /** The steepest slope it climbs, in degrees. 45 by default. */
+    slope?: number
+}
+
+/** Where a slide ended, and whether it ended standing on something. */
+export interface Slid {
+    /** Its feet. */
+    at: Vec3
+    grounded: boolean
 }
 
 export interface World {
@@ -239,14 +296,29 @@ export interface World {
     nav(options?: NavOptions): Promise<Nav>
     /** The first thing on the line from `from` to `to`, or null. */
     raycast(from: Vec3, to: Vec3, filter?: Filter): Hit | null
-    /** Whether nothing the filter sees is between two points. */
-    canSee(from: Vec3, to: Vec3, filter?: Filter): boolean
+    /**
+     * Whether nothing the filter sees is between `from` and `target`. A body
+     * or a character as the target is looked at in its middle, and is not
+     * what blocks the view of itself.
+     */
+    canSee(from: Vec3, target: Vec3 | Body | Character, filter?: Filter): boolean
     /** A shape moved from `from` to `to`: where it first meets something, or null. */
     sweep(shape: Shape, from: Vec3, to: Vec3, filter?: Filter): Hit | null
     /** Every body a shape placed at `at` overlaps. */
     overlap(shape: Shape, at: Vec3, filter?: Filter): Body[]
-    /** The nearest place to `near` where a shape fits without overlapping anything solid. */
-    clearSpot(shape: Shape, near: Vec3, filter?: Filter): Vec3
+    /**
+     * The nearest place to `near`, at its height, where a shape fits without
+     * overlapping anything solid, or null when nowhere `within` does.
+     */
+    clearSpot(shape: Shape, near: Vec3, options?: ClearSpotOptions): Vec3 | null
+    /**
+     * A character's move without a character: feet at `from`, moved by
+     * `delta` metres, sliding along walls and climbing steps as `character`
+     * would. Where it ends and whether it stands there. For a game that owns
+     * its positions (a networked one) and asks the world rather than keeping
+     * a body in it. A body made since the last step is not in its way yet.
+     */
+    slide(from: Vec3, delta: Vec3, options?: SlideOptions): Slid
     /** One fixed step. A world `useWorld` made steps itself; call this on one from `createWorld`. */
     step(): void
     /** Every body's state, to hand back to `restore`. */
@@ -271,10 +343,12 @@ const DEFAULTS = Object.freeze({
     rate: 60,
     friction: 0.5,
     bounce: 0,
+    density: 500,
     box: [1, 1, 1] as Vec3,
     sphere: 0.5,
     capsule: { radius: 0.3, height: 1.6 },
-    character: { radius: 0.3, height: 1.6, step: 0.3, slope: 45, snap: 0.3 },
+    character: { radius: 0.3, height: 1.6, stepHeight: 0.3, slope: 45, snap: 0.3 },
+    clearSpotWithin: 10,
     layer: "default",
 })
 export { DEFAULTS as WORLD_DEFAULTS }
@@ -315,26 +389,28 @@ class ShapeImpl implements Shape {
         return { point: add(from, scale(d, hit.timeOfImpact / len)), normal: vec(hit.normal), distance: hit.timeOfImpact, body: null }
     }
 
-    overlaps(other: Shape, place: Place = {}, otherPlace: Place = {}): boolean {
-        return this.rapier().intersectsShape(xyz(place.at ?? [0, 0, 0]), toQuat(place.rotation), (other as ShapeImpl).rapier(), xyz(otherPlace.at ?? [0, 0, 0]), toQuat(otherPlace.rotation))
+    overlaps(other: Shape, p: Places = {}): boolean {
+        return this.rapier().intersectsShape(xyz(p.at ?? ORIGIN), toQuat(p.rotation), (other as ShapeImpl).rapier(), xyz(p.otherAt ?? ORIGIN), toQuat(p.otherRotation))
     }
 
-    sweepAgainst(target: Shape, m: SweepMotion): number | null {
+    firstTouch(other: Shape, m: Motions): number | null {
         const hit = this.rapier().castShape(
-            xyz(m.from), toQuat(m.rotation), xyz(m.velocity),
-            (target as ShapeImpl).rapier(), xyz(m.targetAt), toQuat(m.targetRotation), xyz(m.targetVelocity ?? [0, 0, 0]),
-            0, m.seconds, true,
+            xyz(m.at ?? ORIGIN), toQuat(m.rotation), xyz(m.velocity ?? ORIGIN),
+            (other as ShapeImpl).rapier(), xyz(m.otherAt ?? ORIGIN), toQuat(m.otherRotation), xyz(m.otherVelocity ?? ORIGIN),
+            0, m.within, true,
         )
         return hit === null || hit === undefined ? null : hit.time_of_impact
     }
 }
 
-/** Shapes as values: `shape.capsule(0.3, 1.6)`. Usable once any world exists. */
+const ORIGIN: Vec3 = [0, 0, 0]
+
+/** Shapes as values, taking the options the world's bodies take: `shape.capsule({ radius: 0.3, height: 1.6 })`. Usable once any world exists. */
 export const shape = Object.freeze({
-    box(size: Vec3 = DEFAULTS.box): Shape { return new ShapeImpl("box", size) },
-    sphere(radius: number = DEFAULTS.sphere): Shape { return new ShapeImpl("sphere", [radius]) },
-    capsule(radius: number = DEFAULTS.capsule.radius, height: number = DEFAULTS.capsule.height): Shape {
-        return new ShapeImpl("capsule", [radius, height])
+    box(o: BoxShapeOptions = {}): Shape { return new ShapeImpl("box", o.size ?? DEFAULTS.box) },
+    sphere(o: SphereShapeOptions = {}): Shape { return new ShapeImpl("sphere", [o.radius ?? DEFAULTS.sphere]) },
+    capsule(o: CapsuleShapeOptions = {}): Shape {
+        return new ShapeImpl("capsule", [o.radius ?? DEFAULTS.capsule.radius, o.height ?? DEFAULTS.capsule.height])
     },
 })
 
@@ -352,6 +428,7 @@ function capsuleHalf(radius: number, height: number): number {
 
 interface Handlers {
     touch?: Set<(other: Body | Character, contact: BodyContact) => void>
+    touchEnd?: Set<(other: Body | Character) => void>
     enter?: Set<(other: Body | Character) => void>
     leave?: Set<(other: Body | Character) => void>
 }
@@ -375,8 +452,6 @@ class WorldImpl implements World {
     readonly characters = new Set<CharacterImpl>()
     readonly stepSeconds: number
     private accumulated = 0
-    /** Seconds the last frame advanced, which is what a character's gravity is added for. */
-    frameSeconds: number
     steps = 0
     private disposed = false
 
@@ -386,7 +461,6 @@ class WorldImpl implements World {
         this.raw = new r.World(xyz(g))
         this.stepSeconds = 1 / (options.rate ?? DEFAULTS.rate)
         this.raw.timestep = this.stepSeconds
-        this.frameSeconds = this.stepSeconds
         this.queue = new r.EventQueue(true)
     }
 
@@ -406,9 +480,16 @@ class WorldImpl implements World {
         return bit
     }
 
-    /** A collider's interaction groups: a member of its layer, colliding with all. */
-    groupsFor(layer: Layer): number {
-        return ((this.layerBit(layer) << 16) | 0xffff) >>> 0
+    /** A collider's interaction groups: a member of its layer, colliding with all but the layers it ignores. */
+    groupsFor(layer: Layer, ignores: readonly Layer[] = []): number {
+        return ((this.layerBit(layer) << 16) | (0xffff & ~this.ignoreMask(ignores))) >>> 0
+    }
+
+    /** The bits of layers a body passes through, claiming them, since naming a layer to pass through is using it. */
+    ignoreMask(ignores: readonly Layer[]): number {
+        let mask = 0
+        for (const l of ignores) mask |= this.layerBit(l)
+        return mask
     }
 
     /** A layer a filter names: its bit, or 0 for one no body has been on, said once. */
@@ -454,8 +535,9 @@ class WorldImpl implements World {
         const layer = o.layer ?? DEFAULTS.layer
         // The larger bounce of two bodies wins, so a ball does not die on a floor with none.
         desc.setFriction(o.friction ?? DEFAULTS.friction).setRestitution(o.bounce ?? DEFAULTS.bounce).setRestitutionCombineRule(r.CoefficientCombineRule.Max)
-            .setSensor(o.trigger === true).setCollisionGroups(this.groupsFor(layer))
+            .setSensor(o.trigger === true).setCollisionGroups(this.groupsFor(layer, o.ignores))
         if (o.mass !== undefined) desc.setMass(o.mass)
+        else desc.setDensity(o.density ?? DEFAULTS.density)
         // Every pair is reported, so a trigger hears a character and a wall hears a kinematic door.
         desc.setActiveCollisionTypes(r.ActiveCollisionTypes.ALL)
         const collider = this.raw.createCollider(desc, rb)
@@ -512,6 +594,38 @@ class WorldImpl implements World {
         return c
     }
 
+    // ---------- slide ----------
+
+    /**
+     * One walker for each shape a game slides: a capsule on a fixed body,
+     * in no layer, so nothing collides with it and no query sees it, and a
+     * controller set up as a character's would be.
+     */
+    private readonly sliders = new Map<string, { bodyHandle: number, colliderHandle: number, controller: any, height: number }>()
+
+    slide(from: Vec3, delta: Vec3, o: SlideOptions = {}): Slid {
+        this.live()
+        const radius = o.radius ?? DEFAULTS.character.radius
+        const height = Math.max(o.height ?? DEFAULTS.character.height, radius * 2)
+        const step = o.stepHeight ?? DEFAULTS.character.stepHeight
+        const slope = o.slope ?? DEFAULTS.character.slope
+        const key = `${radius} ${height} ${step} ${slope}`
+        let s = this.sliders.get(key)
+        if (s === undefined) {
+            const r = this.r
+            const rb = this.raw.createRigidBody(r.RigidBodyDesc.fixed())
+            const collider = this.raw.createCollider(r.ColliderDesc.capsule(capsuleHalf(radius, height), radius).setSensor(true).setCollisionGroups(0), rb)
+            s = { bodyHandle: rb.handle, colliderHandle: collider.handle, controller: makeController(this, radius, step, DEFAULTS.character.snap, slope), height }
+            this.sliders.set(key, s)
+        }
+        const rb = this.raw.getRigidBody(s.bodyHandle)
+        rb.setTranslation({ x: from[0], y: from[1] + height / 2 + SKIN, z: from[2] }, false)
+        this.raw.propagateModifiedBodyPositionsToColliders()
+        s.controller.computeColliderMovement(this.raw.getCollider(s.colliderHandle), xyz(delta), this.r.QueryFilterFlags.EXCLUDE_SENSORS, this.queryGroups(o), this.queryPredicate(o))
+        const m = s.controller.computedMovement()
+        return { at: vec3([from[0] + m.x, from[1] + m.y, from[2] + m.z]), grounded: s.controller.computedGrounded() }
+    }
+
     // ---------- queries ----------
     //
     // The engine's query tree is rebuilt inside a step, so a body made or
@@ -565,8 +679,12 @@ class WorldImpl implements World {
         return { point: add(from, scale(d, best.toi / len)), normal: best.normal, distance: best.toi, body: this.wrapperOf(best.handle) }
     }
 
-    canSee(from: Vec3, to: Vec3, filter?: Filter): boolean {
-        return this.raycast(from, to, filter) === null
+    canSee(from: Vec3, target: Vec3 | Body | Character, filter?: Filter): boolean {
+        if (Array.isArray(target)) return this.raycast(from, target as Vec3, filter) === null
+        const t = target as Body | Character
+        const p = t.position
+        const middle: Vec3 = t.kind === "character" ? [p[0], p[1] + t.height / 2, p[2]] : p
+        return this.raycast(from, middle, { only: filter?.only, skip: [...(filter?.skip ?? []), t] }) === null
     }
 
     sweep(s: Shape, from: Vec3, to: Vec3, filter?: Filter): Hit | null {
@@ -611,13 +729,16 @@ class WorldImpl implements World {
         return found
     }
 
-    clearSpot(s: Shape, near: Vec3, filter?: Filter): Vec3 {
+    clearSpot(s: Shape, near: Vec3, options: ClearSpotOptions = {}): Vec3 | null {
         this.live()
+        const filter: Filter = options
+        const within = options.within ?? DEFAULTS.clearSpotWithin
         const raw = (s as ShapeImpl).rapier()
         const solid = (at: Vec3) => {
             let blocked = false
             this.overlapping(raw, at, filter, (h) => {
-                if (this.byCollider.get(h)?.trigger === true) return true
+                const w = this.byCollider.get(h)
+                if (w === undefined || w.trigger) return true
                 blocked = true
                 return false
             })
@@ -625,9 +746,8 @@ class WorldImpl implements World {
         }
         if (!solid(near)) return vec3(near)
         // Rings outward on the ground plane, nearest first, half the shape's smallest size apart.
-        const stepSize = Math.max(0.05, smallestHalfExtent(s as ShapeImpl) / 2)
-        for (let ring = 1; ring <= 200; ring++) {
-            const radius = ring * stepSize
+        const stepSize = Math.max(0.05, smallestHalfExtent(s as ShapeImpl) / 2, within / 400)
+        for (let radius = stepSize; radius <= within + 1e-9; radius += stepSize) {
             const around = Math.max(8, Math.ceil((2 * Math.PI * radius) / stepSize))
             for (let i = 0; i < around; i++) {
                 const a = (i / around) * Math.PI * 2
@@ -635,7 +755,7 @@ class WorldImpl implements World {
                 if (!solid(at)) return vec3(at)
             }
         }
-        return vec3(near)
+        return null
     }
 
     step(): void {
@@ -647,6 +767,8 @@ class WorldImpl implements World {
         // made it most of a native step. oj makes no soft bodies or joints, so
         // the engine never adds or removes a body by itself here.
         // rapier.test.ts fails if a new Rapier's World.step does more.
+        // Characters walk first, each by its held wish for exactly one step.
+        for (const c of this.characters) c.stepWalk(this.stepSeconds)
         const w = this.raw
         w.physicsPipeline.step(w.gravity, w.integrationParameters, w.islands, w.broadPhase, w.narrowPhase, w.bodies, w.colliders, w.softBodies, w.impulseJoints, w.multibodyJoints, w.ccdSolver, this.queue, undefined)
         this.steps++
@@ -662,28 +784,42 @@ class WorldImpl implements World {
             }
             // A character's touches come from its controller, which sees them
             // whether or not the engine generated a contact.
-            if (!started || a.kind === "character" || b.kind === "character") return
-            const point = this.contactPoint(h1, h2)
-            a.emitTouch(b, { point })
-            b.emitTouch(a, { point })
+            if (a.kind === "character" || b.kind === "character") return
+            if (!started) {
+                a.emitTouchEnd(b)
+                b.emitTouchEnd(a)
+                return
+            }
+            if (!a.listening && !b.listening) return
+            const contact = this.contactOf(h1, h2, a as BodyImpl, b as BodyImpl)
+            a.emitTouch(b, contact)
+            b.emitTouch(a, contact)
         })
     }
 
-    private contactPoint(h1: number, h2: number): Vec3 | null {
-        let point: Vec3 | null = null
+    /**
+     * A point of the touch, and how fast the two were closing. The solver has
+     * already stopped them by the time a step reports the touch, so the speed
+     * is read from what it took to stop them: the impulse along the normal over
+     * the pair's reduced mass is the change of speed, which is (1 + bounce)
+     * times the speed they met at.
+     */
+    private contactOf(h1: number, h2: number, a: BodyImpl, b: BodyImpl): BodyContact {
+        let point: Vec3 | null = null, impulse = 0
         const c1 = this.raw.getCollider(h1), c2 = this.raw.getCollider(h2)
-        this.raw.contactPair(c1, c2, (manifold: any, flipped: boolean) => {
-            if (point !== null || manifold.numSolverContacts() === 0) return
-            point = vec(manifold.solverContactPoint(0))
-            void flipped
+        this.raw.contactPair(c1, c2, (manifold: any) => {
+            if (point === null && manifold.numSolverContacts() > 0) point = vec(manifold.solverContactPoint(0))
+            for (let i = 0; i < manifold.numContacts(); i++) impulse += manifold.contactImpulse(i)
         })
-        return point
+        const inverse = a.inverseMass() + b.inverseMass()
+        const bounce = Math.max(c1.restitution(), c2.restitution())
+        const speed = inverse > 0 ? (impulse * inverse) / (1 + bounce) : 0
+        return { point, speed }
     }
 
     /** Advances by a frame's time, in whole fixed steps. useWorld calls it from the frame clock. */
     advance(seconds: number): number {
         if (this.disposed) return 0
-        this.frameSeconds = seconds
         this.accumulated = Math.min(this.accumulated + seconds, this.stepSeconds * MAX_STEPS_PER_FRAME)
         let n = 0
         while (this.accumulated >= this.stepSeconds - 1e-9) {
@@ -694,14 +830,31 @@ class WorldImpl implements World {
         return n
     }
 
+    /**
+     * The engine's bytes, then what oj itself holds about each character (its
+     * held walk and its speed up and down), then the engine part's length, so
+     * a rewind brings a jump back mid-air too.
+     */
     snapshot(): Uint8Array {
         this.live()
-        return this.raw.takeSnapshot()
+        const engine: Uint8Array = this.raw.takeSnapshot()
+        const own: Record<number, number[]> = {}
+        for (const c of this.characters) own[c.colliderHandle] = c.saveState()
+        const text = asciiBytes(JSON.stringify(own))
+        const out = new Uint8Array(engine.length + text.length + 4)
+        out.set(engine, 0)
+        out.set(text, engine.length)
+        new DataView(out.buffer).setUint32(out.length - 4, engine.length, true)
+        return out
     }
 
     restore(snapshot: Uint8Array): void {
         this.live()
-        const restored = this.r.World.restoreSnapshot(snapshot)
+        const engineLength = snapshot.length >= 4 ? new DataView(snapshot.buffer, snapshot.byteOffset, snapshot.length).getUint32(snapshot.length - 4, true) : -1
+        if (engineLength < 0 || engineLength > snapshot.length - 4) throw new Error("[oj] that snapshot is not one this world made")
+        let own: Record<number, number[]>
+        try { own = JSON.parse(asciiText(snapshot.subarray(engineLength, snapshot.length - 4))) } catch { throw new Error("[oj] that snapshot is not one this world made") }
+        const restored = this.r.World.restoreSnapshot(snapshot.subarray(0, engineLength))
         if (restored === null || restored === undefined) throw new Error("[oj] that snapshot is not one this world's engine can read")
         // A body destroyed since the snapshot comes back, behind the handle the
         // game already holds (its actor went with it, so it has none). One made
@@ -711,6 +864,9 @@ class WorldImpl implements World {
         const orphans: number[] = []
         restored.forEachRigidBody((rb: any) => { if (!holders.has(rb.handle)) orphans.push(rb.handle) })
         for (const h of orphans) restored.removeRigidBody(restored.getRigidBody(h))
+        // The slide walkers were among them; they are made again when next asked for.
+        for (const s of this.sliders.values()) s.controller.free()
+        this.sliders.clear()
         const old = this.raw
         this.raw = restored
         this.fresh.clear()
@@ -729,7 +885,10 @@ class WorldImpl implements World {
             this.byCollider.set(handle, w)
             if (w instanceof CharacterImpl) this.characters.add(w)
         }
-        for (const c of this.characters) c.rebuildController()
+        for (const c of this.characters) {
+            c.rebuildController()
+            c.loadState(own[c.colliderHandle])
+        }
         old.free()
     }
 
@@ -765,6 +924,8 @@ class WorldImpl implements World {
         for (const w of this.byCollider.values()) w.markGone()
         this.byCollider.clear()
         this.characters.clear()
+        for (const s of this.sliders.values()) s.controller.free()
+        this.sliders.clear()
         this.queue.free()
         this.raw.free()
     }
@@ -839,7 +1000,23 @@ class BodyImpl implements Body {
 
     push(impulse: Vec3): void { this.rb().applyImpulse(xyz(impulse), true) }
 
+    addVelocity(v: Vec3): void {
+        const rb = this.rb(), now = rb.linvel()
+        rb.setLinvel({ x: now.x + v[0], y: now.y + v[1], z: now.z + v[2] }, true)
+    }
+
+    /** 0 for anything the simulation does not move, which no touch can slow. */
+    inverseMass(): number {
+        if (!this.dynamic || this.gone) return 0
+        const m = this.rb().mass()
+        return m > 0 ? 1 / m : 0
+    }
+
+    /** Whether a touch on this body has anyone to tell. */
+    get listening(): boolean { return (this.handlers.touch?.size ?? 0) > 0 }
+
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void { return this.listen("touch", handler) }
+    onTouchEnd(handler: (other: Body | Character) => void): () => void { return this.listen("touchEnd", handler) }
     onEnter(handler: (other: Body | Character) => void): () => void { return this.listen("enter", handler) }
     onLeave(handler: (other: Body | Character) => void): () => void { return this.listen("leave", handler) }
 
@@ -857,6 +1034,10 @@ class BodyImpl implements Body {
 
     emitTouch(other: Body | Character, contact: BodyContact): void {
         for (const h of this.handlers.touch ?? []) h(other, contact)
+    }
+
+    emitTouchEnd(other: Body | Character): void {
+        for (const h of this.handlers.touchEnd ?? []) h(other)
     }
 
     emitTrigger(started: boolean, other: Body | Character): void {
@@ -923,6 +1104,20 @@ class BodyImpl implements Body {
  */
 const SKIN = 0.01
 
+/** A character controller: climbs `step`, keeps to the ground within `snap`, climbs slopes up to `slope` degrees. */
+function makeController(world: WorldImpl, radius: number, step: number, snap: number, slope: number): any {
+    const c = world.raw.createCharacterController(SKIN)
+    // Climbing costs the controller extra casts at every contact, about 40%
+    // of a walking move, so a character that climbs nothing does not pay it.
+    if (step > 0) c.enableAutostep(step, radius / 2, false)
+    else c.disableAutostep()
+    c.enableSnapToGround(snap)
+    const angle = (slope * Math.PI) / 180
+    c.setMaxSlopeClimbAngle(angle)
+    c.setMinSlopeSlideAngle(angle)
+    return c
+}
+
 class CharacterImpl implements Character {
     readonly kind = "character" as const
     readonly trigger = false
@@ -933,13 +1128,20 @@ class CharacterImpl implements Character {
     readonly colliderHandle: number
     actor: Actor | null
     tag: unknown
-    fall = 0
+    /** Its speed up and down, which gravity builds while it is off the ground and a jump sets. */
+    private fall = 0
+    /** What `walk` asked for, held. */
+    private wish: Vec3 = [0, 0, 0]
+    private moved: Vec3 = vec3([0, 0, 0])
     private controller: any
     private isGrounded = false
     private touching = new Set<number>()
     private touchHandlers = new Set<(other: Body | Character, contact: BodyContact) => void>()
+    private touchEndHandlers = new Set<(other: Body | Character) => void>()
     private gone = false
     private readonly o: CharacterOptions
+    /** What its controller collides with: everything but the layers it ignores. */
+    private readonly walkGroups: number | undefined
 
     constructor(readonly world: WorldImpl, private readonly r: Rapier, o: CharacterOptions) {
         this.o = o
@@ -952,30 +1154,32 @@ class CharacterImpl implements Character {
         const rb = world.raw.createRigidBody(r.RigidBodyDesc.kinematicPositionBased().setTranslation(at[0], at[1] + this.height / 2 + SKIN, at[2]))
         const collider = world.raw.createCollider(
             r.ColliderDesc.capsule(capsuleHalf(this.radius, this.height), this.radius)
-                .setCollisionGroups(world.groupsFor(this.layer))
+                .setCollisionGroups(world.groupsFor(this.layer, o.ignores))
                 .setActiveCollisionTypes(r.ActiveCollisionTypes.ALL),
             rb,
         )
+        const ignored = world.ignoreMask(o.ignores ?? [])
+        this.walkGroups = ignored === 0 ? undefined : ((0xffff << 16) | (0xffff & ~ignored)) >>> 0
         this.bodyHandle = rb.handle
         this.colliderHandle = collider.handle
         this.rebuildController()
+        this.isGrounded = this.groundUnder([at[0], at[1] + this.height / 2 + SKIN, at[2]])
         if (this.actor !== null) this.syncActor()
+    }
+
+    /**
+     * Standing if there is ground within its skin of a capsule centred at
+     * `centre`, so a character placed on a floor starts standing, rather than
+     * falling one step into its own skin and climbing back out of it.
+     */
+    private groundUnder(centre: Vec3): boolean {
+        return this.world.sweep(shape.capsule({ radius: this.radius, height: this.height }), centre, [centre[0], centre[1] - 2 * SKIN, centre[2]], { skip: [this] }) !== null
     }
 
     /** The controller holds the world's sets, so a restored world needs a new one. */
     rebuildController(): void {
         this.controller?.free()
-        const c = this.world.raw.createCharacterController(SKIN)
-        // Climbing costs the controller extra casts at every contact, about 40%
-        // of a walking move, so a character that climbs nothing does not pay it.
-        const step = this.o.step ?? DEFAULTS.character.step
-        if (step > 0) c.enableAutostep(step, this.radius / 2, false)
-        else c.disableAutostep()
-        c.enableSnapToGround(this.o.snap ?? DEFAULTS.character.snap)
-        const slope = ((this.o.slope ?? DEFAULTS.character.slope) * Math.PI) / 180
-        c.setMaxSlopeClimbAngle(slope)
-        c.setMinSlopeSlideAngle(slope)
-        this.controller = c
+        this.controller = makeController(this.world, this.radius, this.o.stepHeight ?? DEFAULTS.character.stepHeight, this.o.snap ?? DEFAULTS.character.snap, this.o.slope ?? DEFAULTS.character.slope)
     }
 
     get alive(): boolean { return !this.gone }
@@ -991,9 +1195,22 @@ class CharacterImpl implements Character {
         return vec3([t.x, t.y - this.height / 2 - SKIN, t.z])
     }
 
-    move(delta: Vec3, filter?: Filter): void {
-        const rb = this.rb()
-        const dt = this.world.frameSeconds
+    get velocity(): Vec3 { return this.moved }
+
+    walk(velocity: Vec3): void {
+        if (this.gone) throw new Error("[oj] this character was destroyed")
+        this.wish = [velocity[0], velocity[1], velocity[2]]
+    }
+
+    jump(height: number): void {
+        if (this.gone) throw new Error("[oj] this character was destroyed")
+        const g = Math.abs(this.world.raw.gravity.y)
+        this.fall = Math.sqrt(2 * g * Math.max(0, height))
+    }
+
+    /** One step of its held walk, called by the world before the engine steps. */
+    stepWalk(dt: number): void {
+        const rb = this.world.raw.getRigidBody(this.bodyHandle)
         const g = this.world.raw.gravity.y
         // Standing, it does not push down into the floor: snap-to-ground keeps
         // it there, and a downward wish into a floor it rests on made Rapier's
@@ -1001,21 +1218,42 @@ class CharacterImpl implements Character {
         // lost 3% of every walk, and froze outright when placed on the floor).
         const standing = this.isGrounded && this.fall <= 0
         this.fall = standing ? 0 : this.fall + g * dt
-        const wish = { x: delta[0], y: delta[1] + this.fall * dt, z: delta[2] }
+        const wish = { x: this.wish[0] * dt, y: (this.wish[1] + this.fall) * dt, z: this.wish[2] * dt }
         const collider = this.world.raw.getCollider(this.colliderHandle)
-        this.controller.computeColliderMovement(collider, wish, this.r.QueryFilterFlags.EXCLUDE_SENSORS, this.world.queryGroups(filter), this.world.queryPredicate(filter))
+        this.controller.computeColliderMovement(collider, wish, this.r.QueryFilterFlags.EXCLUDE_SENSORS, this.walkGroups)
         const m = this.controller.computedMovement()
         this.isGrounded = this.controller.computedGrounded()
         if (this.isGrounded && this.fall < 0) this.fall = 0
+        // A head that meets a ceiling stops rising.
+        if (this.fall > 0 && m.y < wish.y * 0.5) this.fall = 0
         const t = rb.nextTranslation()
         rb.setNextKinematicTranslation({ x: t.x + m.x, y: t.y + m.y, z: t.z + m.z })
-        this.reportTouches()
+        this.moved = vec3([m.x / dt, m.y / dt, m.z / dt])
+        this.reportTouches(dt)
     }
 
-    /** What the controller ran into this move, reported once when a touch starts. */
-    private reportTouches(): void {
+    /** What oj holds that the engine's snapshot does not: the held walk, the speed up and down, standing. */
+    saveState(): number[] {
+        return [this.wish[0], this.wish[1], this.wish[2], this.fall, this.isGrounded ? 1 : 0]
+    }
+
+    loadState(s: number[] | undefined): void {
+        if (s === undefined) return
+        this.wish = [s[0]!, s[1]!, s[2]!]
+        this.fall = s[3]!
+        this.isGrounded = s[4] === 1
+        this.touching.clear()
+    }
+
+    inverseMass(): number { return 0 }
+    get listening(): boolean { return this.touchHandlers.size > 0 }
+
+    /** What the controller ran into this step, reported once when a touch starts and once when it ends. */
+    private reportTouches(dt: number): void {
         const now = new Set<number>()
         const n = this.controller.numComputedCollisions()
+        const asked: Vec3 = [this.wish[0], this.wish[1] + this.fall, this.wish[2]]
+        void dt
         for (let i = 0; i < n; i++) {
             const hit = this.controller.computedCollision(i)
             const handle = hit?.collider?.handle
@@ -1024,7 +1262,11 @@ class CharacterImpl implements Character {
             if (this.touching.has(handle)) continue
             const other = this.world.wrapperOf(handle)
             if (other === null) continue
-            const contact: BodyContact = { point: vec(hit.witness1) }
+            // How fast it was going into the surface: its wish against the normal, less the other's own speed that way.
+            const normal = hit.normal1 ?? { x: 0, y: 0, z: 0 }
+            const otherVelocity = other.kind === "character" ? other.velocity : (other as BodyImpl).dynamic || (other as BodyImpl).kinematic ? other.velocity : ORIGIN
+            const closing = -((asked[0] - otherVelocity[0]) * normal.x + (asked[1] - otherVelocity[1]) * normal.y + (asked[2] - otherVelocity[2]) * normal.z)
+            const contact: BodyContact = { point: vec(hit.witness1), speed: Math.max(0, closing) }
             for (const h of this.touchHandlers) h(other, contact)
             if (other instanceof BodyImpl) other.emitTouch(this, contact)
         }
@@ -1035,6 +1277,13 @@ class CharacterImpl implements Character {
             if (now.has(handle)) continue
             const other = this.world.raw.getCollider(handle)
             if (other !== null && other !== undefined && other.intersectsShape(this.near(), this.world.raw.getRigidBody(this.bodyHandle).nextTranslation(), toQuat(undefined))) now.add(handle)
+        }
+        for (const handle of this.touching) {
+            if (now.has(handle)) continue
+            const other = this.world.wrapperOf(handle)
+            if (other === null) continue
+            this.emitTouchEnd(other)
+            if (other instanceof BodyImpl) other.emitTouchEnd(this)
         }
         this.touching = now
     }
@@ -1053,9 +1302,8 @@ class CharacterImpl implements Character {
         this.rb().setNextKinematicTranslation(xyz(spot))
         this.world.markFresh(this.colliderHandle)
         this.fall = 0
-        // Standing if there is ground within its skin, so a character placed on
-        // a floor walks off as one that walked there would.
-        this.isGrounded = this.world.sweep(shape.capsule(this.radius, this.height), spot, [spot[0], spot[1] - 2 * SKIN, spot[2]], { skip: [this] }) !== null
+        this.moved = vec3([0, 0, 0])
+        this.isGrounded = this.groundUnder(spot)
         this.touching.clear()
     }
 
@@ -1064,8 +1312,17 @@ class CharacterImpl implements Character {
         return () => { this.touchHandlers.delete(handler) }
     }
 
+    onTouchEnd(handler: (other: Body | Character) => void): () => void {
+        this.touchEndHandlers.add(handler)
+        return () => { this.touchEndHandlers.delete(handler) }
+    }
+
     emitTouch(other: Body | Character, contact: BodyContact): void {
         for (const h of this.touchHandlers) h(other, contact)
+    }
+
+    emitTouchEnd(other: Body | Character): void {
+        for (const h of this.touchEndHandlers) h(other)
     }
 
     emitTrigger(): void {}
@@ -1125,6 +1382,23 @@ async function trianglesOf(source: MeshSource): Promise<Triangles> {
 function smallestHalfExtent(s: ShapeImpl): number {
     if (s.kind === "box") return Math.min(...s.dims) / 2
     return s.dims[0]!
+}
+
+// ---------- the snapshot's own part ----------
+//
+// JSON of numbers and keys, so ASCII: no TextEncoder, which a OneJS app on
+// QuickJS does not have.
+
+function asciiBytes(text: string): Uint8Array {
+    const out = new Uint8Array(text.length)
+    for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i)
+    return out
+}
+
+function asciiText(bytes: Uint8Array): string {
+    let text = ""
+    for (let i = 0; i < bytes.length; i += 4096) text += String.fromCharCode(...bytes.subarray(i, i + 4096))
+    return text
 }
 
 // ---------- vectors, as plain arrays ----------

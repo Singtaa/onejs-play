@@ -439,6 +439,19 @@ Things that are not obvious from the code:
 - **Queries see a body the frame it is made.** Rapier's query tree updates only
   in `step()`, so bodies created or teleported since are tested one by one
   (`fresh` in `world.ts`).
+- **Characters move inside the step.** `walk` is a held velocity that each
+  `step()` applies for exactly one step before the engine's, so a character
+  covers the same ground at any frame rate.
+- **A snapshot is more than Rapier's.** Rapier's bytes, then oj's own JSON per
+  character (held walk, vertical speed, standing), then the engine part's
+  length, so a rewind brings a jump back mid-air. ASCII by hand, since QuickJS
+  has no `TextEncoder`.
+- **`slide` keeps a walker per shape.** A sensor capsule in no collision group
+  on a fixed body, which no query or contact sees; `restore` drops them with
+  the orphans and they are made again when next asked for.
+- **A touch's `speed` is read from the solver.** By the time a step reports a
+  touch the pair has stopped, so the speed is the normal impulse over the
+  reduced mass, divided by one plus the bounce.
 - **Actors follow in one crossing.** `syncActors` hands every moved body's
   placement to `ModelBridge.PlaceMany` as one `Float32Array`; an actor sits at
   its body's centre.

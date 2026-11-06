@@ -25,7 +25,7 @@ export interface NavOptions {
     /** Feet to head: the lowest gap it fits under. 1.6 by default. */
     height?: number
     /** The tallest ledge it walks up. 0.3 by default. */
-    step?: number
+    stepHeight?: number
     /** The steepest slope it walks, in degrees. 45 by default. */
     slope?: number
     /** The grid the floor is measured on, in metres. A third of the radius by default; smaller is finer and slower to build. */
@@ -44,7 +44,7 @@ export interface Nav {
     dispose(): void
 }
 
-export const NAV_DEFAULTS = Object.freeze({ radius: 0.3, height: 1.6, step: 0.3, slope: 45 })
+export const NAV_DEFAULTS = Object.freeze({ radius: 0.3, height: 1.6, stepHeight: 0.3, slope: 45 })
 
 let loading: Promise<Recast> | null = null
 
@@ -76,7 +76,7 @@ export async function buildNav(vertices: Float32Array, indices: Uint32Array, o: 
         cs, ch,
         walkableRadius: Math.ceil(radius / cs),
         walkableHeight: Math.ceil((o.height ?? NAV_DEFAULTS.height) / ch),
-        walkableClimb: Math.floor((o.step ?? NAV_DEFAULTS.step) / ch),
+        walkableClimb: Math.floor((o.stepHeight ?? NAV_DEFAULTS.stepHeight) / ch),
         walkableSlopeAngle: o.slope ?? NAV_DEFAULTS.slope,
         // detailSampleDist stays the library's: it is counted in cells there, and under 0.9 crashes Recast.
     }) as any

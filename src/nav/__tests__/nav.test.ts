@@ -103,7 +103,7 @@ describe("world.nav", () => {
         w.box({ at: [0, -0.5, 0], size: [20, 1, 20] })
         w.box({ at: [5, 0.1, 0], size: [4, 0.2, 4] })
         w.box({ at: [-5, 1, 0], size: [4, 2, 4] })
-        const nav = await w.nav({ step: 0.3 })
+        const nav = await w.nav({ stepHeight: 0.3 })
         expect(nav.path([0, 0, 0], [5, 0.2, 0]).at(-1)![1]).toBeCloseTo(0.2, 1)
         const high = nav.path([0, 0, 0], [-5, 2, 0]).at(-1)!
         expect(high[1]).toBeLessThan(0.5)
