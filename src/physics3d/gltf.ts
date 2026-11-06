@@ -89,7 +89,12 @@ export function glbTriangles(bytes: ArrayBuffer | Uint8Array): Triangles {
             else indices.push(base + a, base + b, base + c)
         }
         if (mode === 4) for (let i = 0; i + 2 < order.length; i += 3) tri(order[i]!, order[i + 1]!, order[i + 2]!)
-        else if (mode === 5) for (let i = 0; i + 2 < order.length; i++) i % 2 === 0 ? tri(order[i]!, order[i + 1]!, order[i + 2]!) : tri(order[i + 1]!, order[i]!, order[i + 2]!)
+        else if (mode === 5) {
+            for (let i = 0; i + 2 < order.length; i++) {
+                if (i % 2 === 0) tri(order[i]!, order[i + 1]!, order[i + 2]!)
+                else tri(order[i + 1]!, order[i]!, order[i + 2]!)
+            }
+        }
         else for (let i = 1; i + 1 < order.length; i++) tri(order[0]!, order[i]!, order[i + 1]!)
     }
     for (const r of roots) visit(r, identity())
