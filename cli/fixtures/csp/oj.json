@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "runtime": "1.1.0",
+    "name": "CSP",
+    "entry": "index.tsx",
+    "controls": ["mouse"]
+}

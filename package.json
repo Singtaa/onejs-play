@@ -88,6 +88,10 @@
     "./host/boot": {
       "types": "./host/boot.d.ts",
       "default": "./host/boot.mjs"
+    },
+    "./host/csp": {
+      "types": "./host/csp.d.ts",
+      "default": "./host/csp.mjs"
     }
   },
   "bin": {

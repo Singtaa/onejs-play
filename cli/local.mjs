@@ -13,7 +13,9 @@ import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { containerBoot } from "../host/boot.mjs"
+import { gameCsp } from "../host/csp.mjs"
 import { contentTypeOf, resolveAsset } from "./assets.mjs"
+import { DEFAULT_SITE } from "./site.mjs"
 
 /** The four files a container is. Mirrors RUNTIME_FILES in the site's staging script. */
 export const RUNTIME_FILES = [
@@ -143,13 +145,18 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
  * under /assets/, which is where `assetUrl()` looks, by the site's rule
  * (assets.mjs). Resolves to `{ url, close }`; `bundle` is read on every
  * request so a rebuild is one refetch. `refused` hears why each asset
- * request the site would 404 was refused.
+ * request the site would 404 was refused. The host page carries the game
+ * origin's Content Security Policy for `site`, so what the site would refuse
+ * is refused here too.
  */
-export function serve({ runtime, root, manifest, bundle, port = 0, refused = () => {}, fetchStreaming = null }) {
+export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, port = 0, refused = () => {}, fetchStreaming = null }) {
     const server = http.createServer(async (req, res) => {
         const url = decodeURIComponent((req.url ?? "/").split("?")[0])
         const send = (code, body, type) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store" }); res.end(body) }
-        if (url === "/") return send(200, hostPage(manifest), TYPES[".html"])
+        if (url === "/") {
+            res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store", "content-security-policy": gameCsp(site) })
+            return res.end(hostPage(manifest))
+        }
         if (url === "/bundle.js") return send(200, bundle(), TYPES[".js"])
         // Chrome asks for one unprompted, and a 404 is logged as a network
         // error that a run would then be failed for.

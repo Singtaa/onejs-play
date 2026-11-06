@@ -308,7 +308,7 @@ export async function start(root, { headless = true, gpu = false, window: size, 
     say(`runtime ${runtimeVersion}`)
 
     const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion }
-    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion) })
+    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, site, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion) })
     server.bundle = built.code
     say(`serving ${server.url}`)
 
