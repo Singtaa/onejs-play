@@ -26,6 +26,7 @@ import { assetUrl } from "./asset"
 import { toRGBA, type ColorInput } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer } from "./physics3d/actors"
+import { modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
@@ -335,6 +336,7 @@ export function loadModel(name: string): Promise<Model> {
             const clips = String(b.Clips(id)).split("\n").filter((c) => c !== "")
             const model: Model = Object.freeze({ id, clips: Object.freeze(clips), height: Number(b.Height(id)) })
             generationOf.set(model, born)
+            modelUrls.set(model, url)
             return model
         })()
         loads.set(url, loading)

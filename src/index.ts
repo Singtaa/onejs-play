@@ -89,7 +89,7 @@ export { useWorld } from "./physics3d/use-world"
 export { createWorld, shape, WORLD_DEFAULTS } from "./physics3d/world"
 export type {
     World, WorldOptions, Body, Character, Shape, Hit, Filter, Layer, BodyContact,
-    BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, Place, SweepMotion,
+    BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, MeshOptions, MeshSource, Place, SweepMotion,
 } from "./physics3d/world"
 
 // 3D models behind the cart's UI.

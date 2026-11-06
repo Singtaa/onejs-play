@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react"
 import { loadImageAsync, loadTextAsync } from "onejs-unity/assets"
 import type { SheetConfig, Texture } from "onejs-react"
+import { setFileLoader } from "./physics3d/sources"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
 // no runtime binding is created.
@@ -433,3 +434,30 @@ export function useFlipbook(ref: { current: any }, name: string): void {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [name])
 }
+
+
+/**
+ * One of this game's files as bytes, by the same name every other loader takes:
+ * fetched where the file has an address, read from disk in a Unity project.
+ */
+export async function loadAssetBytes(name: string): Promise<Uint8Array> {
+    const url = assetUrl(name)
+    if (url.includes("://") || !isResolvedPath(url)) {
+        const response = await (globalThis as any).fetch(url)
+        if (!response.ok) throw new Error(`[oj] ${name}: ${url} answered ${response.status}`)
+        return new Uint8Array(await response.arrayBuffer())
+    }
+    const CS = (globalThis as any).CS
+    // The C# byte[] crosses once, as base64, rather than a crossing a byte.
+    const binary: string = (globalThis as any).atob(CS.System.Convert.ToBase64String(CS.System.IO.File.ReadAllBytes(url)))
+    const out = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+    return out
+}
+
+/** A path on disk, which only a Unity project hands back: absolute, with no scheme. */
+function isResolvedPath(url: string): boolean {
+    return url.startsWith("/") || /^[A-Za-z]:[\\/]/.test(url)
+}
+
+setFileLoader(loadAssetBytes)

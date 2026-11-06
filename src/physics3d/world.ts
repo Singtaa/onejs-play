@@ -22,6 +22,8 @@ import type { Actor, Rotation, Vec3 } from "../models"
 import { loadRapier, type Rapier } from "./rapier"
 import { fromQuat, toQuat, type Quat } from "./rotation"
 import { placeActors, type ActorPlacement } from "./actors"
+import { glbTriangles, type Triangles } from "./gltf"
+import { loadFileBytes, modelUrls } from "./sources"
 
 /** A collision layer, named by use. Up to 16 in one world. */
 export type Layer = string
@@ -89,6 +91,14 @@ export interface CapsuleOptions extends BodyOptionsBase {
     /** End to end, the round ends included. 1.6 by default. */
     height?: number
 }
+
+export interface MeshOptions extends BodyOptionsBase {
+    /** 1 is the model's own size, as `scene.spawn` takes it. */
+    scale?: number
+}
+
+/** What a mesh collider is made from: a model, a .glb by name or URL, its bytes, or triangles. */
+export type MeshSource = { readonly id: number } | string | ArrayBuffer | Uint8Array | Triangles
 
 export interface CharacterOptions {
     /** Where its feet are. */
@@ -210,6 +220,12 @@ export interface World {
     box(options?: BoxOptions): Body
     sphere(options?: SphereOptions): Body
     capsule(options?: CapsuleOptions): Body
+    /**
+     * Every triangle of a model, placed as `scene.spawn` would place it: a
+     * level, a ramp, a rock. Static, or kinematic to move it; never dynamic,
+     * since a pile of triangles has no inside to fall with.
+     */
+    mesh(source: MeshSource, options?: MeshOptions): Promise<Body>
     character(options?: CharacterOptions): Character
     /** The first thing on the line from `from` to `to`, or null. */
     raycast(from: Vec3, to: Vec3, filter?: Filter): Hit | null
@@ -431,6 +447,16 @@ class WorldImpl implements World {
     capsule(o: CapsuleOptions = {}): Body {
         const radius = o.radius ?? DEFAULTS.capsule.radius
         return this.makeBody("capsule", this.r.ColliderDesc.capsule(capsuleHalf(radius, o.height ?? DEFAULTS.capsule.height), radius), o)
+    }
+
+    async mesh(source: MeshSource, o: MeshOptions = {}): Promise<Body> {
+        this.live()
+        if (o.dynamic === true) throw new Error("[oj] a mesh collider is static or kinematic. For something that falls, use box, sphere or capsule.")
+        const t = await trianglesOf(source)
+        this.live()
+        const k = o.scale ?? 1
+        const vertices = k === 1 ? t.vertices : t.vertices.map((v) => v * k)
+        return this.makeBody("mesh", this.r.ColliderDesc.trimesh(vertices, t.indices), o)
     }
 
     character(o: CharacterOptions = {}): Character {
@@ -946,6 +972,15 @@ class CharacterImpl implements Character {
         this.world.forget(this)
         this.markGone()
     }
+}
+
+async function trianglesOf(source: MeshSource): Promise<Triangles> {
+    if (typeof source === "string") return glbTriangles(await loadFileBytes(source))
+    if (source instanceof ArrayBuffer || source instanceof Uint8Array) return glbTriangles(source)
+    if ("vertices" in source && "indices" in source) return source
+    const url = modelUrls.get(source)
+    if (url === undefined) throw new Error("[oj] world.mesh: that model was not loaded with loadModel or useModel, so there is no file to read its triangles from")
+    return glbTriangles(await loadFileBytes(url))
 }
 
 function smallestHalfExtent(s: ShapeImpl): number {
