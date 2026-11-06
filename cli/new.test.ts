@@ -24,6 +24,7 @@ let dir = ""
 let server: Server
 let site = ""
 let taken = false
+let privateRefused = false
 const created: Array<{ body: any, auth?: string }> = []
 
 const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8" })
@@ -36,6 +37,7 @@ const mainOf = (repo: string) => { const r = git(repo, "rev-parse", "--verify", 
 beforeEach(async () => {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "oj-new-")))
     taken = false
+    privateRefused = false
     created.length = 0
     fs.writeFileSync(path.join(dir, "gitconfig"), "[user]\n\tname = Tester\n\temail = tester@example.test\n[init]\n\tdefaultBranch = trunk\n")
     fs.mkdirSync(path.dirname(bare()), { recursive: true })
@@ -45,9 +47,11 @@ beforeEach(async () => {
         for await (const c of req) text += c
         const send = (status: number, value: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
         if (req.method === "POST" && req.url === "/api/games") {
-            created.push({ body: JSON.parse(text), auth: req.headers.authorization })
+            const body = JSON.parse(text)
+            created.push({ body, auth: req.headers.authorization })
             if (taken) return send(409, { error: "You already have a cart called \"Pop Rocks\".", name: "Pop Rocks", sid: "bbbbbbbbbbbb", url: "/@owner/pop-rocks" })
-            return send(200, { sid: SID, url: "/@owner/pop-rocks", public: true, clone: cloneUrl() })
+            if (privateRefused && body.public === false) return send(403, { error: "Every cart is public for now. Private is coming soon." })
+            return send(200, { sid: SID, url: "/@owner/pop-rocks", public: body.public !== false, clone: cloneUrl() })
         }
         if (req.url === `/api/games/${SID}`) {
             const head = mainOf(bare())
@@ -84,9 +88,9 @@ function made(name = "Pop Rocks") {
     return { code, said, cart: path.join(dir, "pop-rocks") }
 }
 
-async function push(root: string, signIn?: (dir: string) => Promise<number>) {
+async function push(root: string, signIn?: (dir: string) => Promise<number>, hidden = false) {
     const said: string[] = []
-    const code = await firstPush(root, { say: (l: string) => said.push(l), ...(signIn ? { signIn } : {}) })
+    const code = await firstPush(root, { say: (l: string) => said.push(l), private: hidden, ...(signIn ? { signIn } : {}) })
     return { code, said }
 }
 
@@ -162,6 +166,22 @@ describe("the first ojplay push makes the cart on the site", () => {
         // git pull and push work there without ojplay, from the login, never a stored token.
         expect(git(cart, "config", "--local", "--get-all", `credential.${site}.helper`).stdout).toContain("OJ_TOKEN")
         expect(fs.readFileSync(path.join(cart, ".git", "config"), "utf8")).not.toContain(TOKEN)
+    })
+
+    it("asks for a private cart with --private, and says it is one", async () => {
+        const { cart } = made()
+        const { code, said } = await push(cart, undefined, true)
+        expect(code).toBe(0)
+        expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true, public: false }, auth: `Bearer ${TOKEN}` }])
+        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (private)`)
+    })
+
+    it("pushes nothing when the site refuses a private cart to this account", async () => {
+        privateRefused = true
+        const { cart } = made()
+        await expect(push(cart, undefined, true)).rejects.toThrow(/public for now/)
+        expect(mainOf(bare())).toBeNull()
+        expect(git(cart, "remote").stdout.trim()).toBe("")
     })
 
     it("is the usual push from then on", async () => {

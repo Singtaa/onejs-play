@@ -19,6 +19,7 @@ const FLAGS = {
     help: "switch",
     version: "switch",
     "no-wait": "switch",
+    private: "switch",
     site: "value",
     root: "value",
     window: "value",

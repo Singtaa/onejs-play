@@ -88,7 +88,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           failed to build, or if
                           nothing was pushed because the changes are not committed. The
                           first push of a cart made with new makes it on the site, public,
-                          after a login if there is none
+                          after a login if there is none (--private makes it private, for an
+                          account with Private)
   new <name>            start a cart in ./<name>: the starter, a git repository and init's
                           tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
@@ -337,12 +338,17 @@ async function main() {
             return 0
         }
         case "push": {
-            const first = await firstPush(root, { say })
+            const first = await firstPush(root, { say, private: flags.private === true })
             if (first !== null) return first
             const bearer = token(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const left = uncommitted(root)
             const before = await status(sid, { bearer })
+            // Asked for a cart that is already public, it would push into the open.
+            if (flags.private === true && before.public) {
+                say(`${before.url} is public, and --private only chooses for a cart's first push. Nothing was pushed: make it private in its Settings first`)
+                return 1
+            }
             // The branch the clone is on: main goes live, any other becomes a preview.
             const branch = currentBranch(root) ?? "main"
             if (branch !== "main") {

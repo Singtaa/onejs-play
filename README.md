@@ -640,7 +640,10 @@ files the site's New makes, from `examples/starter` through
 with one commit, and sets `init`'s tooling up beside it, ignored. No account
 and no network. The first `push` in a cart with no `origin` makes the cart on
 the site, empty and public, under oj.json's `name` (logging in first when
-there is no login), sets `origin` and pushes `main` with its upstream. The
+there is no login), sets `origin` and pushes `main` with its upstream. With
+`--private` it asks for a private cart instead, which the site makes only for
+an account with Private and otherwise refuses, making and pushing nothing; on a
+later push to a public cart, `--private` pushes nothing and says so. The
 site makes it empty because its usual create commits the starter, which a
 history begun here could never fast forward onto. A name the account already
 has is refused there, with that cart's address, and nothing is made.

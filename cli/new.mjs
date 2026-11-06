@@ -72,12 +72,16 @@ export function newCart(parent, name, { say }) {
     return 0
 }
 
-/** POST /api/games for an empty cart: { status, body }, the 409 for a taken name included. */
-export async function createEmpty(name, bearer) {
+/**
+ * POST /api/games for an empty cart: { status, body }, the 409 for a taken
+ * name included. `private` asks for a private one, which the site refuses
+ * (403) to an account without Private, making nothing.
+ */
+export async function createEmpty(name, bearer, { private: hidden = false } = {}) {
     const response = await fetch(`${siteOrigin()}/api/games`, {
         method: "POST",
         headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify({ name, empty: true }),
+        body: JSON.stringify(hidden ? { name, empty: true, public: false } : { name, empty: true }),
     })
     const text = await response.text()
     let body
@@ -90,7 +94,7 @@ export async function createEmpty(name, bearer) {
  * one, because origin is a cart on the site and the push is the usual one;
  * else the exit code. `signIn` is the login it runs when there is none.
  */
-export async function firstPush(root, { say, signIn = (dir) => login(dir) }) {
+export async function firstPush(root, { say, signIn = (dir) => login(dir), private: hidden = false }) {
     if (run(["rev-parse", "--git-dir"], root).status !== 0) {
         say(`this folder is not a git repository: git init && git add -A && git commit -m "New cart", then ${COMMAND} push`)
         return 1
@@ -119,7 +123,7 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir) }) {
         bearer = tokenOf(root)
     }
 
-    const made = await createEmpty(name, bearer)
+    const made = await createEmpty(name, bearer, { private: hidden })
     if (made.status === 409) {
         const where = made.body.url ? ` at ${siteOrigin()}${made.body.url}` : ""
         say(`you already have a cart called "${made.body.name ?? name}",${where}`)
@@ -127,8 +131,8 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir) }) {
         return 1
     }
     if (made.status !== 200) throw new Error(made.body.error ?? `${made.status} from the site`)
-    // Who can see it is the site's answer, not ours: every cart is public while
-    // the site's Private is off (5 Nov 2026), private when it is on.
+    // Who can see it is the site's answer: public unless --private asked and
+    // the account may (5 Nov 2026), or the site's Private is on for everyone.
     const audience = typeof made.body.public === "boolean" ? ` (${made.body.public ? "public" : "private"})` : ""
     say(`made ${made.body.url.replace(/^\//, "")} on ${new URL(siteOrigin()).host}${audience}`)
 
