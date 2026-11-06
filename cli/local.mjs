@@ -150,10 +150,15 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
  * is refused here too.
  */
 export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, port = 0, refused = () => {}, fetchStreaming = null }) {
+    // When the browser first asked for the page, so a navigate that times out
+    // can say whether the page was ever asked for, rather than leave a slow
+    // machine, a slow server and a stuck browser reading the same.
+    let pageAskedAt = null
     const server = http.createServer(async (req, res) => {
         const url = decodeURIComponent((req.url ?? "/").split("?")[0])
         const send = (code, body, type) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store" }); res.end(body) }
         if (url === "/") {
+            pageAskedAt ??= Date.now()
             res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store", "content-security-policy": gameCsp(site) })
             return res.end(hostPage(manifest))
         }
@@ -202,7 +207,7 @@ export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, po
     })
     return new Promise((resolve) => {
         server.listen(port, "127.0.0.1", () => {
-            resolve({ url: `http://127.0.0.1:${server.address().port}/`, close: () => server.close() })
+            resolve({ url: `http://127.0.0.1:${server.address().port}/`, close: () => server.close(), pageAskedAt: () => pageAskedAt })
         })
     })
 }

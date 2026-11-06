@@ -38,4 +38,22 @@ describe("ojplay's local page", () => {
             server.close()
         }
     })
+    // What a navigate that times out reports: whether Chrome ever asked for the page.
+    it("remembers when the page was first asked for", async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-asked-"))
+        const server = await serve({ runtime: root, root, manifest: { name: "t" }, bundle: () => "" })
+        try {
+            expect(server.pageAskedAt()).toBe(null)
+            await fetch(`${server.url}bundle.js`)
+            expect(server.pageAskedAt()).toBe(null)
+            const before = Date.now()
+            await fetch(server.url)
+            const first = server.pageAskedAt()
+            expect(first).toBeGreaterThanOrEqual(before)
+            await fetch(server.url)
+            expect(server.pageAskedAt()).toBe(first)
+        } finally {
+            server.close()
+        }
+    })
 })

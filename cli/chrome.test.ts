@@ -45,4 +45,23 @@ describe("the CLI's CDP calls", () => {
         await vi.advanceTimersByTimeAsync(CAPTURE_MS - CALL_MS)
         await shot
     })
+    // Page.navigate went unanswered on windows-latest's November image (6 Nov
+    // 2026): what the page says afterwards is the only clue to which half hung.
+    it("describes a page that answers, and one that does not, after a navigate that hung", async () => {
+        vi.useFakeTimers()
+        const { b, sent, answer } = browser()
+        b.stderr = () => "first line\nlast line\n"
+        const answered = b.describe()
+        await vi.advanceTimersByTimeAsync(0)
+        answer("Runtime.evaluate", { result: { value: "about:blank complete" } })
+        await vi.advanceTimersByTimeAsync(0)
+        answer("Page.getNavigationHistory", { entries: [{ url: "about:blank" }] })
+        await expect(answered).resolves.toBe("the page is at about:blank complete; history about:blank; chrome's stderr ends: first line | last line")
+
+        sent.length = 0
+        b.stderr = () => ""
+        const silent = b.describe()
+        await vi.advanceTimersByTimeAsync(10000)
+        await expect(silent).resolves.toBe("the page did not answer either (Runtime.evaluate did not answer in 5s); its history did not answer either (Page.getNavigationHistory did not answer in 5s)")
+    })
 })

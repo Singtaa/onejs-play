@@ -320,13 +320,25 @@ export async function start(root, { headless = true, gpu = false, window: size, 
         throw error
     }
     const game = new Game({ root, browser, server, manifest, say })
+    const navigated = Date.now()
     try {
         await browser.navigate(server.url)
     } catch (error) {
+        const page = await browser.describe?.().catch(() => null)
         stop(game)
-        throw error
+        throw new Error(`${error.message}; ${pageRequestSaid(server.pageAskedAt?.() ?? null, navigated)}${page ? `; ${page}` : ""}`, { cause: error })
     }
     return game
+}
+
+/**
+ * Where a navigate that failed got to, from the server's side: the page is
+ * answered from memory the moment it is asked for, so "never asked" puts the
+ * wait in Chrome, and "answered" puts it in Chrome committing a page it had.
+ */
+export function pageRequestSaid(askedAt, navigated) {
+    if (askedAt === null) return "Chrome never asked the local server for the page"
+    return `the local server answered the page ${((askedAt - navigated) / 1000).toFixed(1)} s after the navigate, and Chrome did not commit it`
 }
 
 export function stop(game) {

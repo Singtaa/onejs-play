@@ -160,7 +160,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     // The start time, in a form a harness can read back: how close a run
     // under load comes to STARTUP_MS is the number that says whether it holds.
     say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)}), port after ${seconds(portMs)}, page after ${seconds(pageMs)}`)
-    const browser = new Browser(child, profile, page)
+    const browser = new Browser(child, profile, page, () => stderr)
     // From here the browser is ours to close: a step that fails must not
     // leave it running with nobody holding its handle.
     try {
@@ -203,7 +203,9 @@ function kill(child) {
 
 /** A CDP session on one page, with the console kept. */
 export class Browser {
-    constructor(child, profile, page) {
+    constructor(child, profile, page, stderr = () => "") {
+        /** What Chrome has written to stderr so far. */
+        this.stderr = stderr
         this.child = child
         this.profile = profile
         this.page = page
@@ -281,6 +283,24 @@ export class Browser {
 
     navigate(url) {
         return this.send("Page.navigate", { url })
+    }
+
+    /**
+     * What the page says about itself after a navigate that did not answer,
+     * each question given a few seconds: where it is and how far it loaded,
+     * and whether its renderer answers at all. One line, for the error.
+     */
+    async describe() {
+        const ask = (what, method, params) => this.send(method, params, undefined, 5000).then((r) => r, (e) => ({ failed: `${what} did not answer either (${e.message.replace(/^CDP /, "")})` }))
+        const page = await ask("the page", "Runtime.evaluate", { expression: "location.href + ' ' + document.readyState", returnByValue: true })
+        const history = await ask("its history", "Page.getNavigationHistory", {})
+        const said = []
+        said.push(page.failed ?? `the page is at ${page.result?.value}`)
+        if (history.failed) said.push(history.failed)
+        else said.push(`history ${history.entries.map((e) => e.url).join(" > ")}`)
+        const tail = this.stderr().trim().split("\n").slice(-3).join(" | ")
+        if (tail !== "") said.push(`chrome's stderr ends: ${tail.slice(-400)}`)
+        return said.join("; ")
     }
 
     async screenshot(file) {
