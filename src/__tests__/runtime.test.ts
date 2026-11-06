@@ -91,17 +91,27 @@ describe("the frame clock", () => {
         expect(seen).toEqual([0.02, 0.03])
     })
 
-    // Otherwise one bad callback throws sixty times a second forever.
-    it("removes a callback that throws, and reports it once", () => {
+    // One bad line used to remove the callback for good, which stopped a
+    // cart's whole loop on its first frame (learn Mac). Saying it every frame
+    // would flood the console, so each distinct error is said once.
+    it("keeps a callback that throws, and says each distinct error once", () => {
         const error = vi.spyOn(console, "error").mockImplementation(() => {})
         const r = make()
-        r.oj.onFrame(() => { throw new Error("boom") })
+        const throws = ["boom", "boom", "bang", null]
+        const ran: number[] = []
+        r.oj.onFrame(() => {
+            const next = throws.shift()
+            if (next) throw new Error(next)
+            ran.push(r.oj.time.frame)
+        })
         const ok: number[] = []
         r.oj.onFrame(() => ok.push(1))
-        r.beginFrame(0.016)
-        r.beginFrame(0.016)
-        expect(error).toHaveBeenCalledTimes(1)
-        expect(ok).toHaveLength(2)
+        for (let i = 0; i < 4; i++) r.beginFrame(0.016)
+        expect(error).toHaveBeenCalledTimes(2)
+        expect(String(error.mock.calls[1][1])).toContain("bang")
+        expect(ran).toEqual([4])
+        expect(ok).toHaveLength(4)
+        error.mockRestore()
     })
 
     it("survives a callback unsubscribing during the frame", () => {
