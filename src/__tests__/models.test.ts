@@ -487,3 +487,40 @@ describe("forgetting a model", () => {
         expect(of("Load")).toHaveLength(1)
     })
 })
+
+describe("actors a physics world moves", () => {
+    it("move every actor with one PlaceMany, and read back where they were put", async () => {
+        const { placeActors } = await import("../physics3d/actors")
+        const { scene } = createScene({})
+        const a = scene.spawn(MODEL), b = scene.spawn(MODEL, { yaw: 30 })
+        calls = []
+        placeActors([
+            { actor: a, at: [1, 2, 3], rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 } },
+            { actor: b, at: [4, 5, 6], rotation: null },
+        ])
+        expect(calls.map((c) => c[0])).toEqual(["PlaceMany"])
+        const data = Array.from(calls[0]![1] as Float32Array)
+        expect(data.length).toBe(16)
+        expect(data.slice(0, 4)).toEqual([a.id, 1, 2, 3])
+        expect(data.slice(8, 12)).toEqual([b.id, 4, 5, 6])
+        expect(a.position).toEqual([1, 2, 3])
+        expect(a.yaw).toBeCloseTo(90, 4)
+        // A null rotation keeps the actor's own facing, sent as its own quaternion.
+        expect(b.yaw).toBe(30)
+        expect(data[13]).toBeCloseTo(Math.sin((30 * Math.PI) / 360), 5)
+    })
+
+    it("fall back to one call an actor on a OneJS from before PlaceMany", async () => {
+        const { placeActors } = await import("../physics3d/actors")
+        const { scene } = createScene({})
+        const a = scene.spawn(MODEL)
+        const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
+            get: (t, name) => name === "PlaceMany" ? undefined : t[name as string],
+        })
+        calls = []
+        placeActors([{ actor: a, at: [1, 2, 3], rotation: { x: 0, y: 0, z: 0, w: 1 } }])
+        expect(calls.map((c) => c[0])).toEqual(["Move", "SetRotation"])
+        expect(a.position).toEqual([1, 2, 3])
+    })
+})

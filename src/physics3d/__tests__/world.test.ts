@@ -1,7 +1,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { setWasmModule } from "../../wasm"
-import { createWorld, shape, setActorPlacer, type World, type Body, type Character } from "../world"
+import { createWorld, shape, type World, type Body, type Character } from "../world"
+import { setActorPlacer, type ActorPlacement } from "../actors"
 import { toQuat, fromQuat } from "../rotation"
 import type { Vec3 } from "../../models"
 
@@ -358,20 +359,28 @@ describe("the world", () => {
         w.dispose()
     })
 
-    it("moves each body's actor to it, through the placer", async () => {
-        const placed: { at: Vec3, rotation: unknown }[] = []
-        setActorPlacer((_actor, at, rotation) => { placed.push({ at, rotation }) })
+    it("moves every body's actor in one batch a sync, and leaves a character's facing to the game", async () => {
+        const batches: ActorPlacement[][] = []
+        setActorPlacer((list) => { batches.push([...list]) })
         try {
             const w = await floored()
-            const actor = {} as any
-            const crate = w.box({ at: [0, 3, 0], dynamic: true, actor })
-            expect(placed.length).toBe(1)
+            const a = {} as any, b = {} as any, c = {} as any
+            const crate = w.box({ at: [0, 3, 0], dynamic: true, actor: a })
+            w.box({ at: [2, 3, 0], dynamic: true, actor: b })
+            const me = w.character({ at: [4, 0, 0], actor: c })
+            w.box({ at: [6, 3, 0], dynamic: true })
+            expect(batches.length).toBe(3)
             run(w, 30)
+            batches.length = 0
             ;(w as any).syncActors()
-            expect(placed.at(-1)!.at).toEqual(crate.position)
+            expect(batches.length).toBe(1)
+            expect(batches[0]!.map((p) => p.actor)).toEqual([a, b, c])
+            expect(batches[0]![0]!.at).toEqual(crate.position)
+            expect(batches[0]![2]!.rotation).toBeNull()
+            expect(batches[0]![2]!.at).toEqual(me.position)
             w.dispose()
         } finally {
-            setActorPlacer((actor, at, rotation) => { actor.position = at; if (rotation !== null) actor.rotation = fromQuat(rotation) })
+            setActorPlacer((list) => { for (const p of list) p.actor.position = p.at })
         }
     })
 

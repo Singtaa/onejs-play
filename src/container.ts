@@ -14,6 +14,7 @@ export { evaluateBundle, snapshotGlobals, removeAddedGlobals, SHADOWED_GLOBALS, 
 export type { EvaluateBundleOptions } from "./sandbox"
 
 export { createRuntime, getCurrentRuntime } from "./runtime"
+export { setWasmModule, setWasmBase } from "./wasm"
 export { setAssetBase, getAssetBase } from "./asset"
 export { resetTheme, THEME_USS } from "./theme"
 export { setPlayContext, getPlayContext } from "./play"

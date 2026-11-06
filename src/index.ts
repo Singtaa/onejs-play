@@ -82,6 +82,16 @@ export type { Sound, Voice, PlayOptions } from "onejs-unity/audio"
 export { usePhysics, createPhysicsWorld } from "./physics"
 export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contact } from "./physics"
 
+// 3D physics: colliders, bodies, a character, queries, events and rewind, in
+// metres with y up like the scene. The engine (Rapier, as WebAssembly) is
+// loaded the first time a cart makes a world, and never named here.
+export { useWorld } from "./physics3d/use-world"
+export { createWorld, shape, WORLD_DEFAULTS } from "./physics3d/world"
+export type {
+    World, WorldOptions, Body, Character, Shape, Hit, Filter, Layer, BodyContact,
+    BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, Place, SweepMotion,
+} from "./physics3d/world"
+
 // 3D models behind the cart's UI.
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
 export type {

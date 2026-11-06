@@ -25,6 +25,8 @@ import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetUrl } from "./asset"
 import { toRGBA, type ColorInput } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
+import { setActorPlacer } from "./physics3d/actors"
+import { fromQuat, toQuat } from "./physics3d/rotation"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
 // eslint-disable-next-line no-shadow-restricted-names
@@ -259,6 +261,43 @@ function subscribeBackdrop(listener: () => void): () => void {
     backdropListeners.add(listener)
     return () => { backdropListeners.delete(listener) }
 }
+
+/**
+ * What a physics world uses to move actors: each actor's cached position and
+ * rotation updated here, and all of them moved in Unity with one crossing.
+ * Keyed by actor, so only actors this module made are batched.
+ */
+const placed = new WeakMap<Actor, (position: Vec3, rotation: Readonly<Rotation> | null) => void>()
+
+setActorPlacer((list) => {
+    const b = bridge()
+    const buffer = new Float32Array(list.length * 8)
+    let n = 0
+    for (const { actor, at, rotation } of list) {
+        const set = placed.get(actor)
+        if (set === undefined) {
+            actor.position = at
+            if (rotation !== null) actor.rotation = fromQuat(rotation)
+            continue
+        }
+        const turned = rotation === null ? null : fromQuat(rotation)
+        set(vec3(at), turned)
+        const q = rotation ?? toQuat(actor.rotation)
+        buffer.set([actor.id, at[0], at[1], at[2], q.x, q.y, q.z, q.w], n * 8)
+        n++
+    }
+    if (n === 0) return
+    if (typeof b.PlaceMany === "function") {
+        b.PlaceMany(n * 8 === buffer.length ? buffer : buffer.slice(0, n * 8))
+        return
+    }
+    // A OneJS from before PlaceMany: one actor at a time, the same result.
+    for (let i = 0; i < n * 8; i += 8) {
+        b.Move(buffer[i], buffer[i + 1], buffer[i + 2], buffer[i + 3])
+        const r = fromQuat({ x: buffer[i + 4]!, y: buffer[i + 5]!, z: buffer[i + 6]!, w: buffer[i + 7]! })
+        b.SetRotation(buffer[i], r.yaw, r.pitch, r.roll)
+    }
+})
 
 function bridge(): any {
     const found = globalThis.CS?.OneJS?.Models?.ModelBridge
@@ -505,6 +544,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 b.Destroy(id)
             },
         }
+        placed.set(actor, (p, r) => {
+            position = p
+            if (r !== null) rotation = r
+        })
         actors.push(actor)
         if (o.play) actor.play(o.play, { fade: 0 })
         return actor

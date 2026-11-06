@@ -21,6 +21,7 @@
 import type { Actor, Rotation, Vec3 } from "../models"
 import { loadRapier, type Rapier } from "./rapier"
 import { fromQuat, toQuat, type Quat } from "./rotation"
+import { placeActors, type ActorPlacement } from "./actors"
 
 /** A collision layer, named by use. Up to 16 in one world. */
 export type Layer = string
@@ -108,7 +109,7 @@ export interface CharacterOptions {
 }
 
 /** Where two bodies first touched. */
-export interface Contact {
+export interface BodyContact {
     /** One point of the touch, in the world. */
     point: Vec3 | null
 }
@@ -138,7 +139,7 @@ export interface Body {
     /** A shove, in kilogram metres per second: `push([0, 5, 0])` on a 1 kg box is 5 m/s up. */
     push(impulse: Vec3): void
     /** Each time something starts touching it. Returns an unsubscribe. */
-    onTouch(handler: (other: Body | Character, contact: Contact) => void): () => void
+    onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
     /** A trigger: each time something comes in. */
     onEnter(handler: (other: Body | Character) => void): () => void
     /** A trigger: each time something leaves. */
@@ -170,7 +171,7 @@ export interface Character {
     move(delta: Vec3): void
     /** Puts its feet at `at`, pushed out of anything it would stand inside. */
     teleport(at: Vec3): void
-    onTouch(handler: (other: Body | Character, contact: Contact) => void): () => void
+    onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
     destroy(): void
 }
 
@@ -323,7 +324,7 @@ function capsuleHalf(radius: number, height: number): number {
 // ---------- the world ----------
 
 interface Handlers {
-    touch?: Set<(other: Body | Character, contact: Contact) => void>
+    touch?: Set<(other: Body | Character, contact: BodyContact) => void>
     enter?: Set<(other: Body | Character) => void>
     leave?: Set<(other: Body | Character) => void>
 }
@@ -647,9 +648,14 @@ class WorldImpl implements World {
         return this.byCollider.get(colliderHandle) ?? null
     }
 
-    /** Puts every body's actor where its body is. */
+    /** Puts every body's actor where its body is, in one go. */
     syncActors(): void {
-        for (const w of this.byCollider.values()) w.syncActor()
+        const list: ActorPlacement[] = []
+        for (const w of this.byCollider.values()) {
+            const p = w.placement()
+            if (p !== null) list.push(p)
+        }
+        placeActors(list)
     }
 
     forget(w: BodyImpl | CharacterImpl): void {
@@ -738,7 +744,7 @@ class BodyImpl implements Body {
 
     push(impulse: Vec3): void { this.rb().applyImpulse(xyz(impulse), true) }
 
-    onTouch(handler: (other: Body | Character, contact: Contact) => void): () => void { return this.listen("touch", handler) }
+    onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void { return this.listen("touch", handler) }
     onEnter(handler: (other: Body | Character) => void): () => void { return this.listen("enter", handler) }
     onLeave(handler: (other: Body | Character) => void): () => void { return this.listen("leave", handler) }
 
@@ -754,7 +760,7 @@ class BodyImpl implements Body {
         this.collider().setActiveEvents(this.world.r.ActiveEvents.COLLISION_EVENTS)
     }
 
-    emitTouch(other: Body | Character, contact: Contact): void {
+    emitTouch(other: Body | Character, contact: BodyContact): void {
         for (const h of this.handlers.touch ?? []) h(other, contact)
     }
 
@@ -762,10 +768,15 @@ class BodyImpl implements Body {
         for (const h of (started ? this.handlers.enter : this.handlers.leave) ?? []) h(other)
     }
 
-    syncActor(): void {
-        if (this.actor === null || this.gone) return
+    placement(): ActorPlacement | null {
+        if (this.actor === null || this.gone) return null
         const rb = this.world.raw.getRigidBody(this.bodyHandle)
-        placeActor(this.actor, vec(rb.translation()), rb.rotation())
+        return { actor: this.actor, at: vec(rb.translation()), rotation: rb.rotation() }
+    }
+
+    syncActor(): void {
+        const p = this.placement()
+        if (p !== null) placeActors([p])
     }
 
     markGone(): void { this.gone = true }
@@ -792,7 +803,7 @@ class CharacterImpl implements Character {
     private controller: any
     private isGrounded = false
     private touching = new Set<number>()
-    private touchHandlers = new Set<(other: Body | Character, contact: Contact) => void>()
+    private touchHandlers = new Set<(other: Body | Character, contact: BodyContact) => void>()
     private gone = false
     private readonly o: CharacterOptions
 
@@ -870,7 +881,7 @@ class CharacterImpl implements Character {
             if (this.touching.has(handle)) continue
             const other = this.world.wrapperOf(handle)
             if (other === null) continue
-            const contact: Contact = { point: vec(hit.witness1) }
+            const contact: BodyContact = { point: vec(hit.witness1) }
             for (const h of this.touchHandlers) h(other, contact)
             if (other instanceof BodyImpl) other.emitTouch(this, contact)
         }
@@ -902,20 +913,25 @@ class CharacterImpl implements Character {
         this.touching.clear()
     }
 
-    onTouch(handler: (other: Body | Character, contact: Contact) => void): () => void {
+    onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void {
         this.touchHandlers.add(handler)
         return () => { this.touchHandlers.delete(handler) }
     }
 
-    emitTouch(other: Body | Character, contact: Contact): void {
+    emitTouch(other: Body | Character, contact: BodyContact): void {
         for (const h of this.touchHandlers) h(other, contact)
     }
 
     emitTrigger(): void {}
 
+    placement(): ActorPlacement | null {
+        if (this.actor === null || this.gone) return null
+        return { actor: this.actor, at: this.position, rotation: null }
+    }
+
     syncActor(): void {
-        if (this.actor === null || this.gone) return
-        placeActor(this.actor, this.position, null)
+        const p = this.placement()
+        if (p !== null) placeActors([p])
     }
 
     markGone(): void {
@@ -930,20 +946,6 @@ class CharacterImpl implements Character {
         this.world.forget(this)
         this.markGone()
     }
-}
-
-/**
- * Moves an actor to a body. A rotation of null leaves the actor's own facing
- * alone, which is what a character wants: the game turns it, physics does not.
- */
-let placeActor = (actor: Actor, at: Vec3, rotation: Quat | null): void => {
-    actor.position = at
-    if (rotation !== null) actor.rotation = fromQuat(rotation)
-}
-
-/** Replaces how actors are moved: models.ts batches every body's actor into one crossing. */
-export function setActorPlacer(placer: typeof placeActor): void {
-    placeActor = placer
 }
 
 function smallestHalfExtent(s: ShapeImpl): number {

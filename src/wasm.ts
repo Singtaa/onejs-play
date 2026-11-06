@@ -94,7 +94,8 @@ export async function instantiateWasm(info: WasmModuleInfo, imports: WasmImports
     if (url === null) {
         throw new Error(`[oj] nowhere to load ${info.name} ${info.version} from: no native module, none handed over with setWasmModule, and no StreamingAssets URL`)
     }
-    const response = await fetch(url)
+    // fetch through globalThis: a OneJS app typechecks with no DOM library, and every host here has one.
+    const response = await globalThis.fetch(url)
     if (!response.ok) throw new Error(`[oj] ${info.name} ${info.version}: ${url} answered ${response.status}`)
     const { instance } = await WA.instantiate(await response.arrayBuffer(), imports)
     return instance.exports
