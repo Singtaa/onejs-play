@@ -34,9 +34,13 @@ describe("the vendored Rapier", () => {
     it("steps exactly as world.ts steps it, plus the soft-body remap oj skips", () => {
         // world.ts calls the pipeline itself; a release whose World.step does
         // anything else must be read before it is vendored.
-        const glue = fs.readFileSync(path.join(import.meta.dirname, "../rapier.vendor.js"), "utf8")
-        const body = /\n {2}step\(eventQueue, hooks\) \{\n([\s\S]*?)\n {2}\}\n/.exec(glue)?.[1]
-        expect(body?.trim().split("\n").map((l) => l.trim())).toEqual([
+        // Read by lines, not by a pattern over the text: a Windows checkout has
+        // CRLF line endings, which a pattern anchored on "\n" never matched.
+        const lines = fs.readFileSync(path.join(import.meta.dirname, "../rapier.vendor.js"), "utf8").split(/\r?\n/)
+        const start = lines.indexOf("  step(eventQueue, hooks) {")
+        const end = lines.indexOf("  }", start)
+        expect(start).toBeGreaterThan(-1)
+        expect(lines.slice(start + 1, end).map((l) => l.trim())).toEqual([
             "this.physicsPipeline.step(this.gravity, this.integrationParameters, this.islands, this.broadPhase, this.narrowPhase, this.bodies, this.colliders, this.softBodies, this.impulseJoints, this.multibodyJoints, this.ccdSolver, eventQueue, hooks);",
             "this.mapNewSoftBodies();",
         ])
