@@ -121,6 +121,75 @@ describe("the frame clock", () => {
     })
 })
 
+// The frame, then the step, then late (runtime-1.3.md section 8). The order
+// used to be registration: a world registers when its engine loads, so a
+// camera mounted before that read last frame's pose and one mounted after
+// read this frame's, from the same code.
+describe("frame phases", () => {
+    it("run frame, step, late whatever order they were added in", () => {
+        const r = make()
+        const ran: string[] = []
+        r.oj.onLateFrame(() => ran.push("late"))
+        r.oj.onStep(() => ran.push("step"))
+        r.oj.onFrame(() => ran.push("frame"))
+        r.oj.onStep(() => ran.push("step 2"))
+        r.oj.onFrame(() => ran.push("frame 2"))
+        r.beginFrame(0.016)
+        expect(ran).toEqual(["frame", "frame 2", "step", "step 2", "late"])
+    })
+
+    it("let a frame callback's input move this frame's step, and late read what the step wrote", () => {
+        const r = make()
+        const body = { velocity: 0, position: 0 }
+        const read: number[] = []
+        // Late added first, the world last: the order a cart whose world loads after mount gets.
+        r.oj.onLateFrame(() => read.push(body.position))
+        r.oj.onFrame(() => { body.velocity = 10 })
+        r.oj.onStep((dt) => { body.position += body.velocity * dt })
+        r.beginFrame(0.1)
+        r.beginFrame(0.1)
+        expect(read).toEqual([1, 2])
+    })
+
+    it("pass each phase the frame's dt", () => {
+        const r = make()
+        const seen: number[] = []
+        r.oj.onStep((dt) => seen.push(dt))
+        r.oj.onLateFrame((dt) => seen.push(dt))
+        r.beginFrame(0.02)
+        expect(seen).toEqual([0.02, 0.02])
+    })
+
+    it("keep a world that throws from costing another world or late, and say it once", () => {
+        const error = vi.spyOn(console, "error").mockImplementation(() => {})
+        const r = make()
+        const ran: string[] = []
+        r.oj.onStep(() => { throw new Error("touch handler") })
+        r.oj.onStep(() => ran.push("step"))
+        r.oj.onLateFrame(() => ran.push("late"))
+        r.beginFrame(0.016)
+        r.beginFrame(0.016)
+        expect(ran).toEqual(["step", "late", "step", "late"])
+        expect(error).toHaveBeenCalledTimes(1)
+        expect(String(error.mock.calls[0][0])).toContain("a world's step")
+        error.mockRestore()
+    })
+
+    it("unsubscribe, and drop every phase on dispose", () => {
+        const r = make()
+        const ran: string[] = []
+        const offStep = r.oj.onStep(() => ran.push("step"))
+        r.oj.onLateFrame(() => ran.push("late"))
+        r.beginFrame(0.016)
+        offStep()
+        r.beginFrame(0.016)
+        r.oj.onStep(() => ran.push("step"))
+        r.dispose()
+        r.beginFrame(0.016)
+        expect(ran).toEqual(["step", "late", "late"])
+    })
+})
+
 describe("viewport changes", () => {
     it("make the stage the new viewport", () => {
         const r = make({ viewport: { width: 960, height: 540 } })

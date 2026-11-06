@@ -14,6 +14,13 @@
  *     evaluateBundle(code, { oj: runtime.oj })
  *     // each frame: runtime.beginFrame(dt)
  *     // on resize:  runtime.setViewport(w, h)
+ *
+ * A frame runs in three phases, each in registration order: the frame
+ * (`onFrame`, which is `useFrame`), the step (`onStep`, worlds only), then
+ * late (`onLateFrame`, cameras and anything placed from a drawn pose). The
+ * order is the phase's, never when a callback was added, so a camera reads
+ * the pose this frame's step drew whether it mounted before the world loaded
+ * or after.
  */
 
 import type * as api from "./index"
@@ -61,6 +68,21 @@ export interface HostRuntime {
      * frame forever, and the error is reported once.
      */
     onFrame(callback: (dt: number) => void): () => void
+    /**
+     * Runs a callback every frame after every `onFrame` callback, returning an
+     * unsubscribe. For worlds: what a frame callback set (a velocity, a
+     * drive) moves the body on this frame's step. Not on oj's declarations; a
+     * cart's code runs in the frame or late. Errors as `onFrame`'s, so one
+     * world that throws costs neither another world nor late.
+     */
+    onStep(callback: (dt: number) => void): () => void
+    /**
+     * Runs a callback every frame after every world has stepped and placed its
+     * actors, returning an unsubscribe: Unity's LateUpdate. A camera that
+     * follows a body goes here, and reads its actor, which is what is drawn.
+     * Not on oj's declarations. Errors as `onFrame`'s.
+     */
+    onLateFrame(callback: (dt: number) => void): () => void
 }
 
 /**
@@ -134,7 +156,7 @@ export interface ContainerRuntime {
      * Play editor's preview). Nothing before a mount or after dispose.
      */
     rerender(): void
-    /** Detach from the input module and drop frame callbacks. */
+    /** Detach from the input module and drop frame, step and late callbacks. */
     dispose(): void
 }
 
@@ -175,7 +197,10 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     const time: TimeState = { now: 0, dt: 0, frame: 0 }
     let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0)
 
+    // The three phases, in the order beginFrame runs them.
     const callbacks = new Set<(dt: number) => void>()
+    const steps = new Set<(dt: number) => void>()
+    const lates = new Set<(dt: number) => void>()
     /**
      * Each frame callback's errors said so far. A callback that throws keeps
      * running, and each distinct error is said once: one bad line used to
@@ -185,13 +210,25 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
      * unmounted would do the same for one unlucky frame.
      */
     const said = new WeakMap<object, Set<string>>()
-    function reportFrameError(callback: object, error: unknown): void {
+    function reportFrameError(callback: object, error: unknown, what: string): void {
         const seen = said.get(callback) ?? new Set<string>()
         said.set(callback, seen)
         const key = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
         if (seen.has(key)) return
         seen.add(key)
-        console.error("[oj] a frame callback threw; it keeps running, and this error is said once:", error)
+        console.error(`[oj] ${what} threw; it keeps running, and this error is said once:`, error)
+    }
+    // A copy, so a callback that unsubscribes itself or adds another mid-phase
+    // does not change who runs this phase.
+    function runPhase(phase: Set<(dt: number) => void>, dt: number, what: string): void {
+        if (phase.size === 0) return
+        for (const callback of [...phase]) {
+            try {
+                callback(dt)
+            } catch (error) {
+                reportFrameError(callback, error, what)
+            }
+        }
     }
 
     const oj: HostRuntime = {
@@ -207,6 +244,14 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         onFrame(callback) {
             callbacks.add(callback)
             return () => callbacks.delete(callback)
+        },
+        onStep(callback) {
+            steps.add(callback)
+            return () => steps.delete(callback)
+        },
+        onLateFrame(callback) {
+            lates.add(callback)
+            return () => lates.delete(callback)
         },
     }
     current = oj
@@ -226,13 +271,9 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             time.now += dtSeconds
             time.frame++
             input.beginFrame()
-            for (const callback of [...callbacks]) {
-                try {
-                    callback(dtSeconds)
-                } catch (error) {
-                    reportFrameError(callback, error)
-                }
-            }
+            runPhase(callbacks, dtSeconds, "a frame callback")
+            runPhase(steps, dtSeconds, "a world's step")
+            runPhase(lates, dtSeconds, "a late frame callback")
         },
 
         setViewport(width: number, height: number) {
@@ -245,6 +286,8 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         dispose() {
             remount = null
             callbacks.clear()
+            steps.clear()
+            lates.clear()
             setInputBackend(null)
             setPressCheck(null)
             setAssetBase(null)
