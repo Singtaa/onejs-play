@@ -36,6 +36,11 @@ const keptOf = (cart: Cart, pin: string) => {
 
 beforeAll(async () => {
     server = createServer((req, res) => {
+        // A connection a request at a time. Node's server drops an idle socket
+        // after 5 s, and a test that spent longer in git (6.8 s on
+        // windows-latest, 6 Nov 2026) sent its next request down the pooled
+        // socket as it closed: ECONNRESET, read as "Could not reach" the site.
+        res.setHeader("connection", "close")
         const send = (status: number, body: unknown) => {
             res.writeHead(status, { "content-type": "application/json" })
             res.end(JSON.stringify(body))
