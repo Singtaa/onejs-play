@@ -172,6 +172,23 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0)
 
     const callbacks = new Set<(dt: number) => void>()
+    /**
+     * Each frame callback's errors said so far. A callback that throws keeps
+     * running, and each distinct error is said once: one bad line used to
+     * remove the callback for good, so a cart whose ref style named a
+     * property UI Toolkit lacks stopped its whole loop on the first frame
+     * (learn Mac, engine-findings.md), and a ref read while its element
+     * unmounted would do the same for one unlucky frame.
+     */
+    const said = new WeakMap<object, Set<string>>()
+    function reportFrameError(callback: object, error: unknown): void {
+        const seen = said.get(callback) ?? new Set<string>()
+        said.set(callback, seen)
+        const key = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        if (seen.has(key)) return
+        seen.add(key)
+        console.error("[oj] a frame callback threw; it keeps running, and this error is said once:", error)
+    }
 
     const oj: HostRuntime = {
         ...(options.api ?? {}),
@@ -209,9 +226,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
                 try {
                     callback(dtSeconds)
                 } catch (error) {
-                    // Drop it rather than let it throw once a frame forever.
-                    callbacks.delete(callback)
-                    console.error("[oj] frame callback removed after throwing:", error)
+                    reportFrameError(callback, error)
                 }
             }
         },
