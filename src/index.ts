@@ -105,7 +105,7 @@ export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./mo
 export type {
     Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
     Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions, SkyOptions,
-    MeshData, MeshModelOptions, MeshUpdate, MeshModel, Numbers, Scatter, ScatterCopy, SceneTexture,
+    MeshData, MeshModelOptions, MeshDrawOptions, MeshUpdate, MeshModel, Numbers, Scatter, ScatterCopy, SceneTexture,
 } from "./models"
 
 // Gestures over `input`, so a game does not rewrite the same state machine.

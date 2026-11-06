@@ -427,6 +427,9 @@ Three things that are not obvious from the code:
   wrong as text, which `scene.mesh` and `set` throw as an `[oj]` error. A typed
   array crosses as it is, so a `set` each frame copies nothing in JS. One that
   became a collider refuses `set`, since a collider is made once.
+  `scene.mesh(data, { depthOnly: true })` asks `SetDepthOnly` before the
+  first vertices, and throws where the host cannot (an older OneJS, or HDRP),
+  since a depth-only fan drawn in colour would be seen.
 - **A scatter has no actors.** `scene.scatter` sends every copy in one
   Float32Array, and the bridge draws them as instanced chunks with no
   GameObject, so copies cost a draw call a chunk rather than a GameObject

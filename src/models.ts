@@ -80,6 +80,17 @@ export interface MeshModelOptions extends MeshData {
     color?: ColorInput
 }
 
+/** How a mesh model draws, fixed when it is made. */
+export interface MeshDrawOptions {
+    /**
+     * Writes depth and no colour: it hides what is behind it without being
+     * seen, as a shadow cut out of the world does. Drawn before the opaque
+     * models so its depth is down first, it casts no shadow, and its colour
+     * and alpha draw nothing.
+     */
+    depthOnly?: boolean
+}
+
 /**
  * A `set`: new positions, and anything else that changes. Indices left out
  * stay as they were. Normals, colours and UVs come with every set that changes
@@ -269,8 +280,11 @@ export interface Scene {
      *
      *     const land = scene.mesh({ positions, indices, color: "#6b8f4e" })
      *     scene.spawn(land)
+     *
+     * `{ depthOnly: true }` makes one that hides what is behind it and draws
+     * nothing itself.
      */
-    mesh(options: MeshModelOptions): MeshModel
+    mesh(data: MeshModelOptions, options?: MeshDrawOptions): MeshModel
     /**
      * Copies of a model that never move: a forest, rocks, grass. Far cheaper
      * than spawning each, and with nothing an actor has: no collider, no pick,
@@ -736,9 +750,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return actor
     }
 
-    const mesh = (o: MeshModelOptions): MeshModel => {
+    const mesh = (o: MeshModelOptions, draw: MeshDrawOptions = {}): MeshModel => {
         if (typeof b.CreateMesh !== "function") {
             throw new Error("[oj] scene.mesh needs a newer OneJS: this host's ModelBridge cannot make a model from arrays (CreateMesh came after 3.9.18).")
+        }
+        if (draw.depthOnly === true && typeof b.SetDepthOnly !== "function") {
+            throw new Error("[oj] scene.mesh depthOnly needs a newer OneJS: this host's ModelBridge cannot draw a mesh as depth alone (SetDepthOnly came after 3.9.18).")
         }
         const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
         // The streams a model is made with are its streams for good.
@@ -756,6 +773,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         const id: number = b.CreateMesh(normals, colors, uvs, ...color)
         try {
+            if (draw.depthOnly === true && !b.SetDepthOnly(id)) {
+                throw new Error("[oj] scene.mesh depthOnly: this host draws models with a renderer that cannot write depth without colour (HDRP), so it would be seen.")
+            }
             write(o, "scene.mesh")
         } catch (e) {
             b.Unload(id)
