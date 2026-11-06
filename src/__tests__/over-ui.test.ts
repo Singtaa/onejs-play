@@ -83,7 +83,7 @@ describe("the probe", () => {
         probe(150, 250)
         expect(warn).toHaveBeenCalledTimes(1)
         expect(warn.mock.calls[0][0]).toBe(STAGE_SIZED_HINT)
-        expect(STAGE_SIZED_HINT).toContain(`className="${WORLD_CLASS}"`)
+        expect(STAGE_SIZED_HINT).toContain("<View passThrough>")
         warn.mockRestore()
     })
 
@@ -198,4 +198,11 @@ describe("an ejected cart's input", () => {
         const s = scene()
         return createPressProbe(s.root, s.cs, s.events)
     }
+})
+
+describe("<View passThrough>", () => {
+    it("adds the very class the probe passes over, so the prop and the class are one marker", async () => {
+        const { PASS_THROUGH_CLASS } = await import("onejs-react")
+        expect(WORLD_CLASS).toBe(PASS_THROUGH_CLASS)
+    })
 })
