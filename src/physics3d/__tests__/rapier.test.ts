@@ -31,6 +31,17 @@ describe("the vendored Rapier", () => {
         expect(fs.readFileSync(path.join(dir, "rapier.vendor.js"), "utf8")).not.toMatch(/\.wasm["']/)
     })
 
+    it("steps exactly as world.ts steps it, plus the soft-body remap oj skips", () => {
+        // world.ts calls the pipeline itself; a release whose World.step does
+        // anything else must be read before it is vendored.
+        const glue = fs.readFileSync(path.join(import.meta.dirname, "../rapier.vendor.js"), "utf8")
+        const body = /\n {2}step\(eventQueue, hooks\) \{\n([\s\S]*?)\n {2}\}\n/.exec(glue)?.[1]
+        expect(body?.trim().split("\n").map((l) => l.trim())).toEqual([
+            "this.physicsPipeline.step(this.gravity, this.integrationParameters, this.islands, this.broadPhase, this.narrowPhase, this.bodies, this.colliders, this.softBodies, this.impulseJoints, this.multibodyJoints, this.ccdSolver, eventQueue, hooks);",
+            "this.mapNewSoftBodies();",
+        ])
+    })
+
     it("gives the parity hash every host is held to", async () => {
         setWasmModule("rapier3d", new WA.Module(wasm))
         const R = await loadRapier()

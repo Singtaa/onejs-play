@@ -617,7 +617,15 @@ class WorldImpl implements World {
 
     step(): void {
         this.live()
-        this.raw.step(this.queue)
+        // The pipeline itself, as World.step calls it, without World.step's
+        // mapNewSoftBodies: that wraps what the engine made on its own (pieces a
+        // tear split off) and scans for what it removed, two JS calls a body
+        // every step. Free in V8, about a microsecond each in QuickJS, which
+        // made it most of a native step. oj makes no soft bodies or joints, so
+        // the engine never adds or removes a body by itself here.
+        // rapier.test.ts fails if a new Rapier's World.step does more.
+        const w = this.raw
+        w.physicsPipeline.step(w.gravity, w.integrationParameters, w.islands, w.broadPhase, w.narrowPhase, w.bodies, w.colliders, w.softBodies, w.impulseJoints, w.multibodyJoints, w.ccdSolver, this.queue, undefined)
         this.steps++
         this.fresh.clear()
         this.queue.drainCollisionEvents((h1: number, h2: number, started: boolean) => {
