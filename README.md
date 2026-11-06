@@ -547,6 +547,9 @@ Things that are not obvious from the code:
   walker height 1 and step 0; circles become 16 sides grown to stay outside
   the true circle. A world with gravity is refused.
 
+`scripts/make-models.mjs` writes the examples' simple models (boxes and
+cylinders in flat colours), so none of their `.glb` files lacks a source.
+
 ## Other people
 
 `useRoom(name)` puts a game in a room with everybody else playing it.
