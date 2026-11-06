@@ -24,6 +24,7 @@
 
 import { createRuntime, getCurrentRuntime, type ContainerRuntime } from "./runtime"
 import { createHostInputBackend, IDLE_INPUT, NO_INPUT_WARNING } from "./hostinput"
+import { createPressProbe } from "./over-ui"
 import { setInputBackend } from "onejs-unity/input"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
@@ -166,6 +167,7 @@ export function startStandalone(): ContainerRuntime {
     const hostInput = createHostInputBackend({
         stage: () => standalone!.oj.stage,
         pixelRatio,
+        overUI: createPressProbe(hostRoot()),
     })
     if (hostInput !== null) setInputBackend(hostInput)
     else {

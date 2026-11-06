@@ -43,6 +43,7 @@
  */
 
 import { keyNameFromDomCode, type InputBackend } from "onejs-unity/input"
+import type { PressProbe } from "./over-ui"
 
 /** Modifier bits, matching InputBridge.GetModifiers. */
 const MOD_SHIFT = 1
@@ -107,6 +108,8 @@ interface TouchRecord {
     /** -1 while still down. */
     endedFrame: number
     canceled: boolean
+    /** Whether it came down on UI that answers presses (over-ui.ts), for its whole life. */
+    overUI: boolean
 }
 
 /** Unity's TouchPhase order, which onejs-unity maps back to names. */
@@ -151,6 +154,14 @@ export interface ContainerInput {
     reset(): void
 }
 
+export interface ContainerInputOptions {
+    /**
+     * Whether a press at a stage point is the UI's (over-ui.ts). Asked once
+     * per press, as it is applied. Without one, nothing is over UI.
+     */
+    overUI?: PressProbe | null
+}
+
 class ContainerInputImpl implements ContainerInput, InputSink {
     private _keys = new Map<string, KeyRecord>()
     private _frame = 0
@@ -161,6 +172,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _pressedInOrder: string[] = []
 
     private _buttons = 0
+    /** Whether the press now held began on UI; meaningful while a button is down. */
+    private _pressOverUI = false
     private _buttonDownFrame = new Int32Array(5).fill(-1)
     private _buttonUpFrame = new Int32Array(5).fill(-1)
 
@@ -182,8 +195,14 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _scrollX = 0
     private _scrollY = 0
 
+    constructor(private readonly _probe: PressProbe | null = null) {}
+
     get sink(): InputSink {
         return this
+    }
+
+    private _overUI(x: number, y: number): boolean {
+        return this._probe === null ? false : this._probe(x, y)
     }
 
     // ingestion
@@ -271,6 +290,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         const bit = DOM_BUTTON_TO_BIT[button]
         if (bit === undefined) return
         if (down) {
+            // The first button down starts the press; another joining it is the same press.
+            if (this._buttons === 0) this._pressOverUI = this._overUI(this._pointerX, this._pointerY)
             this._buttons |= 1 << bit
             this._buttonDownFrame[bit] = this._frame
         } else {
@@ -294,6 +315,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             fingerId, pointerId,
             x: viewportX, y: viewportY, prevX: viewportX, prevY: viewportY, deltaX: 0, deltaY: 0,
             phase: PHASE_BEGAN, beganFrame: this._frame, endedFrame: -1, canceled: false,
+            overUI: this._overUI(viewportX, viewportY),
         })
     }
 
@@ -369,6 +391,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._lastPressFrame = -1
         this._modifiers = 0
         this._buttons = 0
+        this._pressOverUI = false
         this._buttonDownFrame.fill(-1)
         this._buttonUpFrame.fill(-1)
         this._pointerX = 0
@@ -431,6 +454,9 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             GetTouchDeltaX: (i: number) => this._touches[i]?.deltaX ?? 0,
             GetTouchDeltaY: (i: number) => this._touches[i]?.deltaY ?? 0,
             GetTouchPhase: (i: number) => this._touches[i]?.phase ?? PHASE_ENDED,
+            // A held press answers where it began; with nothing held, where the pointer is now.
+            IsMouseOverUI: () => this._buttons !== 0 ? this._pressOverUI : this._overUI(this._pointerX, this._pointerY),
+            GetTouchOverUI: (i: number) => this._touches[i]?.overUI ?? false,
         }
     }
 
@@ -505,6 +531,6 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     }
 }
 
-export function createContainerInput(): ContainerInput {
-    return new ContainerInputImpl()
+export function createContainerInput(options: ContainerInputOptions = {}): ContainerInput {
+    return new ContainerInputImpl(options.overUI ?? null)
 }

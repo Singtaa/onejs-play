@@ -37,6 +37,7 @@
 
 import { keyNameFromDomCode, type InputBackend, type InputBackendMethods } from "onejs-unity/input"
 import { screenToStage, screenDeltaToStage, type Stage } from "./stage"
+import type { PressProbe } from "./over-ui"
 
 /** The bridge methods that take a key name. */
 const KEY_METHODS = new Set(["GetKeyDown", "GetKeyPressed", "GetKeyReleased"])
@@ -114,6 +115,8 @@ export interface HostInputOptions {
     pixelRatio(): number
     /** For tests. Defaults to the real InputBridge. */
     bridge?: unknown
+    /** Whether a press at a stage point is the UI's (over-ui.ts). Without one, nothing is over UI. */
+    overUI?: PressProbe | null
 }
 
 /**
@@ -152,9 +155,44 @@ export function createHostInputBackend(options: HostInputOptions): Record<string
     const touchIndex = (name: string, args: unknown[]) =>
         name.startsWith("GetTouch") ? (args[0] as number) : undefined
 
+    /**
+     * Over UI, which the bridge cannot answer (its InputBridge has no such
+     * method). The bridge does not say where a press began, so a press is
+     * placed the first time it is asked about and keeps that answer: a stick
+     * asks on the frame a touch begins, so for what reads it, that is where.
+     */
+    const probe = options.overUI ?? null
+    const overAt = (p: { x: number, y: number }) => probe !== null && probe(p.x, p.y)
+    let press: boolean | null = null
+    const fingers = new Map<number, boolean>()
+    const mouseOverUI = () => {
+        if (source.GetMouseButtons() === 0) {
+            press = null
+            return overAt(positionOf())
+        }
+        if (press === null) press = overAt(positionOf())
+        return press
+    }
+    const touchOverUI = (index: number) => {
+        const finger = source.GetTouchFingerId(index) as number
+        const phase = source.GetTouchPhase(index) as number
+        // Began (0) places it afresh: a finger id is reused once lifted.
+        let over = phase === 0 ? undefined : fingers.get(finger)
+        if (over === undefined) {
+            over = overAt(positionOf(index))
+            fingers.set(finger, over)
+        }
+        // Ended (3) or canceled (4): its last frame.
+        if (phase >= 3) fingers.delete(finger)
+        return over
+    }
+
     return new Proxy({}, {
         get(_target, property) {
             if (typeof property !== "string") return undefined
+
+            if (property === "IsMouseOverUI") return mouseOverUI
+            if (property === "GetTouchOverUI") return touchOverUI
 
             if (POSITION_X.has(property)) {
                 return (...args: unknown[]) => positionOf(touchIndex(property, args)).x
