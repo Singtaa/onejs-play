@@ -104,6 +104,17 @@ describe("Chrome's own log", () => {
         expect(chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" }).some((a) => a.startsWith("--log"))).toBe(false)
     })
 
+    it("is kept by keep() for any run that failed, and keep() says null with no log asked for", () => {
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
+        const log = chromeLog(path.join(folder, "oj-chrome-y"), folder)!
+        fs.writeFileSync(log.file, "log")
+        const b = new Browser(null, path.join(folder, "gone"), null, () => "", log)
+        expect(b.keep()).toContain(log.file)
+        b.close()
+        expect(fs.existsSync(log.file)).toBe(true)
+        expect(new Browser(null, null, null).keep()).toBeNull()
+    })
+
     async function closed(describeFirst: boolean) {
         const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
         const log = chromeLog(path.join(folder, "oj-chrome-x"), folder)!

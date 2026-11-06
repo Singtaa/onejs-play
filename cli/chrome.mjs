@@ -361,11 +361,16 @@ export class Browser {
         else said.push(`history ${history.entries.map((e) => e.url).join(" > ")}`)
         const tail = this.stderr().trim().split("\n").slice(-3).join(" | ")
         if (tail !== "") said.push(`chrome's stderr ends: ${tail.slice(-400)}`)
-        if (this.log) {
-            this.keepLog = true
-            said.push(`chrome's own log is kept at ${this.log.file} and ${this.log.netlog}`)
-        }
+        const kept = this.keep()
+        if (kept) said.push(`chrome's own log is kept at ${kept}`)
         return said.join("; ")
+    }
+
+    /** Keeps Chrome's own log past close, for a run that failed: where it is, or null with none asked for. */
+    keep() {
+        if (!this.log) return null
+        this.keepLog = true
+        return `${this.log.file} and ${this.log.netlog}`
     }
 
     async screenshot(file) {
