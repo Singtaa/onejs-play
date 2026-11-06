@@ -2,7 +2,7 @@
 /**
  * Writes oj's copy of Rapier from the pinned npm package.
  *
- *     node scripts/vendor-rapier.mjs
+ *     node scripts/vendor-rapier.mjs 3     (and 2, for the 2D build)
  *
  * Rapier's npm build imports its .wasm as an ES module, which only a bundler
  * with WebAssembly integration understands. oj is bundled by two configs it
@@ -12,14 +12,15 @@
  * vendored with that one import replaced, and src/wasm.ts instantiates the
  * module and hands it to the glue.
  *
- * Writes, into src/physics3d/:
+ * Writes, into src/physics3d/ (or src/physics2d/):
  *   rapier.vendor.js     the glue, one ES module, no wasm import
  *   rapier.version.ts    its version, sha256 and import list
- * and assets/@ojplay/wasm/rapier3d-<version>.wasm, the module byte for byte.
+ * and assets/@ojplay/wasm/rapier3d-<version>.wasm (or rapier2d-), the module
+ * byte for byte.
  *
  * Run it after changing the pinned version in package.json, and tell
- * whoever links the native module (OneJS's onejs_rapier3d): the import list
- * is what it is linked against. rapier.test.ts fails when these three files
+ * whoever links the native module (OneJS's onejs_rapier3d and
+ * onejs_rapier2d): the import list is what it is linked against. rapier.test.ts fails when these three files
  * and the installed package disagree.
  */
 
@@ -29,21 +30,25 @@ import fs from "node:fs"
 import path from "node:path"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
-const PKG = "@dimforge/rapier3d-deterministic"
+const DIM = process.argv[2]
+if (DIM !== "2" && DIM !== "3") throw new Error("say which build: node scripts/vendor-rapier.mjs 3, or 2")
+const NAME = `rapier${DIM}d`
+const GLUE = `rapier_wasm${DIM}d`
+const PKG = `@dimforge/${NAME}-deterministic`
 const pkgDir = path.join(ROOT, "node_modules", PKG)
-const out = path.join(ROOT, "src/physics3d")
+const out = path.join(ROOT, `src/physics${DIM}d`)
 const version = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8")).version
-const wasmBytes = fs.readFileSync(path.join(pkgDir, "rapier_wasm3d_bg.wasm"))
+const wasmBytes = fs.readFileSync(path.join(pkgDir, `${GLUE}_bg.wasm`))
 const sha256 = createHash("sha256").update(wasmBytes).digest("hex")
 const imports = WebAssembly.Module.imports(new WebAssembly.Module(wasmBytes))
 const modules = [...new Set(imports.map((i) => i.module))]
-if (modules.length !== 1 || modules[0] !== "./rapier_wasm3d_bg.js") throw new Error(`unexpected import modules: ${modules.join(", ")}`)
+if (modules.length !== 1 || modules[0] !== `./${GLUE}_bg.js`) throw new Error(`unexpected import modules: ${modules.join(", ")}`)
 
 const result = await esbuild.build({
     stdin: {
         contents: [
             `export * from "${PKG}/exports.js"`,
-            `export * as bg from "${PKG}/rapier_wasm3d_bg.js"`,
+            `export * as bg from "${PKG}/${GLUE}_bg.js"`,
         ].join("\n"),
         resolveDir: ROOT,
         loader: "js",
@@ -59,9 +64,9 @@ const result = await esbuild.build({
             // raw.js re-exports rapier_wasm3d.js, the one file that imports the
             // .wasm. Its replacement re-exports the same glue and leaves the
             // module unset until src/wasm.ts sets it.
-            build.onResolve({ filter: /\/rapier_wasm3d(\.js)?$/ }, () => ({ path: "rapier_wasm3d", namespace: "oj-rapier" }))
+            build.onResolve({ filter: new RegExp(`/${GLUE}(\\.js)?$`) }, () => ({ path: GLUE, namespace: "oj-rapier" }))
             build.onLoad({ filter: /.*/, namespace: "oj-rapier" }, () => ({
-                contents: `export * from "${PKG}/rapier_wasm3d_bg.js"`,
+                contents: `export * from "${PKG}/${GLUE}_bg.js"`,
                 resolveDir: ROOT,
                 loader: "js",
             }))
@@ -79,8 +84,8 @@ fs.writeFileSync(path.join(out, "rapier.vendor.js"), header + "/* eslint-disable
 // release is a new address and a cache never pairs old bytes with new glue.
 const wasmDir = path.join(ROOT, "assets/@ojplay/wasm")
 fs.mkdirSync(wasmDir, { recursive: true })
-for (const old of fs.readdirSync(wasmDir)) if (old.startsWith("rapier3d-")) fs.rmSync(path.join(wasmDir, old))
-fs.writeFileSync(path.join(wasmDir, `rapier3d-${version}.wasm`), wasmBytes)
+for (const old of fs.readdirSync(wasmDir)) if (old.startsWith(`${NAME}-`)) fs.rmSync(path.join(wasmDir, old))
+fs.writeFileSync(path.join(wasmDir, `${NAME}-${version}.wasm`), wasmBytes)
 fs.writeFileSync(path.join(out, "rapier.version.ts"), `${header.trim()}
 
 /** The Rapier release oj runs. */

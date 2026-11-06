@@ -33,7 +33,8 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
-| `physics.ts` | `usePhysics`, with the per-frame pumping done |
+| `physics/` | What 2D and 3D share: `core.ts` is the one world, body, character and shape implementation behind both, generic over a dimension adapter; `use-stepped.ts` steps a world on the frame clock |
+| `physics2d/` | `useWorld2D`, `createWorld2D`, `shape2D`: 2D physics over Rapier 2D, in stage pixels, y down. `world.ts` is the API, `elements.ts` moves the elements bodies carry (one `ElementPlacer` crossing per step) |
 | `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
 | `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
 | `wasm.ts` | Where a WebAssembly engine comes from on each host: OneJS's native link, a module handed over, or StreamingAssets |

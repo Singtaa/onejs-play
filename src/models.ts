@@ -408,7 +408,7 @@ export function useScene(options: SceneOptions = {}): Scene | null {
         const created = createScene(options)
         setScene(created.scene)
         return created.dispose
-        // Read once, on mount, like usePhysics: a re-render must not rebuild the world.
+        // Read once, on mount, like useWorld: a re-render must not rebuild the world.
         // The scene's methods change it later.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])

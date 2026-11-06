@@ -77,10 +77,16 @@ export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
 export { audio, useSound } from "./audio"
 export type { Sound, Voice, PlayOptions } from "onejs-unity/audio"
 
-// 2D physics. The simulation and the writing of positions onto elements both
-// happen in C#, so a hundred bodies cost JavaScript nothing per frame.
-export { usePhysics, createPhysicsWorld } from "./physics"
-export type { PhysicsWorld, WorldConfig, BodyConfig, BodyShape, BodyType, Contact } from "./physics"
+// 2D physics: the 3D family's names, in stage pixels with y down. The engine
+// (Rapier's 2D build, as WebAssembly) is loaded the first time a cart makes a
+// 2D world, and the elements bodies carry move in one crossing a frame.
+export { useWorld2D } from "./physics2d/use-world-2d"
+export { createWorld2D, shape2D, WORLD2D_DEFAULTS } from "./physics2d/world"
+export type {
+    World2D, World2DOptions, Body2D, Character2D, Shape2D, Hit2D, Contact2D, Vec2, ElementActor,
+    Box2DOptions, CircleOptions, Capsule2DOptions, PolygonOptions, OutlineOptions, Character2DOptions,
+    Place2D, Places2D, Motions2D, ClearSpot2DOptions, Slide2DOptions, Slid2D,
+} from "./physics2d/world"
 
 // 3D physics: colliders, bodies, a character, queries, events and rewind, in
 // metres with y up like the scene. The engine (Rapier, as WebAssembly) is

@@ -1,6 +1,6 @@
 
 import { useEffect, useRef, useState } from "react"
-import { View, Text, mount, useStage, useFrame, useRoom, usePhysics, input, isOnline, useDrawing, type BodyConfig } from "oj"
+import { View, Text, mount, useStage, useFrame, useRoom, useWorld2D, input, isOnline, useDrawing, type Body2D } from "oj"
 import {
     platformRadius, isOff, spawnAt, steer, advance, leashVelocity, leashDelta,
     beginRound, applyFall, standing, isOver, winnerOf, credit,
@@ -43,22 +43,8 @@ const toneOf = (id: number) => TONES[Math.abs(id) % TONES.length]!
 const cssOf = (tone: [number, number, number], scale = 1) =>
     `rgb(${Math.round(tone[0] * 255 * scale)}, ${Math.round(tone[1] * 255 * scale)}, ${Math.round(tone[2] * 255 * scale)})`
 
-const OFF_FIELD = -600
-
-const BODIES: BodyConfig[] = []
-for (let i = 0; i < MAX_BLOBS; i++) {
-    BODIES.push({
-        type: "dynamic",
-        shape: "circle",
-        radius: BLOB_RADIUS,
-        x: OFF_FIELD,
-        y: OFF_FIELD,
-        friction: 0,
-        restitution: BOUNCE,
-        linearDamping: DRAG,
-        angularDamping: 0.8,
-    })
-}
+/** One element per blob slot; a slot's body exists while its blob is on the field. */
+const SLOTS = Array.from({ length: MAX_BLOBS }, (_, slot) => slot)
 
 interface Snapshot {
     connected: boolean
@@ -109,13 +95,34 @@ function Sumo() {
 
     const [snap, setSnap] = useState<Snapshot>(EMPTY)
 
-    const world = usePhysics(field, {
-        gravity: [0, 0],
-        bounds: false,
-        bodies: BODIES,
-    })
+    const world = useWorld2D({ gravity: [0, 0] })
 
     const blobs = useRef<any[]>([]).current
+    const bodies = useRef<(Body2D | null)[]>(SLOTS.map(() => null)).current
+
+    /**
+     * A blob onto the field: a body made for it, or the one it has moved,
+     * and its element shown. A body's mass is 1, so a push is a change of
+     * speed (arena.ts), which is what addVelocity is.
+     */
+    const placeBlob = (slot: number, x: number, y: number, vx = 0, vy = 0): Body2D | null => {
+        if (world === null) return null
+        let body = bodies[slot]
+        if (body === null || body === undefined) {
+            body = world.circle({ at: [x, y], radius: BLOB_RADIUS, dynamic: true, mass: 1, friction: 0, bounce: BOUNCE, actor: blobs[slot] })
+            bodies[slot] = body
+        } else body.position = [x, y]
+        body.velocity = [vx, vy]
+        if (blobs[slot]) blobs[slot].style.opacity = 1
+        return body
+    }
+
+    /** A blob off the field: its body gone, its element hidden where it fell. */
+    const parkBlob = (slot: number) => {
+        bodies[slot]?.destroy()
+        bodies[slot] = null
+        if (blobs[slot]) blobs[slot].style.opacity = 0
+    }
 
     const room = useRoom("ring", {
         onDropped: (reason, detail) => {
@@ -129,10 +136,7 @@ function Sumo() {
         onLeave: (id) => {
             const slot = slots.release(id)
             tracks.delete(id)
-            if (slot !== null && world !== null) {
-                world.bodies[slot]!.moveTo(OFF_FIELD, OFF_FIELD)
-                world.bodies[slot]!.enabled = false
-            }
+            if (slot !== null) parkBlob(slot)
             beat()
         },
         onMessage: (from, raw) => {
@@ -158,7 +162,7 @@ function Sumo() {
                 if (current === null) return
                 round.current = applyFall(current, from, data)
                 const slot = slots.slotOf(from)
-                if (slot !== null && world !== null) world.bodies[slot]!.enabled = false
+                if (slot !== null) parkBlob(slot)
                 return
             }
 
@@ -193,21 +197,12 @@ function Sumo() {
         fallen.current = false
         dashLeft.current = 0
 
-        // Switch on before moving. A body that is not simulating drops the position.
         const place = (slot: number, index: number) => {
             const at = spawnAt(index, starters.length)
-            const body = world.bodies[slot]!
-            body.enabled = true
-            body.moveTo(at.x, at.y)
-            body.setVelocity(0, 0)
+            placeBlob(slot, at.x, at.y)
             return at
         }
-
-        const park = (slot: number) => {
-            const body = world.bodies[slot]!
-            body.moveTo(OFF_FIELD, OFF_FIELD)
-            body.enabled = false
-        }
+        const park = parkBlob
 
         const seat = starters.indexOf(room.id)
         if (seat >= 0) {
@@ -278,6 +273,14 @@ function Sumo() {
 
         const ring = platformRadius(elapsed.current)
 
+        // Drag, so a blob coasts to a stop instead of sliding off forever.
+        const keep = Math.exp(-DRAG * step)
+        for (const body of bodies) {
+            if (body === null) continue
+            const [vx, vy] = body.velocity
+            body.velocity = [vx * keep, vy * keep]
+        }
+
         if (iAmIn) {
             const keys = input.keyboard.axis2D({
                 up: ["W", "UpArrow"], down: ["S", "DownArrow"],
@@ -300,14 +303,14 @@ function Sumo() {
 
             const push = steer(aimX, aimY)
             if (push.x !== 0 || push.y !== 0) {
-                world.bodies[0]!.push(push.x * THRUST * step, push.y * THRUST * step)
+                bodies[0]?.addVelocity([push.x * THRUST * step, push.y * THRUST * step])
             }
 
             dashLeft.current = Math.max(0, dashLeft.current - step)
             let dashing = input.keyboard.wasKeyPressed("Space") || input.mouse.wasLeftPressed
             for (const touch of input.touches) if (touch.phase === "began") dashing = true
             if (dashing && dashLeft.current === 0 && (push.x !== 0 || push.y !== 0)) {
-                world.bodies[0]!.push(push.x * DASH_SPEED, push.y * DASH_SPEED)
+                bodies[0]?.addVelocity([push.x * DASH_SPEED, push.y * DASH_SPEED])
                 dashLeft.current = DASH_COOLDOWN
             }
         }
@@ -324,12 +327,10 @@ function Sumo() {
         if (sinceSync.current <= 0) {
             const tick = 1 / SYNC_HZ
             sinceSync.current = tick
-            const transforms = world.readTransforms()
-
-            if (transforms.length >= MAX_BLOBS * 3) {
-                if (iAmIn && current !== null) {
-                    const x = transforms[0]!
-                    const y = transforms[1]!
+            {
+                const mineBody = bodies[0]
+                if (iAmIn && current !== null && mineBody !== null && mineBody !== undefined) {
+                    const [x, y] = mineBody.position
                     const vx = (x - mine.current.x) / tick
                     const vy = (y - mine.current.y) / tick
                     mine.current = { x, y }
@@ -340,7 +341,8 @@ function Sumo() {
                     })
                     if (isOff(x, y, ring)) {
                         fallen.current = true
-                        world.bodies[0]!.enabled = false
+                        bodies[0]?.destroy()
+                        bodies[0] = null
                         room.send({ k: "out", n: current.n })
                         round.current = applyFall(current, room.id, { n: current.n })
                         beat()
@@ -354,19 +356,16 @@ function Sumo() {
                     if (track.sinceReport > 8) {
                         tracks.delete(peer)
                         slots.release(peer)
-                        world.bodies[slot]!.moveTo(OFF_FIELD, OFF_FIELD)
-                        world.bodies[slot]!.enabled = false
+                        parkBlob(slot)
                         continue
                     }
-                    const x = transforms[slot * 3]!
-                    const y = transforms[slot * 3 + 1]!
-                    const blob = world.bodies[slot]!
-                    if (leashDelta(x, y, track) > SNAP_DISTANCE) {
-                        blob.moveTo(track.x, track.y)
-                        blob.setVelocity(track.vx, track.vy)
-                    } else {
+                    const blob = bodies[slot]
+                    if (blob === null || blob === undefined) continue
+                    const [x, y] = blob.position
+                    if (leashDelta(x, y, track) > SNAP_DISTANCE) placeBlob(slot, track.x, track.y, track.vx, track.vy)
+                    else {
                         const v = leashVelocity(x, y, track)
-                        blob.setVelocity(v.x, v.y)
+                        blob.velocity = [v.x, v.y]
                     }
                 }
             }
@@ -406,14 +405,6 @@ function Sumo() {
         })
     }
 
-    useEffect(() => {
-        if (world === null) return
-        world.bodies.forEach((body, slot) => {
-            if (blobs[slot]) body.bind(blobs[slot])
-            body.moveTo(OFF_FIELD, OFF_FIELD)
-            body.enabled = false
-        })
-    }, [world])
 
     useEffect(() => {
         const timer = setInterval(beat, 250)
@@ -484,7 +475,7 @@ function Sumo() {
 
             <View ref={field} pickingMode="Ignore"
                 style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }}>
-                {BODIES.map((_, slot) => {
+                {SLOTS.map((slot) => {
                     const owner = snap.owners[slot]
                     const tone = toneOf(owner ?? 0)
                     return (
