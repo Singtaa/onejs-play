@@ -91,12 +91,17 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     }
 
     /*
-     * The events that grant a page user activation, which share.ts needs, as
-     * HTML defines them: a keydown other than Escape, a mouse button going
-     * down, and a touch or pen lifting. A finger going down grants nothing on
-     * a phone, so a share asked for in the frame a touch began would be
-     * refused there; the tap counts in the frame it ends, which is also the
-     * frame a Button's onClick fires in.
+     * The frames share.ts may ask the browser in: those of the events that
+     * grant a page user activation, as HTML defines them (a keydown other than
+     * Escape, a mouse button going down, a touch or pen lifting), and of a
+     * mouse button coming up. A finger going down grants nothing on a phone,
+     * so a share asked for in the frame a touch began would be refused there.
+     *
+     * The mouse's release grants nothing either, but the press it ends just
+     * did, and a Button's onClick fires on the release: a click held across
+     * frames (any real one, at 60 fps) had its onClick refused when only the
+     * press counted. Found 6 Nov by the share fixture on Windows CI, where
+     * frames were short enough to split its 70 ms click.
      */
     const onKeyDown = (event: any) => {
         if (preventDefault && PREVENT_DEFAULT_CODES.has(event.code)) event.preventDefault()
@@ -124,7 +129,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         const [x, y] = at(event)
         sink.pointerUp(event.button, x, y)
         if (isTouch(event)) sink.touchUp(event.pointerId, x, y, event.type === "pointercancel")
-        if (event.type === "pointerup" && event.pointerType !== "mouse") sink.activate()
+        if (event.type === "pointerup") sink.activate()
     }
     const onWheel = (event: any) => {
         if (preventDefault) event.preventDefault()
