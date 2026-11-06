@@ -108,6 +108,11 @@ export const scores = {
         const pairs: string[] = []
         if (options.window !== undefined) pairs.push(`window=${encodeURIComponent(options.window)}`)
         if (options.limit !== undefined) pairs.push(`limit=${encodeURIComponent(String(options.limit))}`)
+        // The play token, so a run from the editor reads the board its own
+        // scores went to rather than the cart's public one. The site decides
+        // which from the token; without one this is the public board.
+        const token = getPlayContext()?.token
+        if (token !== undefined && token !== "") pairs.push(`token=${encodeURIComponent(token)}`)
         const suffix = pairs.join("&")
         const url = apiUrl(`/scores${suffix === "" ? "" : `?${suffix}`}`)
         if (url === null) return []

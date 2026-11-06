@@ -467,6 +467,9 @@ and post whatever they like, and nothing short of running the game's rules on a
 server would change that. These boards are for bragging, and the site says so
 where people can read it rather than implying a rigour that is not there.
 
+A run from the editor has a board of its own: what you score while testing
+shows on that board and never on the cart's public one.
+
 Guard the call so one run posts one score: a frame loop notices the end of a
 game sixty times a second.
 

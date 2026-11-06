@@ -80,3 +80,30 @@ describe("a score that is not a number", () => {
         await expect(scores.submit(NaN)).rejects.toThrow(/a score has to be a number/)
     })
 })
+
+describe("reading the board", () => {
+    beforeEach(() => setPlayContext(null))
+
+    /** The site keeps an editor run's scores apart and finds them by this token (PlaySite play-api.ts readBoard). */
+    it("says which play session is asking, so an editor run reads its own board", async () => {
+        const asked: string[] = []
+        const real = globalThis.fetch
+        globalThis.fetch = (async (url: string) => {
+            asked.push(url)
+            return { ok: true, status: 200, text: async () => "{\"entries\":[]}" }
+        }) as never
+        try {
+            setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "a.b/c" })
+            await scores.top({ limit: 5 })
+            setPlayContext({ api: "https://play.onejs.com", sid: "abc123" })
+            await scores.top()
+        } finally {
+            globalThis.fetch = real
+        }
+        expect(asked).toEqual([
+            "https://play.onejs.com/api/games/abc123/scores?limit=5&token=a.b%2Fc",
+            "https://play.onejs.com/api/games/abc123/scores",
+        ])
+    })
+})
+
