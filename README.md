@@ -248,7 +248,7 @@ what an ejected copy needs.
 as `[sha256, bytes]` (`buildGame`'s `assets`, injected as `oj:files` ahead of
 the game's own code), and hands them to `setAssetMap`. A name in that map
 resolves to `<assetBase>/<sha256>/<name>`, a URL that names its bytes, so it
-is cached for good and served without a lookup, and a preview, a version and a
+is cached for good and served without a lookup, and a branch's cart, a version and a
 rollback each load their own commit's files. `assetInfo(name)` says a file's
 size for a loading bar. With a `store` (`buildGame`'s option, passed on to
 `setAssetMap`), a mapped name loads `<store>/<sha256><ext>` instead: PlaySite's
@@ -638,11 +638,11 @@ ojplay build --unity --out <dir>   # for OneJS, a cart at a Unity project's root
 ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
 ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
-ojplay status          # what the site is running, why the tip differs, and each branch's preview (--json for scripts)
-ojplay list            # every cart on the account
+ojplay status          # main's build, why the tip differs, and each cart with what it runs and who can play it (--json for scripts)
+ojplay list            # every cart on the account, a repo's carts each on a line
 ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
 ojplay logout          # forget that login, here and on the site
-ojplay push            # push the branch you are on (main goes live, any other is a preview); exit 1 if the tip did not build or nothing was committed
+ojplay push            # push the branch you are on: every cart following it moves, a branch with none gets an Unlisted one; exit 1 if the tip did not build or nothing was committed
 ojplay new "Name"      # start a cart here: the starter in a new git repo, no account; its first push makes it on the site
 ojplay clone @h/name   # clone a cart; git pull and push in it work with OJ_TOKEN or the login
 ojplay runtime         # fetch the container into ~/.onejs-play (--runtime <version>)
@@ -652,12 +652,13 @@ ojplay runtime         # fetch the container into ~/.onejs-play (--runtime <vers
 files the site's New makes, from `examples/starter` through
 `build/starter.mjs`) into `./<name>`, makes it a git repository on `main`
 with one commit, and sets `init`'s tooling up beside it, ignored. No account
-and no network. The first `push` in a cart with no `origin` makes the cart on
+and no network. The first `push` in a cart with no `origin` makes its repo on
 the site, empty and public, under oj.json's `name` (logging in first when
 there is no login), sets `origin` and pushes `main` with its upstream. With
-`--private` it asks for a private cart instead, which the site makes only for
-an account with Private and otherwise refuses, making and pushing nothing; on a
-later push to a public cart, `--private` pushes nothing and says so. The
+`--private` it asks for a private repo instead, whose first cart is Private,
+which the site makes only for an account with private repos and otherwise
+refuses, making and pushing nothing; on a later push to a public repo,
+`--private` pushes nothing and says so. The
 site makes it empty because its usual create commits the starter, which a
 history begun here could never fast forward onto. A name the account already
 has is refused there, with that cart's address, and nothing is made.

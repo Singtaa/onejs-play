@@ -23,7 +23,7 @@ interface Cart { versions: Record<string, string>, live: string | null, builds: 
 const COMMIT = (c: string) => c.repeat(40).slice(0, 40)
 let carts: Record<string, Cart> = {}
 /** What /api/me/carts answers the token "the-owner". */
-let mineList: Array<{ sid: string, name: string, public: boolean, url: string, clone: string }> = []
+let mineList: Array<{ sid: string, name: string, repoPublic: boolean, url: string, clone: string }> = []
 const asked: string[] = []
 let server: Server
 let origin = ""
@@ -487,7 +487,7 @@ describe("ojplay add at a Unity project's root", () => {
             expect(spawnSync("git", args, { cwd: work, env: gitEnv }).status).toBe(0)
         }
         carts = { "@singtaa/storm": { versions: {}, live: COMMIT("d"), builds: { [COMMIT("d")]: { files: { "oj.json": "{}" } } } } }
-        mineList = [{ sid: "storm1234567", name: "Storm Chaser", public: false, url: `${origin}/@singtaa/storm`, clone: bare }]
+        mineList = [{ sid: "storm1234567", name: "Storm Chaser", repoPublic: false, url: `${origin}/@singtaa/storm`, clone: bare }]
         const project = unityProject()
         process.env.OJ_TOKEN = "the-owner"
         const saved = process.env.GIT_CONFIG_GLOBAL
@@ -613,7 +613,7 @@ describe("ojplay add at the root of a Unity project whose OneJS runs root carts"
             expect(spawnSync("git", args, { cwd: work, env: gitEnv }).status).toBe(0)
         }
         carts = { "@singtaa/storm": { versions: {}, live: COMMIT("d"), builds: { [COMMIT("d")]: { files: { "oj.json": "{}" } } } } }
-        mineList = [{ sid: "storm1234567", name: "Storm Chaser", public: false, url: `${origin}/@singtaa/storm`, clone: bare }]
+        mineList = [{ sid: "storm1234567", name: "Storm Chaser", repoPublic: false, url: `${origin}/@singtaa/storm`, clone: bare }]
         const root = project()
         expect(spawnSync("git", ["init", "-q", "-b", "main"], { cwd: root, env: gitEnv }).status).toBe(0)
         process.env.OJ_TOKEN = "the-owner"

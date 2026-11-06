@@ -49,7 +49,7 @@ beforeEach(async () => {
         if (req.url === "/api/logout") return send(200, { ok: true })
         if (req.url === "/api/me/carts") {
             if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: "This agent login was replaced by a newer login from the same install. Run npx ojplay login again." })
-            return send(200, { handle: "owner", carts: [{ sid: "abcdefabcdef", name: "Hidden", public: false }, { sid: "bcdefabcdefa", name: "Shown", public: true }] })
+            return send(200, { handle: "owner", carts: [{ sid: "abcdefabcdef", name: "Hidden", visibility: "private", repoPublic: false }, { sid: "bcdefabcdefa", name: "Shown", visibility: "public", repoPublic: true }] })
         }
         send(404, {})
     })

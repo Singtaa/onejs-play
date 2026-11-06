@@ -271,7 +271,7 @@ export async function login(root, { name, wait = true, resume = false, code, say
 /**
  * Whether the login stored here still works, said when it does. An agent on a
  * machine its person already logged in runs `login` when it meets a private
- * cart's 404; a new link there is a second Allow for nothing. The site is
+ * repo's 404; a new link there is a second Allow for nothing. The site is
  * asked, since a stored token can be replaced, revoked or expired; one it
  * refuses starts the new link as before. The git helper goes back in, in case
  * the git config lost it.

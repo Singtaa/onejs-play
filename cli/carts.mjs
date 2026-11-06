@@ -5,7 +5,7 @@
  *
  * Every command says what changed in a line or two and names the next step
  * (Sai, 1 Oct: "simple for new users... absolute best DX"). None needs an
- * account for a public cart; a stored login or OJ_TOKEN reaches the
+ * account for a public repo; a stored login or OJ_TOKEN reaches the
  * account's own private ones.
  */
 import { createHash } from "node:crypto"
@@ -65,7 +65,7 @@ async function answer(response) {
 export async function pinOf(root, address, within = null, major = false) {
     const route = `/api/carts/${address.toLowerCase()}/pin`
     const response = await site("POST", route, root, within === null ? {} : { within, major })
-    // The site answers a private cart and a typo alike, so signed out, a 404
+    // The site answers a private repo and a typo alike, so signed out, a 404
     // says how to sign in; signed in, the account's own would have answered.
     if (response.status === 404) {
         throw new Error(`Can't find ${address}.${tokenOf(root) ? "" : ` If it's private, sign in first: ${COMMAND} login`}`)

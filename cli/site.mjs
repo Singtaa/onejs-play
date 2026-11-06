@@ -43,8 +43,9 @@ export function token(root = process.cwd()) {
 }
 
 /**
- * The account's own carts, private ones included: what "which carts do
- * I have" needs. The site's public list leaves out every private cart.
+ * The account's own carts, Unlisted and Private ones included: what "which
+ * carts do I have" needs. A repo with two carts is two rows. The site's
+ * public list leaves out every cart that is not Public.
  */
 export async function mine(bearer) {
     const response = await fetch(`${siteOrigin()}/api/me/carts`, { headers: { authorization: `Bearer ${bearer}` } })
@@ -109,25 +110,38 @@ export async function status(sid, { bearer } = {}) {
     return body
 }
 
-/** A status from the site as the lines `ojplay status` prints. */
+/** The site's carts that follow a branch: the ones a push of it moves. */
+export function following(s, branch) {
+    return (s.carts ?? []).filter((c) => c.ref?.kind === "branch" && c.ref.name === branch)
+}
+
+/** A cart's ref as its address names it: a branch or version, or a commit's first 12. */
+const refWord = (ref) => ref.kind === "commit" ? ref.name.slice(0, 12) : ref.name
+
+/**
+ * A status from the site as the lines `ojplay status` prints: the repo, what
+ * main last built, then each cart with what it runs and who can play it
+ * (PlaySite docs/carts-and-repos.md).
+ */
 export function describeStatus(s) {
     const short = (sha) => String(sha).slice(0, 7)
-    const lines = [`${s.url} (${s.public ? "public" : "private"})`]
-    if (!s.live) lines.push(s.head ? "live: nothing yet" : `live: nothing yet; nothing pushed yet, ${COMMAND} push sends main`)
-    else lines.push(s.head === s.live ? `live: ${short(s.live)}, the tip of main` : `live: ${short(s.live)}`)
-    if (s.head && s.head !== s.live) {
-        if (s.buildError) {
+    const built = s.main?.built ?? null
+    const lines = [`${s.url} (${s.repoPublic ? "public" : "private"} repo)`]
+    if (!built) lines.push(s.head ? "main: nothing built yet" : `main: nothing pushed yet, ${COMMAND} push sends main`)
+    else lines.push(s.head === built ? `main: ${short(built)}, its tip` : `main: ${short(built)}`)
+    if (s.head && s.head !== built) {
+        if (s.main?.buildError) {
             lines.push(`tip of main: ${short(s.head)} did not build:`)
-            for (const line of String(s.buildError).split("\n")) lines.push(`  ${line}`)
+            for (const line of String(s.main.buildError).split("\n")) lines.push(`  ${line}`)
         } else {
             lines.push(`tip of main: ${short(s.head)} is still building`)
         }
     }
-    // Each pushed branch's preview (PlaySite docs/refs-and-assets.md).
-    for (const p of s.previews ?? []) {
-        if (p.built === null) lines.push(`preview ${p.branch}: has not built: ${p.buildError}`)
-        else if (p.buildError) lines.push(`preview ${p.branch}: ${short(p.head)} did not build; ${p.url} still plays ${short(p.built)}`)
-        else lines.push(`preview ${p.branch}: ${short(p.built)} at ${p.url}`)
+    for (const c of s.carts ?? []) {
+        const runs = c.live ? short(c.live) : "nothing yet"
+        lines.push(`cart ${c.address}: ${c.ref.kind} ${refWord(c.ref)}, ${c.visibility}, runs ${runs}`)
+        // A branch cart's own failure; main's is said above.
+        if (c.buildError && !(c.ref.kind === "branch" && c.ref.name === "main")) lines.push(`  did not build: ${String(c.buildError).split("\n")[0]}`)
     }
     return lines
 }
@@ -146,28 +160,35 @@ export function tipOf(root) {
 
 /**
  * What `ojplay push` says after pushing a branch other than main: `before`
- * is that branch's tip on the site before the push (null for a new one),
- * `tip` the commit pushed, `s` the status after it. A push that did not
- * build exits 1, as main's does; main is never moved by it.
+ * is what that branch's cart ran before the push (null for a new branch),
+ * `tip` the commit pushed, `s` the status after it. A push of a branch with
+ * no cart makes it one, Unlisted. A push that did not build exits 1, as
+ * main's does; main is never moved by it.
  */
 export function describeBranchPush(branch, before, tip, s, left) {
     const short = (sha) => String(sha).slice(0, 7)
+    const notCommitted = leftLines(left)
+    const cart = following(s, branch)[0]
+    if (before === tip) {
+        if (left.length > 0) return { lines: ["nothing was pushed", ...notCommitted], code: 1 }
+        return { lines: [cart ? `nothing new to push; ${branch} runs at ${cart.address}` : `nothing new to push on ${branch}`], code: 0 }
+    }
+    if (cart === undefined) return { lines: [`pushed ${branch}; it has no cart (the site said why above)`, ...notCommitted], code: 0 }
+    if (cart.live !== tip) {
+        const plays = cart.live ? `its cart still runs ${short(cart.live)}` : "its cart runs nothing yet"
+        return { lines: [`the tip of ${branch} did not build; ${plays}`, ...String(cart.buildError ?? "").split("\n").filter((l) => l !== ""), ...notCommitted], code: 1 }
+    }
+    const main = s.main?.built ? `main is unchanged, at ${short(s.main.built)}` : "main is unchanged; nothing is built on it yet"
+    return { lines: [`${branch}: ${short(tip)} at ${cart.address}`, main, ...notCommitted], code: 0 }
+}
+
+/** The lines naming what a push left behind, uncommitted: at most eight files. */
+function leftLines(left) {
     const shown = left.length > 8 ? [...left.slice(0, 8), `and ${left.length - 8} more`] : left
-    const notCommitted = left.length === 0 ? [] : [
+    return left.length === 0 ? [] : [
         `not committed, so not pushed: ${shown.join(", ")}`,
         `commit them, then push again: git add -A && git commit -m "<what changed>"`,
     ]
-    const p = (s.previews ?? []).find((x) => x.branch === branch)
-    if (before === tip) {
-        if (left.length > 0) return { lines: ["nothing was pushed", ...notCommitted], code: 1 }
-        return { lines: [p?.url ? `nothing new to push; preview: ${p.url}` : `nothing new to push on ${branch}`], code: 0 }
-    }
-    if (p === undefined) return { lines: [`pushed ${branch}; it has no preview (the site said why above)`, ...notCommitted], code: 0 }
-    if (p.built !== tip) {
-        const plays = p.built === null ? "it has no preview yet" : `the preview still plays ${short(p.built)}`
-        return { lines: [`the tip of ${branch} did not build; ${plays}`, ...String(p.buildError ?? "").split("\n").filter((l) => l !== ""), ...notCommitted], code: 1 }
-    }
-    return { lines: [`preview: ${short(p.built)} at ${p.url}`, `main is unchanged; live: ${short(s.live)}`, ...notCommitted], code: 0 }
 }
 
 /**
@@ -192,20 +213,23 @@ export function uncommitted(root) {
  */
 export function describePush(head, s, left) {
     const short = (sha) => String(sha).slice(0, 7)
-    const shown = left.length > 8 ? [...left.slice(0, 8), `and ${left.length - 8} more`] : left
-    const notCommitted = left.length === 0 ? [] : [
-        `not committed, so not pushed: ${shown.join(", ")}`,
-        `commit them, then push again: git add -A && git commit -m "<what changed>"`,
-    ]
+    const notCommitted = leftLines(left)
+    const built = s.main?.built ?? null
+    // Each cart following main moved with it; with none, main built and nothing plays it.
+    const where = (sha) => {
+        if (!sha) return ["main: nothing built yet"]
+        const carts = following(s, "main")
+        return carts.length === 0 ? [`main: ${short(sha)}; no cart runs main`] : carts.map((c) => `live: ${short(sha)} at ${c.address}`)
+    }
     if (s.head === head) {
         if (left.length > 0) return { lines: ["nothing was pushed", ...notCommitted], code: 1 }
-        return { lines: [`nothing new to push; live: ${short(s.live)} at ${s.url}`], code: 0 }
+        return { lines: built ? where(built).map((line) => `nothing new to push; ${line}`) : ["nothing new to push"], code: 0 }
     }
-    if (s.buildError !== null && s.head !== s.live) {
-        const running = s.live ? "still running " + short(s.live) : "nothing is running"
-        return { lines: [`the tip did not build; ${running}`, ...String(s.buildError).split("\n"), ...notCommitted], code: 1 }
+    if (s.main?.buildError && s.head !== built) {
+        const running = built ? "main still runs " + short(built) : "nothing is running"
+        return { lines: [`the tip did not build; ${running}`, ...String(s.main.buildError).split("\n"), ...notCommitted], code: 1 }
     }
-    return { lines: [`live: ${short(s.live)} at ${s.url}`, ...notCommitted], code: 0 }
+    return { lines: [...where(built), ...notCommitted], code: 0 }
 }
 
 /** GET /api/version: what the site runs, including the runtime pin. */

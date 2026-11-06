@@ -59,13 +59,13 @@ export function newCart(parent, name, { say }) {
     init(dir)
     setupStore(dir)
     run(["add", "--", ...files.map((f) => f.name)], dir)
-    const commit = run(["commit", "-q", "-m", "New cart"], dir)
+    const commit = run(["commit", "-q", "-m", "Start from the example"], dir)
     say(`made ${shown} (a git repo), on this machine only`)
     if (commit.status !== 0) {
         if (!/tell me who you are|empty ident|unable to auto-detect/i.test(commit.stderr)) {
             throw new Error(`git commit in ${shown} failed: ${commit.stderr.trim()}`)
         }
-        say(`git: nothing committed: git does not know who you are. git config --global user.name "Your Name" and user.email you@example.com, then git add -A && git commit -m "New cart"`)
+        say(`git: nothing committed: git does not know who you are. git config --global user.name "Your Name" and user.email you@example.com, then git add -A && git commit -m "Start from the example"`)
     }
     say(`${COMMAND} push puts it on ${new URL(siteOrigin()).host}`)
     say(`next: cd ${shown} && npm install && ${COMMAND} run --watch`)
@@ -74,14 +74,14 @@ export function newCart(parent, name, { say }) {
 
 /**
  * POST /api/games for an empty cart: { status, body }, the 409 for a taken
- * name included. `private` asks for a private one, which the site refuses
- * (403) to an account without Private, making nothing.
+ * name included. `private` asks for a private repo, which the site refuses
+ * (403) to an account without private repos, making nothing.
  */
 export async function createEmpty(name, bearer, { private: hidden = false } = {}) {
     const response = await fetch(`${siteOrigin()}/api/games`, {
         method: "POST",
         headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify(hidden ? { name, empty: true, public: false } : { name, empty: true }),
+        body: JSON.stringify(hidden ? { name, empty: true, private: true } : { name, empty: true }),
     })
     const text = await response.text()
     let body
@@ -96,7 +96,7 @@ export async function createEmpty(name, bearer, { private: hidden = false } = {}
  */
 export async function firstPush(root, { say, signIn = (dir) => login(dir), private: hidden = false }) {
     if (run(["rev-parse", "--git-dir"], root).status !== 0) {
-        say(`this folder is not a git repository: git init && git add -A && git commit -m "New cart", then ${COMMAND} push`)
+        say(`this folder is not a git repository: git init && git add -A && git commit -m "First commit", then ${COMMAND} push`)
         return 1
     }
     const origin = run(["remote", "get-url", "origin"], root)
@@ -107,7 +107,7 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir), priva
         return 1
     }
     if (run(["rev-parse", "--verify", "-q", "refs/heads/main"], root).status !== 0) {
-        say(`nothing is committed on main yet: git add -A && git commit -m "New cart", then ${COMMAND} push`)
+        say(`nothing is committed on main yet: git add -A && git commit -m "First commit", then ${COMMAND} push`)
         return 1
     }
     const manifest = path.join(root, "oj.json")
@@ -131,9 +131,9 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir), priva
         return 1
     }
     if (made.status !== 200) throw new Error(made.body.error ?? `${made.status} from the site`)
-    // Who can see it is the site's answer: public unless --private asked and
-    // the account may (5 Nov 2026), or the site's Private is on for everyone.
-    const audience = typeof made.body.public === "boolean" ? ` (${made.body.public ? "public" : "private"})` : ""
+    // Whether its source is private is the site's answer: public unless
+    // --private asked and the account may, or private repos are on for everyone.
+    const audience = typeof made.body.repoPublic === "boolean" ? ` (${made.body.repoPublic ? "public" : "private"} repo)` : ""
     say(`made ${made.body.url.replace(/^\//, "")} on ${new URL(siteOrigin()).host}${audience}`)
 
     // Origin before the push, so a push that fails (the network, a file the

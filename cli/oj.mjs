@@ -26,7 +26,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { cloneSource, currentBranch, describeBranchPush, describePush, describeStatus, git, mine, sidOf, siteOrigin, status, tipOf, token, tokenOf, uncommitted, version } from "./site.mjs"
+import { cloneSource, currentBranch, describeBranchPush, describePush, describeStatus, following, git, mine, sidOf, siteOrigin, status, tipOf, token, tokenOf, uncommitted, version } from "./site.mjs"
 import { cloneCart, login, logout } from "./login.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
@@ -79,19 +79,20 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
                           --headed, --window, --for, --gpu as above
-  status                what runs, the tip of main, why they differ, and each branch's preview (--sid <id>; --json for scripts)
-  list                  every cart on the account (--json)
+  status                main's build, its tip, why they differ, and each cart with what it runs
+                          and who can play it (--sid <id>; --json for scripts)
+  list                  every cart on the account, a repo's carts each on a line (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
                           this machine can create, edit and push (--no-wait prints and exits,
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
-  push                  git push the branch you are on: main goes live, any other branch
-                          builds as a preview with a link of its own. Exits 1 if the tip
-                          failed to build, or if
+  push                  git push the branch you are on: every cart that follows it moves to
+                          the new build. A branch with no cart gets one, Unlisted, with an
+                          address of its own. Exits 1 if the tip failed to build, or if
                           nothing was pushed because the changes are not committed. The
-                          first push of a cart made with new makes it on the site, public,
-                          after a login if there is none (--private makes it private, for an
-                          account with Private)
+                          first push of a cart made with new makes its repo on the site,
+                          public, after a login if there is none (--private makes the repo
+                          private, for an account with private repos)
   new <name>            start a cart in ./<name>: the starter, a git repository and init's
                           tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
@@ -325,10 +326,13 @@ async function main() {
                 console.log(JSON.stringify({ handle, carts }, null, 2))
                 return 0
             }
-            const hidden = carts.filter((s) => !s.public).length
-            // Named only when there is one: every cart is public while the site's Private is off.
-            say(`${handle} has ${carts.length} cart${carts.length === 1 ? "" : "s"}${hidden > 0 ? `, ${hidden} private` : ""}`)
-            for (const g of carts) console.log(`${g.sid}  ${g.public ? "public " : "private"}  ${g.name}  ${g.url}`)
+            const repos = new Set(carts.map((c) => c.sid)).size
+            say(`${handle} has ${carts.length} cart${carts.length === 1 ? "" : "s"}${repos === carts.length ? "" : ` in ${repos} repo${repos === 1 ? "" : "s"}`}`)
+            // The repo's sid, then who can play the cart, what it runs, and its address.
+            for (const c of carts) {
+                const ref = c.ref.kind === "commit" ? c.ref.name.slice(0, 12) : c.ref.name
+                console.log(`${c.sid}  ${c.visibility.padEnd(8)}  ${c.ref.kind} ${ref}  ${c.address}${c.repoPublic ? "" : "  (private repo)"}`)
+            }
             return 0
         }
         case "status": {
@@ -346,16 +350,16 @@ async function main() {
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const left = uncommitted(root)
             const before = await status(sid, { bearer })
-            // Asked for a cart that is already public, it would push into the open.
-            if (flags.private === true && before.public) {
-                say(`${before.url} is public, and --private only chooses for a cart's first push. Nothing was pushed: make it private in its Settings first`)
+            // Asked for a repo whose source is already public, it would push into the open.
+            if (flags.private === true && before.repoPublic) {
+                say(`${before.url} is a public repo, and --private only chooses for a repo's first push. Nothing was pushed: make its source private in a cart's Settings first`)
                 return 1
             }
-            // The branch the clone is on: main goes live, any other becomes a preview.
+            // The branch the clone is on: every cart following it moves, and a branch with none gets one.
             const branch = currentBranch(root) ?? "main"
             if (branch !== "main") {
                 const tip = tipOf(root)
-                const was = (before.previews ?? []).find((p) => p.branch === branch)?.head ?? null
+                const was = following(before, branch)[0]?.live ?? null
                 const code = git(["push", "origin", branch], { cwd: root, bearer })
                 if (code !== 0) return code
                 const said = describeBranchPush(branch, was, tip, await status(sid, { bearer }), left)
@@ -376,7 +380,7 @@ async function main() {
             const bearer = tokenOf(root)
             const code = cloneCart(url, dir, { bearer })
             if (code !== 0) {
-                if (!bearer) say(`a private cart needs a login first: ${COMMAND} login, or set OJ_TOKEN`)
+                if (!bearer) say(`a private repo needs a login first: ${COMMAND} login, or set OJ_TOKEN`)
                 return code
             }
             for (const line of setupStore(dir)) say(line)

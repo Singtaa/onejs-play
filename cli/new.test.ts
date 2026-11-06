@@ -50,12 +50,13 @@ beforeEach(async () => {
             const body = JSON.parse(text)
             created.push({ body, auth: req.headers.authorization })
             if (taken) return send(409, { error: "You already have a cart called \"Pop Rocks\".", name: "Pop Rocks", sid: "bbbbbbbbbbbb", url: "/@owner/pop-rocks" })
-            if (privateRefused && body.public === false) return send(403, { error: "Every cart is public for now. Private is coming soon." })
-            return send(200, { sid: SID, url: "/@owner/pop-rocks", public: body.public !== false, clone: cloneUrl() })
+            if (privateRefused && body.private === true) return send(403, { error: "A repo's source is public for now. Private repos are coming soon." })
+            return send(200, { sid: SID, url: "/@owner/pop-rocks", repoPublic: body.private !== true, clone: cloneUrl() })
         }
         if (req.url === `/api/games/${SID}`) {
             const head = mainOf(bare())
-            return send(200, { sid: SID, url: `${site}/@owner/pop-rocks`, public: true, head, live: head, buildError: null })
+            const cart = { cart: SID, address: `${site}/@owner/pop-rocks`, ref: { kind: "branch", name: "main" }, visibility: "public", live: head, buildError: null }
+            return send(200, { sid: SID, url: `${site}/@owner/pop-rocks`, repoPublic: true, head, main: { built: head, buildError: null }, carts: [cart] })
         }
         if (req.url === "/api/login") return send(200, { code: "WDJB-MJHT", url: `${site}/device?code=WDJB-MJHT`, poll: "p".repeat(32), interval: 0, expiresIn: 5 })
         if (req.url === "/api/login/poll") return send(200, { token: TOKEN, handle: "owner", expiresAt: 1 })
@@ -106,7 +107,7 @@ describe("ojplay new makes a cart on this machine", () => {
         for (const f of starterWithName(starterFiles(), "Pop Rocks")) expect(fs.readFileSync(path.join(cart, f.name), "utf8")).toBe(f.text)
         expect(JSON.parse(fs.readFileSync(path.join(cart, "oj.json"), "utf8")).name).toBe("Pop Rocks")
         expect(git(cart, "symbolic-ref", "HEAD").stdout.trim()).toBe("refs/heads/main")
-        expect(git(cart, "log", "--format=%s").stdout.trim()).toBe("New cart")
+        expect(git(cart, "log", "--format=%s").stdout.trim()).toBe("Start from the example")
         expect(git(cart, "ls-files").stdout.trim().split("\n")).toEqual(starterFiles().map((f) => f.name))
     })
 
@@ -125,7 +126,7 @@ describe("ojplay new makes a cart on this machine", () => {
         const { code, cart } = made()
         expect(code).toBe(0)
         expect(fetch).not.toHaveBeenCalled()
-        expect(git(cart, "log", "--format=%s").stdout.trim()).toBe("New cart")
+        expect(git(cart, "log", "--format=%s").stdout.trim()).toBe("Start from the example")
     })
 
     it("refuses a folder that is there and not empty, and leaves it alone", () => {
@@ -142,7 +143,7 @@ describe("ojplay new makes a cart on this machine", () => {
         for (const name of ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"]) vi.stubEnv(name, undefined as unknown as string)
         const { code, said, cart } = made()
         expect(code).toBe(0)
-        expect(said[1]).toBe(`git: nothing committed: git does not know who you are. git config --global user.name "Your Name" and user.email you@example.com, then git add -A && git commit -m "New cart"`)
+        expect(said[1]).toBe(`git: nothing committed: git does not know who you are. git config --global user.name "Your Name" and user.email you@example.com, then git add -A && git commit -m "Start from the example"`)
         expect(said).toHaveLength(4)
         expect(fs.existsSync(path.join(cart, "oj.json"))).toBe(true)
         expect(mainOf(cart)).toBe(null)
@@ -157,10 +158,10 @@ describe("the first ojplay push makes the cart on the site", () => {
         const { code, said } = await push(cart)
         expect(code).toBe(0)
         expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true }, auth: `Bearer ${TOKEN}` }])
-        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (public)`)
+        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (public repo)`)
         expect(said.at(-1)).toBe(`live: ${mainOf(cart)!.slice(0, 7)} at ${site}/@owner/pop-rocks`)
         expect(mainOf(bare())).toBe(mainOf(cart))
-        expect(git(bare(), "log", "--format=%s", "main").stdout.trim().split("\n")).toEqual(["Faster dot", "New cart"])
+        expect(git(bare(), "log", "--format=%s", "main").stdout.trim().split("\n")).toEqual(["Faster dot", "Start from the example"])
         expect(git(cart, "remote", "get-url", "origin").stdout.trim()).toBe(cloneUrl())
         expect(git(cart, "rev-parse", "--abbrev-ref", "main@{upstream}").stdout.trim()).toBe("origin/main")
         // git pull and push work there without ojplay, from the login, never a stored token.
@@ -168,15 +169,15 @@ describe("the first ojplay push makes the cart on the site", () => {
         expect(fs.readFileSync(path.join(cart, ".git", "config"), "utf8")).not.toContain(TOKEN)
     })
 
-    it("asks for a private cart with --private, and says it is one", async () => {
+    it("asks for a private repo with --private, and says it is one", async () => {
         const { cart } = made()
         const { code, said } = await push(cart, undefined, true)
         expect(code).toBe(0)
-        expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true, public: false }, auth: `Bearer ${TOKEN}` }])
-        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (private)`)
+        expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true, private: true }, auth: `Bearer ${TOKEN}` }])
+        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (private repo)`)
     })
 
-    it("pushes nothing when the site refuses a private cart to this account", async () => {
+    it("pushes nothing when the site refuses a private repo to this account", async () => {
         privateRefused = true
         const { cart } = made()
         await expect(push(cart, undefined, true)).rejects.toThrow(/public for now/)
@@ -201,7 +202,7 @@ describe("the first ojplay push makes the cart on the site", () => {
             expect(code).toBe(0)
             expect(said[0]).toBe(`pop-rocks is not on ${host()} yet, and putting it there needs a login`)
             expect(print).toHaveBeenCalledWith(`Open ${site}/device?code=WDJB-MJHT and press Allow (code WDJB-MJHT).`)
-            expect(said[1]).toBe(`made @owner/pop-rocks on ${host()} (public)`)
+            expect(said[1]).toBe(`made @owner/pop-rocks on ${host()} (public repo)`)
             expect(created[0].auth).toBe(`Bearer ${TOKEN}`)
         } finally {
             print.mockRestore()
@@ -242,9 +243,9 @@ describe("the first ojplay push makes the cart on the site", () => {
         const loose = path.join(dir, "loose")
         fs.mkdirSync(loose)
         fs.writeFileSync(path.join(loose, "oj.json"), "{}")
-        expect((await push(loose)).said).toEqual([`this folder is not a git repository: git init && git add -A && git commit -m "New cart", then ${COMMAND} push`])
+        expect((await push(loose)).said).toEqual([`this folder is not a git repository: git init && git add -A && git commit -m "First commit", then ${COMMAND} push`])
         git(loose, "init", "-q", "-b", "main")
-        expect((await push(loose)).said).toEqual([`nothing is committed on main yet: git add -A && git commit -m "New cart", then ${COMMAND} push`])
+        expect((await push(loose)).said).toEqual([`nothing is committed on main yet: git add -A && git commit -m "First commit", then ${COMMAND} push`])
         expect(created).toEqual([])
     })
 })
