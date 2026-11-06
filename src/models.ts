@@ -23,7 +23,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetUrl } from "./asset"
-import { toRGBA, type ColorInput } from "onejs-react"
+import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
@@ -100,6 +100,12 @@ export interface MeshModel extends Model {
     /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
     destroy(): void
 }
+
+/**
+ * The scene as a texture, for a program to read: `textures={{ scene: scene.texture }}`.
+ * While any program reads it, the scene draws only into it, and not to the screen.
+ */
+export type SceneTexture = LentTexture
 
 /** One copy in a scatter. y, yaw (degrees) and scale default to 0, 0 and 1. */
 export interface ScatterCopy {
@@ -257,6 +263,19 @@ export interface Scene {
      *     const forest = scene.scatter(pine, trees)
      */
     scatter(model: Model, copies: readonly ScatterCopy[] | Float32Array): Scatter
+    /**
+     * The scene drawn into a texture instead of the screen, for a program to
+     * read: a colour grade, a blur, an outline over the whole world.
+     *
+     *     <ShaderProgram program={grade} textures={{ scene: scene.texture }}
+     *         style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
+     *
+     * The first program that reads it points the camera at it, and the last to
+     * stop gives the scene back to the screen, so it costs nothing until read.
+     * While read, the scene is only where a program draws it. Each frame it is
+     * drawn just before the programs are, so they read this frame's picture.
+     */
+    readonly texture: SceneTexture
     pointLight(options: PointLightOptions): PointLight
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
@@ -407,6 +426,9 @@ function indexList(list: MeshData["indices"] | undefined): Uint32Array | Uint16A
 function rootElement(): any {
     return getCurrentRuntime()?.root ?? globalThis.__root
 }
+
+/** Said once: a host without AcquireSceneTexture. */
+let saidNoSceneTexture = false
 
 /** Any colour oj takes as the three sRGB floats the bridge takes. `what` names it in the error. */
 function rgb(c: ColorInput, what = "colour"): [number, number, number] {
@@ -741,6 +763,28 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
     }
 
+    // Readers this scene counted, so a release after the scene is gone, or one
+    // too many, never takes a reader from the next scene.
+    let readers = 0
+    const texture: SceneTexture = Object.freeze({
+        [LENT_TEXTURE]: true as const,
+        acquire() {
+            if (disposed) return null
+            if (typeof b.AcquireSceneTexture !== "function") {
+                if (!saidNoSceneTexture) console.warn("[oj] scene.texture needs a newer OneJS: this host's ModelBridge cannot draw the scene into a texture (it came after 3.9.18), so the program reads nothing.")
+                saidNoSceneTexture = true
+                return null
+            }
+            readers++
+            return b.AcquireSceneTexture()
+        },
+        release() {
+            if (disposed || readers === 0) return
+            readers--
+            b.ReleaseSceneTexture()
+        },
+    })
+
     const pointLight = (o: PointLightOptions): PointLight => {
         let position = vec3(o.position)
         let color = o.color ?? d.pointLight.color
@@ -766,6 +810,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         spawn,
         mesh,
         scatter,
+        texture,
         pointLight,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
