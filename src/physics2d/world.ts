@@ -75,6 +75,16 @@ interface Body2DOptionsBase {
     bounce?: number
     /** Reports what enters and leaves, never blocks. */
     trigger?: boolean
+    /** How quickly it slows by itself, moving and turning, per second: 1 loses about two thirds of its speed in a second. 0 by default. */
+    drag?: number
+    /** False: it moves but never turns, like a crate that slides rather than tumbles. True by default. */
+    rotates?: boolean
+    /**
+     * For something small and quick, a shot or a puck: it is swept along its
+     * path, so it cannot pass through another moving body between two steps.
+     * Static walls stop everything without it. Costs a sweep a step.
+     */
+    fast?: boolean
     layer?: Layer
     /** Layers it passes through: neither it nor they block the other. Queries still see it. */
     ignores?: readonly Layer[]
@@ -111,7 +121,7 @@ export interface PolygonOptions extends Body2DOptionsBase {
     points: readonly Vec2[]
 }
 
-export interface OutlineOptions extends Omit<Body2DOptionsBase, "dynamic" | "mass" | "density"> {
+export interface OutlineOptions extends Omit<Body2DOptionsBase, "dynamic" | "mass" | "density" | "drag" | "rotates" | "fast"> {
     /** A line through these points, relative to `at`: ground, walls, a level of any shape. */
     points: readonly Vec2[]
     /** Joins the last point back to the first. False by default. */
@@ -167,6 +177,10 @@ export interface Body2D {
     mass: number
     friction: number
     bounce: number
+    /** How quickly it slows by itself, per second. */
+    drag: number
+    /** False holds it from turning; true lets it turn again. */
+    rotates: boolean
     actor: ElementActor | null
     tag: unknown
     /** False once destroyed, or rewound out of existence by `world.restore`. */
@@ -186,7 +200,7 @@ export interface Body2D {
     destroy(): void
 }
 
-/** Something that walks: slides along walls, climbs steps, falls, keeps to the ground. */
+/** Something that walks: slides along walls, climbs steps, falls, keeps to the ground, and rides whatever moving body it stands on. */
 export interface Character2D {
     readonly kind: "character"
     /** Where its feet are. Read-only: `walk`, `jump` and `teleport` change it. */
@@ -205,6 +219,12 @@ export interface Character2D {
     walk(velocity: Vec2): void
     /** Up, as high as `height` pixels against the world's gravity. Call it while `grounded` for one jump. */
     jump(height: number): void
+    /**
+     * Knockback, pixels per second: up throws it as a jump does, and the rest
+     * shoves it along the ground beside its walk, carrying on in the air and
+     * fading on the ground in about a fifth of a second.
+     */
+    addVelocity(velocity: Vec2): void
     /** Puts its feet exactly at `at`. `world.clearSpot` finds where its middle fits; its feet are half its height below. */
     teleport(at: Vec2): void
     onTouch(handler: (other: Body2D | Character2D, contact: Contact2D) => void): () => void
@@ -370,6 +390,7 @@ function dim2(pixelsPerMeter: number): Dim<Vec2, number | undefined, ElementActo
         rot: (deg) => (deg ?? 0) * RAD,
         rotOut: (rad) => tidy(rad / RAD),
         rotate: (rad: number, v) => [Math.cos(rad) * v[0]! - Math.sin(rad) * v[1]!, Math.sin(rad) * v[0]! + Math.cos(rad) * v[1]!],
+        unrotate: (rad: number, v) => [Math.cos(rad) * v[0]! + Math.sin(rad) * v[1]!, -Math.sin(rad) * v[0]! + Math.cos(rad) * v[1]!],
         ring: (near, radius, a) => [near[0] + Math.sin(a) * radius, near[1] + Math.cos(a) * radius],
         shape: (r, kind, d) => kind === "box" ? new r.Cuboid(d[0]! / 2, d[1]! / 2)
             : kind === "circle" ? new r.Ball(d[0]!)

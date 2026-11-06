@@ -35,6 +35,8 @@ export interface Dim<V extends readonly number[], R, A> {
     rotOut(o: any): R
     /** An engine vector turned by an engine rotation. */
     rotate(rot: any, v: Readonly<EVec>): EVec
+    /** An engine vector turned back by an engine rotation: `rotate`'s inverse. */
+    unrotate(rot: any, v: Readonly<EVec>): EVec
     /** The point `radius` world units from `near`, `angle` radians round, on the ground. */
     ring(near: Readonly<V>, radius: number, angle: number): V
     /** The engine's shape for a shape value: `dims` in metres. */
@@ -89,6 +91,9 @@ export interface BodyOptionsOf<V, R, A> {
     friction?: number
     bounce?: number
     trigger?: boolean
+    drag?: number
+    rotates?: boolean
+    fast?: boolean
     layer?: Layer
     ignores?: readonly Layer[]
     actor?: A | null
@@ -215,6 +220,14 @@ const MAX_STEPS_PER_FRAME = 4
  * mid-floor).
  */
 const SKIN = 0.01
+/** How fast a character's shove fades on the ground, per second: e^-15 a second, a twentieth in a fifth of one. */
+const SHOVE_FADE = 15
+/**
+ * How far below a standing character to look for what it rides, in metres. A
+ * character riding rests between 1.5 and 2 skins up (riding fails at 1.5), so
+ * the 2 a placement looks is too tight to lean on.
+ */
+const GROUND_REACH = 4 * SKIN
 /** Points on the edge of `visibility`'s range, a turn's worth, where nothing is in the way. */
 const SIGHT_ARC = 128
 
@@ -273,6 +286,11 @@ export class WorldCore<V extends readonly number[], R, A> {
     readonly characters = new Set<CharacterCore<V, R, A>>()
     /** Kinematic bodies moving at a velocity the game set, each step. */
     readonly gliding = new Set<BodyCore<V, R, A>>()
+    /** Bodies that do not turn: the engine keeps the lock, oj keeps knowing it, which the engine cannot be asked. */
+    readonly unrotating = new Set<BodyCore<V, R, A>>()
+    /** Dynamic and kinematic bodies alive: a world of only scenery has nothing to ride, so its characters do not look. */
+    private movers = 0
+    moving(): boolean { return this.movers > 0 }
     readonly stepSeconds: number
     private accumulated = 0
     steps = 0
@@ -356,6 +374,9 @@ export class WorldCore<V extends readonly number[], R, A> {
         const r = this.r, d = this.dim
         const bodyDesc = o.dynamic ? r.RigidBodyDesc.dynamic() : o.kinematic ? r.RigidBodyDesc.kinematicPositionBased() : r.RigidBodyDesc.fixed()
         bodyDesc.setTranslation(...toE(d, o.at ?? zeroWorld(d))).setRotation(d.rot(o.rotation))
+        if (o.drag !== undefined) bodyDesc.setLinearDamping(o.drag).setAngularDamping(o.drag)
+        if (o.rotates === false) bodyDesc.lockRotations()
+        if (o.fast === true) bodyDesc.setCcdEnabled(true)
         const rb = this.raw.createRigidBody(bodyDesc)
         const layer = o.layer ?? this.defaults.layer
         // The larger bounce of two bodies wins, so a ball does not die on a floor with none.
@@ -367,6 +388,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         desc.setActiveCollisionTypes(r.ActiveCollisionTypes.ALL)
         const collider = this.raw.createCollider(desc, rb)
         const body = new BodyCore(this, kind, rb.handle, collider.handle, layer, o)
+        if (body.dynamic || body.kinematic) this.movers++
         this.byCollider.set(collider.handle, body)
         this.fresh.add(collider.handle)
         return body
@@ -832,6 +854,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         const own: Record<number, number[]> = {}
         for (const c of this.characters) own[c.colliderHandle] = c.saveState()
         for (const b of this.gliding) own[b.colliderHandle] = b.saveState()
+        for (const b of this.unrotating) own[b.colliderHandle] = b.saveState()
         const text = asciiBytes(JSON.stringify(own))
         const out = new Uint8Array(engine.length + text.length + 4)
         out.set(engine, 0)
@@ -868,6 +891,7 @@ export class WorldCore<V extends readonly number[], R, A> {
                 w.markGone()
                 w.releaseActor()
                 this.gliding.delete(w as BodyCore<V, R, A>)
+                this.unrotating.delete(w as BodyCore<V, R, A>)
                 this.byCollider.delete(handle)
                 this.characters.delete(w as CharacterCore<V, R, A>)
                 this.bury(w)
@@ -884,7 +908,12 @@ export class WorldCore<V extends readonly number[], R, A> {
             c.rebuildController()
             c.loadState(own[c.colliderHandle])
         }
-        for (const w of this.byCollider.values()) if (w instanceof BodyCore && w.kinematic) w.loadState(own[w.colliderHandle])
+        this.movers = 0
+        for (const w of this.byCollider.values()) {
+            if (!(w instanceof BodyCore)) continue
+            w.loadState(own[w.colliderHandle])
+            if (w.dynamic || w.kinematic) this.movers++
+        }
         old.free()
     }
 
@@ -908,7 +937,11 @@ export class WorldCore<V extends readonly number[], R, A> {
         this.byCollider.delete(w.colliderHandle)
         this.fresh.delete(w.colliderHandle)
         if (w instanceof CharacterCore) this.characters.delete(w)
-        else this.gliding.delete(w)
+        else {
+            this.gliding.delete(w)
+            this.unrotating.delete(w)
+            if (w.dynamic || w.kinematic) this.movers--
+        }
         this.bury(w)
     }
 
@@ -954,6 +987,7 @@ export class BodyCore<V extends readonly number[], R, A> {
         this.dynamic = o.dynamic === true
         this.kinematic = o.kinematic === true && !this.dynamic
         this.trigger = o.trigger === true
+        if (o.rotates === false) this.lock(true)
         if (this.actor !== null) this.syncActor()
     }
 
@@ -1023,8 +1057,34 @@ export class BodyCore<V extends readonly number[], R, A> {
         rb.setNextKinematicTranslation(this.d.e(add(this.d.a(rb.nextTranslation()), scale(this.held, dt))))
     }
 
-    saveState(): number[] { return this.held ?? [] }
-    loadState(s: number[] | undefined): void { this.hold(s !== undefined && s.length === this.d.n ? s : null) }
+    /** How quickly it slows by itself, moving and turning, per second. */
+    get drag(): number { return this.rb().linearDamping() }
+    set drag(k: number) {
+        const rb = this.rb()
+        rb.setLinearDamping(k)
+        rb.setAngularDamping(k)
+    }
+
+    private locked = false
+    get rotates(): boolean { return !this.locked }
+    set rotates(on: boolean) {
+        this.rb().lockRotations(!on, true)
+        this.lock(!on)
+    }
+
+    private lock(locked: boolean): void {
+        this.locked = locked
+        if (locked) this.world.unrotating.add(this)
+        else this.world.unrotating.delete(this)
+    }
+
+    /** What oj holds that the engine's snapshot does not: whether it is locked from turning, then a kinematic body's held velocity. */
+    saveState(): number[] { return [this.locked ? 1 : 0, ...(this.held ?? [])] }
+    /** Nothing saved is a body that turns and holds no velocity. The engine's own snapshot already holds the lock itself. */
+    loadState(s: number[] | undefined): void {
+        this.lock(s !== undefined && s[0] === 1)
+        if (this.kinematic) this.hold(s !== undefined && s.length === this.d.n + 1 ? s.slice(1) : null)
+    }
 
     get mass(): number { return this.rb().mass() }
     set mass(m: number) { this.collider().setMass(m) }
@@ -1153,6 +1213,8 @@ export class CharacterCore<V extends readonly number[], R, A> {
     private wish: EVec
     /** How it moved over the last step, in metres a second. */
     private moved: EVec
+    /** A shove along the ground from `addVelocity`, metres a second: kept in the air, fading on the ground. */
+    private shove: EVec
     private controller: any
     private isGrounded = false
     private touching = new Set<number>()
@@ -1168,6 +1230,7 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.o = o
         this.wish = zero(d)
         this.moved = zero(d)
+        this.shove = zero(d)
         this.radius = o.radius ?? c.radius
         this.height = Math.max(o.height ?? c.height, this.radius * 2)
         this.layer = o.layer ?? world.defaults.layer
@@ -1186,7 +1249,7 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.bodyHandle = rb.handle
         this.colliderHandle = collider.handle
         this.rebuildController()
-        this.isGrounded = this.groundUnder(centre)
+        this.isGrounded = this.groundUnder(centre) !== -1
         if (this.actor !== null) this.syncActor()
     }
 
@@ -1198,13 +1261,26 @@ export class CharacterCore<V extends readonly number[], R, A> {
     }
 
     /**
-     * Standing if there is ground within its skin of a capsule centred at
-     * `centre`, so a character placed on a floor starts standing, rather than
-     * falling one step into its own skin and climbing back out of it.
+     * The collider within `reach` metres below a capsule centred at `centre`,
+     * or -1. Within its skin, a character placed on a floor starts standing,
+     * rather than falling one step into its own skin and climbing back out.
      */
-    private groundUnder(centre: EVec): boolean {
+    private groundUnder(centre: EVec): number {
         const raw = this.world.raw.getCollider(this.colliderHandle).shape
-        return this.world.engineSweep(raw, centre, add(centre, scale(this.d.up, -2 * SKIN)), { skip: [this] }) !== null
+        return this.world.engineSweep(raw, centre, add(centre, scale(this.d.up, -2 * SKIN)), { skip: [this] })?.handle ?? -1
+    }
+
+    private footShape: any = null
+    /**
+     * The collider it stands on with its capsule centred at `centre`, or -1:
+     * what it rides. Only its bottom round end is cast, so a crate resting on
+     * its head, which the whole capsule would start touching, is not taken
+     * for the floor.
+     */
+    private standingOn(centre: EVec): number {
+        this.footShape ??= new this.world.r.Ball(this.radius / this.d.unit)
+        const foot = add(centre, scale(this.d.up, -capsuleHalf(this.radius, this.height) / this.d.unit))
+        return this.world.engineSweep(this.footShape, foot, add(foot, scale(this.d.up, -GROUND_REACH)), { skip: [this] })?.handle ?? -1
     }
 
     /** The controller holds the world's sets, so a restored world needs a new one. */
@@ -1245,6 +1321,33 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.fall = Math.sqrt(2 * g * Math.max(0, height / this.d.unit))
     }
 
+    /** Knockback: the part along up joins its speed up and down, as a jump does; the rest is a shove beside its walk. */
+    addVelocity(v: V): void {
+        if (this.gone) throw new Error("[oj] this character was destroyed")
+        const d = this.d, e = toE(d, v)
+        const g = dot(d.a(this.world.raw.gravity), d.up)
+        // With no gravity there is no ground, so the whole of it is a shove.
+        const up = g === 0 ? 0 : dot(e, d.up)
+        this.fall += up
+        this.shove = add(this.shove, sub(e, scale(d.up, up)))
+    }
+
+    /**
+     * Where the point it stands on goes this step, in metres: what riding a
+     * moving body adds to its own move. A kinematic body has already been
+     * given where it goes next; a dynamic one is read at that point.
+     */
+    private carry(ground: number, feet: EVec, dt: number): EVec | null {
+        if (ground === -1) return null
+        const on = this.world.wrapperOf(ground)
+        if (!(on instanceof BodyCore) || !on.alive || (!on.dynamic && !on.kinematic)) return null
+        const d = this.d, rb = this.world.raw.getRigidBody(on.bodyHandle)
+        if (on.dynamic) return scale(d.a(rb.velocityAtPoint(d.e(feet))), dt)
+        const from = d.a(rb.translation()), to = d.a(rb.nextTranslation())
+        const local = d.unrotate(rb.rotation(), sub(feet, from))
+        return sub(add(to, d.rotate(rb.nextRotation(), local)), feet)
+    }
+
     /** One step of its held walk, called by the world before the engine steps. */
     stepWalk(dt: number): void {
         const d = this.d
@@ -1259,22 +1362,57 @@ export class CharacterCore<V extends readonly number[], R, A> {
         // Walking is along the ground: up and down are a jump's and gravity's.
         // With no gravity there is no ground, and it walks every way.
         const along = g === 0 ? this.wish : sub(this.wish, scale(d.up, dot(this.wish, d.up)))
-        const wish = scale(add(along, scale(d.up, this.fall)), dt)
+        let wish = scale(add(add(along, this.shove), scale(d.up, this.fall)), dt)
+        const at = d.a(rb.nextTranslation())
+        // Riding: what it stands on carries it. What that is comes from here,
+        // before anything moves this step, where it and the body under it are
+        // both where the last step left them. Down is taken without the
+        // controller, since the body under it has not moved yet and would stop
+        // it; everything else goes through the controller, so a wall or a
+        // ceiling still stops it.
+        let sink: EVec | null = null
+        const ground = this.isGrounded && this.world.moving() ? this.standingOn(at) : -1
+        const carried = this.carry(ground, add(at, scale(d.up, -(this.height / 2 / d.unit + SKIN))), dt)
+        if (carried !== null) {
+            const down = Math.min(0, dot(carried, d.up))
+            if (down < 0) sink = scale(d.up, down)
+            wish = add(wish, sub(carried, scale(d.up, down)))
+        }
         const collider = this.world.raw.getCollider(this.colliderHandle)
         this.controller.computeColliderMovement(collider, d.e(wish), this.world.r.QueryFilterFlags.EXCLUDE_SENSORS, this.walkGroups)
-        const m = d.a(this.controller.computedMovement())
+        let m = d.a(this.controller.computedMovement())
+        if (sink !== null) m = add(m, sink)
         this.isGrounded = this.controller.computedGrounded()
         if (this.isGrounded && this.fall < 0) this.fall = 0
         // A head that meets a ceiling stops rising.
         if (this.fall > 0 && dot(m, d.up) < this.fall * dt * 0.5) this.fall = 0
-        rb.setNextKinematicTranslation(d.e(add(d.a(rb.nextTranslation()), m)))
+        this.stopShove(dt)
+        const next = add(at, m)
+        rb.setNextKinematicTranslation(d.e(next))
         this.moved = scale(m, 1 / dt)
         this.reportTouches()
     }
 
-    /** What oj holds that the engine's snapshot does not: the held walk, the speed along up, standing. */
+    /**
+     * A shove loses what a wall it met took from it, and fades while it is on
+     * the ground: to a twentieth in a fifth of a second.
+     */
+    private stopShove(dt: number): void {
+        if (this.shove.every((x) => x === 0)) return
+        const d = this.d
+        for (let i = 0; i < this.controller.numComputedCollisions(); i++) {
+            const n = this.controller.computedCollision(i)?.normal1
+            if (n === undefined) continue
+            const normal = d.a(n), into = dot(this.shove, normal)
+            if (into < 0) this.shove = sub(this.shove, scale(normal, into))
+        }
+        if (this.isGrounded) this.shove = scale(this.shove, Math.exp(-SHOVE_FADE * dt))
+        if (dot(this.shove, this.shove) < 1e-6) this.shove = zero(d)
+    }
+
+    /** What oj holds that the engine's snapshot does not: the held walk, the speed along up, standing, and the shove. */
     saveState(): number[] {
-        return [...this.wish, this.fall, this.isGrounded ? 1 : 0]
+        return [...this.wish, this.fall, this.isGrounded ? 1 : 0, ...this.shove]
     }
 
     loadState(s: number[] | undefined): void {
@@ -1283,6 +1421,7 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.wish = s.slice(0, n)
         this.fall = s[n]!
         this.isGrounded = s[n + 1] === 1
+        this.shove = s.length === 2 * n + 2 ? s.slice(n + 2) : zero(this.d)
         this.touching.clear()
     }
 
@@ -1345,7 +1484,8 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.world.markFresh(this.colliderHandle)
         this.fall = 0
         this.moved = zero(this.d)
-        this.isGrounded = this.groundUnder(centre)
+        this.shove = zero(this.d)
+        this.isGrounded = this.groundUnder(centre) !== -1
         this.touching.clear()
     }
 

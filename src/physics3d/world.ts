@@ -75,6 +75,16 @@ interface BodyOptionsBase {
     bounce?: number
     /** Reports what enters and leaves, never blocks. */
     trigger?: boolean
+    /** How quickly it slows by itself, moving and turning, per second: 1 loses about two thirds of its speed in a second. 0 by default. */
+    drag?: number
+    /** False: it moves but never turns, like a crate that slides rather than tumbles. True by default. */
+    rotates?: boolean
+    /**
+     * For something small and quick, a shot or a puck: it is swept along its
+     * path, so it cannot pass through another moving body between two steps.
+     * Static walls stop everything without it. Costs a sweep a step.
+     */
+    fast?: boolean
     layer?: Layer
     /** Layers it passes through: neither it nor they block the other. Queries still see it. */
     ignores?: readonly Layer[]
@@ -160,6 +170,10 @@ export interface Body {
     mass: number
     friction: number
     bounce: number
+    /** How quickly it slows by itself, per second. */
+    drag: number
+    /** False holds it from turning; true lets it turn again. */
+    rotates: boolean
     actor: Actor | null
     tag: unknown
     /** False once destroyed, or rewound out of existence by `world.restore`. */
@@ -179,7 +193,7 @@ export interface Body {
     destroy(): void
 }
 
-/** Something that walks: slides along walls, climbs steps, falls, keeps to the ground. */
+/** Something that walks: slides along walls, climbs steps, falls, keeps to the ground, and rides whatever moving body it stands on. */
 export interface Character {
     readonly kind: "character"
     readonly world: World
@@ -204,6 +218,12 @@ export interface Character {
     walk(velocity: Vec3): void
     /** Up, as high as `height` metres against the world's gravity. Call it while `grounded` for one jump. */
     jump(height: number): void
+    /**
+     * Knockback, metres per second: up throws it as a jump does, and the rest
+     * shoves it along the ground beside its walk, carrying on in the air and
+     * fading on the ground in about a fifth of a second.
+     */
+    addVelocity(velocity: Vec3): void
     /** Puts its feet exactly at `at`. `world.clearSpot` finds where its middle fits; its feet are half its height below. */
     teleport(at: Vec3): void
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
@@ -405,6 +425,7 @@ const DIM3: Dim<Vec3, Partial<Rotation> | undefined, Actor> = {
     rot: (r) => toQuat(r),
     rotOut: (q) => fromQuat(q),
     rotate: (q: Quat, v) => rotate(q, v as Vec3),
+    unrotate: (q: Quat, v) => rotate({ x: -q.x, y: -q.y, z: -q.z, w: q.w }, v as Vec3),
     ring: (near, radius, a) => [near[0] + Math.sin(a) * radius, near[1], near[2] + Math.cos(a) * radius],
     shape: (r, kind, d) => kind === "box" ? new r.Cuboid(d[0]! / 2, d[1]! / 2, d[2]! / 2)
         : kind === "sphere" ? new r.Ball(d[0]!)
