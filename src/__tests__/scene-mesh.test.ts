@@ -1,7 +1,8 @@
 /**
- * `scene.mesh`: a model made from arrays, as the calls it makes on OneJS's
- * ModelBridge (CreateMesh and SetMesh, tested in OneJS's MeshModelEditModeTests),
- * and as the triangles a physics world reads from it.
+ * `scene.mesh` and `scene.scatter`, as the calls they make on OneJS's
+ * ModelBridge (CreateMesh, SetMesh and Scatter, tested in OneJS's
+ * MeshModelEditModeTests and ScatterEditModeTests), and a mesh model as the
+ * triangles a physics world reads from it.
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -18,6 +19,8 @@ let savedCS: unknown
 // What SetMesh answers next: "" takes the arrays, anything else is what was wrong.
 let answer: string
 let unloads: boolean
+// What Scatter answers: a handle, or 0 for a model it cannot draw that way.
+let scatterAnswer: number | null
 
 function recorder(): any {
     let next = 40
@@ -25,6 +28,7 @@ function recorder(): any {
         get(_t, name: string) {
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
+                if (name === "Scatter") return scatterAnswer ?? ++next
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return answer
                 if (name === "Unload") return unloads
@@ -47,6 +51,7 @@ beforeEach(() => {
     calls = []
     answer = ""
     unloads = true
+    scatterAnswer = null
     savedCS = (globalThis as any).CS
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: recorder() } } }
 })
@@ -179,5 +184,53 @@ describe("a mesh model as a physics collider", () => {
         } finally {
             world.dispose()
         }
+    })
+})
+
+describe("scene.scatter", () => {
+    it("sends the copies as one Float32Array, five numbers a copy, with y, yaw and scale defaulted", () => {
+        const s = scene()
+        const model = s.mesh(SQUARE)
+        const forest = s.scatter(model, [{ x: 1, z: 2 }, { x: 3, y: 4, z: 5, yaw: 90, scale: 2 }])
+        const [, id, data] = of("Scatter")[0]!
+        expect(id).toBe(model.id)
+        expect(data).toBeInstanceOf(Float32Array)
+        expect(Array.from(data as Float32Array)).toEqual([1, 0, 2, 0, 1, 3, 4, 5, 90, 2])
+        expect(forest.count).toBe(2)
+    })
+
+    it("passes a Float32Array through as it is", () => {
+        const s = scene()
+        const copies = new Float32Array(10)
+        s.scatter(s.mesh(SQUARE), copies)
+        expect(of("Scatter")[0]![2]).toBe(copies)
+    })
+
+    it("refuses copies it cannot read, before asking the bridge", () => {
+        const s = scene()
+        const model = s.mesh(SQUARE)
+        expect(() => s.scatter(model, new Float32Array(7))).toThrow("five numbers a copy (x, y, z, yaw, scale), and this one has 7")
+        expect(() => s.scatter(model, [{ x: 1, z: 1 }, { x: 2 } as any])).toThrow("copy 1 needs an x and a z")
+        expect(() => s.scatter(model, "trees" as any)).toThrow("a list of { x, z } or a Float32Array")
+        expect(of("Scatter")).toHaveLength(0)
+    })
+
+    it("says why when the bridge cannot draw a model this way", () => {
+        const s = scene()
+        const model = s.mesh(SQUARE)
+        scatterAnswer = 0
+        expect(() => s.scatter(model, [{ x: 0, z: 0 }])).toThrow("has a skinned mesh")
+    })
+
+    it("is destroyed once, and not after its scene took it along", () => {
+        const s = scene()
+        const forest = s.scatter(s.mesh(SQUARE), [{ x: 0, z: 0 }])
+        forest.destroy()
+        forest.destroy()
+        expect(of("DestroyScatter")).toHaveLength(1)
+        const rocks = s.scatter(s.mesh(SQUARE), [{ x: 0, z: 0 }])
+        dispose()
+        rocks.destroy()
+        expect(of("DestroyScatter")).toHaveLength(1)
     })
 })

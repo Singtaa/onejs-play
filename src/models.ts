@@ -101,6 +101,21 @@ export interface MeshModel extends Model {
     destroy(): void
 }
 
+/** One copy in a scatter. y, yaw (degrees) and scale default to 0, 0 and 1. */
+export interface ScatterCopy {
+    x: number
+    y?: number
+    z: number
+    yaw?: number
+    scale?: number
+}
+
+/** Copies of a model that never move, from `scene.scatter`. */
+export interface Scatter {
+    readonly count: number
+    destroy(): void
+}
+
 export interface SpawnOptions {
     position?: Vec3
     /** Which way it faces; any part left out is 0. */
@@ -232,6 +247,16 @@ export interface Scene {
      *     scene.spawn(land)
      */
     mesh(options: MeshModelOptions): MeshModel
+    /**
+     * Copies of a model that never move: a forest, rocks, grass. Far cheaper
+     * than spawning each, and with nothing an actor has: no collider, no pick,
+     * no animation. `copies` is a list of `{ x, z }` (y, yaw and scale too, if
+     * wanted), or a Float32Array of x, y, z, yaw and scale a copy. A model with a
+     * skinned mesh is refused, since its copies could never move.
+     *
+     *     const forest = scene.scatter(pine, trees)
+     */
+    scatter(model: Model, copies: readonly ScatterCopy[] | Float32Array): Scatter
     pointLight(options: PointLightOptions): PointLight
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
@@ -677,6 +702,45 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return model
     }
 
+    const scatter = (model: Model, copies: readonly ScatterCopy[] | Float32Array): Scatter => {
+        if (generationOf.get(model) !== generation) {
+            throw new Error("[oj] scene.scatter: this model was made for a scene that is gone. Load it again once the scene is live.")
+        }
+        if (typeof b.Scatter !== "function") {
+            throw new Error("[oj] scene.scatter needs a newer OneJS: this host's ModelBridge has no Scatter (it came after 3.9.18).")
+        }
+        let data: Float32Array
+        if (copies instanceof Float32Array) {
+            if (copies.length % 5 !== 0) throw new Error(`[oj] scene.scatter: a Float32Array of copies is five numbers a copy (x, y, z, yaw, scale), and this one has ${copies.length}`)
+            data = copies
+        } else if (Array.isArray(copies)) {
+            data = new Float32Array(copies.length * 5)
+            for (let i = 0, at = 0; i < copies.length; i++, at += 5) {
+                const c = copies[i]!
+                if (typeof c?.x !== "number" || typeof c?.z !== "number") throw new Error(`[oj] scene.scatter: copy ${i} needs an x and a z`)
+                data[at] = c.x
+                data[at + 1] = c.y ?? 0
+                data[at + 2] = c.z
+                data[at + 3] = c.yaw ?? 0
+                data[at + 4] = c.scale ?? 1
+            }
+        } else {
+            throw new Error("[oj] scene.scatter: copies are a list of { x, z } or a Float32Array, five numbers a copy")
+        }
+        const id: number = b.Scatter(model.id, data)
+        if (id === 0) throw new Error("[oj] scene.scatter: this model has a skinned mesh, and scattered copies never move. Spawn it instead.")
+        const born = generation
+        let alive = true
+        return Object.freeze({
+            count: data.length / 5,
+            destroy() {
+                if (!alive || born !== generation) return
+                alive = false
+                b.DestroyScatter(id)
+            },
+        })
+    }
+
     const pointLight = (o: PointLightOptions): PointLight => {
         let position = vec3(o.position)
         let color = o.color ?? d.pointLight.color
@@ -701,6 +765,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const scene: Scene = {
         spawn,
         mesh,
+        scatter,
         pointLight,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
