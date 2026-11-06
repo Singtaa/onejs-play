@@ -50,7 +50,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
 | `show.ts` | `show`: a value, a table or a graph beside the line that made it, in the OJPlay editor; a log line on change anywhere else |
 | `container.ts` | The host-facing surface, `ojplay/container` |
-| `runtime.ts` | Container-side: builds the `oj` object a game receives, and runs each frame in three phases: the frame (`useFrame`), the step (worlds), late (cameras) |
+| `runtime.ts` | Container-side: builds the `oj` object a game receives, and runs each frame in three phases: the frame (`useFrame`), the step (worlds), late (cameras). Given `pendingCompiles`, it holds every phase behind the cart's first screen until its programs have drawn once, at most `FIRST_DRAW_CAP` (2 s), then starts with a 1/60 frame |
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `input.ts` | Container-side: the input backend onejs-unity reads through, with the pointer lock's state (asked in a press's frame, else on the next press) |
