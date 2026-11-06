@@ -1,4 +1,4 @@
-import { BAKER_VERSION, bakedHereLine, difference, matches, recordOf, type LightInputs, type StaticActor } from "../record"
+import { BAKER_VERSION, bakedHereLine, difference, layoutOf, matches, parseSaved, recordOf, sameLayout, type LightInputs, type SavedLight, type StaticActor } from "../record"
 
 const actor = (model: string, x: number, over: Partial<StaticActor> = {}): StaticActor => ({
     model, sha: `sha-${model}`, position: [x, 0, 0], rotation: { yaw: 0, pitch: 0, roll: 0 }, scale: 1, ...over,
@@ -58,8 +58,35 @@ describe("a light record", () => {
         expect(seen.size).toBe(2000)
     })
 
-    it("says the console line for a missing file and for a stale one", () => {
-        expect(bakedHereLine("yard.light.png", null)).toBe("[oj] yard.light.png is not in the cart yet: baked here.")
-        expect(bakedHereLine("yard.light.png", "models/yard.glb changed")).toBe("[oj] yard.light.png was baked for a different scene (models/yard.glb changed): baked here instead.")
+    it("says the console line for a missing file, an unreadable one and a stale one", () => {
+        expect(bakedHereLine("yard.light.png", { why: "missing" })).toBe("[oj] yard.light.png is not in the cart yet: baked here.")
+        expect(bakedHereLine("yard.light.png", { why: "unreadable", detail: "it holds no light record" })).toBe("[oj] yard.light.png is not a light file oj can read (it holds no light record): baked here instead.")
+        expect(bakedHereLine("yard.light.png", { why: "stale", detail: "models/yard.glb changed" })).toBe("[oj] yard.light.png was baked for a different scene (models/yard.glb changed): baked here instead.")
+    })
+})
+
+describe("a saved light", () => {
+    const layout = layoutOf(64, 32, 24, [-1, -1, -1, 1, 9, 6, 9], [[0, 0, 10, 10], [12, 0, 10, 10]])
+    const saved: SavedLight = { ...recordOf(scene(yard)), layout }
+
+    it("reads back from its text as it was written", () => {
+        expect(parseSaved(JSON.stringify(saved))).toEqual(saved)
+    })
+
+    it("says why a text is not a record this baker wrote", () => {
+        expect(parseSaved(null)).toBe("it holds no light record")
+        expect(parseSaved("{")).toBe("its light record is not JSON")
+        expect(parseSaved(JSON.stringify({ ...saved, v: 2 }))).toMatch(/version/)
+        const { layout: _, ...bare } = saved
+        expect(parseSaved(JSON.stringify(bare))).toBe("its light record is missing a field")
+        expect(parseSaved(JSON.stringify({ ...saved, layout: { ...layout, grid: [0, 0, 0, 1] } }))).toBe("its light record is missing a field")
+        expect(parseSaved(JSON.stringify({ ...saved, actors: [["wall.glb", "sha", 0, 0, 0, 0, 0, "0", 1]] }))).toBe("its light record is missing a field")
+    })
+
+    it("lays out the same only with the same atlas, grid and every rectangle in its place", () => {
+        expect(sameLayout(layout, layoutOf(64, 32, 24, [-1, -1, -1, 1, 9, 6, 9], [[0, 0, 10, 10], [12, 0, 10, 10]]))).toBe(true)
+        expect(sameLayout(layout, layoutOf(64, 32, 24, [-1, -1, -1, 1, 9, 6, 9], [[12, 0, 10, 10], [0, 0, 10, 10]]))).toBe(false)
+        expect(sameLayout(layout, layoutOf(128, 32, 24, [-1, -1, -1, 1, 9, 6, 9], [[0, 0, 10, 10], [12, 0, 10, 10]]))).toBe(false)
+        expect(sameLayout(layout, layoutOf(64, 32, 24, [-1, -1, -1, 1.5, 9, 6, 9], [[0, 0, 10, 10], [12, 0, 10, 10]]))).toBe(false)
     })
 })

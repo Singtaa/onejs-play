@@ -67,7 +67,8 @@ const round = (x: number, step: number) => {
     return r === 0 ? 0 : Number(r.toFixed(Math.max(0, -Math.floor(Math.log10(step)))))
 }
 
-function rowOf(a: StaticActor): ActorRow {
+/** An actor as the record keeps it, rounded. */
+export function rowOf(a: StaticActor): ActorRow {
     return [
         a.model, a.sha,
         round(a.position[0], POSITION_STEP), round(a.position[1], POSITION_STEP), round(a.position[2], POSITION_STEP),
@@ -76,7 +77,8 @@ function rowOf(a: StaticActor): ActorRow {
     ]
 }
 
-const compareRows = (a: ActorRow, b: ActorRow) => {
+/** The record's order: model, hash, then place. */
+export const compareRows = (a: ActorRow, b: ActorRow) => {
     for (let i = 0; i < a.length; i++) {
         const x = a[i]!, y = b[i]!
         if (x < y) return -1
@@ -98,7 +100,10 @@ export function recordOf(inputs: LightInputs): LightRecord {
 
 /** A hash of everything but the fingerprint itself, as 16 hex digits. */
 function fingerprintOf(body: Omit<LightRecord, "fingerprint">): string {
-    const text = JSON.stringify([body.v, body.baker, body.actors, body.sun, body.ambient, body.detail, body.quality])
+    return hash16(JSON.stringify([body.v, body.baker, body.actors, body.sun, body.ambient, body.detail, body.quality]))
+}
+
+function hash16(text: string): string {
     // Two 32-bit FNV-1a passes with different offsets: a file named in a cart
     // is compared with one scene, so this guards against chance, not an adversary.
     let a = 0x811c9dc5, b = 0x050c5d1f
@@ -109,6 +114,60 @@ function fingerprintOf(body: Omit<LightRecord, "fingerprint">): string {
         b = (b ^ (b >>> 15)) >>> 0
     }
     return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0")
+}
+
+/**
+ * Where a bake's light sits: the atlas, the probe grid and every rectangle.
+ * It is made from the record alone (the rounded actors, in the record's order),
+ * so a scene that matches a file lays out as the file did; the layout is
+ * saved too, so an unwrapper or packer that changed is caught rather than
+ * drawing one actor's light on another.
+ */
+export interface SavedLayout {
+    /** The atlas's width and height in texels, and its texels a metre. */
+    atlas: [number, number, number]
+    /** The probe grid's origin, spacing and three counts. */
+    grid: [number, number, number, number, number, number, number]
+    /** Every rectangle, in the record's order, hashed. */
+    rects: string
+}
+
+/** What a light file's text chunk holds. */
+export interface SavedLight extends LightRecord {
+    layout: SavedLayout
+}
+
+/** The layout of an atlas `width` by `height` at `detail`, a probe grid, and each rectangle as x, y, width and height in texels. */
+export function layoutOf(width: number, height: number, detail: number, grid: readonly number[], rects: readonly (readonly number[])[]): SavedLayout {
+    return {
+        atlas: [width, height, detail],
+        grid: [...grid] as SavedLayout["grid"],
+        rects: hash16(JSON.stringify(rects)),
+    }
+}
+
+export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
+    return JSON.stringify(a) === JSON.stringify(b)
+}
+
+const isNumbers = (x: unknown, n: number) => Array.isArray(x) && x.length === n && x.every((v) => typeof v === "number")
+
+/** A light file's text read back: the record, or why it is not one this baker wrote. */
+export function parseSaved(text: string | null): SavedLight | string {
+    if (text === null) return "it holds no light record"
+    let r: any
+    try {
+        r = JSON.parse(text)
+    } catch {
+        return "its light record is not JSON"
+    }
+    if (r === null || typeof r !== "object" || r.v !== 1) return "its light record is of a version this oj does not read"
+    const ok = typeof r.baker === "number" && typeof r.fingerprint === "string" && Array.isArray(r.actors)
+        && (r.sun === null || isNumbers(r.sun, 7)) && isNumbers(r.ambient, 6)
+        && typeof r.detail === "number" && typeof r.quality === "number"
+        && r.layout !== null && typeof r.layout === "object" && isNumbers(r.layout.atlas, 3) && isNumbers(r.layout.grid, 7) && typeof r.layout.rects === "string"
+        && r.actors.every((a: unknown) => Array.isArray(a) && a.length === 9 && typeof a[0] === "string" && typeof a[1] === "string" && a.slice(2).every((v: unknown) => typeof v === "number"))
+    return ok ? r as SavedLight : "its light record is missing a field"
 }
 
 /** Whether a saved record was baked for exactly these inputs. */
@@ -146,9 +205,17 @@ export function difference(saved: LightRecord, now: LightRecord): string | null 
     return null
 }
 
-/** The console line for a named bake that ran here: the file was missing, or `reason` says what changed. */
-export function bakedHereLine(name: string, reason: string | null): string {
-    return reason === null
-        ? `[oj] ${name} is not in the cart yet: baked here.`
-        : `[oj] ${name} was baked for a different scene (${reason}): baked here instead.`
+/**
+ * Why a named bake ran here: the file was missing, it could not be read, or
+ * it was baked for a different scene.
+ */
+export type BakedHere = { why: "missing" } | { why: "unreadable", detail: string } | { why: "stale", detail: string }
+
+/** The console line for a named bake that ran here. */
+export function bakedHereLine(name: string, here: BakedHere): string {
+    switch (here.why) {
+        case "missing": return `[oj] ${name} is not in the cart yet: baked here.`
+        case "unreadable": return `[oj] ${name} is not a light file oj can read (${here.detail}): baked here instead.`
+        case "stale": return `[oj] ${name} was baked for a different scene (${here.detail}): baked here instead.`
+    }
 }

@@ -19,6 +19,8 @@ export { setAssetBase, getAssetBase } from "./asset"
 export { resetTheme, THEME_USS } from "./theme"
 export { setPlayContext, getPlayContext } from "./play"
 export type { PlayContext } from "./play"
+export { setLightHost } from "./light/host"
+export type { BakedLight, LightHost } from "./light/host"
 export type { OjRuntime, ContainerRuntime, RuntimeOptions, TimeState } from "./runtime"
 
 export { createContainerInput } from "./input"

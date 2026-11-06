@@ -1,9 +1,11 @@
 /**
  * `scene.bake` as the calls it makes on OneJS's ModelBridge: LightMesh,
- * SetLightUnwrap, BeginBake and StepBake (tested in OneJS's
- * ModelLightPlayModeTests). The unwrap is xatlas's own, so what reaches the
- * bridge is what a cart's would be.
+ * SetLightUnwrap, BeginBake, StepBake, LightFile and LoadLight (tested in
+ * OneJS's ModelLightPlayModeTests). The unwrap is xatlas's own, so what
+ * reaches the bridge is what a cart's would be. A named bake reads its light
+ * file from the cart's own origin, which `fetch` stands in for here.
  */
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest"
@@ -14,6 +16,10 @@ import { RAPIER_VERSION } from "../physics3d/rapier.version"
 import { createWorld } from "../physics3d/world"
 import { XATLAS_VERSION } from "../light/xatlas.version"
 import { decodeLightMesh, PATHS_PER_FRAME } from "../light/bake"
+import { readText, writeText } from "../light/png"
+import { parseSaved, type SavedLight } from "../light/record"
+import { setLightHost, type BakedLight } from "../light/host"
+import { setAssetBase, setAssetMap } from "../asset"
 
 type Call = [string, ...unknown[]]
 
@@ -24,6 +30,14 @@ let refused: Set<number>
 let beginAnswer: string
 // What StepBake answers, in turn; the last repeats.
 let steps: number[]
+let loadAnswer: string
+// The cart's files by name, as its origin serves them.
+let served: Map<string, Uint8Array>
+let fetched: string[]
+let baked: BakedLight[]
+
+/** A 1 by 1 PNG: what LightFile answers, before oj adds its record. */
+const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 /** A 2 m square on the ground, as LightMesh lays it out: counts, positions, indices. */
 function squareMesh(): string {
@@ -50,6 +64,10 @@ function recorder(): any {
                 if (name === "LightMesh") return refused.has(args[0] as number) ? "" : squareMesh()
                 if (name === "BeginBake") return beginAnswer
                 if (name === "StepBake") return steps.length > 1 ? steps.shift() : steps[0]
+                if (name === "LightFile") return PIXEL
+                if (name === "LoadLight") return loadAnswer
+                if (name === "Load") return ++next
+                if (name === "Clips") return ""
                 return undefined
             }
         },
@@ -72,15 +90,30 @@ beforeEach(() => {
     refused = new Set()
     beginAnswer = ""
     steps = [1]
+    loadAnswer = ""
+    served = new Map()
+    fetched = []
+    baked = []
+    vi.stubGlobal("fetch", async (url: string) => {
+        fetched.push(url)
+        const bytes = served.get(url.replace("https://cart.test/assets/", ""))
+        return bytes === undefined
+            ? { ok: false, status: 404 }
+            : { ok: true, status: 200, arrayBuffer: async () => bytes.slice().buffer }
+    })
+    setLightHost({ baked: (light) => baked.push(light) })
     savedCS = (globalThis as any).CS
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: recorder() } } }
-    runtime = createRuntime({ root: {}, version: "1.0.0" })
+    runtime = createRuntime({ root: {}, version: "1.0.0", assetBase: "https://cart.test/assets" })
 })
 
 afterEach(() => {
     dispose?.()
     runtime.dispose()
     ;(globalThis as any).CS = savedCS
+    setLightHost(null)
+    setAssetBase(null)
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
 })
 
@@ -278,6 +311,203 @@ describe("scene.bake", () => {
         await s.bake().done
         await s.bake().done
         expect(warn.mock.calls.filter((c) => /needs a newer OneJS/.test(String(c[0]))).length).toBe(1)
+    })
+})
+
+describe("scene.bake with a name", () => {
+    const NAME = "room.light.png"
+    /** Two squares on the ground, spawned in the order given. */
+    const room = (s: ReturnType<typeof scene>, xs: readonly number[]) => {
+        const ground = s.mesh(SQUARE)
+        return xs.map((x) => s.spawn(ground, { static: true, position: [x, 0, 0] }))
+    }
+    const recordOf = (bytes: Uint8Array) => parseSaved(readText(bytes)) as SavedLight
+    /** A fresh scene, as the next Run is. */
+    const again = () => {
+        dispose()
+        calls = []
+        return scene()
+    }
+
+    /** Bakes the room here and returns the file the host was handed. */
+    async function bakeAndSave(xs: readonly number[]): Promise<Uint8Array> {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene()
+        room(s, xs)
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(baked.length).toBe(1)
+        const bytes = baked[0]!.bytes
+        baked = []
+        return bytes
+    }
+
+    it("bakes here when the cart lacks the file, then says so once and hands the host the file with its record", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene()
+        room(s, [0, 3])
+        const light = s.bake(NAME)
+        await started()
+        expect(of("BeginBake").length).toBe(1)
+        expect(baked).toEqual([])
+        frame()
+        await light.done
+        expect(fetched).toEqual([`https://cart.test/assets/${NAME}`])
+        expect(baked.length).toBe(1)
+        expect(baked[0]!.name).toBe(NAME)
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} is not in the cart yet: baked here.`)
+        expect(warn.mock.calls.map((c) => c[0])).toEqual([baked[0]!.line])
+        const saved = recordOf(baked[0]!.bytes)
+        expect(saved.actors.map((r) => r[2])).toEqual([0, 3])
+        expect(saved.actors[0]![0]).toBe("scene.mesh")
+        expect(saved.layout.atlas[0]).toBe(of("BeginBake")[0]![4])
+        expect(of("LightFile").length).toBe(1)
+    })
+
+    it("loads the file when it was baked for this scene, and bakes nothing", async () => {
+        served.set(NAME, await bakeAndSave([0, 3]))
+        const s = again()
+        const [a, b] = room(s, [0, 3])
+        const light = s.bake(NAME)
+        await light.done
+        expect(light.progress).toBe(1)
+        expect(of("BeginBake")).toEqual([])
+        const [, file, actors, copies, grid, width, height] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number]
+        expect(Buffer.from(file, "base64")).toEqual(Buffer.from(served.get(NAME)!))
+        expect(Array.from(actors).filter((_, i) => i % 5 === 0)).toEqual([a!.id, b!.id])
+        expect(copies.length).toBe(0)
+        expect(grid.length).toBe(7)
+        expect(width).toBe(recordOf(served.get(NAME)!).layout.atlas[0])
+        expect(height).toBe(recordOf(served.get(NAME)!).layout.atlas[1])
+        expect(baked).toEqual([])
+    })
+
+    it("gives each actor the rectangle it was baked with, whatever order the scene spawned them in", async () => {
+        served.set(NAME, await bakeAndSave([0, 3]))
+        const first = of("BeginBake")[0]![1] as Float32Array
+        const s = again()
+        const [right, left] = room(s, [3, 0])
+        await s.bake(NAME).done
+        const loaded = of("LoadLight")[0]![2] as Float32Array
+        const rectOf = (list: Float32Array, i: number) => Array.from(list.slice(i * 5 + 1, i * 5 + 5))
+        // The first bake's list starts with the actor at x 0, as the record's order does.
+        expect(loaded[0]).toBe(left!.id)
+        expect(loaded[5]).toBe(right!.id)
+        expect(rectOf(loaded, 0)).toEqual(rectOf(first, 0))
+        expect(rectOf(loaded, 1)).toEqual(rectOf(first, 1))
+    })
+
+    it("bakes here, naming what changed, when the file was baked for a different scene", async () => {
+        served.set(NAME, await bakeAndSave([0, 3]))
+        const s = again()
+        room(s, [0, 4])
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(of("LoadLight")).toEqual([])
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} was baked for a different scene (scene.mesh moved from [3, 0, 0] to [4, 0, 0]): baked here instead.`)
+    })
+
+    it("bakes here when the file is not a light file, or OneJS cannot show it", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        served.set(NAME, new Uint8Array(Buffer.from(PIXEL, "base64")))
+        const s = scene()
+        room(s, [0])
+        let light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} is not a light file oj can read (it holds no light record): baked here instead.`)
+
+        served.set(NAME, baked[0]!.bytes)
+        baked = []
+        loadAnswer = "the light file is 1 by 1, and a 64 by 64 atlas with 27 probes needs 64 by 66"
+        const t = again()
+        room(t, [0])
+        light = t.bake(NAME)
+        await started()
+        expect(of("LoadLight").length).toBe(1)
+        frame()
+        await light.done
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} is not a light file oj can read (${loadAnswer}): baked here instead.`)
+    })
+
+    it("asks for no file a build's file map does not list", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        setAssetMap({ "other.png": ["abc", 3] })
+        const s = scene()
+        room(s, [0])
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(fetched).toEqual([])
+        expect(baked[0]!.line).toMatch(/is not in the cart yet/)
+    })
+
+    it("names a file model as it was loaded, by its file map hash, or by its bytes' hash where there is no map", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        const crate = new Uint8Array([1, 2, 3, 4])
+        served.set("crate.glb", crate)
+        const { loadModel } = await import("../models")
+        let s = scene()
+        s.spawn(await loadModel("crate.glb"), { static: true })
+        let light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(recordOf(baked[0]!.bytes).actors[0]!.slice(0, 2)).toEqual(["crate.glb", createHash("sha256").update(crate).digest("hex")])
+
+        baked = []
+        setAssetMap({ "crate.glb": ["f".repeat(64), 4] })
+        s = again()
+        s.spawn(await loadModel("crate.glb"), { static: true })
+        light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(recordOf(baked[0]!.bytes).actors[0]!.slice(0, 2)).toEqual(["crate.glb", "f".repeat(64)])
+    })
+
+    it("hashes a scene.mesh model's colour and streams, so a mesh made again in another colour is stale", async () => {
+        served.set(NAME, await bakeAndSave([0]))
+        const s = again()
+        s.spawn(s.mesh({ ...SQUARE, color: "#ff0000" }), { static: true, position: [0, 0, 0] })
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(baked[0]!.line).toMatch(/scene\.mesh changed/)
+    })
+
+    it("loads the file under float noise in a placement, which the record rounds away", async () => {
+        served.set(NAME, await bakeAndSave([0, 3]))
+        const s = again()
+        room(s, [2e-5, 3 - 3e-5])
+        await s.bake(NAME).done
+        expect(of("LoadLight").length).toBe(1)
+        expect(of("BeginBake")).toEqual([])
+    })
+
+    it("bakes here when the file's layout is not the one this oj makes for its record", async () => {
+        const bytes = await bakeAndSave([0, 3])
+        const saved = recordOf(bytes)
+        served.set(NAME, writeText(bytes, JSON.stringify({ ...saved, layout: { ...saved.layout, rects: "0000000000000000" } })))
+        const s = again()
+        room(s, [0, 3])
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(of("LoadLight")).toEqual([])
+        expect(baked[0]!.line).toMatch(/its atlas is laid out differently by this oj/)
+    })
+
+    it("refuses an empty name", () => {
+        expect(() => scene().bake("")).toThrow(/name the light file/)
     })
 })
 

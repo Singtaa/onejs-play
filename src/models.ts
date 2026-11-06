@@ -22,13 +22,16 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { assetUrl } from "./asset"
+import { assetInfo, assetNames, assetUrl, loadAssetBytes } from "./asset"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
-import { beginBake, ChartCache, PATHS_PER_FRAME, type BakeItem } from "./light/bake"
+import { beginBake, ChartCache, lightFile, loadLight, PATHS_PER_FRAME, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
+import { lightBakedHere } from "./light/host"
+import { bakedHereLine, type BakedHere, type LightRecord } from "./light/record"
+import { sha256Hex } from "./light/sha256"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
 // eslint-disable-next-line no-shadow-restricted-names
@@ -336,14 +339,18 @@ export interface Scene {
      * Everything else takes that light where it stands, as it moves. The sun's
      * own light and shadows stay live.
      *
-     *     const light = scene.bake()
-     *     await light.done
+     *     scene.bake("room.light.png")
+     *
+     * Named, it loads that light file from the cart when it was baked for
+     * this scene, and bakes here when the file is missing or out of date,
+     * saying so on the console, where the editor offers to save it. With no
+     * name it bakes here every time: the call for a level made at runtime.
      *
      * It bakes beside the game, a little each frame: moving things are lit
      * within a few frames, the static ones from a quick draft, then finished.
      * Bake again after changing what is static, the sun or the ambient.
      */
-    bake(): Bake
+    bake(name?: string): Bake
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
     /** Moves the camera. Changes only what it names. */
@@ -425,6 +432,10 @@ function setLive(next: typeof live) {
 let generation = 0
 const loads = new Map<string, Promise<Model>>()
 const generationOf = new WeakMap<Model, number>()
+// The name each file model was loaded by, as the cart gave it: what a light record calls it.
+const modelNames = new WeakMap<Model, string>()
+// What a scene.mesh model is made of now, as bytes: what a light record hashes for it.
+const meshBytes = new WeakMap<Model, () => Uint8Array>()
 
 /** The stage's backdrop colour, or transparent while a 3D scene is live behind the panel. */
 export function useBackdrop(color: string): string {
@@ -552,6 +563,7 @@ export function loadModel(name: string): Promise<Model> {
             const model: Model = Object.freeze({ id, clips: Object.freeze(clips), height: Number(b.Height(id)) })
             generationOf.set(model, born)
             modelUrls.set(model, url)
+            modelNames.set(model, name)
             return model
         })()
         loads.set(url, loading)
@@ -805,7 +817,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
         // The streams a model is made with are its streams for good.
         const normals = o.normals !== undefined, colors = o.colors !== undefined, uvs = o.uvs !== undefined
-        let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array } | null = null
+        let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array, colors: Float32Array | null } | null = null
         const write = (d: MeshUpdate, what: string) => {
             const positions = floats(d.positions, "positions", 3)
             if (positions === null) throw new Error(`[oj] ${what}: positions are required`)
@@ -814,7 +826,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const problem = String(b.SetMesh(id, positions, indices,
                 floats(d.normals, "normals", 3), vertexColors, floats(d.uvs, "uvs", 2)))
             if (problem !== "") throw new Error(`[oj] ${what}: ${problem}`)
-            latest = { positions, indices: indices ?? latest!.indices }
+            latest = { positions, indices: indices ?? latest!.indices, colors: vertexColors ?? latest?.colors ?? null }
         }
         const id: number = b.CreateMesh(normals, colors, uvs, ...color)
         try {
@@ -851,6 +863,19 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
         generationOf.set(model, generation)
         arrayModels.set(model, made)
+        meshBytes.set(model, () => {
+            // Its colour, then its streams, each after its length: what its light depends on.
+            const parts: ArrayBufferView[] = [new Float32Array(color), latest!.positions, latest!.indices, latest!.colors ?? new Float32Array(0)]
+            const out = new Uint8Array(parts.reduce((n, p) => n + 4 + p.byteLength, 0))
+            const view = new DataView(out.buffer)
+            let at = 0
+            for (const p of parts) {
+                view.setUint32(at, p.byteLength, true)
+                out.set(new Uint8Array(p.buffer, p.byteOffset, p.byteLength), at + 4)
+                at += 4 + p.byteLength
+            }
+            return out
+        })
         if (draw.depthOnly === true) depthOnly.add(model)
         return model
     }
@@ -971,7 +996,32 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return items
     }
 
-    const bake = (): Bake => {
+    // A file model's hash, read once a scene where the build's file map does not carry it.
+    const fileShas = new Map<Model, Promise<string>>()
+    const identify = async (model: Model): Promise<{ name: string, sha: string }> => {
+        const name = modelNames.get(model)
+        if (name === undefined) return { name: "scene.mesh", sha: sha256Hex(meshBytes.get(model)?.() ?? new Uint8Array(0)) }
+        const mapped = assetInfo(name)?.sha256
+        if (mapped !== undefined) return { name, sha: mapped }
+        let sha = fileShas.get(model)
+        if (sha === undefined) {
+            sha = loadAssetBytes(name).then(sha256Hex)
+            fileShas.set(model, sha)
+        }
+        return { name, sha: await sha }
+    }
+
+    // A named light file's bytes, or null when the cart does not have it.
+    const readNamed = async (name: string): Promise<SavedFile> => {
+        const listed = assetNames()
+        if (listed.length > 0 && assetInfo(name) === undefined && !listed.includes(name)) return readSaved(null)
+        return readSaved(await loadAssetBytes(name).catch(() => null))
+    }
+
+    const bake = (name?: string): Bake => {
+        if (name !== undefined && (typeof name !== "string" || name === "")) {
+            throw new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
+        }
         baking?.stop()
         let progress = 0
         let finish!: () => void
@@ -996,23 +1046,60 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             },
         }
         baking = me
+        const live = () => !stopped && !disposed
         const give = (why: string) => {
             console.warn(`[oj] scene.bake: ${why}. The scene keeps its ambient light.`)
             progress = 1
             me.stop()
         }
-        beginBake(b, bakeItems(), charts, () => !stopped && !disposed).then((why) => {
-            if (stopped || disposed) return
+        const run = async () => {
+            let items = bakeItems()
+            let record: LightRecord | null = null
+            let file: SavedFile = readSaved(null)
+            if (name !== undefined && items.length > 0) {
+                const sun = sunNow === null ? null : { direction: sunNow.direction, color: rgb(sunNow.color), intensity: sunNow.intensity }
+                const scaled = (c: ColorInput) => rgb(c).map((x) => x * ambientNow.intensity) as [number, number, number]
+                const [recorded, found] = await Promise.all([
+                    recordItems(items, identify, { sun, ambient: { sky: scaled(ambientNow.sky), ground: scaled(ambientNow.ground) } }),
+                    readNamed(name),
+                ])
+                if (!live()) return
+                record = recorded.record
+                items = recorded.items
+                file = found
+            }
+            const plan = await planLight(b, items, charts, live)
+            if (plan === null || !live()) return
+            if (typeof plan === "string") return give(plan)
+            let here: BakedHere | null = null
+            if (name !== undefined) {
+                here = whyBakeHere(file, record!, plan)
+                if (here === null && file.found === "saved") {
+                    const why = loadLight(b, plan, file.png)
+                    if (why === "") {
+                        progress = 1
+                        return me.stop()
+                    }
+                    here = { why: "unreadable", detail: why }
+                }
+            }
+            const why = beginBake(b, plan)
             if (why !== "") return give(why)
             stopFrame = everyFrame(() => {
                 const p = Number(b.StepBake(PATHS_PER_FRAME))
                 // Below 0: the bridge's bake went, cleared by a later one or by the scene.
                 if (p < 0) return me.stop()
                 progress = p
-                if (p >= 1) me.stop()
+                if (p < 1) return
+                if (here !== null) {
+                    const bytes = lightFile(b, { ...record!, layout: plan.layout })
+                    if (bytes !== null) lightBakedHere({ name: name!, line: bakedHereLine(name!, here), bytes })
+                }
+                me.stop()
             })
-        }, (e: unknown) => {
-            if (!stopped && !disposed) give(e instanceof Error ? e.message.replace(/^\[oj\] (scene\.bake: )?/, "") : String(e))
+        }
+        run().catch((e: unknown) => {
+            if (live()) give(e instanceof Error ? e.message.replace(/^\[oj\] (scene\.bake: )?/, "") : String(e))
         })
         return handle
     }
