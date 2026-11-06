@@ -34,7 +34,15 @@ export default async function (cart) {
 
     await cart.browser.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })
     await cart.until(async () => (await cart.stage()).width === 390, { timeoutMs: 10000, what: "the stage to take the phone's 390 by 844" })
-    await cart.frameAfter(await cart.frame() + 3)
+    // windows-latest draws a 3x phone in software at 0.7 fps, and the frames
+    // just after the resize slower still: three of them once took past
+    // frameAfter's 15 s there (6 Nov 2026). The timings print so a run says
+    // how near this is.
+    let since = Date.now()
+    await cart.frameAfter(await cart.frame() + 3, 60000)
+    const frames = (Date.now() - since) / 1000
     check("phone", await lines(cart))
+    since = Date.now()
     await cart.shot(".oj/font-phone.png")
+    console.log(`phone at 3x: three frames in ${frames.toFixed(1)} s, the screenshot in ${((Date.now() - since) / 1000).toFixed(1)} s`)
 }

@@ -53,6 +53,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  */
 export const STARTUP_MS = 90000
 
+/** How long a CDP call may go unanswered before it is a hang. */
+export const CALL_MS = 30000
+
+/**
+ * How long a screenshot may take. A capture waits for the page to draw, and
+ * costs about as long as eleven of the cart's own frames at any scale (a
+ * clip at a third of a 3x phone took as long as the whole page): 0.2 s at
+ * 57 fps and 1.2 s at 12 fps on a Mac's SwiftShader, and 15 to 26 s on
+ * windows-latest, whose SwiftShader (Subzero, no GPU) draws a 3x phone at
+ * 0.7 fps (6 Nov 2026). CALL_MS refused the font fixture's phone shot there.
+ */
+export const CAPTURE_MS = 120000
+
 /**
  * Launches a browser and attaches to its first page.
  *
@@ -244,17 +257,17 @@ export class Browser {
      * target) can pass a sessionId and read what came back. `send` is the
      * unwrapped form for the common case.
      */
-    call(method, params = {}, sessionId) {
+    call(method, params = {}, sessionId, timeoutMs = CALL_MS) {
         return new Promise((ok, no) => {
             const id = ++this.id
-            const timer = setTimeout(() => { this.pending.delete(id); no(new Error(`CDP ${method} did not answer in 30s`)) }, 30000)
+            const timer = setTimeout(() => { this.pending.delete(id); no(new Error(`CDP ${method} did not answer in ${timeoutMs / 1000}s`)) }, timeoutMs)
             this.pending.set(id, (m) => { clearTimeout(timer); ok(m) })
             this.ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }))
         })
     }
 
-    async send(method, params = {}, sessionId) {
-        const m = await this.call(method, params, sessionId)
+    async send(method, params = {}, sessionId, timeoutMs = CALL_MS) {
+        const m = await this.call(method, params, sessionId, timeoutMs)
         if (m.error) throw new Error(`${method}: ${m.error.message}`)
         return m.result
     }
@@ -271,7 +284,7 @@ export class Browser {
     }
 
     async screenshot(file) {
-        const s = await this.send("Page.captureScreenshot", { format: "png" })
+        const s = await this.send("Page.captureScreenshot", { format: "png" }, undefined, CAPTURE_MS)
         fs.mkdirSync(path.dirname(file), { recursive: true })
         fs.writeFileSync(file, Buffer.from(s.data, "base64"))
         return file
