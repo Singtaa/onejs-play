@@ -63,7 +63,8 @@
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.68.0",
     "unity-types": "file:../unity-types",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "xatlas-wasm": "0.1.3"
   },
   "exports": {
     ".": "./src/index.ts",

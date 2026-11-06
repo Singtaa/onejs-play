@@ -35,7 +35,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `room.ts` | `useRoom`: other people, over a relay |
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
 | `physics/` | What 2D and 3D share: `core.ts` is the one world, body, character and shape implementation behind both, generic over a dimension adapter; `sight.ts` is `visibility`'s geometry across one plane; `use-stepped.ts` steps a world on the frame clock |
-| `light/` | Baked light's plain parts, no engine (PlaySite docs/lightmapping.md): `record.ts` is what a saved light was baked for, its fingerprint and the first difference in the console line's words; `png.ts` reads and writes that record in the file's `tEXt` chunk; `probes.ts` places the probe grid and blends it for a moving actor; `atlas.ts` packs each static actor's rectangle, lowering the detail to fit |
+| `light/` | Baked light's plain parts, no engine (PlaySite docs/lightmapping.md): `record.ts` is what a saved light was baked for, its fingerprint and the first difference in the console line's words; `png.ts` reads and writes that record in the file's `tEXt` chunk; `probes.ts` places the probe grid and blends it for a moving actor; `atlas.ts` packs each static actor's rectangle, lowering the detail to fit, and lays each model out once at its smallest actor's density; `unwrap.ts` cuts a model into xatlas charts and packs them at that density, giving the second UV set and each output vertex's source vertex |
 | `physics2d/` | `useWorld2D`, `createWorld2D`, `shape2D`: 2D physics over Rapier 2D, in stage pixels, y down. `world.ts` is the API, `elements.ts` moves the elements bodies carry (one `ElementPlacer` crossing per step) |
 | `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `car.ts` is `world.car` over Rapier's ray-cast vehicle, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
 | `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
@@ -458,8 +458,10 @@ page is PlaySite's `docs/physics.md`; the design and its reasoning are
 engine stays oj's to change.
 
 The engines are WebAssembly that oj loads lazily, the first time a cart makes a
-world or a navmesh. `scripts/vendor-rapier.mjs` and `scripts/vendor-recast.mjs`
-write the glue (with its `.wasm` import removed), a version file naming the
+world or a navmesh, or bakes light. `scripts/vendor-rapier.mjs`,
+`scripts/vendor-recast.mjs` and `scripts/vendor-xatlas.mjs` write the glue
+(with its `.wasm` import removed; xatlas-wasm carries its module inline, so
+that script decodes it out), a version file naming the
 module's sha256 and imports, and the module itself under `assets/@ojplay/wasm/`,
 which every OneJS build copies to StreamingAssets as a package asset.
 `src/wasm.ts` then picks the source per host, in this order:
