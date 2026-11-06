@@ -779,7 +779,7 @@ describe("a cart moved from Assets/<Name>/~ to the project root (init --from-uni
             // What happens to a cart between the two: Set Up moves ojplay on, and syncTypes
             // maps a cart this one imports.
             const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
-            pkg.devDependencies[PACKAGE] = "^0.14.0"
+            pkg.devDependencies[PACKAGE] = "^0.15.0"
             fs.writeFileSync(path.join(root, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
             const tsconfig = JSON.parse(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8"))
             tsconfig.compilerOptions.paths["@a/b"] = ["./.oj/carts/@a/b@1.0.0/index.tsx"]

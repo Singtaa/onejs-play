@@ -141,7 +141,7 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir), priva
     run(["remote", "add", "origin", made.body.clone], root)
     pointAtLogin(root)
     const left = uncommitted(root)
-    const code = git(["push", "-u", "origin", "main"], { cwd: root, bearer })
+    const code = await git(["push", "-u", "origin", "main"], { cwd: root, bearer })
     if (code !== 0) return code
     const said = describePush(null, await status(made.body.sid, { bearer }), left)
     for (const line of said.lines) say(line)

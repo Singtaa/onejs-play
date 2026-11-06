@@ -2,7 +2,7 @@
  * The site, from a terminal: which game this folder is, what the site says
  * about it, creating one, and pushing with a token and no prompt.
  */
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { home } from "./local.mjs"
@@ -43,12 +43,42 @@ export function token(root = process.cwd()) {
 }
 
 /**
+ * A read from the site, asked a second time when the connection died under it.
+ *
+ * A pooled keep-alive connection can be gone by the time a request goes out
+ * on it: closed by a proxy or a NAT with nothing sent, or closed by the site
+ * in the same moment the request leaves. The request dies (ECONNRESET, or
+ * "other side closed") and fetch does not try again. The pool has dropped the
+ * dead connection by then, so asking again opens a fresh one. Only for
+ * reads, which are safe to repeat (site-connection.test.ts).
+ *
+ * It was found the loudest way: git ran under spawnSync, so the event loop was
+ * held through a whole push and the site's close of an idle connection was
+ * never seen; the read after the push died on it, every time on Windows (CI,
+ * 6 Nov 2026). `git` runs async now, which removes that cause (new.test.ts),
+ * and this stays for the ones a running loop cannot see either.
+ */
+export async function readFromSite(url, init = {}) {
+    try {
+        return await fetch(url, init)
+    } catch (error) {
+        if (!droppedConnection(error)) throw error
+        return fetch(url, init)
+    }
+}
+
+/** Whether a fetch failed because its connection was closed under it, rather than the site being unreachable. */
+export function droppedConnection(error) {
+    return error instanceof TypeError && ["ECONNRESET", "EPIPE", "UND_ERR_SOCKET"].includes(error.cause?.code)
+}
+
+/**
  * The account's own carts, Unlisted and Private ones included: what "which
  * carts do I have" needs. A repo with two carts is two rows. The site's
  * public list leaves out every cart that is not Public.
  */
 export async function mine(bearer) {
-    const response = await fetch(`${siteOrigin()}/api/me/carts`, { headers: { authorization: `Bearer ${bearer}` } })
+    const response = await readFromSite(`${siteOrigin()}/api/me/carts`, { headers: { authorization: `Bearer ${bearer}` } })
     const body = await json(response)
     if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
     return body
@@ -104,7 +134,7 @@ async function json(response) {
 /** GET /api/games/<sid>: head, live, buildError and the rest. */
 export async function status(sid, { bearer } = {}) {
     const headers = bearer ? { authorization: `Bearer ${bearer}` } : {}
-    const response = await fetch(`${siteOrigin()}/api/games/${sid}`, { headers })
+    const response = await readFromSite(`${siteOrigin()}/api/games/${sid}`, { headers })
     const body = await json(response)
     if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
     return body
@@ -234,7 +264,7 @@ export function describePush(head, s, left) {
 
 /** GET /api/version: what the site runs, including the runtime pin. */
 export async function version() {
-    const response = await fetch(`${siteOrigin()}/api/version`)
+    const response = await readFromSite(`${siteOrigin()}/api/version`)
     return json(response)
 }
 
@@ -256,12 +286,22 @@ export function credentialArgs(bearer) {
 /**
  * Runs git with the token supplied through a one-shot credential helper, so
  * nothing is stored on disk and nothing prompts. Output passes through:
- * the `remote:` lines are where a push's build result arrives.
+ * the `remote:` lines are where a push's build result arrives. Answers its
+ * exit code.
+ *
+ * Not spawnSync, though nothing here needs git's output: a push can take
+ * longer than the site keeps an idle connection open, and with the event loop
+ * held for the whole push, fetch never saw the site close it and sent the next
+ * read down the dead connection (ECONNRESET on Windows, 6 Nov 2026). With the
+ * loop running, the pool drops it itself (new.test.ts).
  */
 export function git(args, { cwd, bearer } = {}) {
     const helper = bearer ? credentialArgs(bearer) : []
-    const result = spawnSync("git", [...helper, ...args], { cwd, stdio: "inherit" })
-    return result.status ?? 1
+    return new Promise((resolve) => {
+        const child = spawn("git", [...helper, ...args], { cwd, stdio: "inherit" })
+        child.on("error", () => resolve(1))
+        child.on("close", (code) => resolve(code ?? 1))
+    })
 }
 
 /**

@@ -72,7 +72,7 @@ export async function addWhole(project, address, { npm = runNpm } = {}) {
             app = path.join(project, "Assets", name, "~")
             refuseIfThere(project, app)
             fs.mkdirSync(path.dirname(app), { recursive: true })
-            const code = cloneCart(own.clone, app, { bearer, quiet: true })
+            const code = await cloneCart(own.clone, app, { bearer, quiet: true })
             if (code !== 0) throw new Error(`git clone of ${pinned.address} failed (exit ${code}). Check ${COMMAND} login, then run it again.`)
         } else {
             kept = await download(project, pinned.address, value, scratch)
@@ -138,7 +138,7 @@ async function addAtRoot(project, address, { npm }) {
             root = path.join(project, name)
             refuseIfAtRoot(project, name)
             how = inRepository ? "submodule" : "clone"
-            const code = inRepository ? submoduleCart(own.clone, project, name, { bearer }) : cloneCart(own.clone, root, { bearer, quiet: true })
+            const code = await (inRepository ? submoduleCart(own.clone, project, name, { bearer }) : cloneCart(own.clone, root, { bearer, quiet: true }))
             if (code !== 0) throw new Error(`git ${inRepository ? "submodule add" : "clone"} of ${pinned.address} failed (exit ${code}). Check ${COMMAND} login, then run it again.`)
         } else {
             kept = await download(project, pinned.address, value, scratch)
