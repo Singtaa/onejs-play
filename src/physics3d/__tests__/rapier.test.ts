@@ -9,7 +9,7 @@ import { setWasmModule, instantiateWasm, wasmUrl, setWasmBase } from "../../wasm
 // No DOM lib here, so the global is reached untyped.
 const WA = (globalThis as any).WebAssembly
 const dir = path.resolve(import.meta.dirname, "..")
-const wasm = fs.readFileSync(path.join(dir, "rapier3d.wasm"))
+const wasm = fs.readFileSync(path.resolve(dir, `../../assets/@ojplay/wasm/rapier3d-${RAPIER_VERSION}.wasm`))
 const pkgDir = path.resolve(dir, "../../node_modules/@dimforge/rapier3d-deterministic")
 
 describe("the vendored Rapier", () => {
@@ -82,7 +82,7 @@ describe("instantiateWasm", () => {
     it("fetches from StreamingAssets by name and version", () => {
         ;(globalThis as any).__streamingAssetsPath = "https://h.test/runtime/1.0.70/StreamingAssets"
         try {
-            expect(wasmUrl(RAPIER_MODULE)).toBe(`https://h.test/runtime/1.0.70/StreamingAssets/onejs/wasm/rapier3d-${RAPIER_VERSION}.wasm`)
+            expect(wasmUrl(RAPIER_MODULE)).toBe(`https://h.test/runtime/1.0.70/StreamingAssets/onejs/assets/@ojplay/wasm/rapier3d-${RAPIER_VERSION}.wasm`)
             setWasmBase("https://cdn.test/w")
             expect(wasmUrl(RAPIER_MODULE)).toBe(`https://cdn.test/w/rapier3d-${RAPIER_VERSION}.wasm`)
         } finally {

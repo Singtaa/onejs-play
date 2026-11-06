@@ -4,7 +4,7 @@
 export const RAPIER_VERSION = "0.21.0"
 
 /**
- * The sha256 of rapier3d.wasm. A host that links the module natively checks it
+ * The sha256 of the module. A host that links the module natively checks it
  * against this, so a glue and a module from different releases fail by name.
  */
 export const RAPIER_WASM_SHA256 = "4e9890fd2df60072f9db06a33e4030221249c1b3687b722b2388c21f09e97551"

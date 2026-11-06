@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { setWasmModule } from "../../wasm"
+import { RAPIER_VERSION } from "../rapier.version"
 import { createWorld, shape, type World, type Body, type Character } from "../world"
 import { setActorPlacer, type ActorPlacement } from "../actors"
 import { toQuat, fromQuat } from "../rotation"
@@ -9,7 +10,7 @@ import type { Vec3 } from "../../models"
 const WA = (globalThis as any).WebAssembly
 
 beforeAll(() => {
-    setWasmModule("rapier3d", new WA.Module(fs.readFileSync(path.resolve(import.meta.dirname, "../rapier3d.wasm"))))
+    setWasmModule("rapier3d", new WA.Module(fs.readFileSync(path.resolve(import.meta.dirname, `../../../assets/@ojplay/wasm/rapier3d-${RAPIER_VERSION}.wasm`))))
 })
 
 const near = (a: readonly number[], b: readonly number[], eps = 1e-3) => a.every((v, i) => Math.abs(v - b[i]!) < eps)

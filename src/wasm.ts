@@ -9,9 +9,11 @@
  *    and only used when it says it has this exact module.
  * 2. **A host that hands one over**, with setWasmModule: a room script on
  *    workerd, which cannot compile from bytes, and Node tests.
- * 3. **Otherwise it is fetched** from StreamingAssets, `onejs/wasm/<name>-<version>.wasm`,
- *    which is where the Play container serves it and where a OneJS WebGL build
- *    carries it. A new version is a new address, so a cache can never hand an
+ * 3. **Otherwise it is fetched** from StreamingAssets,
+ *    `onejs/assets/@ojplay/wasm/<name>-<version>.wasm`. ojplay ships each module
+ *    under `assets/@ojplay/`, OneJS's convention for a package's assets, so every
+ *    OneJS build copies it there: the Play container's, and an ejected game's
+ *    WebGL build. A new version is a new address, so a cache can never hand an
  *    old module to new glue.
  *
  * Each module is named with its sha256, and a native module whose hash is not
@@ -68,7 +70,7 @@ export function wasmUrl(info: WasmModuleInfo): string | null {
     if (base !== null) return `${base}/${file}`
     const streaming = typeof globalThis.__streamingAssetsPath === "string" ? globalThis.__streamingAssetsPath as string : null
     if (streaming === null || !streaming.includes("://")) return null
-    return `${streaming}/onejs/wasm/${file}`
+    return `${streaming}/onejs/assets/@ojplay/wasm/${file}`
 }
 
 /** Instantiates one of oj's modules from wherever this host keeps it. */
