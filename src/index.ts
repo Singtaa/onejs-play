@@ -180,6 +180,10 @@ export type { Room, RoomOptions, RoomMessage } from "./room"
 
 export { isOnline } from "./play"
 
+// Sharing a link and copying text, called in the frame of a press (share.ts).
+export { share, copy } from "./share"
+export type { ShareData, ShareOptions, ShareResult, CopyResult } from "./share"
+
 // the editor
 
 // A value beside the line that made it, drawn in the OJPlay editor (show.ts).
