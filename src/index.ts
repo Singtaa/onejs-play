@@ -85,7 +85,7 @@ export { createWorld2D, shape2D, WORLD2D_DEFAULTS } from "./physics2d/world"
 export type {
     World2D, World2DOptions, Body2D, Character2D, Shape2D, Hit2D, Contact2D, Vec2, ElementActor,
     Box2DOptions, CircleOptions, Capsule2DOptions, PolygonOptions, OutlineOptions, Character2DOptions,
-    Place2D, Places2D, Motions2D, ClearSpot2DOptions, Slide2DOptions, Slid2D,
+    Place2D, Places2D, Motions2D, ClearSpot2DOptions, Slide2DOptions, Slid2D, Sight2DOptions,
 } from "./physics2d/world"
 
 // 3D physics: colliders, bodies, a character, queries, events and rewind, in
@@ -96,7 +96,7 @@ export { createWorld, shape, WORLD_DEFAULTS } from "./physics3d/world"
 export type {
     World, WorldOptions, Body, Character, Shape, Hit, Filter, Layer, BodyContact,
     BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, MeshOptions, MeshSource, Place, Places, Motions,
-    BoxShapeOptions, SphereShapeOptions, CapsuleShapeOptions, ClearSpotOptions, SlideOptions, Slid,
+    BoxShapeOptions, SphereShapeOptions, CapsuleShapeOptions, ClearSpotOptions, SlideOptions, Slid, SightOptions,
 } from "./physics3d/world"
 export type { Nav, NavOptions } from "./nav/nav"
 

@@ -465,6 +465,13 @@ Things that are not obvious from the code:
 - **`slide` keeps a walker per shape.** A sensor capsule in no collision group
   on a fixed body, which no query or contact sees; `restore` drops them with
   the orphans and they are made again when next asked for.
+- **`visibility` is rays, refined.** A fan of 128 rays across the floor at eye
+  height, plus one at each collider in range so a thin pillar between two of
+  them is not missed. Where neighbours meet different things the gap is halved
+  ten times and a ray kept either side of the edge; where they meet two faces
+  of one thing a ray goes to the corner the faces make. The rays are
+  `raycast`'s own, so the polygon agrees with `canSee`; a test samples 4000
+  points against it. About 300 rays and half a millisecond among 30 boxes.
 - **A touch's `speed` is read from the solver.** By the time a step reports a
   touch the pair has stopped, so the speed is the normal impulse over the
   reduced mass, divided by one plus the bounce.

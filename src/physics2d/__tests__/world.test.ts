@@ -241,3 +241,39 @@ describe("2D events, rewind and elements", () => {
         }
     })
 })
+
+describe("2D visibility, seen from above", () => {
+    const inside = (poly: readonly Vec2[], x: number, y: number) => {
+        let ins = false
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const a = poly[i]!, b = poly[j]!
+            if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) ins = !ins
+        }
+        return ins
+    }
+
+    it("is cut by a box, in pixels, and agrees with canSee", async () => {
+        const w = await createWorld2D({ gravity: [0, 0] })
+        w.box({ at: [500, 300], size: [100, 400] })
+        w.circle({ at: [200, 650], radius: 60 })
+        const eye: Vec2 = [250, 300]
+        const poly = w.visibility(eye, { within: 800 })
+        expect(inside(poly, 400, 300)).toBe(true)
+        expect(inside(poly, 700, 300)).toBe(false)
+        expect(inside(poly, 700, 900)).toBe(true)
+        expect(Math.min(...poly.map((p) => Math.hypot(p[0] - 450, p[1] - 100)))).toBeLessThan(0.1)
+        let wrong = 0
+        for (let i = 0; i < 400; i++) {
+            const x = 250 + Math.cos(i * 2.4) * (i * 1.9), y = 300 + Math.sin(i * 2.4) * (i * 1.9)
+            const seen = w.canSee(eye, [x, y])
+            const edge = Math.min(...poly.map((p, k) => {
+                const q = poly[(k + 1) % poly.length]!
+                const ex = q[0] - p[0], ey = q[1] - p[1], l = ex * ex + ey * ey
+                const t = l === 0 ? 0 : Math.max(0, Math.min(1, ((x - p[0]) * ex + (y - p[1]) * ey) / l))
+                return Math.hypot(p[0] + ex * t - x, p[1] + ey * t - y)
+            }))
+            if (edge > 1 && inside(poly, x, y) !== seen) wrong++
+        }
+        expect(wrong).toBe(0)
+    })
+})

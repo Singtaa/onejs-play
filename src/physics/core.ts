@@ -129,6 +129,9 @@ export interface Defaults<V> {
     density: number
     character: { radius: number, height: number, stepHeight: number, slope: number, snap: number }
     clearSpotWithin: number
+    /** How high above its feet `visibility` looks from, and how far. */
+    sightHeight: number
+    sightWithin: number
     layer: Layer
 }
 
@@ -204,6 +207,11 @@ const MAX_STEPS_PER_FRAME = 4
  * mid-floor).
  */
 const SKIN = 0.01
+/** Rays in `visibility`'s first fan, and how many times it halves the gap at an edge. */
+const SIGHT_FAN = 128
+const SIGHT_HALVINGS = 10
+/** How many things one gap between two rays of the fan can hold before the rest are skipped. */
+const SIGHT_DEPTH = 6
 
 type Thing<V extends readonly number[], R, A> = BodyCore<V, R, A> | CharacterCore<V, R, A>
 
@@ -426,6 +434,108 @@ export class WorldCore<V extends readonly number[], R, A> {
         if (Array.isArray(target)) return this.raycast(from, target as V, filter) === null
         const t = target as Thing<V, R, A>
         return this.raycast(from, t.middle(), { only: filter?.only, skip: [...(filter?.skip ?? []), t] }) === null
+    }
+
+    // ---------- sight ----------
+
+    /**
+     * The floor the eye sees, as a polygon round it: rays across the floor,
+     * at `height` above `eye`, out to `within`, through the same query
+     * `raycast` and `canSee` make, so the polygon and `canSee` agree.
+     *
+     * Rays go out in a fan, and one at each collider in range so nothing
+     * slips between them. Where two neighbouring rays meet different things,
+     * the edge between is found by halving the gap and kept as a ray either
+     * side of it; where they meet two faces of one thing, a ray goes to the
+     * corner the faces make. Flat faces come out exact, round ones as fine
+     * as the fan.
+     */
+    visibility(eye: V, o: Filter & { height?: number, within?: number } = {}): V[] {
+        this.live()
+        const d = this.dim, u = d.unit
+        const within = (o.within ?? this.defaults.sightWithin) / u
+        const height = (o.height ?? this.defaults.sightHeight) / u
+        if (!(within > 0)) return []
+        const feet = toE(d, eye)
+        const origin = add(feet, scale(d.up, height))
+        // The floor's two axes: x and z in 3D, the whole plane in 2D.
+        const [ax, az] = d.n === 3 ? [0, 2] : [0, 1]
+        const dirAt = (angle: number): EVec => {
+            const v = zero(d)
+            v[ax] = Math.cos(angle)
+            v[az] = Math.sin(angle)
+            return v
+        }
+        const groups = this.queryGroups(o), predicate = this.predicate(o), fresh = this.freshColliders(o, false)
+        interface Ray { angle: number, x: number, z: number, handle: number, nx: number, nz: number }
+        const cast = (angle: number): Ray => {
+            const dir = dirAt(angle)
+            const hit = this.engineRay(origin, dir, within, groups, predicate, fresh)
+            const t = hit === null ? within : hit.toi
+            return {
+                angle,
+                x: origin[ax]! + dir[ax]! * t, z: origin[az]! + dir[az]! * t,
+                handle: hit === null ? -1 : hit.handle,
+                nx: hit === null ? 0 : hit.normal[ax]!, nz: hit === null ? 0 : hit.normal[az]!,
+            }
+        }
+
+        const TAU = Math.PI * 2
+        const angles: number[] = []
+        for (let i = 0; i < SIGHT_FAN; i++) angles.push((i / SIGHT_FAN) * TAU)
+        const aim = (handle: number) => {
+            const at = d.a(this.raw.getCollider(handle).translation())
+            const dx = at[ax]! - origin[ax]!, dz = at[az]! - origin[az]!
+            if (dx * dx + dz * dz > 1e-12) angles.push((Math.atan2(dz, dx) + TAU) % TAU)
+            return true
+        }
+        this.overlapping(new this.r.Ball(within), fromE(d, origin), o, aim)
+        angles.sort((a, b) => a - b)
+
+        const base = angles.map(cast)
+        const out: Ray[] = []
+        const same = (a: Ray, b: Ray) => a.handle === b.handle
+            && (a.handle === -1 || (a.nx * b.nx + a.nz * b.nz > 0.9999 && Math.abs(a.nx * (b.x - a.x) + a.nz * (b.z - a.z)) < 1e-3))
+        /** Adds the rays strictly between two neighbours that the polygon needs. */
+        const refine = (a: Ray, b: Ray, budget: number): void => {
+            if (b.angle - a.angle < 1e-9 || same(a, b)) return
+            if (a.handle === b.handle) {
+                // Two faces of one thing: a ray to where they would meet, or between.
+                const det = a.nx * b.nz - a.nz * b.nx
+                let angle = (a.angle + b.angle) / 2
+                if (Math.abs(det) > 1e-9) {
+                    const ca = a.nx * a.x + a.nz * a.z, cb = b.nx * b.x + b.nz * b.z
+                    const cx = (ca * b.nz - cb * a.nz) / det, cz = (a.nx * cb - b.nx * ca) / det
+                    let c = Math.atan2(cz - origin[az]!, cx - origin[ax]!)
+                    while (c < a.angle) c += TAU
+                    while (c >= a.angle + TAU) c -= TAU
+                    if (c > a.angle && c < b.angle) angle = c
+                }
+                out.push(cast(angle))
+                return
+            }
+            if (budget === 0) return
+            // Two different things: halve the gap down to the edge, a ray either side of it.
+            let lo = a, hi = b
+            for (let k = 0; k < SIGHT_HALVINGS; k++) {
+                const mid = cast((lo.angle + hi.angle) / 2)
+                if (mid.handle === lo.handle) lo = mid; else hi = mid
+            }
+            if (lo !== a) { refine(a, lo, budget - 1); out.push(lo) }
+            if (hi !== b) { out.push(hi); refine(hi, b, budget - 1) }
+        }
+        for (let i = 0; i < base.length; i++) {
+            const a = base[i]!, next = base[(i + 1) % base.length]!
+            out.push(a)
+            refine(a, i + 1 < base.length ? next : { ...next, angle: next.angle + TAU }, SIGHT_DEPTH)
+        }
+
+        return out.map((r) => {
+            const p = feet.slice()
+            p[ax] = r.x
+            p[az] = r.z
+            return fromE(d, p)
+        })
     }
 
     /** A shape (engine) moved from `f` to `t` (metres): the first collider it meets. */

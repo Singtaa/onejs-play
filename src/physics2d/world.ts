@@ -247,6 +247,12 @@ export interface Slide2DOptions extends Filter {
     slope?: number
 }
 
+/** How far `world.visibility` sees, and what it sees past. */
+export interface Sight2DOptions extends Filter {
+    /** In pixels. 1000 by default. */
+    within?: number
+}
+
 export interface Slid2D {
     at: Vec2
     grounded: boolean
@@ -273,6 +279,11 @@ export interface World2D {
     clearSpot(shape: Shape2D, near: Vec2, options?: ClearSpot2DOptions): Vec2 | null
     /** A character's move without a character: where it ends and whether it stands. */
     slide(from: Vec2, delta: Vec2, options?: Slide2DOptions): Slid2D
+    /**
+     * What an eye at `eye` sees, for a world seen from above: a polygon round
+     * it, its corners in order, made with the rays `canSee` makes.
+     */
+    visibility(eye: Vec2, options?: Sight2DOptions): Vec2[]
     /** One fixed step. A world `useWorld2D` made steps itself; call this on one from `createWorld2D`. */
     step(): void
     /** Every body's state, to hand back to `restore`. */
@@ -301,6 +312,8 @@ const DEFAULTS = Object.freeze({
     capsule: { radius: 30, height: 160 },
     character: { radius: 30, height: 160, stepHeight: 30, slope: 45, snap: 30 },
     clearSpotWithin: 1000,
+    sightHeight: 0,
+    sightWithin: 1000,
     layer: "default",
 })
 export { DEFAULTS as WORLD2D_DEFAULTS }

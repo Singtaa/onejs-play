@@ -274,6 +274,14 @@ export interface SlideOptions extends Filter {
     slope?: number
 }
 
+/** Where `world.visibility` looks from, how far, and what it sees past. */
+export interface SightOptions extends Filter {
+    /** How high above `eye` the eyes are, in metres; what is lower is seen over. 1.5 by default. */
+    height?: number
+    /** How far it sees, in metres. 30 by default. */
+    within?: number
+}
+
 /** Where a slide ended, and whether it ended standing on something. */
 export interface Slid {
     /** Its feet. */
@@ -323,6 +331,13 @@ export interface World {
      * a body in it. A body made since the last step is not in its way yet.
      */
     slide(from: Vec3, delta: Vec3, options?: SlideOptions): Slid
+    /**
+     * The floor someone standing at `eye` sees: a polygon round them, its
+     * corners in order at `eye`'s height, made with the rays `canSee` makes,
+     * so whatever is inside it they can see. Shadows, fog of war, a guard's
+     * cone cut to the room.
+     */
+    visibility(eye: Vec3, options?: SightOptions): Vec3[]
     /** One fixed step. A world `useWorld` made steps itself; call this on one from `createWorld`. */
     step(): void
     /** Every body's state, to hand back to `restore`. */
@@ -353,6 +368,8 @@ const DEFAULTS = Object.freeze({
     capsule: { radius: 0.3, height: 1.6 },
     character: { radius: 0.3, height: 1.6, stepHeight: 0.3, slope: 45, snap: 0.3 },
     clearSpotWithin: 10,
+    sightHeight: 1.5,
+    sightWithin: 30,
     layer: "default",
 })
 export { DEFAULTS as WORLD_DEFAULTS }
