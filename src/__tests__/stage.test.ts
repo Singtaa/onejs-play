@@ -3,7 +3,7 @@ import { stageOf, screenToStage, screenDeltaToStage } from "../stage"
 
 describe("stageOf", () => {
     it("is the measured viewport", () => {
-        expect(stageOf(1280, 720)).toEqual({ width: 1280, height: 720 })
+        expect(stageOf(1280, 720)).toEqual({ width: 1280, height: 720, pixelRatio: 1 })
     })
 
     /** UI Toolkit measures nothing on its first frames; a game dividing by the stage must never see zero. */

@@ -82,7 +82,7 @@ describe("startStandalone", () => {
         expect(getCurrentRuntime()).toBeNull()
         const runtime = startStandalone()
         expect(getCurrentRuntime()).toBe(runtime.oj)
-        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800 })
+        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800, pixelRatio: 1 })
     })
 
     it("scales the panel by the pixel ratio, so one logical pixel is one CSS pixel", () => {
@@ -94,7 +94,7 @@ describe("startStandalone", () => {
         host = fakeHost({ width: 1280, height: 800, dpr: 2 })
         const runtime = startStandalone()
         expect(host.panelSettings.scale).toBe(2)
-        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800 })
+        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800, pixelRatio: 2 })
     })
 
     it("advances the frame clock", () => {
@@ -120,7 +120,7 @@ describe("startStandalone", () => {
         host.step(0)
         host.resize(2000, 1400)
         host.step(16)
-        expect(runtime.oj.stage).toEqual({ width: 2000, height: 1400 })
+        expect(runtime.oj.stage).toEqual({ width: 2000, height: 1400, pixelRatio: 1 })
     })
 
     it("rescales the panel when the window moves to a display of a different density", () => {
@@ -129,7 +129,7 @@ describe("startStandalone", () => {
         host.resize(1280, 800, 2)
         host.step(16)
         expect(host.panelSettings.scale).toBe(2)
-        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800 })
+        expect(runtime.oj.stage).toEqual({ width: 1280, height: 800, pixelRatio: 2 })
     })
 
     it("never hands the panel a scale it treats as blank", () => {
@@ -145,7 +145,7 @@ describe("startStandalone", () => {
         host = fakeHost({ width: 640, height: 480 })
         ;(host.panelSettings as any).targetTexture = { width: 1920, height: 1080 }
         const runtime = startStandalone()
-        expect(runtime.oj.stage).toEqual({ width: 1920, height: 1080 })
+        expect(runtime.oj.stage).toEqual({ width: 1920, height: 1080, pixelRatio: 1 })
     })
 
     it("follows a RenderTexture assigned after the game started", () => {
@@ -153,7 +153,7 @@ describe("startStandalone", () => {
         host.step(0)
         ;(host.panelSettings as any).targetTexture = { width: 1024, height: 768 }
         host.step(16)
-        expect(runtime.oj.stage).toEqual({ width: 1024, height: 768 })
+        expect(runtime.oj.stage).toEqual({ width: 1024, height: 768, pixelRatio: 1 })
     })
 
     it("divides a RenderTexture by the pixel ratio the panel is scaled by", () => {
@@ -161,7 +161,7 @@ describe("startStandalone", () => {
         ;(host.panelSettings as any).targetTexture = { width: 1920, height: 1080 }
         const runtime = startStandalone()
         expect(host.panelSettings.scale).toBe(2)
-        expect(runtime.oj.stage).toEqual({ width: 960, height: 540 })
+        expect(runtime.oj.stage).toEqual({ width: 960, height: 540, pixelRatio: 2 })
     })
 
     it("reads nothing from an unassigned RenderTexture, so Play logs no red line", () => {
@@ -174,7 +174,7 @@ describe("startStandalone", () => {
         host.step(0)
         host.step(16)
         expect(bridgeLog).toEqual([])
-        expect(runtime.oj.stage).toEqual({ width: 640, height: 480 })
+        expect(runtime.oj.stage).toEqual({ width: 640, height: 480, pixelRatio: 1 })
     })
 
     it("sizes the stage from a RenderTexture that came over the bridge", () => {
@@ -182,7 +182,7 @@ describe("startStandalone", () => {
         host = fakeHost({ width: 640, height: 480 })
         ;(host.panelSettings as any).targetTexture = unityObject({ width: 1920, height: 1080 })
         const runtime = startStandalone()
-        expect(runtime.oj.stage).toEqual({ width: 1920, height: 1080 })
+        expect(runtime.oj.stage).toEqual({ width: 1920, height: 1080, pixelRatio: 1 })
         expect(bridgeLog).toEqual([])
     })
 

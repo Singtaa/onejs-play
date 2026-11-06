@@ -168,7 +168,7 @@ export function startStandalone(): ContainerRuntime {
     standalone = createRuntime({
         root: hostRoot(),
         version: "standalone",
-        viewport: size,
+        viewport: size && { ...size, pixelRatio: pixelRatio() },
         inputSource: "host",
     })
     applyPixelRatio()
@@ -218,7 +218,7 @@ export function startStandalone(): ContainerRuntime {
             (current.width !== last.width || current.height !== last.height || dpr !== last.dpr)) {
             if (dpr !== last.dpr) applyPixelRatio()
             last = { width: current.width, height: current.height, dpr }
-            standalone.setViewport(current.width, current.height)
+            standalone.setViewport(current.width, current.height, dpr)
         }
 
         standalone.beginFrame(dt, realDt)

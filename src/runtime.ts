@@ -13,7 +13,7 @@
  *     const runtime = createRuntime({ root: __root, version: "1.0.0", viewport })
  *     evaluateBundle(code, { oj: runtime.oj })
  *     // each frame: runtime.beginFrame(dt)
- *     // on resize:  runtime.setViewport(w, h)
+ *     // on resize:  runtime.setViewport(w, h, devicePixelRatio)
  *
  * A frame runs in three phases, each in registration order: the frame
  * (`onFrame`, which is `useFrame`), the step (`onStep`, worlds only), then
@@ -117,8 +117,8 @@ export interface RuntimeOptions {
     root: unknown
     /** The pinned runtime version, as resolved from the manifest. */
     version: string
-    /** Initial viewport in CSS pixels. */
-    viewport?: { width: number; height: number }
+    /** Initial viewport in CSS pixels, and the screen pixels per CSS pixel (1 when left out). */
+    viewport?: { width: number; height: number; pixelRatio?: number }
     /**
      * Where this game's own files are served from, without a trailing slash.
      *
@@ -161,8 +161,11 @@ export interface ContainerRuntime {
      * really passed, and is `dtSeconds` when left out.
      */
     beginFrame(dtSeconds: number, realSeconds?: number): void
-    /** Replace the stage with a newly measured viewport. */
-    setViewport(width: number, height: number): void
+    /**
+     * Replace the stage with a newly measured viewport. `pixelRatio` left out
+     * keeps the stage's own, so a host that never knew one is not reset to 1.
+     */
+    setViewport(width: number, height: number, pixelRatio?: number): void
     /**
      * Renders the mounted cart again, its state kept: what a host calls after
      * swapping something a render reads, such as a live `.sl` program (the
@@ -208,7 +211,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     setPlayContext(options.play ?? null)
 
     const time: TimeState = { now: 0, dt: 0, realDt: 0, frame: 0 }
-    let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0)
+    let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0, options.viewport?.pixelRatio)
 
     // The three phases, in the order beginFrame runs them.
     const callbacks = new Set<FrameCallback>()
@@ -290,8 +293,8 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             runPhase(lates, dtSeconds, realSeconds, "a late frame callback")
         },
 
-        setViewport(width: number, height: number) {
-            stage = stageOf(width, height)
+        setViewport(width: number, height: number, pixelRatio: number = stage.pixelRatio) {
+            stage = stageOf(width, height, pixelRatio)
         },
 
         rerender() {

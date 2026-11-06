@@ -32,7 +32,7 @@ describe("the oj object", () => {
         }
         // What every host provides is still there.
         expect(oj.version).toBe("1.4.2")
-        expect(oj.stage).toEqual({ width: 960, height: 540 })
+        expect(oj.stage).toEqual({ width: 960, height: 540, pixelRatio: 1 })
         expect(typeof oj.onFrame).toBe("function")
     })
 
@@ -40,7 +40,7 @@ describe("the oj object", () => {
         const { oj } = make({ viewport: { width: 1920, height: 540 } })
         expect(oj.version).toBe("1.4.2")
         expect(oj.root).toEqual({ fake: "root" })
-        expect(oj.stage).toEqual({ width: 1920, height: 540 })
+        expect(oj.stage).toEqual({ width: 1920, height: 540, pixelRatio: 1 })
         expect(oj.time.frame).toBe(0)
     })
 
@@ -194,7 +194,20 @@ describe("viewport changes", () => {
     it("make the stage the new viewport", () => {
         const r = make({ viewport: { width: 960, height: 540 } })
         r.setViewport(1920, 1080)
-        expect(r.oj.stage).toEqual({ width: 1920, height: 1080 })
+        expect(r.oj.stage).toEqual({ width: 1920, height: 1080, pixelRatio: 1 })
+    })
+
+    it("carry the screen's pixel ratio, kept when a resize does not say", () => {
+        const r = make({ viewport: { width: 390, height: 844, pixelRatio: 3 } })
+        expect(r.oj.stage.pixelRatio).toBe(3)
+        r.setViewport(844, 390)
+        expect(r.oj.stage).toEqual({ width: 844, height: 390, pixelRatio: 3 })
+        r.setViewport(844, 390, 2)
+        expect(r.oj.stage.pixelRatio).toBe(2)
+        for (const bad of [0, -1, NaN, Infinity]) {
+            r.setViewport(800, 600, bad)
+            expect(r.oj.stage.pixelRatio, String(bad)).toBe(1)
+        }
     })
 
     // useStage compares identity to decide whether to re-render.
@@ -203,7 +216,7 @@ describe("viewport changes", () => {
         const before = r.oj.stage
         r.setViewport(1920, 1080)
         expect(r.oj.stage).not.toBe(before)
-        expect(before).toEqual({ width: 960, height: 540 })
+        expect(before).toEqual({ width: 960, height: 540, pixelRatio: 1 })
     })
 
     it("leave pointer coordinates alone: they were never scaled", () => {

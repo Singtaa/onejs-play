@@ -21,6 +21,14 @@
 export interface Stage {
     width: number
     height: number
+    /**
+     * Screen pixels per stage pixel: the page's devicePixelRatio in the
+     * browser (3 on most phones), 1 natively, where the panel already lays out
+     * in the screen's own pixels. A cart cannot read devicePixelRatio itself,
+     * so this is how it knows. Pass it to a ShaderProgram's `pixelRatio` to
+     * draw it sharp, at this number squared the cost.
+     */
+    pixelRatio: number
 }
 
 /**
@@ -29,15 +37,19 @@ export interface Stage {
  * UI Toolkit reports nothing on the frames before its first layout, and a zero
  * size divided through by a game seeds NaN into every coordinate downstream.
  */
-const UNMEASURED: Stage = { width: 960, height: 540 }
+const UNMEASURED: Stage = { width: 960, height: 540, pixelRatio: 1 }
 
 function positiveFinite(value: number): boolean {
     return Number.isFinite(value) && value > 0
 }
 
-/** The stage for a measured viewport, or the unmeasured default when it is not usable yet. */
-export function stageOf(width: number, height: number): Stage {
-    return positiveFinite(width) && positiveFinite(height) ? { width, height } : { ...UNMEASURED }
+/**
+ * The stage for a measured viewport, or the unmeasured default when it is not
+ * usable yet. A pixel ratio that is not a positive number is 1.
+ */
+export function stageOf(width: number, height: number, pixelRatio = 1): Stage {
+    const ratio = positiveFinite(pixelRatio) ? pixelRatio : 1
+    return positiveFinite(width) && positiveFinite(height) ? { width, height, pixelRatio: ratio } : { ...UNMEASURED, pixelRatio: ratio }
 }
 
 /**
