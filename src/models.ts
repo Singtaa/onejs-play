@@ -26,7 +26,7 @@ import { assetUrl } from "./asset"
 import { toRGBA, type ColorInput } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer } from "./physics3d/actors"
-import { modelUrls } from "./physics3d/sources"
+import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
@@ -52,6 +52,53 @@ export interface Model {
     readonly clips: readonly string[]
     /** Height in the model's own units, before any spawn scale. */
     readonly height: number
+}
+
+/** A list of numbers: a typed array, which crosses to Unity as its bytes, or a plain array. */
+export type Numbers = Float32Array | readonly number[]
+
+/**
+ * What `scene.mesh` makes a model from. Every list is flat: positions three
+ * numbers a vertex, indices three a triangle. A triangle shows the side that
+ * `cross(b - a, c - a)` points to, as Unity's own meshes and oj's physics do.
+ */
+export interface MeshData {
+    /** x, y and z a vertex, in the model's own units. */
+    positions: Numbers
+    /** Three a triangle, each a vertex's place in `positions`. A Uint16Array is half the bytes. */
+    indices: Uint32Array | Uint16Array | readonly number[]
+    /** x, y and z a vertex. Computed from the triangles when left out, and again on every `set`. */
+    normals?: Numbers
+    /** sRGB from 0 to 1, three or four a vertex (r, g, b, and a), multiplied into the model's `color`. */
+    colors?: Numbers
+    /** u and v a vertex, for a texture. */
+    uvs?: Numbers
+}
+
+export interface MeshModelOptions extends MeshData {
+    /** The whole model's colour, white by default. An alpha below 1 draws it see-through. */
+    color?: ColorInput
+}
+
+/**
+ * A `set`: new positions, and anything else that changes. Indices left out
+ * stay as they were. Normals, colours and UVs come with every set that changes
+ * the number of vertices, if the model was made with them; otherwise they may
+ * be left out and stay.
+ */
+export type MeshUpdate = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">>
+
+/** A model made from arrays: spawned, scattered and made a collider like a loaded one. */
+export interface MeshModel extends Model {
+    /**
+     * Redraws it, and every actor of it, with new vertices: a shadow or a trail
+     * that changes each frame. Its buffers keep their room, so one that varies
+     * between sizes stops allocating once it has seen the largest. A model that
+     * became a physics collider keeps its shape and refuses.
+     */
+    set(data: MeshUpdate): void
+    /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
+    destroy(): void
 }
 
 export interface SpawnOptions {
@@ -177,6 +224,14 @@ export interface SceneOptions {
 
 export interface Scene {
     spawn(model: Model, options?: SpawnOptions): Actor
+    /**
+     * A model made from arrays, such as a terrain from `rng.noise`, spawned
+     * like a loaded one. It goes with the scene.
+     *
+     *     const land = scene.mesh({ positions, indices, color: "#6b8f4e" })
+     *     scene.spawn(land)
+     */
+    mesh(options: MeshModelOptions): MeshModel
     pointLight(options: PointLightOptions): PointLight
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
@@ -306,6 +361,22 @@ function bridge(): any {
         throw new Error("[oj] 3D models need glTFast: this host has no OneJS.Models.ModelBridge. In a Unity project, add com.unity.cloud.gltfast with the Package Manager.")
     }
     return found
+}
+
+/** A list of numbers as the Float32Array the bridge takes, `width` to an element. */
+function floats(list: Numbers | undefined, what: string, width: number): Float32Array | null {
+    if (list === undefined || list === null) return null
+    const typed = list instanceof Float32Array ? list : Array.isArray(list) ? Float32Array.from(list) : null
+    if (typed === null) throw new Error(`[oj] scene.mesh: ${what} is a ${Object.prototype.toString.call(list).slice(8, -1)}; give a Float32Array or an array of numbers`)
+    if (typed.length % width !== 0) throw new Error(`[oj] scene.mesh: ${what} has ${typed.length} numbers, which is not ${width} a vertex`)
+    return typed
+}
+
+function indexList(list: MeshData["indices"] | undefined): Uint32Array | Uint16Array | null {
+    if (list === undefined || list === null) return null
+    if (list instanceof Uint32Array || list instanceof Uint16Array) return list
+    if (Array.isArray(list)) return Uint32Array.from(list)
+    throw new Error(`[oj] scene.mesh: indices are a ${Object.prototype.toString.call(list).slice(8, -1)}; give a Uint32Array, a Uint16Array or an array of numbers`)
 }
 
 function rootElement(): any {
@@ -555,6 +626,57 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return actor
     }
 
+    const mesh = (o: MeshModelOptions): MeshModel => {
+        if (typeof b.CreateMesh !== "function") {
+            throw new Error("[oj] scene.mesh needs a newer OneJS: this host's ModelBridge cannot make a model from arrays (CreateMesh came after 3.9.18).")
+        }
+        const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
+        // The streams a model is made with are its streams for good.
+        const normals = o.normals !== undefined, colors = o.colors !== undefined, uvs = o.uvs !== undefined
+        let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array } | null = null
+        const write = (d: MeshUpdate, what: string) => {
+            const positions = floats(d.positions, "positions", 3)
+            if (positions === null) throw new Error(`[oj] ${what}: positions are required`)
+            const indices = indexList(d.indices)
+            const vertexColors = floats(d.colors, "colors", 1)
+            const problem = String(b.SetMesh(id, positions, indices,
+                floats(d.normals, "normals", 3), vertexColors, floats(d.uvs, "uvs", 2)))
+            if (problem !== "") throw new Error(`[oj] ${what}: ${problem}`)
+            latest = { positions, indices: indices ?? latest!.indices }
+        }
+        const id: number = b.CreateMesh(normals, colors, uvs, ...color)
+        try {
+            write(o, "scene.mesh")
+        } catch (e) {
+            b.Unload(id)
+            throw e
+        }
+        const made = {
+            collider: false,
+            triangles: () => ({
+                vertices: latest!.positions.slice(),
+                indices: latest!.indices instanceof Uint32Array ? latest!.indices.slice() : Uint32Array.from(latest!.indices),
+            }),
+        }
+        const model: MeshModel = Object.freeze({
+            id,
+            clips: Object.freeze([]) as readonly string[],
+            get height() { return Number(b.Height(id)) },
+            set(d: MeshUpdate) {
+                if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
+                if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
+                write(d, "mesh.set")
+            },
+            destroy() {
+                if (generationOf.get(model) !== generation) return
+                if (!b.Unload(id)) console.warn("[oj] this mesh is still in the scene, so it stays. Destroy its actors first.")
+            },
+        })
+        generationOf.set(model, generation)
+        arrayModels.set(model, made)
+        return model
+    }
+
     const pointLight = (o: PointLightOptions): PointLight => {
         let position = vec3(o.position)
         let color = o.color ?? d.pointLight.color
@@ -578,6 +700,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
 
     const scene: Scene = {
         spawn,
+        mesh,
         pointLight,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)

@@ -27,7 +27,7 @@ import { fromQuat, toQuat, type Quat } from "./rotation"
 import { placeActors, type ActorPlacement } from "./actors"
 import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim } from "../physics/core"
 import { glbTriangles, type Triangles } from "./gltf"
-import { loadFileBytes, modelUrls } from "./sources"
+import { arrayModels, loadFileBytes, modelUrls } from "./sources"
 import { buildNav, type Nav, type NavOptions } from "../nav/nav"
 import { CAR_SIZE, CarCore, type CarOptionsOf, type CarWheelState } from "./car"
 
@@ -117,7 +117,7 @@ export interface MeshOptions extends BodyOptionsBase {
     scale?: number
 }
 
-/** What a mesh collider is made from: a model, a .glb by name or URL, its bytes, or triangles. */
+/** What a mesh collider is made from: a model (loaded or made with `scene.mesh`), a .glb by name or URL, its bytes, or triangles. */
 export type MeshSource = { readonly id: number } | string | ArrayBuffer | Uint8Array | Triangles
 
 export interface CharacterOptions {
@@ -579,6 +579,11 @@ async function trianglesOf(source: MeshSource): Promise<Triangles> {
     if (typeof source === "string") return glbTriangles(await loadFileBytes(source))
     if (source instanceof ArrayBuffer || source instanceof Uint8Array) return glbTriangles(source)
     if ("vertices" in source && "indices" in source) return source
+    const made = arrayModels.get(source)
+    if (made !== undefined) {
+        made.collider = true
+        return made.triangles()
+    }
     const url = modelUrls.get(source)
     if (url === undefined) throw new Error("[oj] world.mesh: that model was not loaded with loadModel or useModel, so there is no file to read its triangles from")
     return glbTriangles(await loadFileBytes(url))
