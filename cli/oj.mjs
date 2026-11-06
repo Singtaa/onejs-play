@@ -317,6 +317,11 @@ async function main() {
                 return 0
             } catch (error) {
                 say(`failed: ${error.message}`)
+                // What the page said last, since a cart that never started says why there or nowhere.
+                const said = game.browser.console.slice(-5)
+                if (said.length > 0) say(`the page's last console lines:\n${said.map((l) => `  ${l.level}: ${l.text.slice(0, 300)}`).join("\n")}`)
+                const kept = game.browser.keep?.()
+                if (kept) say(`chrome's own log is kept at ${kept}`)
                 try { say(`screenshot ${path.relative(root, await game.shot(path.resolve(root, ".oj/failed.png")))}`) } catch { /* the page may be gone */ }
                 return 1
             } finally {
