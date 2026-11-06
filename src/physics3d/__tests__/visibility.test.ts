@@ -45,7 +45,7 @@ async function walled(): Promise<World> {
 describe("visibility", () => {
     it("is a circle `within` round the eye in an open world", async () => {
         const w = await createWorld()
-        const poly = w.visibility([0, 0, 0], { within: 10 })
+        const poly = w.visibility([0, 0, 0], { within: 10 }).outline
         expect(poly.length).toBeGreaterThanOrEqual(128)
         for (const p of poly) {
             expect(Math.hypot(p[0], p[2])).toBeCloseTo(10, 5)
@@ -55,7 +55,7 @@ describe("visibility", () => {
 
     it("stops at a wall, its corners exact, and sees past either end of it", async () => {
         const w = await walled()
-        const poly = w.visibility([0, 0, 0], { within: 20 })
+        const poly = w.visibility([0, 0, 0], { within: 20 }).outline
         expect(inside(poly, 3, 0)).toBe(true)
         expect(inside(poly, 8, 0)).toBe(false)
         expect(inside(poly, 8, 5)).toBe(true)
@@ -73,7 +73,7 @@ describe("visibility", () => {
         w.sphere({ at: [3, 1.5, -5], radius: 1.2 })
         w.box({ at: [12, 1, 9], size: [0.2, 2, 0.2] })
         const eye: Vec3 = [0.5, 0, 0.3]
-        const poly = w.visibility(eye, { within: 18, height: 1.5 })
+        const poly = w.visibility(eye, { within: 18, height: 1.5 }).outline
         let checked = 0, wrong = 0
         let seed = 7
         const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
@@ -92,7 +92,7 @@ describe("visibility", () => {
         const w = await createWorld()
         // Turned 45 degrees: its corners are 3√2 m from its middle along x and z, the nearest at (5.76, 3).
         w.box({ at: [10, 1, 3], size: [6, 2, 6], rotation: { yaw: 45 } })
-        const poly = w.visibility([0, 0, 0], { within: 20 })
+        const poly = w.visibility([0, 0, 0], { within: 20 }).outline
         const tip = 10 - 3 * Math.SQRT2
         expect(inside(poly, tip - 0.02, 3)).toBe(true)
         expect(inside(poly, tip + 0.05, 3)).toBe(false)
@@ -101,7 +101,7 @@ describe("visibility", () => {
     it("does not miss a thin pillar far off between two rays of its fan", async () => {
         const w = await createWorld()
         w.box({ at: [17, 1, 3], size: [0.1, 2, 0.1] })
-        const poly = w.visibility([0, 0, 0], { within: 20 })
+        const poly = w.visibility([0, 0, 0], { within: 20 }).outline
         const behind = 19 / Math.hypot(17, 3)
         expect(inside(poly, 17 * behind, 3 * behind)).toBe(false)
     })
@@ -109,22 +109,22 @@ describe("visibility", () => {
     it("sees over what is lower than its eyes", async () => {
         const w = await createWorld()
         w.box({ at: [3, 0.5, 0], size: [1, 1, 4] })
-        expect(inside(w.visibility([0, 0, 0], { within: 10 }), 6, 0)).toBe(true)
-        expect(inside(w.visibility([0, 0, 0], { within: 10, height: 0.5 }), 6, 0)).toBe(false)
+        expect(inside(w.visibility([0, 0, 0], { within: 10 }).outline, 6, 0)).toBe(true)
+        expect(inside(w.visibility([0, 0, 0], { within: 10, height: 0.5 }).outline, 6, 0)).toBe(false)
     })
 
     it("sees through what its filter leaves out", async () => {
         const w = await walled()
-        expect(inside(w.visibility([0, 0, 0], { within: 20, skip: ["wall"] }), 8, 0)).toBe(true)
-        expect(inside(w.visibility([0, 0, 0], { within: 20, only: ["floor"] }), 8, 0)).toBe(true)
-        expect(inside(w.visibility([0, 0, 0], { within: 20, only: ["wall"] }), 8, 0)).toBe(false)
+        expect(inside(w.visibility([0, 0, 0], { within: 20, skip: ["wall"] }).outline, 8, 0)).toBe(true)
+        expect(inside(w.visibility([0, 0, 0], { within: 20, only: ["floor"] }).outline, 8, 0)).toBe(true)
+        expect(inside(w.visibility([0, 0, 0], { within: 20, only: ["wall"] }).outline, 8, 0)).toBe(false)
     })
 
     it("is blocked by a body made since the last step", async () => {
         const w = await createWorld()
         w.step()
         w.box({ at: [4, 1, 0], size: [1, 2, 2] })
-        expect(inside(w.visibility([0, 0, 0], { within: 10 }), 7, 0)).toBe(false)
+        expect(inside(w.visibility([0, 0, 0], { within: 10 }).outline, 7, 0)).toBe(false)
     })
 
     it("asks the engine once a look, for what is in range, and casts no ray into it", async () => {
@@ -137,7 +137,7 @@ describe("visibility", () => {
         raw.castRayAndGetNormal = (...args: unknown[]) => { rays++; return cast(...args) }
         raw.intersectionsWithShape = (...args: unknown[]) => { queries++; return query(...args) }
         // Clear of every box: the box at the middle stands where the old version of this test stood its eye.
-        const poly = w.visibility([0.3, 0, 2.5], { within: 20 })
+        const poly = w.visibility([0.3, 0, 2.5], { within: 20 }).outline
         expect(poly.length).toBeGreaterThan(30)
         expect(rays).toBe(0)
         expect(queries).toBe(1)
@@ -154,7 +154,7 @@ describe("visibility", () => {
         const v = new Float32Array([-9, 0, 9, -5, 0, 7, -1, 0, 9, -9, 3, 9.5, -5, 3, 7.5, -1, 3, 9.5])
         await w.mesh({ vertices: v, indices: new Uint32Array([0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4]) })
         const eye: Vec3 = [0.2, 0, -0.4]
-        const poly = w.visibility(eye, { within: 16, height: 1.2 })
+        const poly = w.visibility(eye, { within: 16, height: 1.2 }).outline
         let checked = 0, wrong = 0
         let seed = 11
         const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
@@ -173,7 +173,7 @@ describe("visibility", () => {
         const w = await createWorld()
         const wall = w.box({ at: [5, 1, 0], size: [1, 2, 4] })
         w.step()
-        const sees = () => inside(w.visibility([0, 0, 0], { within: 12 }), 8, 0)
+        const sees = () => inside(w.visibility([0, 0, 0], { within: 12 }).outline, 8, 0)
         expect(sees()).toBe(false)
         const before = w.snapshot()
         wall.position = [5, 1, 9]
@@ -185,15 +185,58 @@ describe("visibility", () => {
     it("sees nothing from inside something solid, as canSee does not", async () => {
         const w = await createWorld()
         w.box({ at: [0, 1, 0], size: [2, 2, 2] })
-        const poly = w.visibility([0, 0, 0], { within: 10, height: 1 })
+        const poly = w.visibility([0, 0, 0], { within: 10, height: 1 }).outline
         expect(poly.length).toBe(1)
         expect(poly[0]).toEqual([0, 0, 0])
         expect(w.canSee([0, 1, 0], [5, 1, 0])).toBe(false)
     })
 
+    it("says what each corner lies on: the wall, a crate, a ball or a wall across the edge of range, and null only at that edge, on a kept cut too", async () => {
+        const w = await createWorld()
+        w.box({ at: [0, -0.5, 0], size: [80, 1, 80], layer: "floor" })
+        const wall = w.box({ at: [5, 2, 0], size: [1, 4, 4], layer: "wall" })
+        const crate = w.box({ at: [-4, 1, 3], size: [2, 2, 2], dynamic: true })
+        const ball = w.sphere({ at: [0, 1.5, -6], radius: 1 })
+        // Across the edge of range: rays to its far corners meet it past 20 m, where it is not in sight.
+        const far = w.box({ at: [0, 2, 19.8], size: [30, 4, 1] })
+        // How far a floor point is from each one's outline across the eye's plane (y = 1.5).
+        const off = new Map<unknown, (x: number, z: number) => number>([
+            [wall, (x, z) => Math.hypot(Math.max(0, Math.abs(x - 5) - 0.5), Math.max(0, Math.abs(z) - 2)) || Math.min(0.5 - Math.abs(x - 5), 2 - Math.abs(z))],
+            [crate, (x, z) => Math.hypot(Math.max(0, Math.abs(x + 4) - 1), Math.max(0, Math.abs(z - 3) - 1)) || Math.min(1 - Math.abs(x + 4), 1 - Math.abs(z - 3))],
+            [ball, (x, z) => Math.abs(Math.hypot(x, z + 6) - 1)],
+            [far, (x, z) => Math.hypot(Math.max(0, Math.abs(x) - 15), Math.max(0, Math.abs(z - 19.8) - 0.5)) || Math.min(15 - Math.abs(x), 0.5 - Math.abs(z - 19.8))],
+        ])
+        const check = () => {
+            const { outline, reaches } = w.visibility([0, 0, 0], { within: 20 })
+            expect(reaches.length).toBe(outline.length)
+            const seen = new Set<unknown>()
+            for (let i = 0; i < outline.length; i++) {
+                const [x, , z] = outline[i]!, b = reaches[i]!
+                if (b === null) expect(Math.hypot(x, z)).toBeCloseTo(20, 6)
+                else {
+                    expect(off.get(b)!(x, z)).toBeLessThan(1e-3)
+                    seen.add(b)
+                }
+            }
+            expect([...seen]).toHaveLength(4)
+            return reaches
+        }
+        const first = check()
+        // The wall's and the ball's cuts are kept for the second look; what they reach is the same.
+        expect(check()).toEqual(first)
+    })
+
+    it("reaches only null in an open world, and the solid an eye is inside", async () => {
+        const open = await createWorld()
+        expect(open.visibility([0, 0, 0], { within: 10 }).reaches.every((b) => b === null)).toBe(true)
+        const w = await createWorld()
+        const box = w.box({ at: [0, 1, 0], size: [2, 2, 2] })
+        expect(w.visibility([0, 0, 0], { within: 10, height: 1 }).reaches).toEqual([box])
+    })
+
     it("puts a box's corners where they are, to a tenth of a millimetre", async () => {
         const w = await walled()
-        const poly = w.visibility([0, 0, 0], { within: 20 })
+        const poly = w.visibility([0, 0, 0], { within: 20 }).outline
         for (const z of [-2, 2]) expect(Math.min(...poly.map((p) => Math.hypot(p[0] - 4.5, p[2] - z)))).toBeLessThan(1e-4)
     })
 })

@@ -44,7 +44,7 @@ export interface Dim<V extends readonly number[], R, A> {
     /** The engine's shape for a shape value: `dims` in metres. */
     shape(r: any, kind: string, dims: readonly number[]): any
     /** Moves every listed actor to its body, in one go if the host can. */
-    place(list: readonly Placement<V, A>[]): void
+    place(list: readonly Drawn<V, A>[]): void
     /**
      * What happens to the actor of a body that is gone: a 3D actor goes with
      * it, and this is true; a 2D element is React's and stays, and this is
@@ -56,11 +56,15 @@ export interface Dim<V extends readonly number[], R, A> {
 }
 
 export interface Placement<V, A> {
-    actor: A
+    /** Null for a car's chassis drawn only for the wheels it carries, which is never handed to the dimension. */
+    actor: A | null
     at: V
     /** The engine's rotation, or null to leave the actor's facing alone. */
     rotation: any | null
 }
+
+/** A placement with an actor to move: what the dimension is handed. */
+export type Drawn<V, A> = Placement<V, A> & { actor: A }
 
 // ---------- the public shapes, generically ----------
 
@@ -300,6 +304,11 @@ export interface Driver {
     saveState(): number[]
     /** After a rewind, with a new engine: its chassis is back or gone, and what it held then. */
     restored(alive: boolean, state: number[] | undefined): void
+    /**
+     * The models it carries (a car's wheels), placed on its chassis where the
+     * chassis is drawn, `ahead` seconds past the last step, onto `out`.
+     */
+    carried?(at: readonly number[], rotation: any, ahead: number, out: Drawn<any, any>[]): void
 }
 
 export class WorldCore<V extends readonly number[], R, A> {
@@ -322,6 +331,8 @@ export class WorldCore<V extends readonly number[], R, A> {
     readonly unrotating = new Set<BodyCore<V, R, A>>()
     /** Every car made, driving or not: a rewind can bring a destroyed one's chassis back. */
     readonly drivers = new Set<Driver>()
+    /** Drivers that carry models on their chassis, by the chassis: drawn wherever the chassis is drawn. */
+    readonly carriers = new Map<Thing<V, R, A>, Driver>()
     /** Dynamic and kinematic bodies alive: a world of only scenery has nothing to ride, so its characters do not look. */
     private movers = 0
     moving(): boolean { return this.movers > 0 }
@@ -543,50 +554,59 @@ export class WorldCore<V extends readonly number[], R, A> {
 
     /**
      * The floor the eye sees, as a polygon round it, at `height` above `eye`,
-     * out to `within`. The colliders in range are found by the query `canSee`
-     * filters with, cut by the plane the eye looks across, and the polygon is
-     * worked out from those cuts in plain arithmetic (physics/sight.ts): a ray
-     * either side of each corner and tangent, none in between. So it agrees
-     * with `canSee`, and costs no call into the engine per ray.
+     * out to `within`, and what each of its corners lies on. The colliders in
+     * range are found by the query `canSee` filters with, cut by the plane the
+     * eye looks across, and the polygon is worked out from those cuts in plain
+     * arithmetic (physics/sight.ts): a ray either side of each corner and
+     * tangent, none in between. So it agrees with `canSee`, and costs no call
+     * into the engine per ray; each ray already knows what it stopped at.
      */
-    visibility(eye: V, o: Filter & { height?: number, within?: number } = {}): V[] {
+    visibility(eye: V, o: Filter & { height?: number, within?: number } = {}): { outline: V[], reaches: (Thing<V, R, A> | null)[] } {
         this.live()
         const d = this.dim, u = d.unit
         const within = (o.within ?? this.defaults.sightWithin) / u
         const height = (o.height ?? this.defaults.sightHeight) / u
-        if (!(within > 0)) return []
+        if (!(within > 0)) return { outline: [], reaches: [] }
         const feet = toE(d, eye)
         const origin = add(feet, scale(d.up, height))
         // The plane's two axes: x and z in 3D, the whole plane in 2D.
         const [ax, az] = d.n === 3 ? [0, 2] : [0, 1]
         const parts: Part[] = []
+        // What each part is a cut of, beside it.
+        const owners: (Thing<V, R, A> | null)[] = []
         const h = d.n === 3 ? origin[1]! : 0
         this.overlapping(new this.r.Ball(within), fromE(d, origin), o, (handle) => {
-            const w = this.byCollider.get(handle)
+            const w = this.byCollider.get(handle) ?? null
             // Scenery does not move, so its cut is kept until a static body is moved or the world restored.
             const still = w instanceof BodyCore && !w.dynamic && !w.kinematic
             const kept = still ? this.cuts.get(w) : undefined
-            if (kept !== undefined && kept.h === h && kept.epoch === this.stillEpoch) { parts.push(...kept.parts); return true }
+            if (kept !== undefined && kept.h === h && kept.epoch === this.stillEpoch) {
+                for (const p of kept.parts) { parts.push(p); owners.push(w) }
+                return true
+            }
             const c = this.raw.getCollider(handle)
             if (c === null || c === undefined || c.isSensor()) return true
             const mine: Part[] = []
             this.cut(c, origin, mine)
-            parts.push(...mine)
+            for (const p of mine) { parts.push(p); owners.push(w) }
             if (still) this.cuts.set(w, { h, epoch: this.stillEpoch, parts: mine })
             return true
         })
-        const flat: number[] = []
-        sight(origin[ax]!, origin[az]!, within, parts, SIGHT_ARC, flat)
+        const flat: number[] = [], on: number[] = []
+        sight(origin[ax]!, origin[az]!, within, parts, SIGHT_ARC, flat, on)
         // Each corner at the eye's feet, in world units, frozen as every vector oj hands out is.
-        const out: V[] = new Array(flat.length / 2)
+        const outline: V[] = new Array(flat.length / 2)
+        const reaches: (Thing<V, R, A> | null)[] = new Array(on.length)
         for (let i = 0; i < flat.length; i += 2) {
             const p = new Array(d.n)
             for (let k = 0; k < d.n; k++) p[k] = feet[k]! * u
             p[ax] = flat[i]! * u
             p[az] = flat[i + 1]! * u
-            out[i / 2] = Object.freeze(p) as unknown as V
+            outline[i / 2] = Object.freeze(p) as unknown as V
+            const k = on[i / 2]!
+            reaches[i / 2] = k < 0 ? null : owners[k]!
         }
-        return out
+        return { outline, reaches }
     }
 
     /** Each collider's shape as it was made, read from the engine once. */
@@ -914,7 +934,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         }
         // How far into the next step this frame is.
         const t = Math.min(1, this.accumulated / this.stepSeconds)
-        const list: Placement<V, A>[] = []
+        const list: Drawn<V, A>[] = []
         for (const [w, p] of this.poses) {
             if (!w.alive || p.to.actor !== w.actor) continue
             if (this.snapped.has(w)) {
@@ -925,9 +945,19 @@ export class WorldCore<V extends readonly number[], R, A> {
                 p.from = now
                 p.to = now
             }
-            list.push(this.ahead(w, p, t))
+            this.drawn(w, this.ahead(w, p, t), t * this.stepSeconds, list)
         }
         if (list.length > 0) this.dim.place(list)
+    }
+
+    /**
+     * What drawing `w` at `p` puts on screen, onto `out`: its own actor, and
+     * the models a car carries, on the chassis as drawn, so a wheel never
+     * lags its car. `ahead` is how far past the last step `p` is, seconds.
+     */
+    drawn(w: Thing<V, R, A>, p: Placement<V, A>, ahead: number, out: Drawn<V, A>[]): void {
+        if (p.actor !== null) out.push(p as Drawn<V, A>)
+        this.carriers.get(w)?.carried?.(p.at, p.rotation, ahead, out)
     }
 
     /**
@@ -1115,7 +1145,10 @@ export class WorldCore<V extends readonly number[], R, A> {
         // A car whose chassis is neither here nor buried can never come back.
         for (const v of [...this.drivers]) {
             const alive = this.byCollider.has(v.colliderHandle)
-            if (!alive && !this.buried.has(v.colliderHandle)) this.drivers.delete(v)
+            if (!alive && !this.buried.has(v.colliderHandle)) {
+                this.drivers.delete(v)
+                for (const [w, c] of this.carriers) if (c === v) this.carriers.delete(w)
+            }
             v.restored(alive, own[`car${v.colliderHandle}`])
         }
         if (this.blending) this.recordPoses()
@@ -1130,10 +1163,10 @@ export class WorldCore<V extends readonly number[], R, A> {
 
     /** Puts every body's actor where its body is, in one go. */
     syncActors(): void {
-        const list: Placement<V, A>[] = []
+        const list: Drawn<V, A>[] = []
         for (const w of this.byCollider.values()) {
             const p = w.placement()
-            if (p !== null) list.push(p)
+            if (p !== null) this.drawn(w, p, 0, list)
         }
         if (list.length > 0) this.dim.place(list)
     }
@@ -1346,14 +1379,17 @@ export class BodyCore<V extends readonly number[], R, A> {
     }
 
     placement(): Placement<V, A> | null {
-        if (this.actor === null || this.gone) return null
+        if (this.gone || (this.actor === null && !this.world.carriers.has(this))) return null
         const rb = this.world.raw.getRigidBody(this.bodyHandle)
         return { actor: this.actor, at: fromE(this.d, this.d.a(rb.translation())), rotation: rb.rotation() }
     }
 
     syncActor(): void {
         const p = this.placement()
-        if (p !== null) this.d.place([p])
+        if (p === null) return
+        const list: Drawn<V, A>[] = []
+        this.world.drawn(this, p, 0, list)
+        if (list.length > 0) this.d.place(list)
     }
 
     markGone(): void { this.gone = true }
@@ -1750,7 +1786,7 @@ export class CharacterCore<V extends readonly number[], R, A> {
 
     emitTrigger(): void {}
 
-    placement(): Placement<V, A> | null {
+    placement(): Drawn<V, A> | null {
         if (this.actor === null || this.gone) return null
         return { actor: this.actor, at: this.d.characterActorAt === "middle" ? this.middle() : this.position, rotation: null }
     }

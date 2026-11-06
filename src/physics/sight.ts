@@ -262,6 +262,8 @@ function pieces(part: Part): Piece[] {
 
 // One look's working arrays, emptied each look: a look runs to the end before another starts.
 const list: Piece[] = []
+/** Which of the look's parts each piece in `list` came from. */
+const from: number[] = []
 const near: number[] = []
 const bins: number[][] = Array.from({ length: BINS }, () => [])
 
@@ -272,13 +274,15 @@ const bins: number[][] = Array.from({ length: BINS }, () => [])
  */
 function binned(parts: readonly Part[], ox: number, oz: number): void {
     list.length = 0
+    from.length = 0
     near.length = 0
     for (const b of bins) b.length = 0
     const w = TAU / BINS
-    for (const part of parts) {
-        for (const piece of pieces(part)) {
+    for (let p = 0; p < parts.length; p++) {
+        for (const piece of pieces(parts[p]!)) {
             const i = list.length
             list.push(piece)
+            from.push(p)
             const wx = piece.cx - ox, wz = piece.cz - oz, d = Math.hypot(wx, wz)
             near.push(Math.max(0, d - piece.r))
             if (d <= piece.r) { for (const b of bins) b.push(i); continue }
@@ -292,14 +296,15 @@ function binned(parts: readonly Part[], ox: number, oz: number): void {
 
 /**
  * What an eye at (ox, oz) sees out to `within`, among `parts`: the outline of
- * it, round the eye counterclockwise, as x and z pairs appended to `out`. The
- * edge of range is drawn with `arc` points to the turn where nothing is in the
- * way. Nothing at all when the eye is inside something solid, as every ray
- * the engine casts from there stops where it starts. Returns how many rays it
- * took.
+ * it, round the eye counterclockwise, as x and z pairs appended to `out`, and
+ * for each point the index of the part it lies on, or -1 at the edge of range,
+ * appended to `on`. The edge of range is drawn with `arc` points to the turn
+ * where nothing is in the way. Only the eye itself, on the part holding it,
+ * when the eye is inside something solid, as every ray the engine casts from
+ * there stops where it starts. Returns how many rays it took.
  */
-export function sight(ox: number, oz: number, within: number, parts: readonly Part[], arc: number, out: number[]): number {
-    for (const part of parts) if (holds(part, ox, oz)) { out.push(ox, oz); return 0 }
+export function sight(ox: number, oz: number, within: number, parts: readonly Part[], arc: number, out: number[], on: number[]): number {
+    for (let p = 0; p < parts.length; p++) if (holds(parts[p]!, ox, oz)) { out.push(ox, oz); on.push(p); return 0 }
     const angles: number[] = []
     for (const part of parts) partAngles(part, ox, oz, within, angles)
     const sorted = new Float64Array(angles.length)
@@ -307,7 +312,7 @@ export function sight(ox: number, oz: number, within: number, parts: readonly Pa
     sorted.sort()
     const step = TAU / arc
     if (sorted.length === 0) {
-        for (let k = 0; k < arc; k++) out.push(ox + Math.cos(k * step) * within, oz + Math.sin(k * step) * within)
+        for (let k = 0; k < arc; k++) { out.push(ox + Math.cos(k * step) * within, oz + Math.sin(k * step) * within); on.push(-1) }
         return 0
     }
     // Each angle once, and the first again a turn on, to close the outline.
@@ -316,20 +321,23 @@ export function sight(ox: number, oz: number, within: number, parts: readonly Pa
     for (const a of sorted) if (a - last > 1e-12) { rays.push(a); last = a }
     binned(parts, ox, oz)
     const ts: number[] = new Array(rays.length)
+    const met: number[] = new Array(rays.length)
     for (let i = 0; i < rays.length; i++) {
         const dx = Math.cos(rays[i]!), dz = Math.sin(rays[i]!)
-        let t = Infinity
+        let t = Infinity, m = -1
         // Nearest first, so once a ray has met something nothing further is asked.
         for (const k of bins[Math.min(BINS - 1, Math.floor(rays[i]! / (TAU / BINS)))]!) {
             if (near[k]! >= t) break
             const h = partHit(list[k]!.part, ox, oz, dx, dz)
-            if (h < t) t = h
+            if (h < t) { t = h; m = from[k]! }
         }
         ts[i] = t
+        met[i] = m
     }
     for (let i = 0; i < rays.length; i++) {
         const a = rays[i]!, t = Math.min(ts[i]!, within)
         out.push(ox + Math.cos(a) * t, oz + Math.sin(a) * t)
+        on.push(ts[i]! <= within ? met[i]! : -1)
         // Between two rays that reach nothing, nothing is in the way: the edge of range, as an arc.
         const j = (i + 1) % rays.length
         if (ts[i]! <= within || ts[j]! <= within) continue
@@ -337,6 +345,7 @@ export function sight(ox: number, oz: number, within: number, parts: readonly Pa
         for (let k = Math.floor(a / step) + 1; k * step < b; k++) {
             if (k * step - a < 1e-9 || b - k * step < 1e-9) continue
             out.push(ox + Math.cos(k * step) * within, oz + Math.sin(k * step) * within)
+            on.push(-1)
         }
     }
     return rays.length

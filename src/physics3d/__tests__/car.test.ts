@@ -8,8 +8,9 @@ import path from "node:path"
 import { setWasmModule } from "../../wasm"
 import { RAPIER_VERSION } from "../rapier.version"
 import { createWorld, type World, type Car, type CarOptions } from "../world"
-import { toQuat } from "../rotation"
-import type { Rotation } from "../../models"
+import { fromQuat, toQuat } from "../rotation"
+import { setActorPlacer, type ActorPlacement } from "../actors"
+import type { Actor, Rotation, Vec3 } from "../../models"
 
 const WA = (globalThis as any).WebAssembly
 
@@ -279,5 +280,118 @@ describe("world.car in the family", () => {
         expect(turned()).toBeLessThan(11)
         expect(turned()).toBeGreaterThan(4)
         w.dispose()
+    })
+})
+
+describe("world.car places the wheel models it is given", () => {
+    /** Every placement of each of `actors`, in order, as frames hand them over. */
+    function watch(actors: readonly object[]): { at: Vec3, rotation: Rotation }[][] {
+        const seen = actors.map(() => [] as { at: Vec3, rotation: Rotation }[])
+        setActorPlacer((list: readonly ActorPlacement[]) => {
+            for (const p of list) {
+                const i = actors.indexOf(p.actor)
+                if (i >= 0) seen[i]!.push({ at: p.at, rotation: fromQuat(p.rotation!) })
+            }
+        })
+        return seen
+    }
+    const restorePlacer = () => setActorPlacer((list) => { for (const p of list) p.actor.position = p.at })
+    const near = (a: Readonly<Rotation>, b: Readonly<Rotation>) => {
+        const qa = toQuat(a), qb = toQuat(b)
+        return Math.abs(qa.x * qb.x + qa.y * qb.y + qa.z * qb.z + qa.w * qb.w)
+    }
+
+    it("puts each where car.wheels says, steered and rolled, with no chassis model of its own", async () => {
+        const wheels = [{}, {}, {}, {}] as unknown as [Actor, Actor, Actor, Actor]
+        const seen = watch(wheels)
+        try {
+            const w = await createWorld() as any
+            w.box({ at: [0, -0.5, 0], size: [2000, 1, 2000], friction: 0.9 })
+            const car = w.car({ at: [0, 0.8, 0], wheels }) as Car
+            // Placed where it starts, before any step.
+            for (const s of seen) expect(s.length).toBe(1)
+            car.drive(1, 0.6)
+            for (let i = 0; i < 120; i++) w.frame(1 / 60)
+            expect(car.speed).toBeGreaterThan(3)
+            car.wheels.forEach((x, i) => {
+                const last = seen[i]!.at(-1)!
+                expect(Math.hypot(...last.at.map((v, k) => v - x.position[k]!) as [number, number, number])).toBeLessThan(1e-9)
+                expect(near(last.rotation, x.rotation)).toBeGreaterThan(1 - 1e-9)
+            })
+            // The front pair steer and the rear pair do not, as car.wheels has them.
+            expect(near(seen[0]!.at(-1)!.rotation, seen[2]!.at(-1)!.rotation)).toBeLessThan(0.9999)
+            w.dispose()
+        } finally { restorePlacer() }
+    })
+
+    it("keeps each on the chassis as drawn between steps at 120 Hz, rolling on every frame", async () => {
+        const body = {} as Actor
+        const wheels = [{}, {}, {}, {}] as unknown as [Actor, Actor, Actor, Actor]
+        const seen = watch([body, ...wheels])
+        try {
+            const w = await createWorld() as any
+            w.box({ at: [0, -0.5, 0], size: [2000, 1, 2000], friction: 0.9 })
+            const car = w.car({ at: [0, 0.8, 0], actor: body, wheels }) as Car
+            for (const s of seen) s.length = 0
+            car.drive(1)
+            for (let i = 0; i < 360; i++) w.frame(1 / 120)
+            expect(car.speed).toBeGreaterThan(8)
+            // Each frame of the last second: the chassis was drawn, and each wheel
+            // with it, at the same place on the chassis as car.wheels has after the step.
+            const frames = seen[0]!.length
+            for (const s of seen) expect(s.length).toBe(frames)
+            const offset = (wheel: Vec3, at: Vec3, r: Rotation) => {
+                const q = toQuat(r), d: Vec3 = [wheel[0] - at[0], wheel[1] - at[1], wheel[2] - at[2]]
+                // Into the chassis's frame: the inverse rotation.
+                const x = -q.x, y = -q.y, z = -q.z, ww = q.w
+                const tx = 2 * (y * d[2] - z * d[1]), ty = 2 * (z * d[0] - x * d[2]), tz = 2 * (x * d[1] - y * d[0])
+                return [d[0] + ww * tx + (y * tz - z * ty), d[1] + ww * ty + (z * tx - x * tz), d[2] + ww * tz + (x * ty - y * tx)]
+            }
+            const truth = car.wheels.map((x) => offset(x.position, car.body.position, car.body.rotation))
+            for (let f = frames - 120; f < frames; f++) {
+                const c = seen[0]![f]!
+                for (let i = 0; i < 4; i++) {
+                    const o = offset(seen[i + 1]![f]!.at, c.at, c.rotation)
+                    // The springs settle as it accelerates: within a millimetre of where the last step had them.
+                    expect(Math.hypot(o[0]! - truth[i]![0]!, o[1]! - truth[i]![1]!, o[2]! - truth[i]![2]!)).toBeLessThan(1e-3)
+                }
+                // Rolling: the wheel turned since the frame before, steps or no step.
+                expect(near(seen[3]![f]!.rotation, seen[3]![f - 1]!.rotation)).toBeLessThan(1 - 1e-6)
+            }
+            w.dispose()
+        } finally { restorePlacer() }
+    })
+
+    it("lets them go with the car, destroyed or rewound away, as its chassis model goes, and refuses anything but four", async () => {
+        const gone: object[] = []
+        const wheel = () => ({ destroy() { gone.push(this) } })
+        const wheels = [wheel(), wheel(), wheel(), wheel()] as unknown as [Actor, Actor, Actor, Actor]
+        const seen = watch(wheels)
+        try {
+            const w = await createWorld() as any
+            w.box({ at: [0, -0.5, 0], size: [200, 1, 200] })
+            const car = w.car({ at: [0, 0.8, 0], wheels }) as Car
+            expect(() => w.car({ wheels: wheels.slice(0, 2) })).toThrow(/four models/)
+            for (let i = 0; i < 10; i++) w.frame(1 / 60)
+            const snap = w.snapshot()
+            car.destroy()
+            expect(gone).toEqual(wheels)
+            const before = seen[0]!.length
+            for (let i = 0; i < 10; i++) w.frame(1 / 60)
+            // Brought back by a rewind, it drives, without the models that went with it.
+            w.restore(snap)
+            expect(car.alive).toBe(true)
+            car.drive(1)
+            for (let i = 0; i < 30; i++) w.frame(1 / 60)
+            expect(car.speed).toBeGreaterThan(0.5)
+            expect(seen[0]!.length).toBe(before)
+            // Rewound out of existence: a car made after the snapshot.
+            gone.length = 0
+            const later = [wheel(), wheel(), wheel(), wheel()] as unknown as [Actor, Actor, Actor, Actor]
+            w.car({ at: [5, 0.8, 0], wheels: later })
+            w.restore(snap)
+            expect(gone).toEqual(later)
+            w.dispose()
+        } finally { restorePlacer() }
     })
 })

@@ -501,7 +501,9 @@ Things that are not obvious from the code:
   answers each ray itself. `physics/sight.ts` then casts in plain JS, a ray
   either side of each corner and tangent and where a part crosses the edge of
   range, and along round arcs to 5 mm. Rays find what is in their slice of
-  the turn, nearest first. A static body's cut is kept until a body is
+  the turn, nearest first, and each knows which part it stopped at, which is
+  how `reaches` names the body under every corner of `outline` at no extra
+  query (null past range). A static body's cut is kept until a body is
   placed by hand or the world restored. Tests sample 4000 points against
   `canSee` among every shape oj makes, in 2D and 3D. On Gunyard's yard (36
   boxes) a look takes 0.042 ms in Chrome and 0.17 ms on the 4x phone profile,
@@ -535,6 +537,12 @@ Things that are not obvious from the code:
   not, so a braked, stopped car is held after `updateVehicle` by its speed
   along its length toward where it stopped (`parked`), re-anchored when
   pushed more than 2 cm. Its wheels are placed from the chassis after the step.
+  Wheel models given as `wheels` are carried: wherever the world draws the
+  chassis (`WorldCore.drawn`), on a step or ahead of one, each wheel is put on
+  it there, rolled on by its last step's spin rate, so it never trails the
+  car. A chassis with wheel models and no model of its own is still drawn,
+  as a placement with a null actor that is never handed to the scene. They go
+  with the car, destroyed or rewound away, as its chassis model does.
 - **Rotations are Unity's.** `rotation.ts` converts yaw, pitch and roll the way
   `Quaternion.Euler` does, and `gltf.ts` mirrors glTF's x as glTFast does, so
   a mesh collider lines up with the model drawn from the same file.

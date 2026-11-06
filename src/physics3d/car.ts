@@ -12,7 +12,7 @@
  */
 
 import type { Rotation, Vec3 } from "../models"
-import type { BodyCore, Driver } from "../physics/core"
+import type { BodyCore, Drawn, Driver } from "../physics/core"
 import { fromQuat, type Quat } from "./rotation"
 
 /** What `world.car` takes. Every number has a default that drives like a small road car. */
@@ -36,7 +36,14 @@ export interface CarOptionsOf<A> {
     grip?: number
     /** Which wheels the engine turns. "rear" by default. */
     drivenWheels?: "front" | "rear" | "all"
+    /** The chassis model, centred on the chassis. */
     actor?: A | null
+    /**
+     * Wheel models, front left, front right, rear left, rear right: the world
+     * puts each where its wheel is, steered and rolling, on the chassis as it
+     * is drawn. Without them, `car.wheels` says where to put your own.
+     */
+    wheels?: readonly [A, A, A, A]
     layer?: string
 }
 
@@ -97,6 +104,10 @@ export class CarCore<A> implements Driver {
     private steerNow = 0
     /** Each wheel's roll, radians, carried across a rewind, which builds a new controller. */
     private spinFrom = [0, 0, 0, 0]
+    /** How fast each wheel rolled over the last step, radians a second: how far it rolls on a frame drawn past it. */
+    private spinRate = [0, 0, 0, 0]
+    /** The wheel models the world places, or null when the cart places its own. */
+    private wheelActors: readonly A[] | null
     /** Where the chassis stopped with the brake on, which it is held to, or null while it is not held. */
     private parked: number[] | null = null
     private active = true
@@ -122,6 +133,12 @@ export class CarCore<A> implements Driver {
         this.rb().setLinearDamping(DAMP)
         this.build()
         world.drivers.add(this)
+        if (o.wheels !== undefined) {
+            if (!Array.isArray(o.wheels) || o.wheels.length !== 4) throw new Error("[oj] a car's wheels are four models: front left, front right, rear left, rear right")
+            this.wheelActors = [...o.wheels]
+            world.carriers.set(body, this)
+            body.syncActor()
+        } else this.wheelActors = null
     }
 
     private rb(): any { return this.world.raw.getRigidBody(this.body.bodyHandle) }
@@ -174,29 +191,46 @@ export class CarCore<A> implements Driver {
         return false
     }
 
+    /**
+     * Wheel `i` on a chassis at `at` turned by `q`: its middle and its
+     * rotation, `ahead` seconds past the last step, rolled on by as much.
+     */
+    private wheelOn(i: number, at: Readonly<Vec3>, q: Quat, ahead: number): { at: Vec3, rotation: Quat } {
+        const c = this.corners[i]!
+        const len = this.controller.wheelSuspensionLength(i) ?? REST
+        const p = rotate(q, [c[0], c[1] - len, c[2]])
+        const steer = i < 2 ? this.steerNow : 0
+        const spin = this.spinFrom[i]! + (this.controller.wheelRotation(i) ?? 0) + this.spinRate[i]! * ahead
+        return { at: [p[0] + at[0], p[1] + at[1], p[2] + at[2]], rotation: mul(mul(q, axisAngle([0, 1, 0], steer)), axisAngle([1, 0, 0], spin)) }
+    }
+
     /** Each wheel where it is now, worked out from the chassis's pose after the step rather than the controller's from before it. */
     get wheels(): readonly CarWheelState[] {
         this.live()
         const rb = this.rb(), q: Quat = rb.rotation(), t = rb.translation()
-        return this.corners.map((c, i) => {
-            const len = this.controller.wheelSuspensionLength(i) ?? REST
-            const p = rotate(q, [c[0], c[1] - len, c[2]])
-            const steer = i < 2 ? this.steerNow : 0
-            const spin = this.spinFrom[i]! + (this.controller.wheelRotation(i) ?? 0)
-            const turned = mul(mul(q, axisAngle([0, 1, 0], steer)), axisAngle([1, 0, 0], spin))
+        return this.corners.map((_, i) => {
+            const w = this.wheelOn(i, [t.x, t.y, t.z], q, 0)
             return Object.freeze({
-                position: Object.freeze([p[0] + t.x, p[1] + t.y, p[2] + t.z]) as unknown as Vec3,
-                rotation: fromQuat(turned),
+                position: Object.freeze(w.at) as unknown as Vec3,
+                rotation: fromQuat(w.rotation),
                 grounded: this.controller.wheelIsInContact(i) === true,
             })
         })
+    }
+
+    carried(at: readonly number[], rotation: Quat, ahead: number, out: Drawn<Vec3, A>[]): void {
+        if (this.wheelActors === null) return
+        for (let i = 0; i < 4; i++) {
+            const w = this.wheelOn(i, at as unknown as Vec3, rotation, ahead)
+            out.push({ actor: this.wheelActors[i]!, at: w.at, rotation: w.rotation })
+        }
     }
 
     stepDrive(dt: number): void {
         if (!this.alive) return
         const rb = this.rb()
         // A sleeping chassis is left alone: the controller's impulses would sit in its velocity and kick it on waking.
-        if (rb.isSleeping()) return
+        if (rb.isSleeping()) { this.spinRate = [0, 0, 0, 0]; return }
         const speed = this.speed, v = this.controller, wish = this.wish
         const s = Math.abs(speed) / this.topSpeed
         // The lock narrows with speed, and the wheel turns at a hand's pace rather than snapping.
@@ -216,7 +250,9 @@ export class CarCore<A> implements Driver {
             v.setWheelEngineForce(i, this.driven.includes(i) ? force / this.driven.length : 0)
             v.setWheelBrake(i, (m * decel * dt) / 4)
         }
+        const rolled = [0, 1, 2, 3].map((i) => v.wheelRotation(i) ?? 0)
         v.updateVehicle(dt)
+        this.spinRate = rolled.map((r, i) => ((v.wheelRotation(i) ?? 0) - r) / dt)
         // Held still: a ray-cast car's tyres let it creep down a slope, 4 cm a
         // second at 15 degrees, braked or not, and taking its speed away each
         // step still leaves a quarter of a millimetre a step. So with the
@@ -249,8 +285,9 @@ export class CarCore<A> implements Driver {
         // The old controller went with the old engine.
         this.controller = null
         this.active = alive
-        if (!alive) return
+        if (!alive) { this.releaseWheels(); return }
         this.build()
+        this.spinRate = [0, 0, 0, 0]
         const s = state ?? [0, 0, 0, 0, 0, 0, 0, 0]
         this.wish = { throttle: s[0]!, steer: s[1]!, brake: s[2]! }
         this.steerNow = s[3]!
@@ -265,7 +302,16 @@ export class CarCore<A> implements Driver {
         this.world.raw.removeVehicleController(this.controller)
         this.controller = null
         this.active = false
+        this.releaseWheels()
         this.body.destroy()
+    }
+
+    /** Its wheel models go with it, as its chassis model does: a rewind that brings it back brings it without them. */
+    private releaseWheels(): void {
+        if (this.wheelActors === null) return
+        for (const a of this.wheelActors) this.world.dim.release(a)
+        this.wheelActors = null
+        this.world.carriers.delete(this.body)
     }
 }
 

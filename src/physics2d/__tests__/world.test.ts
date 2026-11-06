@@ -257,7 +257,7 @@ describe("2D visibility, seen from above", () => {
         w.box({ at: [500, 300], size: [100, 400] })
         w.circle({ at: [200, 650], radius: 60 })
         const eye: Vec2 = [250, 300]
-        const poly = w.visibility(eye, { within: 800 })
+        const poly = w.visibility(eye, { within: 800 }).outline
         expect(inside(poly, 400, 300)).toBe(true)
         expect(inside(poly, 700, 300)).toBe(false)
         expect(inside(poly, 700, 900)).toBe(true)
@@ -275,6 +275,28 @@ describe("2D visibility, seen from above", () => {
             if (edge > 1 && inside(poly, x, y) !== seen) wrong++
         }
         expect(wrong).toBe(0)
+    })
+
+    it("says what each corner lies on, in pixels, and null at the edge of range", async () => {
+        const w = await createWorld2D({ gravity: [0, 0] })
+        // A zigzag wall of 60 segments either side of the eye, which sight holds as several pieces each.
+        const zigzag = (x: number) => w.outline({ points: Array.from({ length: 61 }, (_, k): Vec2 => [x + (k % 2) * 20, -400 + k * 25]) })
+        const left = zigzag(-120), right = zigzag(700)
+        const box = w.box({ at: [500, 300], size: [100, 400] })
+        const ball = w.circle({ at: [200, 650], radius: 60 })
+        const { outline, reaches } = w.visibility([250, 300], { within: 800 })
+        expect(reaches.length).toBe(outline.length)
+        const on = new Map<unknown, number>()
+        for (let i = 0; i < outline.length; i++) {
+            const [x, y] = outline[i]!, b = reaches[i]
+            on.set(b, (on.get(b) ?? 0) + 1)
+            if (b === box) expect(Math.abs(x - 450) < 0.1 || Math.abs(y - 100) < 0.1 || Math.abs(y - 500) < 0.1).toBe(true)
+            else if (b === ball) expect(Math.abs(Math.hypot(x - 200, y - 650) - 60)).toBeLessThan(0.1)
+            else if (b === left) expect(x >= -120.1 && x <= -99.9).toBe(true)
+            else if (b === right) expect(x >= 699.9 && x <= 720.1).toBe(true)
+            else { expect(b).toBe(null); expect(Math.hypot(x - 250, y - 300)).toBeCloseTo(800, 4) }
+        }
+        for (const b of [box, ball, left, right, null]) expect(on.get(b)).toBeGreaterThan(0)
     })
 })
 
@@ -303,7 +325,7 @@ describe("2D visibility among every shape", () => {
         w.outline({ at: [0, 0], points: [[900, 100], [950, 400], [880, 600]] })
         w.outline({ at: [0, 0], points: [[100, 500], [160, 460], [200, 540]], closed: true })
         const eye: Vec2 = [480, 420]
-        const poly = w.visibility(eye, { within: 700 })
+        const poly = w.visibility(eye, { within: 700 }).outline
         let checked = 0, wrong = 0
         let seed = 3
         const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)

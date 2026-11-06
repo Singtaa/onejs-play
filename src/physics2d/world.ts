@@ -21,7 +21,7 @@
 
 import { loadRapier2D, type Rapier2D } from "./rapier"
 import { placeElements, resolveElement, type ElementActor, type ElementPlacement } from "./elements"
-import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim, type Defaults, type Placement } from "../physics/core"
+import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim, type Defaults, type Drawn } from "../physics/core"
 import { buildNav, NAV_DEFAULTS } from "../nav/nav"
 import type { Layer } from "../physics3d/world"
 
@@ -287,6 +287,14 @@ export interface Sight2DOptions extends Filter2D {
     within?: number
 }
 
+/** What `world.visibility` sees: the outline in sight, and what each corner of it lies on. */
+export interface Sight2D {
+    /** What is in sight, a polygon round the eye, its corners in order. */
+    outline: Vec2[]
+    /** What `outline[i]` lies on, or null where it is the edge of range. */
+    reaches: (Body2D | Character2D | null)[]
+}
+
 export interface Nav2DOptions {
     /** The walker's radius, pixels: how far from a wall its centre keeps, to within a `cell`. 30 by default. */
     radius?: number
@@ -334,10 +342,11 @@ export interface World2D {
     /** A character's move without a character: where it ends and whether it stands. */
     slide(from: Vec2, delta: Vec2, options?: Slide2DOptions): Slid2D
     /**
-     * What an eye at `eye` sees, for a world seen from above: a polygon round
-     * it, its corners in order, answering what `canSee` would from there.
+     * What an eye at `eye` sees, for a world seen from above: `outline`, a
+     * polygon round it, its corners in order, answering what `canSee` would
+     * from there, and `reaches`, what each corner lies on.
      */
-    visibility(eye: Vec2, options?: Sight2DOptions): Vec2[]
+    visibility(eye: Vec2, options?: Sight2DOptions): Sight2D
     /**
      * Paths round the static bodies, for a world seen from above (no
      * gravity): the floor is the box round them all, and every one is a wall.
@@ -428,7 +437,7 @@ function dim2(pixelsPerMeter: number): Dim<Vec2, number | undefined, ElementActo
                 : new r.Capsule(capsuleHalf(d[0]!, d[1]!), d[0]!),
         place: (list) => {
             const out: ElementPlacement[] = []
-            for (const p of list as readonly Placement<Vec2, ElementActor>[]) {
+            for (const p of list as readonly Drawn<Vec2, ElementActor>[]) {
                 const element = resolveElement(p.actor)
                 if (element !== null) out.push({ element, at: p.at, degrees: p.rotation === null ? null : tidy(p.rotation / RAD) })
             }

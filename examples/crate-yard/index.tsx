@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { mount, useScene, useModel, useWorld, useFrame, useStick, Stick, input, Text, View, type Actor, type Body, type Vec3 } from "oj"
+import { mount, useScene, useModel, useWorld, useFrame, useStick, Stick, input, Text, View, type Body, type Vec3 } from "oj"
 import { CRATE, RAMP, STACKS, START, YARD, chase, crateSpots, knocked, overturned, readDrive, setUpright } from "./yard"
 
 /** Seconds a car lies on its roof or side before it is set back on its wheels. */
@@ -23,7 +23,7 @@ function CrateYard() {
     }
     const world = useWorld()
     const stick = useStick("left")
-    const yard = useRef<{ car: ReturnType<NonNullable<typeof world>["car"]>, wheels: Actor[], crates: { body: Body, from: Vec3 }[] } | null>(null)
+    const yard = useRef<{ car: ReturnType<NonNullable<typeof world>["car"]>, crates: { body: Body, from: Vec3 }[] } | null>(null)
     const camera = useRef<Vec3>([0, 5, -38])
     const lying = useRef(0)
     const [hud, setHud] = useState({ kmh: 0, knocked: 0, crates: 0 })
@@ -42,9 +42,9 @@ function CrateYard() {
             from: at,
             body: world.box({ at, size: [CRATE, CRATE, CRATE], dynamic: true, mass: 40, actor: scene.spawn(m.crate, { scale: CRATE }) }),
         }))
-        const car = world.car({ at: START, actor: scene.spawn(m.car) })
-        const wheels = car.wheels.map(() => scene.spawn(m.wheel))
-        yard.current = { car, wheels, crates }
+        const wheel = () => scene.spawn(m.wheel)
+        const car = world.car({ at: START, actor: scene.spawn(m.car), wheels: [wheel(), wheel(), wheel(), wheel()] })
+        yard.current = { car, crates }
         return () => {
             car.destroy()
             yard.current = null
@@ -88,21 +88,12 @@ function CrateYard() {
     }, [scene, stick])
 
     /**
-     * The wheels and the camera, from where the chassis is drawn. Between
-     * steps on a fast screen the chassis is drawn ahead of its last step, so
-     * the wheels move by the same lead to stay on it. A cart's frame runs
-     * before the step, so this is the frame before's drawing, and the wheels
-     * trail the chassis by a frame's travel at speed.
+     * The camera, from where the chassis is drawn. A cart's frame runs before
+     * the step, so this is the frame before's drawing, a frame's travel
+     * behind at speed. The world places the wheels itself, on the chassis.
      */
     function follow(y: NonNullable<typeof yard.current>, dt: number) {
         const drawn = y.car.body.actor?.position ?? y.car.body.position
-        const stepped = y.car.body.position
-        const lead = [0, 1, 2].map((i) => drawn[i]! - stepped[i]!)
-        y.car.wheels.forEach((w, i) => {
-            const actor = y.wheels[i]!
-            actor.position = [w.position[0] + lead[0]!, w.position[1] + lead[1]!, w.position[2] + lead[2]!]
-            actor.rotation = w.rotation
-        })
         const view = chase(camera.current, drawn, y.car.body.rotation.yaw, dt)
         camera.current = view.position
         scene!.camera({ position: view.position, lookAt: view.lookAt })
