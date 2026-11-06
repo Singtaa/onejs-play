@@ -278,6 +278,47 @@ describe("2D visibility, seen from above", () => {
     })
 })
 
+describe("2D visibility among every shape", () => {
+    const inside = (poly: readonly Vec2[], x: number, y: number) => {
+        let ins = false
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const a = poly[i]!, b = poly[j]!
+            if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) ins = !ins
+        }
+        return ins
+    }
+    const edge = (poly: readonly Vec2[], x: number, y: number) => Math.min(...poly.map((p, k) => {
+        const q = poly[(k + 1) % poly.length]!
+        const ex = q[0] - p[0], ey = q[1] - p[1], l = ex * ex + ey * ey
+        const t = l === 0 ? 0 : Math.max(0, Math.min(1, ((x - p[0]) * ex + (y - p[1]) * ey) / l))
+        return Math.hypot(p[0] + ex * t - x, p[1] + ey * t - y)
+    }))
+
+    it("agrees with canSee among a turned box, capsules, a polygon and open and closed outlines", async () => {
+        const w = await createWorld2D({ gravity: [0, 0] })
+        w.box({ at: [650, 250], size: [120, 60], rotation: 25 })
+        w.capsule({ at: [300, 650], radius: 30, height: 200, rotation: 70 })
+        w.capsule({ at: [150, 200], radius: 40, height: 80 })
+        w.polygon({ at: [700, 700], points: [[0, -70], [60, 30], [-50, 50]] })
+        w.outline({ at: [0, 0], points: [[900, 100], [950, 400], [880, 600]] })
+        w.outline({ at: [0, 0], points: [[100, 500], [160, 460], [200, 540]], closed: true })
+        const eye: Vec2 = [480, 420]
+        const poly = w.visibility(eye, { within: 700 })
+        let checked = 0, wrong = 0
+        let seed = 3
+        const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+        for (let i = 0; i < 3000; i++) {
+            const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 690
+            const x = eye[0] + Math.cos(a) * r, y = eye[1] + Math.sin(a) * r
+            if (edge(poly, x, y) < 1) continue
+            checked++
+            if (inside(poly, x, y) !== w.canSee(eye, [x, y])) wrong++
+        }
+        expect(checked).toBeGreaterThan(2800)
+        expect(wrong).toBe(0)
+    })
+})
+
 describe("what the second cold read found, in 2D", () => {
     it("puts a character's element on its middle, where the element's centre is", async () => {
         const placed: ElementPlacement[][] = []

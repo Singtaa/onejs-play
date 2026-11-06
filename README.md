@@ -33,7 +33,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
-| `physics/` | What 2D and 3D share: `core.ts` is the one world, body, character and shape implementation behind both, generic over a dimension adapter; `use-stepped.ts` steps a world on the frame clock |
+| `physics/` | What 2D and 3D share: `core.ts` is the one world, body, character and shape implementation behind both, generic over a dimension adapter; `sight.ts` is `visibility`'s geometry across one plane; `use-stepped.ts` steps a world on the frame clock |
 | `physics2d/` | `useWorld2D`, `createWorld2D`, `shape2D`: 2D physics over Rapier 2D, in stage pixels, y down. `world.ts` is the API, `elements.ts` moves the elements bodies carry (one `ElementPlacer` crossing per step) |
 | `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
 | `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
@@ -476,13 +476,19 @@ Things that are not obvious from the code:
 - **`walk` is along the ground.** The wish loses its component along up
   before it is applied, unless gravity is zero (a top-down world), where it
   walks every way.
-- **`visibility` is rays, refined.** A fan of 128 rays across the floor at eye
-  height, plus one at each collider in range so a thin pillar between two of
-  them is not missed. Where neighbours meet different things the gap is halved
-  ten times and a ray kept either side of the edge; where they meet two faces
-  of one thing a ray goes to the corner the faces make. The rays are
-  `raycast`'s own, so the polygon agrees with `canSee`; a test samples 4000
-  points against it. About 300 rays and half a millisecond among 30 boxes.
+- **`visibility` is one query and arithmetic.** The engine is asked once a
+  look for the colliders in range, as `canSee` filters them. Each is cut by the
+  plane the eye looks across, into convex outlines, segments and circles:
+  a box, a hull, a capsule's middle, a cut mesh, a ball. A tilted capsule
+  answers each ray itself. `physics/sight.ts` then casts in plain JS, a ray
+  either side of each corner and tangent and where a part crosses the edge of
+  range, and along round arcs to 5 mm. Rays find what is in their slice of
+  the turn, nearest first. A static body's cut is kept until a body is
+  placed by hand or the world restored. Tests sample 4000 points against
+  `canSee` among every shape oj makes, in 2D and 3D. On Gunyard's yard (36
+  boxes) a look takes 0.042 ms in Chrome and 0.17 ms on the 4x phone profile,
+  within a fifth of the cart's own sight and a ninth of the ray fan it
+  replaced; the one query is 0.008 ms of it.
 - **A touch's `speed` is read from the solver.** By the time a step reports a
   touch the pair has stopped, so the speed is the normal impulse over the
   reduced mass, divided by one plus the bounce.

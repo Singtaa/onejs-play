@@ -338,9 +338,9 @@ export interface World {
     slide(from: Vec3, delta: Vec3, options?: SlideOptions): Slid
     /**
      * The floor someone standing at `eye` sees: a polygon round them, its
-     * corners in order at `eye`'s height, made with the rays `canSee` makes,
-     * so whatever is inside it they can see. Shadows, fog of war, a guard's
-     * cone cut to the room.
+     * corners in order at `eye`'s height. It answers what `canSee` would from
+     * their eyes, so whatever is inside it they can see. Shadows, fog of war,
+     * a guard's cone cut to the room.
      */
     visibility(eye: Vec3, options?: SightOptions): Vec3[]
     /** One fixed step. A world `useWorld` made steps itself; call this on one from `createWorld`. */

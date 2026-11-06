@@ -294,7 +294,7 @@ export interface World2D {
     slide(from: Vec2, delta: Vec2, options?: Slide2DOptions): Slid2D
     /**
      * What an eye at `eye` sees, for a world seen from above: a polygon round
-     * it, its corners in order, made with the rays `canSee` makes.
+     * it, its corners in order, answering what `canSee` would from there.
      */
     visibility(eye: Vec2, options?: Sight2DOptions): Vec2[]
     /** One fixed step. A world `useWorld2D` made steps itself; call this on one from `createWorld2D`. */

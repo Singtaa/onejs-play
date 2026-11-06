@@ -14,6 +14,8 @@
  * axis) are never scaled.
  */
 
+import { counterclockwise, hull, sight, type Part } from "./sight"
+
 // ---------- what a dimension supplies ----------
 
 /** A vector in the engine's metres, as a plain array of 2 or 3 numbers. */
@@ -213,11 +215,45 @@ const MAX_STEPS_PER_FRAME = 4
  * mid-floor).
  */
 const SKIN = 0.01
-/** Rays in `visibility`'s first fan, and how many times it halves the gap at an edge. */
-const SIGHT_FAN = 128
-const SIGHT_HALVINGS = 10
-/** How many things one gap between two rays of the fan can hold before the rest are skipped. */
-const SIGHT_DEPTH = 6
+/** Points on the edge of `visibility`'s range, a turn's worth, where nothing is in the way. */
+const SIGHT_ARC = 128
+
+/** A collider's shape as it was made, in its own frame, in metres. */
+type LocalShape =
+    | { kind: "box", half: EVec }
+    | { kind: "ball", r: number }
+    | { kind: "capsule", r: number, half: number }
+    | { kind: "mesh" | "outline", verts: Float32Array, idx: Uint32Array | undefined }
+    | { kind: "hull", verts: Float32Array }
+
+/**
+ * How far along a ray across the plane y = `oy` a capsule from `a` to `b`
+ * of radius `r` is met, or Infinity; 0 from inside it.
+ */
+function capsuleRay(a: EVec, b: EVec, r: number, ox: number, oy: number, oz: number, dx: number, dz: number): number {
+    const bax = b[0]! - a[0]!, bay = b[1]! - a[1]!, baz = b[2]! - a[2]!
+    const oax = ox - a[0]!, oay = oy - a[1]!, oaz = oz - a[2]!
+    const baba = bax * bax + bay * bay + baz * baz, bard = bax * dx + baz * dz, baoa = bax * oax + bay * oay + baz * oaz
+    // From inside: nearest point of the axis within r.
+    const k = baba > 0 ? Math.min(1, Math.max(0, baoa / baba)) : 0
+    if ((oax - bax * k) ** 2 + (oay - bay * k) ** 2 + (oaz - baz * k) ** 2 <= r * r) return 0
+    const rdoa = dx * oax + dz * oaz, oaoa = oax * oax + oay * oay + oaz * oaz
+    const qa = baba - bard * bard, qb = baba * rdoa - baoa * bard, qc = baba * oaoa - baoa * baoa - r * r * baba
+    let best = Infinity
+    if (qa > 1e-12) {
+        const disc = qb * qb - qa * qc
+        if (disc >= 0) {
+            const t = (-qb - Math.sqrt(disc)) / qa, y = baoa + t * bard
+            if (t >= 0 && y > 0 && y < baba) best = t
+        }
+    }
+    for (const c of [a, b]) {
+        const wx = ox - c[0]!, wy = oy - c[1]!, wz = oz - c[2]!
+        const hb = dx * wx + dz * wz, hc = wx * wx + wy * wy + wz * wz - r * r, disc = hb * hb - hc
+        if (disc >= 0) { const t = -hb - Math.sqrt(disc); if (t >= 0 && t < best) best = t }
+    }
+    return best
+}
 
 type Thing<V extends readonly number[], R, A> = BodyCore<V, R, A> | CharacterCore<V, R, A>
 
@@ -389,6 +425,7 @@ export class WorldCore<V extends readonly number[], R, A> {
 
     markFresh(colliderHandle: number): void {
         this.fresh.add(colliderHandle)
+        this.stillEpoch++
         this.raw.propagateModifiedBodyPositionsToColliders()
     }
 
@@ -447,16 +484,12 @@ export class WorldCore<V extends readonly number[], R, A> {
     // ---------- sight ----------
 
     /**
-     * The floor the eye sees, as a polygon round it: rays across the floor,
-     * at `height` above `eye`, out to `within`, through the same query
-     * `raycast` and `canSee` make, so the polygon and `canSee` agree.
-     *
-     * Rays go out in a fan, and one at each collider in range so nothing
-     * slips between them. Where two neighbouring rays meet different things,
-     * the edge between is found by halving the gap and kept as a ray either
-     * side of it; where they meet two faces of one thing, a ray goes to the
-     * corner the faces make. Flat faces come out exact, round ones as fine
-     * as the fan.
+     * The floor the eye sees, as a polygon round it, at `height` above `eye`,
+     * out to `within`. The colliders in range are found by the query `canSee`
+     * filters with, cut by the plane the eye looks across, and the polygon is
+     * worked out from those cuts in plain arithmetic (physics/sight.ts): a ray
+     * either side of each corner and tangent, none in between. So it agrees
+     * with `canSee`, and costs no call into the engine per ray.
      */
     visibility(eye: V, o: Filter & { height?: number, within?: number } = {}): V[] {
         this.live()
@@ -466,84 +499,163 @@ export class WorldCore<V extends readonly number[], R, A> {
         if (!(within > 0)) return []
         const feet = toE(d, eye)
         const origin = add(feet, scale(d.up, height))
-        // The floor's two axes: x and z in 3D, the whole plane in 2D.
+        // The plane's two axes: x and z in 3D, the whole plane in 2D.
         const [ax, az] = d.n === 3 ? [0, 2] : [0, 1]
-        const dirAt = (angle: number): EVec => {
-            const v = zero(d)
-            v[ax] = Math.cos(angle)
-            v[az] = Math.sin(angle)
-            return v
-        }
-        const groups = this.queryGroups(o), predicate = this.predicate(o), fresh = this.freshColliders(o, false)
-        interface Ray { angle: number, x: number, z: number, handle: number, nx: number, nz: number }
-        const cast = (angle: number): Ray => {
-            const dir = dirAt(angle)
-            const hit = this.engineRay(origin, dir, within, groups, predicate, fresh)
-            const t = hit === null ? within : hit.toi
-            return {
-                angle,
-                x: origin[ax]! + dir[ax]! * t, z: origin[az]! + dir[az]! * t,
-                handle: hit === null ? -1 : hit.handle,
-                nx: hit === null ? 0 : hit.normal[ax]!, nz: hit === null ? 0 : hit.normal[az]!,
-            }
-        }
-
-        const TAU = Math.PI * 2
-        const angles: number[] = []
-        for (let i = 0; i < SIGHT_FAN; i++) angles.push((i / SIGHT_FAN) * TAU)
-        const aim = (handle: number) => {
-            const at = d.a(this.raw.getCollider(handle).translation())
-            const dx = at[ax]! - origin[ax]!, dz = at[az]! - origin[az]!
-            if (dx * dx + dz * dz > 1e-12) angles.push((Math.atan2(dz, dx) + TAU) % TAU)
+        const parts: Part[] = []
+        const h = d.n === 3 ? origin[1]! : 0
+        this.overlapping(new this.r.Ball(within), fromE(d, origin), o, (handle) => {
+            const w = this.byCollider.get(handle)
+            // Scenery does not move, so its cut is kept until a static body is moved or the world restored.
+            const still = w instanceof BodyCore && !w.dynamic && !w.kinematic
+            const kept = still ? this.cuts.get(w) : undefined
+            if (kept !== undefined && kept.h === h && kept.epoch === this.stillEpoch) { parts.push(...kept.parts); return true }
+            const c = this.raw.getCollider(handle)
+            if (c === null || c === undefined || c.isSensor()) return true
+            const mine: Part[] = []
+            this.cut(c, origin, mine)
+            parts.push(...mine)
+            if (still) this.cuts.set(w, { h, epoch: this.stillEpoch, parts: mine })
             return true
+        })
+        const flat: number[] = []
+        sight(origin[ax]!, origin[az]!, within, parts, SIGHT_ARC, flat)
+        // Each corner at the eye's feet, in world units, frozen as every vector oj hands out is.
+        const out: V[] = new Array(flat.length / 2)
+        for (let i = 0; i < flat.length; i += 2) {
+            const p = new Array(d.n)
+            for (let k = 0; k < d.n; k++) p[k] = feet[k]! * u
+            p[ax] = flat[i]! * u
+            p[az] = flat[i + 1]! * u
+            out[i / 2] = Object.freeze(p) as unknown as V
         }
-        this.overlapping(new this.r.Ball(within), fromE(d, origin), o, aim)
-        angles.sort((a, b) => a - b)
+        return out
+    }
 
-        const base = angles.map(cast)
-        const out: Ray[] = []
-        const same = (a: Ray, b: Ray) => a.handle === b.handle
-            && (a.handle === -1 || (a.nx * b.nx + a.nz * b.nz > 0.9999 && Math.abs(a.nx * (b.x - a.x) + a.nz * (b.z - a.z)) < 1e-3))
-        /** Adds the rays strictly between two neighbours that the polygon needs. */
-        const refine = (a: Ray, b: Ray, budget: number): void => {
-            if (b.angle - a.angle < 1e-9 || same(a, b)) return
-            if (a.handle === b.handle) {
-                // Two faces of one thing: a ray to where they would meet, or between.
-                const det = a.nx * b.nz - a.nz * b.nx
-                let angle = (a.angle + b.angle) / 2
-                if (Math.abs(det) > 1e-9) {
-                    const ca = a.nx * a.x + a.nz * a.z, cb = b.nx * b.x + b.nz * b.z
-                    const cx = (ca * b.nz - cb * a.nz) / det, cz = (a.nx * cb - b.nx * ca) / det
-                    let c = Math.atan2(cz - origin[az]!, cx - origin[ax]!)
-                    while (c < a.angle) c += TAU
-                    while (c >= a.angle + TAU) c -= TAU
-                    if (c > a.angle && c < b.angle) angle = c
+    /** Each collider's shape as it was made, read from the engine once. */
+    private readonly shapes = new WeakMap<object, LocalShape>()
+    /** A static body's cut by the plane at `h`, good while `stillEpoch` has not moved. */
+    private readonly cuts = new WeakMap<object, { h: number, epoch: number, parts: Part[] }>()
+    /** Moves on whenever a body is put somewhere by hand or the world is restored: what could move a static body. */
+    private stillEpoch = 0
+
+    private localShape(c: any): LocalShape {
+        const w = this.byCollider.get(c.handle)
+        const known = w === undefined ? undefined : this.shapes.get(w)
+        if (known !== undefined) return known
+        const T = this.r.ShapeType
+        const type = c.shapeType()
+        let shape: LocalShape
+        if (type === T.Cuboid) shape = { kind: "box", half: this.dim.a(c.halfExtents()) }
+        else if (type === T.Ball) shape = { kind: "ball", r: c.radius() }
+        else if (type === T.Capsule) shape = { kind: "capsule", r: c.radius(), half: c.halfHeight() }
+        else if (type === T.TriMesh) shape = { kind: "mesh", verts: c.vertices(), idx: c.indices() }
+        else if (type === T.Polyline) shape = { kind: "outline", verts: c.vertices(), idx: c.indices() }
+        else if (type === T.ConvexPolygon) shape = { kind: "hull", verts: c.vertices() }
+        else throw new Error(`[oj] visibility cannot see a collider of Rapier shape type ${type}; oj makes none`)
+        if (w !== undefined) this.shapes.set(w, shape)
+        return shape
+    }
+
+    /** A collider as the plane through `origin` (across the floor in 3D, the world itself in 2D) cuts it, onto `parts`. */
+    private cut(c: any, origin: EVec, parts: Part[]): void {
+        const d = this.dim, s = this.localShape(c)
+        const t = d.a(c.translation()), rot = c.rotation()
+        const at = (v: EVec): EVec => { const p = d.rotate(rot, v); for (let i = 0; i < p.length; i++) p[i]! += t[i]!; return p }
+        if (d.n === 2) {
+            if (s.kind === "ball") parts.push({ kind: "circle", cx: t[0]!, cz: t[1]!, r: s.r })
+            else if (s.kind === "box") {
+                const [hx, hy] = s.half
+                const pts: number[] = []
+                for (const [x, y] of [[-hx!, -hy!], [hx!, -hy!], [hx!, hy!], [-hx!, hy!]]) pts.push(...at([x!, y!]))
+                parts.push({ kind: "convex", pts: counterclockwise(pts) })
+            } else if (s.kind === "capsule") {
+                const a = at([0, s.half]), b = at([0, -s.half]), side = d.rotate(rot, [s.r, 0])
+                parts.push({ kind: "circle", cx: a[0]!, cz: a[1]!, r: s.r }, { kind: "circle", cx: b[0]!, cz: b[1]!, r: s.r })
+                if (s.half > 0) {
+                    parts.push({ kind: "convex", pts: counterclockwise([a[0]! + side[0]!, a[1]! + side[1]!, b[0]! + side[0]!, b[1]! + side[1]!,
+                        b[0]! - side[0]!, b[1]! - side[1]!, a[0]! - side[0]!, a[1]! - side[1]!]) })
                 }
-                out.push(cast(angle))
+            } else if (s.kind === "hull") {
+                const pts: number[] = []
+                for (let i = 0; i < s.verts.length; i += 2) pts.push(...at([s.verts[i]!, s.verts[i + 1]!]))
+                parts.push({ kind: "convex", pts: counterclockwise(pts) })
+            } else if (s.kind === "outline") {
+                const pts: number[] = []
+                const n = s.verts.length / 2
+                const pairs = s.idx ?? Array.from({ length: Math.max(0, 2 * (n - 1)) }, (_, k) => (k + 1) >> 1)
+                for (let k = 0; k < pairs.length; k += 2) {
+                    const i = pairs[k]!, j = pairs[k + 1]!
+                    pts.push(...at([s.verts[2 * i]!, s.verts[2 * i + 1]!]), ...at([s.verts[2 * j]!, s.verts[2 * j + 1]!]))
+                }
+                parts.push({ kind: "segments", pts })
+            }
+            return
+        }
+        // 3D: the plane y = h, looked across in x and z.
+        const h = origin[1]!
+        if (s.kind === "ball") {
+            const dy = h - t[1]!
+            if (Math.abs(dy) < s.r) parts.push({ kind: "circle", cx: t[0]!, cz: t[2]!, r: Math.sqrt(s.r * s.r - dy * dy) })
+        } else if (s.kind === "box") {
+            const [hx, hy, hz] = s.half as [number, number, number]
+            const up = d.rotate(rot, [0, 1, 0])
+            if (Math.abs(up[1]!) > 1 - 1e-9) {
+                // Upright, or upside down: turned only about y, cut where it stands.
+                if (Math.abs(h - t[1]!) >= hy) return
+                const across = d.rotate(rot, [hx, 0, 0]), along = d.rotate(rot, [0, 0, hz])
+                const x = t[0]!, z = t[2]!, ax = across[0]!, az = across[2]!, bx = along[0]!, bz = along[2]!
+                parts.push({ kind: "convex", pts: counterclockwise([x - ax - bx, z - az - bz, x + ax - bx, z + az - bz, x + ax + bx, z + az + bz, x - ax + bx, z - az + bz]) })
                 return
             }
-            if (budget === 0) return
-            // Two different things: halve the gap down to the edge, a ray either side of it.
-            let lo = a, hi = b
-            for (let k = 0; k < SIGHT_HALVINGS; k++) {
-                const mid = cast((lo.angle + hi.angle) / 2)
-                if (mid.handle === lo.handle) lo = mid; else hi = mid
+            // Tilted: where its twelve edges cross the plane.
+            const corners: EVec[] = []
+            for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) corners.push(at([sx * hx, sy * hy, sz * hz]))
+            const pts: number[] = []
+            for (let i = 0; i < 8; i++) {
+                for (const bit of [1, 2, 4]) {
+                    const j = i | bit
+                    if (j === i) continue
+                    const p = corners[i]!, q = corners[j]!
+                    const dp = p[1]! - h, dq = q[1]! - h
+                    if ((dp < 0) === (dq < 0)) continue
+                    const k = dp / (dp - dq)
+                    pts.push(p[0]! + (q[0]! - p[0]!) * k, p[2]! + (q[2]! - p[2]!) * k)
+                }
             }
-            if (lo !== a) { refine(a, lo, budget - 1); out.push(lo) }
-            if (hi !== b) { out.push(hi); refine(hi, b, budget - 1) }
+            if (pts.length >= 6) parts.push({ kind: "convex", pts: hull(pts) })
+        } else if (s.kind === "capsule") {
+            const axis = d.rotate(rot, [0, 1, 0])
+            const a = at([0, s.half, 0]), b = at([0, -s.half, 0])
+            if (h < Math.min(a[1]!, b[1]!) - s.r || h > Math.max(a[1]!, b[1]!) + s.r) return
+            if (Math.abs(axis[1]!) > 1 - 1e-9) {
+                const dy = h - Math.min(Math.max(h, Math.min(a[1]!, b[1]!)), Math.max(a[1]!, b[1]!))
+                if (Math.abs(dy) < s.r) parts.push({ kind: "circle", cx: t[0]!, cz: t[2]!, r: Math.sqrt(s.r * s.r - dy * dy) })
+                return
+            }
+            // Tilted: its cut has no simple outline, so it answers each ray itself.
+            const r = s.r
+            parts.push({ kind: "exact", cx: t[0]!, cz: t[2]!, r: s.half * Math.hypot(axis[0]!, axis[2]!) + r,
+                hit: (ox, oz, dx, dz) => capsuleRay(a, b, r, ox, h, oz, dx, dz) })
+        } else if (s.kind === "mesh") {
+            // Each triangle the plane crosses leaves a segment.
+            const v = s.verts, w: EVec[] = []
+            for (let i = 0; i < v.length; i += 3) w.push(at([v[i]!, v[i + 1]!, v[i + 2]!]))
+            const pts: number[] = []
+            const idx = s.idx ?? Array.from({ length: w.length }, (_, k) => k)
+            for (let k = 0; k + 2 < idx.length; k += 3) {
+                const tri = [w[idx[k]!]!, w[idx[k + 1]!]!, w[idx[k + 2]!]!]
+                const cut: number[] = []
+                for (let e = 0; e < 3; e++) {
+                    const p = tri[e]!, q = tri[(e + 1) % 3]!
+                    const dp = p[1]! - h, dq = q[1]! - h
+                    if ((dp < 0) === (dq < 0)) continue
+                    const f = dp / (dp - dq)
+                    cut.push(p[0]! + (q[0]! - p[0]!) * f, p[2]! + (q[2]! - p[2]!) * f)
+                }
+                if (cut.length === 4) pts.push(...cut)
+            }
+            if (pts.length > 0) parts.push({ kind: "segments", pts })
         }
-        for (let i = 0; i < base.length; i++) {
-            const a = base[i]!, next = base[(i + 1) % base.length]!
-            out.push(a)
-            refine(a, i + 1 < base.length ? next : { ...next, angle: next.angle + TAU }, SIGHT_DEPTH)
-        }
-
-        return out.map((r) => {
-            const p = feet.slice()
-            p[ax] = r.x
-            p[az] = r.z
-            return fromE(d, p)
-        })
     }
 
     /** A shape (engine) moved from `f` to `t` (metres): the first collider it meets. */
@@ -750,6 +862,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         const old = this.raw
         this.raw = restored
         this.fresh.clear()
+        this.stillEpoch++
         for (const [handle, w] of [...this.byCollider]) {
             if (restored.getCollider(handle) === null || restored.getCollider(handle) === undefined) {
                 w.markGone()
