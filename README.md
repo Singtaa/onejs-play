@@ -34,6 +34,9 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `room.ts` | `useRoom`: other people, over a relay |
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
 | `physics.ts` | `usePhysics`, with the per-frame pumping done |
+| `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
+| `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
+| `wasm.ts` | Where a WebAssembly engine comes from on each host: OneJS's native link, a module handed over, or StreamingAssets |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
 | `models.ts` | `useScene`, `useModel`: `.glb` models behind the panel, with a sun, shadows and lights |
@@ -393,6 +396,48 @@ Three things that are not obvious from the code:
 `ojplay add` of a cart with a `.glb` adds `com.unity.cloud.gltfast` to the
 project's `Packages/manifest.json` (`ensureGltfast` in `cli/unity.mjs`), so the
 project runs on its next open.
+
+## 3D physics and paths
+
+`useWorld` is Rapier (the deterministic build, pinned exactly) under oj's own
+names: bodies, a character controller, queries, triggers, snapshots. The user
+page is PlaySite's `docs/physics.md`; the design and its reasoning are
+`PlaySite/docs/physics.md`. Rapier's name appears nowhere in the API, so the
+engine stays oj's to change.
+
+The engines are WebAssembly that oj loads lazily, the first time a cart makes a
+world or a navmesh. `scripts/vendor-rapier.mjs` and `scripts/vendor-recast.mjs`
+write the glue (with its `.wasm` import removed), a version file naming the
+module's sha256 and imports, and the module itself under `assets/@ojplay/wasm/`,
+which every OneJS build copies to StreamingAssets as a package asset.
+`src/wasm.ts` then picks the source per host, in this order:
+
+1. `globalThis.__wasm`, OneJS's native link of the same module (QuickJS has no
+   WebAssembly), used only when its sha256 matches;
+2. a module handed over with `setWasmModule` (workerd cannot compile bytes;
+   Node tests);
+3. a fetch from `StreamingAssets/onejs/assets/@ojplay/wasm/<name>-<version>.wasm`.
+
+Re-vendor after changing a pinned version, and tell whoever links the native
+module: the import list is its contract. `rapier.test.ts` fails when the
+vendored files and the installed package disagree, and when a new Rapier's
+`World.step` does more than the pipeline call `world.ts` makes in its place.
+
+Things that are not obvious from the code:
+
+- **Queries see a body the frame it is made.** Rapier's query tree updates only
+  in `step()`, so bodies created or teleported since are tested one by one
+  (`fresh` in `world.ts`).
+- **Actors follow in one crossing.** `syncActors` hands every moved body's
+  placement to `ModelBridge.PlaceMany` as one `Float32Array`; an actor sits at
+  its body's centre.
+- **Rotations are Unity's.** `rotation.ts` converts yaw, pitch and roll the way
+  `Quaternion.Euler` does, and `gltf.ts` mirrors glTF's x as glTFast does, so
+  a mesh collider lines up with the model drawn from the same file.
+- **Deterministic everywhere.** `parity.mjs` holds the hash of a fixed scene;
+  Node, Chrome, workerd and OneJS's native QuickJS link all produce it.
+- **Recast's `detailSampleDist` is in cells.** Below about 0.9 the build reads
+  out of bounds, so `nav.ts` leaves Recast's default.
 
 ## Other people
 

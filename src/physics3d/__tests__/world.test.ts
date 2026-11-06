@@ -161,6 +161,25 @@ describe("a character", () => {
         }
     }
 
+    it("is stopped by a dynamic crate as by a wall, and is not moved by one landing on it", async () => {
+        const { w, me } = await walking()
+        run(w, 2)
+        const crate = w.box({ at: [0, 0.25, 2], size: [0.5, 0.5, 0.5], dynamic: true })
+        run(w, 30)
+        const crateAt = crate.position
+        walk(w, me, [0, 0, 1], 60)
+        expect(me.position[2]).toBeLessThan(2 - 0.25 - 0.3 + 0.05)
+        expect(near(crate.position, crateAt, 0.02)).toBe(true)
+
+        const before = me.position
+        w.box({ at: [before[0], 3, before[2]], size: [0.5, 0.5, 0.5], dynamic: true })
+        for (let i = 0; i < 90; i++) {
+            me.move([0, 0, 0])
+            w.step()
+        }
+        expect(near(me.position, before, 0.02)).toBe(true)
+    })
+
     it("stands on the floor", async () => {
         const { w, me } = await walking()
         walk(w, me, [0, 0, 0], 30)
