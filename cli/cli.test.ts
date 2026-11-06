@@ -340,8 +340,8 @@ describe("the browser", () => {
         }
     })
 
-    // windows-latest's November image sent a headless page's request 31 to 33 s
-    // late through the system's proxy settings; a person's headed run keeps them.
+    // A headless run talks only to 127.0.0.1, so it has no proxy to ask; a
+    // person's headed run keeps theirs.
     it("skips the system proxy headless, and keeps it headed", () => {
         expect(chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" })).toContain("--no-proxy-server")
         expect(chromeArgs({ headless: false, window: [960, 540], profile: "/tmp/p" })).not.toContain("--no-proxy-server")

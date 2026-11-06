@@ -143,3 +143,30 @@ describe("Chrome's own log", () => {
         expect(said).toContain(log.file)
     })
 })
+
+// Headless, the page lives in an off-the-record context of its own (launch):
+// a permission granted from it has to be for that context, not the profile's.
+describe("a page in a context of its own", () => {
+    function inContext(context: string | null) {
+        const sent: any[] = []
+        const b = new Browser(null, null, null, () => "", null, context)
+        b.ws = { send: (text: string) => sent.push(JSON.parse(text)) } as any
+        return { b, sent }
+    }
+
+    it("grants a permission for the page's context unless the caller named one", () => {
+        const { b, sent } = inContext("ctx-1")
+        b.call("Browser.grantPermissions", { permissions: ["clipboardReadWrite"] })
+        b.call("Browser.setPermission", { permission: { name: "midi" }, setting: "granted", browserContextId: "other" })
+        b.call("Runtime.evaluate", { expression: "1" })
+        expect(sent[0].params).toEqual({ permissions: ["clipboardReadWrite"], browserContextId: "ctx-1" })
+        expect(sent[1].params.browserContextId).toBe("other")
+        expect(sent[2].params).toEqual({ expression: "1" })
+    })
+
+    it("leaves every call alone in the profile's own context", () => {
+        const { b, sent } = inContext(null)
+        b.call("Browser.grantPermissions", { permissions: ["clipboardReadWrite"] })
+        expect(sent[0].params).toEqual({ permissions: ["clipboardReadWrite"] })
+    })
+})

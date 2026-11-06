@@ -102,13 +102,13 @@ export function chromeArgs({ headless, window, profile, gpu = false, log = null 
         // desktop has.
         ...(headless && !gpu ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
         // Headless runs talk to ojplay's own server on 127.0.0.1 and nothing
-        // else, so they skip the system's proxy settings. On windows-latest's
-        // November image (6 Nov 2026) one navigate in a sweep sent its request
-        // 31 to 33 s late, the page's own timing putting the wait between
-        // connecting and requesting, while the server answered at once; five
-        // sweeps of five failed so, and with this flag a sweep ran clean. A
-        // headed `ojplay run` keeps the person's proxy, which a cart reaching
-        // out from their desktop may need.
+        // else, so they skip the system's proxy settings. This was first taken
+        // for the cause of windows-latest's 30 s navigates (6 Nov 2026), after
+        // one clean sweep with it; the next sweeps stalled with it in place,
+        // and Chrome's network log put the wait in the cookie store's load
+        // (launch, offTheRecordPage). It stays because a headless run has no
+        // proxy to ask. A headed `ojplay run` keeps the person's proxy, which
+        // a cart reaching out from their desktop may need.
         ...(headless ? ["--no-proxy-server"] : []),
         // Chrome's own account of itself, asked for with OJ_CHROME_LOG (chromeLog):
         // its verbose log and its network log, for a stall nothing else can name.
@@ -184,10 +184,30 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     }
     const pageMs = Date.now() - began
 
+    // Headless, the page is opened in a browser context of its own, off the
+    // record. A profile's own context keeps its cookies in a store on disk,
+    // encrypted with a key the OS hands over, and every request waits for
+    // that store to load. On windows-latest's November image the load took
+    // 25 to 30 s and more (6 Nov 2026, Chrome's network log:
+    // COOKIE_PERSISTENT_STORE_LOAD from 0.28 to 30.42 s, the page's request
+    // waiting from 0.29 to 30.42 s), so Page.navigate ran out at 30 s with the
+    // local server never asked or asked late. An off-the-record context keeps
+    // its cookies in memory, with no store and no key to wait for. A headed
+    // `ojplay run` keeps the profile's own context, the one a person expects.
+    let context = null
+    if (headless) {
+        try {
+            ({ page, context } = await offTheRecordPage(port, deadline))
+        } catch (error) {
+            discard(child, profile)
+            throw new Error(`Chrome started but opened no page of its own within ${STARTUP_MS / 1000}s: ${error.message}`, { cause: error })
+        }
+    }
+
     // The start time, in a form a harness can read back: how close a run
     // under load comes to STARTUP_MS is the number that says whether it holds.
     say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)}), port after ${seconds(portMs)}, page after ${seconds(pageMs)}`)
-    const browser = new Browser(child, profile, page, () => stderr, log)
+    const browser = new Browser(child, profile, page, () => stderr, log, context)
     // From here the browser is ours to close: a step that fails must not
     // leave it running with nobody holding its handle.
     try {
@@ -217,6 +237,45 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     return browser
 }
 
+/**
+ * A page in a new browser context, off the record: Target.createBrowserContext
+ * then Target.createTarget, asked over the browser's own socket, which closes
+ * once the page exists (the context lives as long as the browser does).
+ * Resolves to the page as /json/list would list it, and the context's id.
+ */
+async function offTheRecordPage(port, deadline) {
+    const { webSocketDebuggerUrl } = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json())
+    const ws = new WebSocket(webSocketDebuggerUrl)
+    await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error("the browser's CDP socket failed")) })
+    let id = 0
+    const pending = new Map()
+    ws.onmessage = (e) => {
+        const m = JSON.parse(e.data)
+        pending.get(m.id)?.(m)
+        pending.delete(m.id)
+    }
+    const ask = (method, params) => new Promise((ok, no) => {
+        const n = ++id
+        const timer = setTimeout(() => { pending.delete(n); no(new Error(`${method} did not answer`)) }, Math.max(1000, deadline - Date.now()))
+        pending.set(n, (m) => {
+            clearTimeout(timer)
+            if (m.error) no(new Error(`${method}: ${m.error.message}`))
+            else ok(m.result)
+        })
+        ws.send(JSON.stringify({ id: n, method, params }))
+    })
+    try {
+        const { browserContextId } = await ask("Target.createBrowserContext", { disposeOnDetach: false })
+        const { targetId } = await ask("Target.createTarget", { url: "about:blank", browserContextId })
+        return { context: browserContextId, page: { id: targetId, type: "page", webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/${targetId}` } }
+    } finally {
+        ws.close()
+    }
+}
+
+/** The Browser-domain calls that name a context: sent from a page, they mean the page's. */
+const CONTEXT_CALLS = new Set(["Browser.grantPermissions", "Browser.resetPermissions", "Browser.setPermission", "Browser.setDownloadBehavior"])
+
 /** Stops Chrome and deletes its profile: every way out of a run, failed or not. */
 function discard(child, profile) {
     kill(child)
@@ -232,7 +291,9 @@ function kill(child) {
 
 /** A CDP session on one page, with the console kept. */
 export class Browser {
-    constructor(child, profile, page, stderr = () => "", log = null) {
+    constructor(child, profile, page, stderr = () => "", log = null, context = null) {
+        /** The browser context the page is in, or null for the profile's own (launch, offTheRecordPage). */
+        this.context = context
         /** What Chrome has written to stderr so far. */
         this.stderr = stderr
         /** Chrome's own log files (chromeLog), or null; kept once describe() has been asked. */
@@ -292,6 +353,12 @@ export class Browser {
      * unwrapped form for the common case.
      */
     call(method, params = {}, sessionId, timeoutMs = CALL_MS) {
+        // A permission granted from the page is for the page: in its own
+        // context, unless the caller named another. A playtest script written
+        // before the page had a context of its own keeps working unchanged.
+        if (this.context !== null && CONTEXT_CALLS.has(method) && params.browserContextId === undefined) {
+            params = { ...params, browserContextId: this.context }
+        }
         return new Promise((ok, no) => {
             const id = ++this.id
             const timer = setTimeout(() => { this.pending.delete(id); no(new Error(`CDP ${method} did not answer in ${timeoutMs / 1000}s`)) }, timeoutMs)
@@ -321,13 +388,13 @@ export class Browser {
      * Waits until the page's renderer answers, by `deadline` (a Date.now()),
      * and resolves to when it did.
      *
-     * A listed page is not a live one. On windows-latest's November image
-     * (Chrome 156.0.8078.80, 6 Nov 2026) the about:blank renderer sometimes
-     * stopped answering once the viewport was set, while the browser still
-     * answered for it: its main thread waits on the GPU process, which is
-     * SwiftShader starting, and a navigate sent then waits on that renderer
-     * and timed out at 30 s with the page never asked for. So the start is
-     * not over until the renderer answers, inside the start's own deadline.
+     * A listed page is not a live one: a page can be listed before its
+     * renderer answers, and a navigate sent to it then waits on that
+     * renderer. So the start is not over until the renderer answers, inside
+     * the start's own deadline. This was first written for windows-latest's
+     * 30 s navigates (6 Nov 2026), taking the cause for the GPU process; the
+     * cause turned out to be the cookie store's load (launch), and this wait
+     * stays because it costs one call on a page that answers.
      */
     async waitForRenderer(deadline, askMs = 5000) {
         for (;;) {
