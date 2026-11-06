@@ -2,6 +2,9 @@ import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { RAPIER_VERSION, RAPIER_WASM_SHA256, RAPIER_WASM_IMPORTS } from "../rapier.version"
+import { setWasmModule } from "../../wasm"
+import { loadRapier2D } from "../rapier"
+import { fallingBoxesHash, PARITY } from "../parity.mjs"
 
 const WA = (globalThis as any).WebAssembly
 const dir = path.resolve(import.meta.dirname, "..")
@@ -34,5 +37,13 @@ describe("the vendored Rapier 2D", () => {
             "this.physicsPipeline.step(this.gravity, this.integrationParameters, this.islands, this.broadPhase, this.narrowPhase, this.bodies, this.colliders, this.softBodies, this.impulseJoints, this.multibodyJoints, this.ccdSolver, eventQueue, hooks);",
             "this.mapNewSoftBodies();",
         ])
+    })
+
+    it("gives the parity hash every host is held to", async () => {
+        setWasmModule("rapier2d", new WA.Module(wasm))
+        const R = await loadRapier2D()
+        expect(fallingBoxesHash(R)).toBe(PARITY.hash)
+        // One box fewer is another world, and another hash.
+        expect(fallingBoxesHash(R, PARITY.boxes - 1)).not.toBe(PARITY.hash)
     })
 })
