@@ -42,7 +42,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
-| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows and lights, and the scene as a texture a program reads |
+| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
