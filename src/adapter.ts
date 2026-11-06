@@ -62,6 +62,9 @@ export interface DomInputOptions {
     preventDefault?: boolean
 }
 
+/** Each DOM button index's bit in a pointer event's `buttons`: left, middle, right, back, forward. */
+const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
+
 /** True when this build has a DOM to listen to at all. */
 export function hasDom(view: any = globalThis): boolean {
     return typeof view?.addEventListener === "function" && typeof view?.document !== "undefined"
@@ -114,10 +117,18 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     // Unity does the same: a touch moves the mouse and appears in Input.touches.
     const isTouch = (event: any) => event.pointerType === "touch"
 
+    // A second mouse button pressed while one is held, or one of two let go, arrives
+    // as a pointermove naming that button, not as a pointerdown or pointerup: the
+    // Pointer Events spec fires those only for the first press and the last release.
+    // Read from `buttons`, so "both buttons walk forward" sees the second one.
     const onPointerMove = (event: any) => {
         const [x, y] = at(event)
         sink.pointerMove(x, y)
         if (isTouch(event)) sink.touchMove(event.pointerId, x, y)
+        else if (event.button >= 0 && typeof event.buttons === "number" && BUTTON_BITS[event.button] !== undefined) {
+            if ((event.buttons & BUTTON_BITS[event.button]) !== 0) sink.pointerDown(event.button, x, y)
+            else sink.pointerUp(event.button, x, y)
+        }
     }
     const onPointerDown = (event: any) => {
         const [x, y] = at(event)
@@ -131,6 +142,9 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         if (isTouch(event)) sink.touchUp(event.pointerId, x, y, event.type === "pointercancel")
         if (event.type === "pointerup") sink.activate()
     }
+    // Right-drag is a camera's turn, so the browser's own menu never opens over a game.
+    // A cart that wants a menu of its own reads the right button as any other.
+    const onContextMenu = (event: any) => { if (preventDefault) event.preventDefault() }
     const onWheel = (event: any) => {
         if (preventDefault) event.preventDefault()
         sink.wheel(event.deltaX, event.deltaY)
@@ -162,6 +176,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     view.addEventListener("pointerup", onPointerUp)
     view.addEventListener("pointercancel", onPointerUp)
     view.addEventListener("wheel", onWheel, wheelOptions)
+    view.addEventListener("contextmenu", onContextMenu)
     view.addEventListener("blur", onBlur)
     view.document?.addEventListener?.("visibilitychange", onVisibility)
     if (view.document?.hidden === true) setPageHidden(true)
@@ -182,6 +197,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         view.removeEventListener("pointerup", onPointerUp)
         view.removeEventListener("pointercancel", onPointerUp)
         view.removeEventListener("wheel", onWheel, wheelOptions)
+        view.removeEventListener("contextmenu", onContextMenu)
         view.removeEventListener("blur", onBlur)
         view.document?.removeEventListener?.("visibilitychange", onVisibility)
         setShareBrowser(null)

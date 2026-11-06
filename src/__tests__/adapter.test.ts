@@ -126,6 +126,49 @@ describe("createDomInputAdapter", () => {
         expect(b(input).GetMousePositionY()).toBe(100)
     })
 
+    // learn Mac, 6 Nov: right-drag is WoW's turn, and it opened the browser's menu.
+    it("never lets the browser's context menu open over the game, unless defaults are left alone", () => {
+        const view = fakeView()
+        const detach = createDomInputAdapter(createContainerInput().sink, { view })
+        const menu = { preventDefault: vi.fn() }
+        view.fire("contextmenu", menu)
+        expect(menu.preventDefault).toHaveBeenCalled()
+        detach()
+
+        const left = fakeView()
+        createDomInputAdapter(createContainerInput().sink, { view: left, preventDefault: false })
+        const kept = { preventDefault: vi.fn() }
+        left.fire("contextmenu", kept)
+        expect(kept.preventDefault).not.toHaveBeenCalled()
+    })
+
+    // learn Mac, 6 Nov: "both buttons walk forward" missed the second button. By the Pointer Events
+    // spec a button joining one already held, or leaving while another stays, is a pointermove.
+    it("reads a second mouse button from a pointermove's buttons, both on the way down and up", () => {
+        const input = createContainerInput()
+        const view = fakeView()
+        createDomInputAdapter(input.sink, { view })
+        const mouse = (button: number, buttons: number) => ({ pointerType: "mouse", pointerId: 1, clientX: 50, clientY: 50, button, buttons })
+        // Unity's order: left 1, right 2, middle 4.
+        view.fire("pointerdown", mouse(0, 1))
+        input.beginFrame()
+        expect(b(input).GetMouseButtons()).toBe(1)
+        view.fire("pointermove", mouse(2, 3))
+        input.beginFrame()
+        expect(b(input).GetMouseButtons()).toBe(3)
+        expect(b(input).GetMouseButtonsPressed()).toBe(2)
+        view.fire("pointermove", mouse(-1, 3))
+        input.beginFrame()
+        expect(b(input).GetMouseButtons()).toBe(3)
+        view.fire("pointermove", mouse(0, 2))
+        input.beginFrame()
+        expect(b(input).GetMouseButtons()).toBe(2)
+        expect(b(input).GetMouseButtonsReleased()).toBe(1)
+        view.fire("pointerup", mouse(2, 0))
+        input.beginFrame()
+        expect(b(input).GetMouseButtons()).toBe(0)
+    })
+
     it("releases everything held when focus is lost", () => {
         const input = createContainerInput()
         const view = fakeView()

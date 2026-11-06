@@ -417,6 +417,28 @@ describe("mouse position, delta and scroll", () => {
         expect(b(c).GetMouseDeltaX()).toBe(0)
     })
 
+    // The Gunyard session, 6 Nov: Chrome can send pointerdown with no pointermove before it, and the
+    // press's frame read the whole jump from (0, 0), or from where the last finger lifted, as a drag.
+    it("places the pointer at a press without counting the jump as movement", () => {
+        const c = tick(make())
+        c.sink.pointerDown(0, 300, 200)
+        deliver(c)
+        expect(b(c).GetMousePositionX()).toBe(300)
+        expect(b(c).GetMouseDeltaX()).toBe(0)
+        expect(b(c).GetMouseDeltaY()).toBe(0)
+        tick(c)
+        c.sink.pointerMove(310, 204)
+        deliver(c)
+        expect(b(c).GetMouseDeltaX()).toBe(10)
+        expect(b(c).GetMouseDeltaY()).toBe(4)
+        tick(c)
+        c.sink.pointerUp(0, 310, 204)
+        c.sink.pointerDown(0, 40, 600)
+        deliver(c)
+        expect(b(c).GetMouseDeltaX()).toBe(0)
+        expect(b(c).GetMouseDeltaY()).toBe(0)
+    })
+
     it("accumulates scroll between frames and clears it at the boundary", () => {
         const c = tick(make())
         c.sink.wheel(1, -3)

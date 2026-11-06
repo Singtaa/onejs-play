@@ -314,8 +314,18 @@ class ContainerInputImpl implements ContainerInput, InputSink {
         this._pointerY = viewportY
     }
 
+    /**
+     * A press or a release places the pointer where it happened without counting
+     * the jump as movement. Chrome can send pointerdown with no pointermove before
+     * it, so the pointer was still wherever it was last seen ((0, 0) on a fresh
+     * page, or where the last finger lifted), and a drag-to-look camera was flung
+     * by that whole distance on its first drag (the Gunyard session, 6 Nov).
+     */
     private _applyPointerButton(button: number, down: boolean, viewportX?: number, viewportY?: number): void {
-        if (viewportX !== undefined && viewportY !== undefined) this._applyPointerMove(viewportX, viewportY)
+        if (viewportX !== undefined && viewportY !== undefined) {
+            this._pointerX = viewportX
+            this._pointerY = viewportY
+        }
         const bit = DOM_BUTTON_TO_BIT[button]
         if (bit === undefined) return
         if (down) {
