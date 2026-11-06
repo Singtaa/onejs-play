@@ -41,7 +41,9 @@ let parent: string
 let root: string
 let said: string[]
 beforeEach(() => {
-    parent = fs.mkdtempSync(path.join(os.tmpdir(), "oj-bake-"))
+    // The long form of the temp path: Windows hands out an 8.3 one (RUNNER~1),
+    // whose ~ reaches the script's file URL as %7E, which vitest cannot load.
+    parent = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "oj-bake-"))
     root = path.join(parent, "cart")
     fs.mkdirSync(root)
     said = []
