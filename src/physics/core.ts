@@ -270,6 +270,21 @@ function capsuleRay(a: EVec, b: EVec, r: number, ox: number, oy: number, oz: num
 
 type Thing<V extends readonly number[], R, A> = BodyCore<V, R, A> | CharacterCore<V, R, A>
 
+/**
+ * Something the world drives each step before the engine does, beside
+ * gliding bodies and walking characters: a car. It lives on a chassis body,
+ * whose collider says after a rewind whether it is still there.
+ */
+export interface Driver {
+    readonly colliderHandle: number
+    /** One step's driving, before the engine steps. */
+    stepDrive(dt: number): void
+    /** What it holds that the engine's snapshot does not. */
+    saveState(): number[]
+    /** After a rewind, with a new engine: its chassis is back or gone, and what it held then. */
+    restored(alive: boolean, state: number[] | undefined): void
+}
+
 export class WorldCore<V extends readonly number[], R, A> {
     raw: any
     readonly queue: any
@@ -288,6 +303,8 @@ export class WorldCore<V extends readonly number[], R, A> {
     readonly gliding = new Set<BodyCore<V, R, A>>()
     /** Bodies that do not turn: the engine keeps the lock, oj keeps knowing it, which the engine cannot be asked. */
     readonly unrotating = new Set<BodyCore<V, R, A>>()
+    /** Every car made, driving or not: a rewind can bring a destroyed one's chassis back. */
+    readonly drivers = new Set<Driver>()
     /** Dynamic and kinematic bodies alive: a world of only scenery has nothing to ride, so its characters do not look. */
     private movers = 0
     moving(): boolean { return this.movers > 0 }
@@ -766,6 +783,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         // Kinematic bodies glide and characters walk first, each by what it holds, for exactly one step.
         for (const b of this.gliding) b.stepGlide(this.stepSeconds)
         for (const c of this.characters) c.stepWalk(this.stepSeconds)
+        for (const v of this.drivers) v.stepDrive(this.stepSeconds)
         // The pipeline itself, as World.step calls it, without World.step's
         // mapNewSoftBodies: that wraps what the engine made on its own (pieces a
         // tear split off) and scans for what it removed, two JS calls a body
@@ -851,10 +869,11 @@ export class WorldCore<V extends readonly number[], R, A> {
     snapshot(): Uint8Array {
         this.live()
         const engine: Uint8Array = this.raw.takeSnapshot()
-        const own: Record<number, number[]> = {}
+        const own: Record<string, number[]> = {}
         for (const c of this.characters) own[c.colliderHandle] = c.saveState()
         for (const b of this.gliding) own[b.colliderHandle] = b.saveState()
         for (const b of this.unrotating) own[b.colliderHandle] = b.saveState()
+        for (const v of this.drivers) if (this.byCollider.has(v.colliderHandle)) own[`car${v.colliderHandle}`] = v.saveState()
         const text = asciiBytes(JSON.stringify(own))
         const out = new Uint8Array(engine.length + text.length + 4)
         out.set(engine, 0)
@@ -867,7 +886,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         this.live()
         const engineLength = snapshot.length >= 4 ? new DataView(snapshot.buffer, snapshot.byteOffset, snapshot.length).getUint32(snapshot.length - 4, true) : -1
         if (engineLength < 0 || engineLength > snapshot.length - 4) throw new Error("[oj] that snapshot is not one this world made")
-        let own: Record<number, number[]>
+        let own: Record<string, number[]>
         try { own = JSON.parse(asciiText(snapshot.subarray(engineLength, snapshot.length - 4))) } catch { throw new Error("[oj] that snapshot is not one this world made") }
         const restored = this.r.World.restoreSnapshot(snapshot.subarray(0, engineLength))
         if (restored === null || restored === undefined) throw new Error("[oj] that snapshot is not one this world's engine can read")
@@ -913,6 +932,12 @@ export class WorldCore<V extends readonly number[], R, A> {
             if (!(w instanceof BodyCore)) continue
             w.loadState(own[w.colliderHandle])
             if (w.dynamic || w.kinematic) this.movers++
+        }
+        // A car whose chassis is neither here nor buried can never come back.
+        for (const v of [...this.drivers]) {
+            const alive = this.byCollider.has(v.colliderHandle)
+            if (!alive && !this.buried.has(v.colliderHandle)) this.drivers.delete(v)
+            v.restored(alive, own[`car${v.colliderHandle}`])
         }
         old.free()
     }

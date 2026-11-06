@@ -29,6 +29,7 @@ import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim } from "../physic
 import { glbTriangles, type Triangles } from "./gltf"
 import { loadFileBytes, modelUrls } from "./sources"
 import { buildNav, type Nav, type NavOptions } from "../nav/nav"
+import { CAR_SIZE, CarCore, type CarOptionsOf, type CarWheelState } from "./car"
 
 /** A collision layer, named by use. Up to 16 in one world. */
 export type Layer = string
@@ -231,6 +232,34 @@ export interface Character {
     destroy(): void
 }
 
+/** What `world.car` takes. Every number has a default that drives like a small road car. */
+export type CarOptions = CarOptionsOf<Actor>
+
+/** One wheel of a car, for a model that follows it. */
+export type CarWheel = CarWheelState
+
+/** A car: a chassis body on four sprung wheels, driven every step. */
+export interface Car {
+    /**
+     * Held until the next call: throttle and steer from -1 to 1 (steer 1 is
+     * right, throttle -1 brakes and then reverses), brake from 0 to 1.
+     * `drive(stick.y, stick.x)` once a frame from a stick; `drive(0, 0)` lets go.
+     */
+    drive(throttle: number, steer?: number, brake?: number): void
+    /** Metres per second forward, negative in reverse. */
+    readonly speed: number
+    /** Any wheel on the ground, as of the last step. */
+    readonly grounded: boolean
+    /** Front left, front right, rear left, rear right. */
+    readonly wheels: readonly CarWheel[]
+    /** The chassis, an ordinary body: contacts, `push` and rewinds work as for any other. The car owns its mass and drag. */
+    readonly body: Body
+    /** False once destroyed, or rewound out of existence by `world.restore`. */
+    readonly alive: boolean
+    /** Takes the car and its chassis out of the world. */
+    destroy(): void
+}
+
 /** A shape as a value, in no world: for asking about a place and a time that are not now. */
 export interface Shape {
     readonly kind: "box" | "sphere" | "capsule"
@@ -325,6 +354,8 @@ export interface World {
      */
     mesh(source: MeshSource, options?: MeshOptions): Promise<Body>
     character(options?: CharacterOptions): Character
+    /** A car that drives itself from what `drive` holds, each step. */
+    car(options?: CarOptions): Car
     /**
      * Paths over this world's floor, built from every static, solid body:
      * walls, crates and mesh levels, as they are now. A level that changes
@@ -457,6 +488,13 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
     box(o: BoxOptions = {}): Body3 {
         const s = o.size ?? DEFAULTS.box
         return this.makeBody("box", this.r.ColliderDesc.cuboid(s[0] / 2, s[1] / 2, s[2] / 2), o)
+    }
+
+    car(o: CarOptions = {}): CarCore<Actor> {
+        const body = this.makeBody("box", this.r.ColliderDesc.cuboid(...(o.size ?? CAR_SIZE).map((x) => x / 2) as Vec3), {
+            at: o.at, rotation: o.rotation, dynamic: true, friction: 0.3, layer: o.layer, actor: o.actor,
+        })
+        return new CarCore(this, body, o)
     }
 
     sphere(o: SphereOptions = {}): Body3 {
