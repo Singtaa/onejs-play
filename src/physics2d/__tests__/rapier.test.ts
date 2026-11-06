@@ -13,8 +13,12 @@ const pkgDir = path.resolve(dir, "../../node_modules/@dimforge/rapier2d-determin
 
 describe("the vendored Rapier 2D", () => {
     it("is the installed package's release, byte for byte, and the same release as 3D", async () => {
-        const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"))
-        expect(RAPIER_VERSION).toBe(pkg.version)
+        // Read from node_modules, so a checkout that has not run npm install since
+        // this package was added fails here; say that, rather than ENOENT.
+        const installed = path.join(pkgDir, "package.json")
+        expect(fs.existsSync(installed), `@dimforge/rapier2d-deterministic is not installed: run npm install in onejs-play`).toBe(true)
+        const pkg = JSON.parse(fs.readFileSync(installed, "utf8"))
+        expect(pkg.version, `node_modules has @dimforge/rapier2d-deterministic ${pkg.version}, not the pinned ${RAPIER_VERSION}: run npm install in onejs-play`).toBe(RAPIER_VERSION)
         expect(RAPIER_VERSION).toBe((await import("../../physics3d/rapier.version")).RAPIER_VERSION)
         expect(createHash("sha256").update(wasm).digest("hex")).toBe(RAPIER_WASM_SHA256)
         expect(createHash("sha256").update(fs.readFileSync(path.join(pkgDir, "rapier_wasm2d_bg.wasm"))).digest("hex")).toBe(RAPIER_WASM_SHA256)
