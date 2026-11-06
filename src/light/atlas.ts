@@ -4,8 +4,8 @@
  * The unwrap is per model: xatlas lays a model's charts out once, at one texel
  * a metre, and that layout's size is the model's footprint. Each static actor
  * gets its own rectangle of the atlas, its model's footprint times its scale
- * times the detail. A bake holds 168 bytes a texel, so the atlas is capped at
- * `MAX_ATLAS` a side (44 MB while baking at 512) and the detail is lowered
+ * times the detail. A bake holds 72 bytes a texel (OneJS Runtime/Lighting), so
+ * the atlas is capped at `MAX_ATLAS` a side (19 MB while baking at 512) and the detail is lowered
  * until every rectangle fits: bounce light is soft, so a yard at 5 texels a
  * metre still looks right where a room keeps its 24.
  */
