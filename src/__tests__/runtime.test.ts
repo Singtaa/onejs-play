@@ -254,6 +254,28 @@ describe("useFrame's clock", () => {
         r.dispose()
     })
 
+    // The clamp keeps a stall from throwing everything through a wall; the real
+    // seconds are for what must not run slow after one, such as a wall clock.
+    it("passes the unclamped seconds second, to useFrame, every phase and oj.time", async () => {
+        const { subscribeFrame } = await import("onejs-react/src/frame")
+        const r = make()
+        const seen: Array<[string, number, number]> = []
+        const stop = subscribeFrame((dt, realDt) => seen.push(["useFrame", dt, realDt]))
+        r.oj.onStep((dt, realDt) => seen.push(["step", dt, realDt]))
+        r.oj.onLateFrame((dt, realDt) => seen.push(["late", dt, realDt]))
+        r.beginFrame(0.1, 0.35)
+        expect(seen).toEqual([["useFrame", 0.1, 0.35], ["step", 0.1, 0.35], ["late", 0.1, 0.35]])
+        expect(r.oj.time.dt).toBe(0.1)
+        expect(r.oj.time.realDt).toBe(0.35)
+        expect(r.oj.time.now).toBe(0.1)
+        seen.length = 0
+        r.beginFrame(0.02)
+        expect(seen[0]).toEqual(["useFrame", 0.02, 0.02])
+        expect(r.oj.time.realDt).toBe(0.02)
+        stop()
+        r.dispose()
+    })
+
     it("goes back to onejs-react's own once the runtime is disposed", async () => {
         const { subscribeFrame } = await import("onejs-react/src/frame")
         vi.stubGlobal("requestAnimationFrame", () => 1)

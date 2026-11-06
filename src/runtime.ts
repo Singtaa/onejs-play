@@ -37,13 +37,22 @@ import { setFrameClock } from "onejs-react"
 export interface TimeState {
     /** Seconds since the runtime started. */
     now: number
-    /** Seconds since the previous frame. */
+    /**
+     * Seconds since the previous frame, as the game advances by: the host
+     * clamps it at 100 ms, so the first frame after a stall or a hidden tab
+     * does not move everything ten seconds at once.
+     */
     dt: number
+    /** Seconds since the previous frame as they really passed, never clamped. */
+    realDt: number
     /** Frames elapsed. */
     frame: number
 }
 
 type Api = typeof api
+
+/** What each phase's callbacks receive: the clamped seconds, then the real ones. */
+type FrameCallback = (dt: number, realDt: number) => void
 
 /**
  * What every host provides: the clock, the stage, and the root to render into.
@@ -67,7 +76,7 @@ export interface HostRuntime {
      * A callback that throws is removed rather than left to throw once per
      * frame forever, and the error is reported once.
      */
-    onFrame(callback: (dt: number) => void): () => void
+    onFrame(callback: FrameCallback): () => void
     /**
      * Runs a callback every frame after every `onFrame` callback, returning an
      * unsubscribe. For worlds: what a frame callback set (a velocity, a
@@ -75,14 +84,14 @@ export interface HostRuntime {
      * cart's code runs in the frame or late. Errors as `onFrame`'s, so one
      * world that throws costs neither another world nor late.
      */
-    onStep(callback: (dt: number) => void): () => void
+    onStep(callback: FrameCallback): () => void
     /**
      * Runs a callback every frame after every world has stepped and placed its
      * actors, returning an unsubscribe: Unity's LateUpdate. A camera that
      * follows a body goes here, and reads its actor, which is what is drawn.
      * Not on oj's declarations. Errors as `onFrame`'s.
      */
-    onLateFrame(callback: (dt: number) => void): () => void
+    onLateFrame(callback: FrameCallback): () => void
 }
 
 /**
@@ -146,8 +155,12 @@ export interface ContainerRuntime {
     readonly oj: OjRuntime
     /** The input the adapter pushes browser events into. */
     readonly input: ContainerInput
-    /** Advance one frame. Drives the clock, input edges and frame callbacks. */
-    beginFrame(dtSeconds: number): void
+    /**
+     * Advance one frame. Drives the clock, input edges and frame callbacks.
+     * `dtSeconds` is clamped by the host; `realSeconds` is the time that
+     * really passed, and is `dtSeconds` when left out.
+     */
+    beginFrame(dtSeconds: number, realSeconds?: number): void
     /** Replace the stage with a newly measured viewport. */
     setViewport(width: number, height: number): void
     /**
@@ -194,13 +207,13 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     setAssetBase(options.assetBase ?? null)
     setPlayContext(options.play ?? null)
 
-    const time: TimeState = { now: 0, dt: 0, frame: 0 }
+    const time: TimeState = { now: 0, dt: 0, realDt: 0, frame: 0 }
     let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0)
 
     // The three phases, in the order beginFrame runs them.
-    const callbacks = new Set<(dt: number) => void>()
-    const steps = new Set<(dt: number) => void>()
-    const lates = new Set<(dt: number) => void>()
+    const callbacks = new Set<FrameCallback>()
+    const steps = new Set<FrameCallback>()
+    const lates = new Set<FrameCallback>()
     /**
      * Each frame callback's errors said so far. A callback that throws keeps
      * running, and each distinct error is said once: one bad line used to
@@ -220,11 +233,11 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     }
     // A copy, so a callback that unsubscribes itself or adds another mid-phase
     // does not change who runs this phase.
-    function runPhase(phase: Set<(dt: number) => void>, dt: number, what: string): void {
+    function runPhase(phase: Set<FrameCallback>, dt: number, realDt: number, what: string): void {
         if (phase.size === 0) return
         for (const callback of [...phase]) {
             try {
-                callback(dt)
+                callback(dt, realDt)
             } catch (error) {
                 reportFrameError(callback, error, what)
             }
@@ -266,14 +279,15 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         oj: oj as OjRuntime,
         input,
 
-        beginFrame(dtSeconds: number) {
+        beginFrame(dtSeconds: number, realSeconds: number = dtSeconds) {
             time.dt = dtSeconds
+            time.realDt = realSeconds
             time.now += dtSeconds
             time.frame++
             input.beginFrame()
-            runPhase(callbacks, dtSeconds, "a frame callback")
-            runPhase(steps, dtSeconds, "a world's step")
-            runPhase(lates, dtSeconds, "a late frame callback")
+            runPhase(callbacks, dtSeconds, realSeconds, "a frame callback")
+            runPhase(steps, dtSeconds, realSeconds, "a world's step")
+            runPhase(lates, dtSeconds, realSeconds, "a late frame callback")
         },
 
         setViewport(width: number, height: number) {

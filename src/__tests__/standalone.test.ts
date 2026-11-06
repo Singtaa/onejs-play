@@ -106,6 +106,15 @@ describe("startStandalone", () => {
         expect(runtime.oj.time.dt).toBeCloseTo(0.016, 3)
     })
 
+    it("clamps dt at 100 ms after a stall and keeps the real seconds in realDt", () => {
+        const runtime = startStandalone()
+        host.step(0)
+        host.step(16)
+        host.step(366)
+        expect(runtime.oj.time.dt).toBeCloseTo(0.1, 6)
+        expect(runtime.oj.time.realDt).toBeCloseTo(0.35, 6)
+    })
+
     it("follows the window when it changes, without being told", () => {
         const runtime = startStandalone()
         host.step(0)

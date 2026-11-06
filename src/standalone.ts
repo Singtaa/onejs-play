@@ -205,7 +205,8 @@ export function startStandalone(): ContainerRuntime {
     const tick = (now: number) => {
         globalThis.requestAnimationFrame(tick)
         if (standalone === null) return
-        const dt = previous === null ? 1 / 60 : Math.min(0.1, (now - previous) / 1000)
+        const realDt = previous === null ? 1 / 60 : (now - previous) / 1000
+        const dt = Math.min(0.1, realDt)
         previous = now
 
         // Polled rather than driven by an event: nothing here can see a Unity
@@ -220,7 +221,7 @@ export function startStandalone(): ContainerRuntime {
             standalone.setViewport(current.width, current.height)
         }
 
-        standalone.beginFrame(dt)
+        standalone.beginFrame(dt, realDt)
     }
     globalThis.requestAnimationFrame(tick)
 
