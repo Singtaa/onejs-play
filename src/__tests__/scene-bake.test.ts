@@ -277,7 +277,7 @@ describe("scene.bake", () => {
         const s = scene()
         await s.bake().done
         await s.bake().done
-        expect(warn.mock.calls.filter((c) => /needs a newer OneJS/.test(c[0])).length).toBe(1)
+        expect(warn.mock.calls.filter((c) => /needs a newer OneJS/.test(String(c[0]))).length).toBe(1)
     })
 })
 
