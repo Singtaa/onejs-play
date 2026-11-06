@@ -9,7 +9,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { build } from "./game.mjs"
-import { ensureRuntime, serve } from "./local.mjs"
+import { ensureRuntime, serve, streamingFetcher } from "./local.mjs"
 import { unservableAssets } from "./assets.mjs"
 import { launch } from "./chrome.mjs"
 import { siteOrigin, version } from "./site.mjs"
@@ -308,7 +308,7 @@ export async function start(root, { headless = true, gpu = false, window: size, 
     say(`runtime ${runtimeVersion}`)
 
     const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion }
-    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, refused: (reason) => say(`404 ${reason}`) })
+    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion) })
     server.bundle = built.code
     say(`serving ${server.url}`)
 

@@ -23,6 +23,20 @@ export const RUNTIME_FILES = [
     "PlayContainer.data",
 ]
 
+/**
+ * A file under the container's StreamingAssets, from the site, or null when the
+ * site has none. The container's own four files are fetched up front by
+ * ensureRuntime; these are fetched when something asks for one.
+ */
+export function streamingFetcher(site, version) {
+    return async (rel) => {
+        const response = await fetch(`${site}/runtime/${version}/${rel}`)
+        if (response.status === 404) return null
+        if (!response.ok) throw new Error(`${response.status} from the site`)
+        return Buffer.from(await response.arrayBuffer())
+    }
+}
+
 export function home() {
     return process.env.OJ_HOME ?? path.join(os.homedir(), ".onejs-play")
 }
@@ -131,8 +145,8 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
  * request so a rebuild is one refetch. `refused` hears why each asset
  * request the site would 404 was refused.
  */
-export function serve({ runtime, root, manifest, bundle, port = 0, refused = () => {} }) {
-    const server = http.createServer((req, res) => {
+export function serve({ runtime, root, manifest, bundle, port = 0, refused = () => {}, fetchStreaming = null }) {
+    const server = http.createServer(async (req, res) => {
         const url = decodeURIComponent((req.url ?? "/").split("?")[0])
         const send = (code, body, type) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store" }); res.end(body) }
         if (url === "/") return send(200, hostPage(manifest), TYPES[".html"])
@@ -160,6 +174,21 @@ export function serve({ runtime, root, manifest, bundle, port = 0, refused = () 
             return fs.createReadStream(asset.file).pipe(res)
         }
         const file = url.startsWith("/runtime/") ? path.join(runtime, url.slice("/runtime/".length)) : null
+        if (file !== null && !url.includes("..") && !fs.existsSync(file) && fetchStreaming !== null && url.startsWith("/runtime/StreamingAssets/")) {
+            // A file the engine or oj asks for by URL at runtime, such as the
+            // physics engine's module: fetched from the site once, then kept
+            // beside the container it belongs to.
+            try {
+                const bytes = await fetchStreaming(url.slice("/runtime/".length))
+                if (bytes !== null) {
+                    fs.mkdirSync(path.dirname(file), { recursive: true })
+                    fs.writeFileSync(file + ".part", bytes)
+                    fs.renameSync(file + ".part", file)
+                }
+            } catch (error) {
+                return send(502, `could not fetch ${url}: ${error.message}`, "text/plain")
+            }
+        }
         if (file === null || url.includes("..") || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(404, "not found", "text/plain")
         res.writeHead(200, { "content-type": TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream", "cache-control": "no-store" })
         fs.createReadStream(file).pipe(res)

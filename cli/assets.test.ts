@@ -87,6 +87,28 @@ describe("resolving /assets/<name> in a cart folder", () => {
 })
 
 describe("the local origin's /assets/", () => {
+    it("fetches a StreamingAssets file the container lacks once, keeps it, and 404s one the site lacks", async () => {
+        const runtime = cart({})
+        const asked: string[] = []
+        const server = await serve({
+            runtime, root: runtime, manifest: { name: "t" }, bundle: () => "",
+            fetchStreaming: async (rel: string) => { asked.push(rel); return rel.endsWith("m.wasm") ? Buffer.from("\0asm") : null },
+        })
+        try {
+            const url = `${server.url}runtime/StreamingAssets/onejs/assets/@ojplay/wasm/m.wasm`
+            expect(await (await fetch(url)).text()).toBe("\0asm")
+            expect(await (await fetch(url)).text()).toBe("\0asm")
+            expect(asked).toEqual(["StreamingAssets/onejs/assets/@ojplay/wasm/m.wasm"])
+            expect(fs.existsSync(path.join(runtime, "StreamingAssets/onejs/assets/@ojplay/wasm/m.wasm"))).toBe(true)
+            expect((await fetch(`${server.url}runtime/StreamingAssets/none.wasm`)).status).toBe(404)
+            // Only StreamingAssets: the container's own files are fetched up front, never on demand.
+            expect((await fetch(`${server.url}runtime/Other.wasm`)).status).toBe(404)
+            expect(asked).toHaveLength(2)
+        } finally {
+            server.close()
+        }
+    })
+
     it("serves by the rule, with the site's content type, and reports each refusal", async () => {
         const root = cart({ "pop.wav": "RIFF", "assets/boom.wav": "RIFF", "index.tsx": "secret" })
         const refused: string[] = []
