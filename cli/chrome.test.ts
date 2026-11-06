@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { Browser, CALL_MS, CAPTURE_MS } from "./chrome.mjs"
+import { Browser, CALL_MS, CAPTURE_MS, chromeArgs, chromeLog } from "./chrome.mjs"
 
 /** A Browser on a socket that keeps what was sent and answers only when told. */
 function browser() {
@@ -86,5 +86,49 @@ describe("the CLI's CDP calls", () => {
         const stuck = expect(b.waitForRenderer(Date.now() + 12000)).rejects.toThrow(/renderer is stuck/)
         await vi.advanceTimersByTimeAsync(12000)
         await stuck
+    })
+})
+
+// A stall on a runner is read from Chrome's own logs (Tachi 7e22a48c): asked
+// for with OJ_CHROME_LOG, kept for a browser whose page did not answer.
+describe("Chrome's own log", () => {
+    it("is off unless a folder is named, and names two files after the profile", () => {
+        expect(chromeLog("/tmp/oj-chrome-abc", "")).toBeNull()
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
+        const log = chromeLog("/tmp/oj-chrome-abc", folder)!
+        expect(log.file).toBe(path.join(folder, "oj-chrome-abc.log"))
+        expect(log.netlog).toBe(path.join(folder, "oj-chrome-abc.netlog.json"))
+        const args = chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p", log })
+        expect(args).toEqual(expect.arrayContaining(["--enable-logging", `--log-file=${log.file}`, "--v=1", `--log-net-log=${log.netlog}`]))
+        expect(args.at(-1)).toBe("about:blank")
+        expect(chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" }).some((a) => a.startsWith("--log"))).toBe(false)
+    })
+
+    async function closed(describeFirst: boolean) {
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
+        const log = chromeLog(path.join(folder, "oj-chrome-x"), folder)!
+        fs.writeFileSync(log.file, "log")
+        fs.writeFileSync(log.netlog, "{")
+        // No child: there is no Chrome to stop, and kill() finds no pid to signal.
+        const b = new Browser(null, path.join(folder, "gone"), null, () => "", log)
+        b.ws = { send: () => {}, close: () => {} } as any
+        b.send = () => Promise.reject(new Error("no answer")) as any
+        let said = ""
+        if (describeFirst) said = await b.describe()
+        b.close()
+        return { log, said }
+    }
+
+    it("is deleted with a browser that worked", async () => {
+        const { log } = await closed(false)
+        expect(fs.existsSync(log.file)).toBe(false)
+        expect(fs.existsSync(log.netlog)).toBe(false)
+    })
+
+    it("is kept, and named, for a browser whose page did not answer", async () => {
+        const { log, said } = await closed(true)
+        expect(fs.existsSync(log.file)).toBe(true)
+        expect(fs.existsSync(log.netlog)).toBe(true)
+        expect(said).toContain(log.file)
     })
 })

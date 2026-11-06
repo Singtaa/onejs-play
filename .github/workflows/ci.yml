@@ -98,4 +98,28 @@ jobs:
       # 60 s limit and the run went red with every test passing.
       - run: npm run test:unit
 
+      # A browser whose page never answers keeps Chrome's own verbose log and
+      # network log (cli/chrome.mjs, chromeLog); every other one is deleted.
       - run: npm run test:e2e
+        env:
+          OJ_CHROME_LOG: ${{ runner.temp }}/chrome-logs
+
+      # What a failed sweep left running and lying about: a stall that grows
+      # through a sweep reads very differently with forty Chromes still alive.
+      - name: What the sweep left behind
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $chrome = @(Get-Process chrome -ErrorAction SilentlyContinue)
+          "chrome.exe processes still running: $($chrome.Count)"
+          $chrome | Sort-Object StartTime | Select-Object -First 20 Id, StartTime, CPU, WorkingSet64 | Format-Table | Out-String -Width 200
+          "profiles left in temp: $(@(Get-ChildItem $env:TEMP -Directory -Filter 'oj-*' -ErrorAction SilentlyContinue).Count)"
+          Get-CimInstance Win32_OperatingSystem | Select-Object FreePhysicalMemory, TotalVisibleMemorySize | Format-List | Out-String
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: chrome-logs-${{ matrix.os }}
+          path: ${{ runner.temp }}/chrome-logs
+          if-no-files-found: ignore
+          retention-days: 7

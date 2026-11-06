@@ -85,7 +85,7 @@ export const CAPTURE_MS = 120000
  * on an Apple silicon Mac gets the real GPU ("ANGLE Metal Renderer") with no
  * flag at all; elsewhere it may fall back to software anyway.
  */
-export function chromeArgs({ headless, window, profile, gpu = false }) {
+export function chromeArgs({ headless, window, profile, gpu = false, log = null }) {
     return [
         ...(headless ? ["--headless=new"] : []),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`,
@@ -110,9 +110,26 @@ export function chromeArgs({ headless, window, profile, gpu = false }) {
         // headed `ojplay run` keeps the person's proxy, which a cart reaching
         // out from their desktop may need.
         ...(headless ? ["--no-proxy-server"] : []),
+        // Chrome's own account of itself, asked for with OJ_CHROME_LOG (chromeLog):
+        // its verbose log and its network log, for a stall nothing else can name.
+        ...(log ? ["--enable-logging", `--log-file=${log.file}`, "--v=1", `--log-net-log=${log.netlog}`] : []),
         `--window-size=${window[0]},${window[1]}`,
         "about:blank",
     ]
+}
+
+/**
+ * Where Chrome writes its own logs, when OJ_CHROME_LOG names a folder: a
+ * verbose log and a network log a browser, named after its profile, kept only
+ * for a browser whose page did not answer (Browser.describe) and deleted with
+ * any other. CI sets it and uploads what is kept, so a stall on a runner is
+ * read from Chrome rather than inferred from what it did not do.
+ */
+export function chromeLog(profile, folder = process.env.OJ_CHROME_LOG) {
+    if (!folder) return null
+    fs.mkdirSync(folder, { recursive: true })
+    const name = path.basename(profile)
+    return { file: path.join(folder, `${name}.log`), netlog: path.join(folder, `${name}.netlog.json`) }
 }
 
 export async function launch({ headless = true, gpu = false, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
@@ -126,7 +143,8 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     // sweeps orphans with `pkill -f <prefix>` gives its own, so the sweep
     // cannot reach another session's Chrome.
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), profilePrefix))
-    const args = chromeArgs({ headless, window, profile, gpu })
+    const log = chromeLog(profile)
+    const args = chromeArgs({ headless, window, profile, gpu, log })
     const began = Date.now()
     const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" })
@@ -169,7 +187,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     // The start time, in a form a harness can read back: how close a run
     // under load comes to STARTUP_MS is the number that says whether it holds.
     say(`chrome ${headless ? "headless" : "headed"} ${window[0]}x${window[1]} (${path.basename(binary)}), port after ${seconds(portMs)}, page after ${seconds(pageMs)}`)
-    const browser = new Browser(child, profile, page, () => stderr)
+    const browser = new Browser(child, profile, page, () => stderr, log)
     // From here the browser is ours to close: a step that fails must not
     // leave it running with nobody holding its handle.
     try {
@@ -214,9 +232,12 @@ function kill(child) {
 
 /** A CDP session on one page, with the console kept. */
 export class Browser {
-    constructor(child, profile, page, stderr = () => "") {
+    constructor(child, profile, page, stderr = () => "", log = null) {
         /** What Chrome has written to stderr so far. */
         this.stderr = stderr
+        /** Chrome's own log files (chromeLog), or null; kept once describe() has been asked. */
+        this.log = log
+        this.keepLog = false
         this.child = child
         this.profile = profile
         this.page = page
@@ -340,6 +361,10 @@ export class Browser {
         else said.push(`history ${history.entries.map((e) => e.url).join(" > ")}`)
         const tail = this.stderr().trim().split("\n").slice(-3).join(" | ")
         if (tail !== "") said.push(`chrome's stderr ends: ${tail.slice(-400)}`)
+        if (this.log) {
+            this.keepLog = true
+            said.push(`chrome's own log is kept at ${this.log.file} and ${this.log.netlog}`)
+        }
         return said.join("; ")
     }
 
@@ -364,6 +389,11 @@ export class Browser {
     close() {
         try { this.ws?.close() } catch { /* going anyway */ }
         discard(this.child, this.profile)
+        if (this.log && !this.keepLog) {
+            for (const file of [this.log.file, this.log.netlog]) {
+                try { fs.rmSync(file, { force: true, maxRetries: 3, retryDelay: 100 }) } catch { /* a locked log is not worth failing over */ }
+            }
+        }
     }
 }
 
