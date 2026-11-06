@@ -69,7 +69,7 @@ export type { PathSink } from "./transform"
 // onejs-unity/input/backend.ts and ./input.ts.
 
 export { input, resolveKeyName, keyNameFromDomCode } from "onejs-unity/input"
-export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
+export type { Keyboard, Mouse, Gamepad, Touch, PointerType } from "onejs-unity/input"
 
 // Sound, over Unity's AudioSource rather than WebAudio. WebAudio exists only in
 // a browser, so a game built on it could never leave the web, which is why the
