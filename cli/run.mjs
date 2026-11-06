@@ -293,7 +293,7 @@ function findExpression(spec) {
  * Builds the folder, fetches the container, serves both and boots a browser.
  * Resolves to a started Game; the caller closes it.
  */
-export async function start(root, { headless = true, window: size, runtime: pinned, say = () => {} } = {}) {
+export async function start(root, { headless = true, gpu = false, window: size, runtime: pinned, say = () => {} } = {}) {
     const built = await build(root)
     say(`built ${built.entry}: ${(built.code.length / 1024).toFixed(1)} KB`)
     for (const w of built.warnings) say(`warning: ${w}`)
@@ -314,7 +314,7 @@ export async function start(root, { headless = true, window: size, runtime: pinn
 
     let browser
     try {
-        browser = await launch({ headless, window: size ?? DEFAULT_WINDOW, say })
+        browser = await launch({ headless, gpu, window: size ?? DEFAULT_WINDOW, say })
     } catch (error) {
         server.close()
         throw error

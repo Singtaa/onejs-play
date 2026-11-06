@@ -340,6 +340,16 @@ describe("the browser", () => {
         }
     })
 
+    // A 3D game's frame rate on SwiftShader says nothing about a player's:
+    // --gpu is the one way to measure it headless.
+    it("draws headless on the software rasteriser unless asked for the GPU", () => {
+        const software = chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" })
+        expect(software).toContain("--use-angle=swiftshader")
+        const gpu = chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p", gpu: true })
+        expect(gpu.some((a) => a.includes("swiftshader"))).toBe(false)
+        expect(gpu).toContain("--headless=new")
+    })
+
     // A Chrome that never came up left its profile in the temp folder, one per
     // failed run: 30 of them, 598 MB, on one machine by Oct 2026.
     it("removes its profile when Chrome does not start", async () => {

@@ -61,8 +61,18 @@ export const STARTUP_MS = 90000
  * cannot collide. The profile is fresh and thrown away: nothing a game does
  * survives into the next run.
  */
-/** The command line launch() starts Chrome with. */
-export function chromeArgs({ headless, window, profile }) {
+/**
+ * The command line launch() starts Chrome with.
+ *
+ * `gpu` leaves the GPU to Chrome. Headless, Chrome otherwise draws on
+ * SwiftShader, the software rasteriser, which is right for a check that has to
+ * read the same on every machine and wrong for any number about how fast 3D
+ * runs: at 960 x 540 it holds 30 fps with 8 animated characters, where this
+ * Mac's GPU holds 60 with 192 (docs/multiplayer-seed.md §1.5). Headless Chrome
+ * on an Apple silicon Mac gets the real GPU ("ANGLE Metal Renderer") with no
+ * flag at all; elsewhere it may fall back to software anyway.
+ */
+export function chromeArgs({ headless, window, profile, gpu = false }) {
     return [
         ...(headless ? ["--headless=new"] : []),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`,
@@ -74,16 +84,16 @@ export function chromeArgs({ headless, window, profile }) {
         // Linux has the same through the desktop's password store. A throwaway
         // profile needs neither.
         "--use-mock-keychain", "--password-store=basic",
-        // Software rasteriser, deliberately: headless Chrome has no usable GPU
-        // on the machines this has run on, and asking for the real one falls
-        // back here anyway. A headed window gets whatever the desktop has.
-        ...(headless ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
+        // Software rasteriser unless asked for the GPU: the same pixels and the
+        // same speed on every machine. A headed window gets whatever the
+        // desktop has.
+        ...(headless && !gpu ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
         `--window-size=${window[0]},${window[1]}`,
         "about:blank",
     ]
 }
 
-export async function launch({ headless = true, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
+export async function launch({ headless = true, gpu = false, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
     // Checked before Chrome starts, so an old Node fails with the fix in hand
     // rather than "WebSocket is not defined" after starting a browser for nothing.
     if (typeof WebSocket !== "function") {
@@ -94,7 +104,7 @@ export async function launch({ headless = true, window = [960, 540], say = () =>
     // sweeps orphans with `pkill -f <prefix>` gives its own, so the sweep
     // cannot reach another session's Chrome.
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), profilePrefix))
-    const args = chromeArgs({ headless, window, profile })
+    const args = chromeArgs({ headless, window, profile, gpu })
     const began = Date.now()
     const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`
     const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" })

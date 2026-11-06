@@ -72,11 +72,13 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           --for <s>       headless: seconds to run before the screenshot (default 5)
                           --shot <file>   where the screenshot goes (default .oj/run.png)
                           --window <w,h>  browser size in CSS pixels (default 960,540)
+                          --gpu           headless on the machine's GPU instead of the software
+                                          rasteriser: for how fast 3D runs, not for pixels
   test [script.mjs]     run, then call the script's default export with the cart (with no
                           script, let it run --for seconds, default 2); fails on a console error,
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
-                          --headed, --window, --for as above
+                          --headed, --window, --for, --gpu as above
   status                what runs, the tip of main, why they differ, and each branch's preview (--sid <id>; --json for scripts)
   list                  every cart on the account (--json)
   login                 print a ${siteOrigin()} link; once the person presses Allow there,
@@ -222,7 +224,7 @@ async function main() {
             return typecheck(root)
         case "run": {
             const headed = flags.headed === true
-            const game = await start(root, { headless: !headed, window: size, runtime: flags.runtime && String(flags.runtime), say })
+            const game = await start(root, { headless: !headed, gpu: flags.gpu === true, window: size, runtime: flags.runtime && String(flags.runtime), say })
             // Each distinct line once: Unity repeats its AudioContext warning
             // on every frame until a gesture.
             const seen = new Set()
@@ -276,7 +278,7 @@ async function main() {
                 process.once("SIGINT", on)
                 process.once("SIGTERM", on)
             })
-            const game = await start(root, { headless: flags.headed !== true, window: size, runtime: flags.runtime && String(flags.runtime), say })
+            const game = await start(root, { headless: flags.headed !== true, gpu: flags.gpu === true, window: size, runtime: flags.runtime && String(flags.runtime), say })
             try {
                 const play = (async () => {
                     const ms = await game.ready()
