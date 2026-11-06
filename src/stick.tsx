@@ -81,6 +81,16 @@ function onPad(x: number, y: number): boolean {
     return false
 }
 
+/** Every stick mounted now, so a camera's drag can leave a thumb one has taken. */
+const sticks = new Set<StickState>()
+
+/** Whether a mounted stick or pad has this finger: a camera drag (camera.ts) leaves it alone. */
+export function heldByControl(fingerId: number): boolean {
+    for (const s of sticks) if (s.active && s.finger === fingerId) return true
+    for (const p of pads) if (p.finger === fingerId) return true
+    return false
+}
+
 const ended = (t: TouchPoint) => t.phase === "ended" || t.phase === "canceled"
 
 export function newStick(radius: number, restX = 0, restY = 0): StickState {
@@ -155,6 +165,10 @@ export function useStick(side: "left" | "right" | ((x: number, y: number) => boo
     const state = useRef<StickState | null>(null)
     if (state.current === null) state.current = newStick(radius, restX, restY)
     const s = state.current
+    useEffect(() => {
+        sticks.add(s)
+        return () => { sticks.delete(s) }
+    }, [s])
     useFrame(() => {
         const owns = typeof side === "function" ? side : side === "left" ? (x: number) => x < stage.width / 2 : (x: number) => x >= stage.width / 2
         readStick(s, input.touches, owns)

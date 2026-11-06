@@ -115,6 +115,10 @@ export type { SwipeDirection, SwipeOptions } from "./gesture"
 export { useStick, usePad, Stick, Pad } from "./stick"
 export type { StickState, PadState, StickOptions } from "./stick"
 
+// Cameras a cart drags: around a point, and behind an actor.
+export { useOrbit, useFollowCamera } from "./camera"
+export type { Orbit, OrbitOptions, FollowCamera, FollowOptions, FollowTarget, CameraBind } from "./camera"
+
 // math
 
 export { Mathf } from "./mathf"
