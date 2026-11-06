@@ -989,7 +989,12 @@ class CharacterImpl implements Character {
     }
 
     teleport(at: Vec3): void {
-        const spot = this.world.clearSpot(shape.capsule(this.radius, this.height), [at[0], at[1] + this.height / 2, at[2]], { skip: [this] })
+        // Tested a little above where it will stand: feet resting on a floor
+        // touch it, and a touch counts as an overlap, which would walk the
+        // character away from a perfectly good spot.
+        const lift = 0.02
+        const clear = this.world.clearSpot(shape.capsule(this.radius, this.height), [at[0], at[1] + this.height / 2 + lift, at[2]], { skip: [this] })
+        const spot: Vec3 = [clear[0], clear[1] - lift, clear[2]]
         this.rb().setTranslation(xyz(spot), true)
         this.rb().setNextKinematicTranslation(xyz(spot))
         this.world.markFresh(this.colliderHandle)

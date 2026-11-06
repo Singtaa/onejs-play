@@ -1,5 +1,5 @@
 import "../node"
-import { createWorld } from "../physics3d/world"
+import { createWorld, shape } from "../index"
 
 describe("ojplay/node", () => {
     it("gives a test physics and paths with nothing handed over by hand", async () => {
@@ -10,5 +10,9 @@ describe("ojplay/node", () => {
         expect(world.raycast([0, 1, -3], [0, 1, 3])?.distance).toBeCloseTo(2.75)
         const nav = await world.nav()
         expect(nav.path([0, 0, -2], [0, 0, 2]).length).toBeGreaterThan(1)
+    })
+
+    it("lets a test import oj itself", () => {
+        expect(shape.sphere(1).kind).toBe("sphere")
     })
 })

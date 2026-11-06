@@ -239,6 +239,15 @@ describe("a character", () => {
         w.dispose()
     })
 
+    it("teleport onto open floor lands exactly there, feet on the floor", async () => {
+        const { w, me } = await walking()
+        me.teleport([-4, 0, 3])
+        expect(near(me.position, [-4, 0, 3])).toBe(true)
+        me.move([0.1, 0, 0])
+        expect(near(me.position, [-3.9, 0, 3], 0.02)).toBe(true)
+        w.dispose()
+    })
+
     it("teleport lands it clear of whatever it would stand inside", async () => {
         const { w, me } = await walking()
         w.box({ at: [5, 1, 5], size: [2, 2, 2], layer: "wall" })
