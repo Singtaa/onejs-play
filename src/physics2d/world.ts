@@ -22,6 +22,7 @@
 import { loadRapier2D, type Rapier2D } from "./rapier"
 import { placeElements, resolveElement, type ElementActor, type ElementPlacement } from "./elements"
 import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim, type Defaults, type Placement } from "../physics/core"
+import { buildNav, NAV_DEFAULTS } from "../nav/nav"
 import type { Layer } from "../physics3d/world"
 
 export type { Layer } from "../physics3d/world"
@@ -286,6 +287,26 @@ export interface Sight2DOptions extends Filter2D {
     within?: number
 }
 
+export interface Nav2DOptions {
+    /** The walker's radius, pixels: how far from a wall its centre keeps, to within a `cell`. 30 by default. */
+    radius?: number
+    /** The grid the floor is measured on, pixels. A third of the radius by default; smaller is finer and slower to build. */
+    cell?: number
+    /** Only bodies on these layers are walls. Every static, solid body by default. */
+    only?: readonly string[]
+}
+
+/** Paths across a world seen from above. */
+export interface Nav2D {
+    /**
+     * The corners of the shortest way from `from` to `to`, not including
+     * `from` and ending at `to`, or as near it as can be reached. Empty when
+     * `from` is inside a wall or outside the floor.
+     */
+    path(from: Vec2, to: Vec2): Vec2[]
+    dispose(): void
+}
+
 export interface Slid2D {
     at: Vec2
     grounded: boolean
@@ -317,6 +338,12 @@ export interface World2D {
      * it, its corners in order, answering what `canSee` would from there.
      */
     visibility(eye: Vec2, options?: Sight2DOptions): Vec2[]
+    /**
+     * Paths round the static bodies, for a world seen from above (no
+     * gravity): the floor is the box round them all, and every one is a wall.
+     * Built once, from the bodies there now; build again when they change.
+     */
+    nav(options?: Nav2DOptions): Promise<Nav2D>
     /** One fixed step. A world `useWorld2D` made steps itself; call this on one from `createWorld2D`. */
     step(): void
     /** Every body's state, to hand back to `restore`. */
@@ -464,6 +491,31 @@ class World2 extends WorldCore<Vec2, number | undefined, ElementActor> {
         return this.makeBody("outline", this.r.ColliderDesc.polyline(this.flat(points)), o)
     }
 
+    async nav(o: Nav2DOptions = {}): Promise<Nav2D> {
+        this.live()
+        const g = this.raw.gravity
+        if (g.x !== 0 || g.y !== 0) throw new Error("[oj] world.nav finds paths across a world seen from above, which has no gravity; this one's pulls things down the screen. Make the world with gravity: [0, 0] for a top-down game.")
+        // Each wall's outline in metres, x and y as the engine has them.
+        const walls: number[][] = []
+        for (const w of this.byCollider.values()) {
+            if (!(w instanceof BodyCore) || w.dynamic || w.kinematic || w.trigger) continue
+            if (o.only !== undefined && !o.only.includes(w.layer)) continue
+            walls.push(...outlinesOf(w.collider(), this.dim, this.r.ShapeType))
+        }
+        if (walls.length === 0) throw new Error("[oj] world.nav: no static bodies to walk round" + (o.only ? ` in layers ${o.only.join(", ")}` : ""))
+        const radius = this.m(o.radius ?? DEFAULTS.character.radius)
+        const nav = await buildNav(...navFloor(walls), {
+            radius, cell: o.cell === undefined ? undefined : this.m(o.cell),
+            height: NAV_WALKER, stepHeight: 0, slope: NAV_DEFAULTS.slope,
+        })
+        const ppm = this.pixelsPerMeter
+        return {
+            path: (from, to) => nav.path([from[0] / ppm, 0, from[1] / ppm], [to[0] / ppm, 0, to[1] / ppm])
+                .map((p) => Object.freeze([p[0] * ppm, p[2] * ppm]) as unknown as Vec2),
+            dispose: () => nav.dispose(),
+        }
+    }
+
     private flat(points: readonly Vec2[]): Float32Array {
         const out = new Float32Array(points.length * 2)
         points.forEach((p, i) => { out[i * 2] = this.m(p[0]); out[i * 2 + 1] = this.m(p[1]) })
@@ -478,4 +530,94 @@ function enclosesArea(points: readonly Vec2[]): boolean {
     if (a === undefined || b === undefined) return false
     const span = Math.hypot(b[0] - a[0], b[1] - a[1])
     return points.some((p) => Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / span > 1e-6)
+}
+
+// ---------- paths, from above ----------
+
+/**
+ * The walker's height in the navigation mesh, metres. Seen from above,
+ * nothing passes over or under anything, so it only has to be more than a
+ * wall's top: the floor under a wall then has no room for a walker.
+ */
+const NAV_WALKER = 1
+/** How tall each wall stands, metres: under `NAV_WALKER`. */
+const NAV_WALL = NAV_WALKER / 2
+/** Sides a round wall gets. */
+const NAV_ROUND = 16
+
+/**
+ * A collider as closed outlines, or as open runs of segments, in metres:
+ * what a walker cannot cross. A round one becomes a polygon just outside it.
+ */
+function outlinesOf(c: any, d: Dim<Vec2, number | undefined, ElementActor>, T: any): number[][] {
+    const t = c.translation(), rot = c.rotation(), type = c.shapeType()
+    const at = (x: number, y: number) => { const p = d.rotate(rot, [x, y]); return [p[0]! + t.x, p[1]! + t.y] }
+    const ring = (cx: number, cy: number, r: number, from: number, to: number, n: number) => {
+        const out: number[] = [], grow = r / Math.cos(Math.PI / NAV_ROUND)
+        for (let i = 0; i <= n; i++) {
+            const a = from + ((to - from) * i) / n
+            out.push(...at(cx + Math.cos(a) * grow, cy + Math.sin(a) * grow))
+        }
+        return out
+    }
+    if (type === T.Cuboid) {
+        const { x, y } = c.halfExtents()
+        return [[...at(-x, -y), ...at(x, -y), ...at(x, y), ...at(-x, y)]]
+    }
+    // A capsule stands along its own y: a half ring round each end.
+    if (type === T.Capsule) {
+        const h = c.halfHeight(), r = c.radius(), half = NAV_ROUND / 2
+        return [[...ring(0, h, r, 0, Math.PI, half), ...ring(0, -h, r, Math.PI, 2 * Math.PI, half)]]
+    }
+    if (type === T.Ball) return [ring(0, 0, c.radius(), 0, (2 * Math.PI * (NAV_ROUND - 1)) / NAV_ROUND, NAV_ROUND - 1)]
+    const v: Float32Array = c.vertices()
+    const local: number[] = []
+    for (let i = 0; i < v.length; i += 2) local.push(...at(v[i]!, v[i + 1]!))
+    if (type === T.ConvexPolygon) return [local]
+    if (type !== T.Polyline) throw new Error(`[oj] world.nav cannot read a collider of Rapier shape type ${type}; oj makes none`)
+    // An outline is a run of segments, each a wall of no thickness, in order unless the engine kept which joins which.
+    const n = v.length / 2, idx: ArrayLike<number> = c.indices() ?? Array.from({ length: Math.max(0, 2 * (n - 1)) }, (_, k) => (k + 1) >> 1)
+    const out: number[][] = []
+    for (let k = 0; k + 1 < idx.length; k += 2) out.push([local[2 * idx[k]!]!, local[2 * idx[k]! + 1]!, local[2 * idx[k + 1]!]!, local[2 * idx[k + 1]! + 1]!])
+    return out
+}
+
+/**
+ * Triangles for Recast, y up, from outlines in the plane: a floor facing up
+ * over the box round them all, and each outline stood up as a wall whose top
+ * faces down, so it is solid and no walker stands on it.
+ */
+function navFloor(walls: readonly number[][]): [Float32Array, Uint32Array] {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+    for (const w of walls) for (let i = 0; i < w.length; i += 2) {
+        x0 = Math.min(x0, w[i]!); x1 = Math.max(x1, w[i]!)
+        z0 = Math.min(z0, w[i + 1]!); z1 = Math.max(z1, w[i + 1]!)
+    }
+    const vertices: number[] = [], indices: number[] = []
+    const vertex = (x: number, y: number, z: number) => { vertices.push(x, y, z); return vertices.length / 3 - 1 }
+    /** A triangle, wound to face up or down. */
+    const tri = (a: number, b: number, c: number, up: boolean) => {
+        const ax = vertices[3 * b]! - vertices[3 * a]!, az = vertices[3 * b + 2]! - vertices[3 * a + 2]!
+        const bx = vertices[3 * c]! - vertices[3 * a]!, bz = vertices[3 * c + 2]! - vertices[3 * a + 2]!
+        const ny = az * bx - ax * bz
+        if (ny === 0 || ny > 0 === up) indices.push(a, b, c)
+        else indices.push(a, c, b)
+    }
+    const f = [vertex(x0, 0, z0), vertex(x1, 0, z0), vertex(x1, 0, z1), vertex(x0, 0, z1)]
+    tri(f[0]!, f[1]!, f[2]!, true)
+    tri(f[0]!, f[2]!, f[3]!, true)
+    for (const w of walls) {
+        const n = w.length / 2, closed = n > 2
+        const low: number[] = [], high: number[] = []
+        for (let i = 0; i < n; i++) {
+            low.push(vertex(w[2 * i]!, 0, w[2 * i + 1]!))
+            high.push(vertex(w[2 * i]!, NAV_WALL, w[2 * i + 1]!))
+        }
+        for (let i = 0; i < (closed ? n : n - 1); i++) {
+            const j = (i + 1) % n
+            indices.push(low[i]!, low[j]!, high[j]!, low[i]!, high[j]!, high[i]!)
+        }
+        if (closed) for (let i = 1; i + 1 < n; i++) tri(high[0]!, high[i]!, high[i + 1]!, false)
+    }
+    return [new Float32Array(vertices), new Uint32Array(indices)]
 }
