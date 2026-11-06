@@ -127,7 +127,7 @@ export interface CharacterOptions {
     radius?: number
     /** Feet to the top of its head. 1.6 by default. */
     height?: number
-    /** The tallest ledge it walks up. 0.3 by default; 0 climbs nothing, and is cheaper. */
+    /** The tallest ledge it walks up: 0.4 by default, a kerb or a knee-high rim, and a crate is too tall. 0 climbs nothing, and is cheaper. */
     stepHeight?: number
     /** The steepest slope it climbs, in degrees. 45 by default. */
     slope?: number
@@ -322,7 +322,7 @@ export interface SlideOptions extends Filter {
     radius?: number
     /** Feet to the top of its head. 1.6 by default. */
     height?: number
-    /** The tallest ledge it walks up. 0.3 by default. */
+    /** The tallest ledge it walks up. 0.4 by default. */
     stepHeight?: number
     /** The steepest slope it climbs, in degrees. 45 by default. */
     slope?: number
@@ -422,7 +422,7 @@ const DEFAULTS = Object.freeze({
     box: [1, 1, 1] as Vec3,
     sphere: 0.5,
     capsule: { radius: 0.3, height: 1.6 },
-    character: { radius: 0.3, height: 1.6, stepHeight: 0.3, slope: 45, snap: 0.3 },
+    character: { radius: 0.3, height: 1.6, stepHeight: 0.4, slope: 45, snap: 0.3 },
     clearSpotWithin: 10,
     sightHeight: 1.5,
     sightWithin: 30,

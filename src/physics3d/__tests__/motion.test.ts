@@ -6,12 +6,14 @@ import fs from "node:fs"
 import path from "node:path"
 import { setWasmModule } from "../../wasm"
 import { RAPIER_VERSION } from "../rapier.version"
+import { RECAST_VERSION } from "../../nav/recast.version"
 import { createWorld, type World, type Body } from "../world"
 
 const WA = (globalThis as any).WebAssembly
 
 beforeAll(() => {
     setWasmModule("rapier3d", new WA.Module(fs.readFileSync(path.resolve(import.meta.dirname, `../../../assets/@ojplay/wasm/rapier3d-${RAPIER_VERSION}.wasm`))))
+    setWasmModule("recast", new WA.Module(fs.readFileSync(path.resolve(import.meta.dirname, `../../../assets/@ojplay/wasm/recast-${RECAST_VERSION}.wasm`))))
 })
 
 const run = (w: World, steps: number) => { for (let i = 0; i < steps; i++) w.step() }
@@ -305,5 +307,40 @@ describe("riding", () => {
         run(w, 20)
         expect(c.position).toEqual(there)
         w.dispose()
+    })
+})
+
+describe("stepHeight's default, 0.4", () => {
+    /** A ledge `h` high across the way, long enough to stand on. */
+    async function ledge(h: number) {
+        const w = await floored()
+        w.box({ at: [0, h / 2, 12], size: [6, h, 20] })
+        return w
+    }
+
+    it("walks a character and a slide up a 0.35 m kerb, and stops both at 0.45 m", async () => {
+        for (const [h, up] of [[0.35, true], [0.45, false]] as const) {
+            const w = await ledge(h)
+            const c = w.character({ at: [0, 0, 0] })
+            c.walk([0, 0, 3])
+            run(w, 120)
+            expect(c.position[1] > h - 0.05).toBe(up)
+            let at: [number, number, number] = [0, 0, 0]
+            for (let i = 0; i < 120; i++) at = w.slide(at, [0, 0, 0.05]).at as [number, number, number]
+            expect(at[1] > h - 0.05).toBe(up)
+            w.dispose()
+        }
+    })
+
+    it("is nav's too, so a path goes up what a character can climb and round what it cannot", async () => {
+        for (const [h, up] of [[0.35, true], [0.45, false]] as const) {
+            const w = await ledge(h)
+            const nav = await w.nav()
+            const pts = nav.path([0, 0, 0], [0, h, 12])
+            const end = pts[pts.length - 1]
+            expect(end !== undefined && Math.abs(end[1] - h) < 0.1 && Math.abs(end[2] - 12) < 0.5).toBe(up)
+            nav.dispose()
+            w.dispose()
+        }
     })
 })

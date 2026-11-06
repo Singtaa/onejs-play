@@ -24,7 +24,7 @@ export interface NavOptions {
     radius?: number
     /** Feet to head: the lowest gap it fits under. 1.6 by default. */
     height?: number
-    /** The tallest ledge it walks up. 0.3 by default. */
+    /** The tallest ledge it walks up. 0.4 by default, as a character's. */
     stepHeight?: number
     /** The steepest slope it walks, in degrees. 45 by default. */
     slope?: number
@@ -44,7 +44,7 @@ export interface Nav {
     dispose(): void
 }
 
-export const NAV_DEFAULTS = Object.freeze({ radius: 0.3, height: 1.6, stepHeight: 0.3, slope: 45 })
+export const NAV_DEFAULTS = Object.freeze({ radius: 0.3, height: 1.6, stepHeight: 0.4, slope: 45 })
 
 let loading: Promise<Recast> | null = null
 
