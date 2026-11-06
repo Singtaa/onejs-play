@@ -22,7 +22,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | Module | Contents |
 |---|---|
 | `index.ts` | The game-facing surface, aliased to `oj` |
-| `mount.ts` | `mount()` and `useStage()` |
+| `mount.ts` | `mount()`, `useStage()` and `useLateFrame()`, the late phase of the frame clock |
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stick.tsx` | `useStick`, `usePad`, `<Stick>`, `<Pad>`: thumb controls for phones, read off `input.touches` |

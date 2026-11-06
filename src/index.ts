@@ -54,7 +54,7 @@ export type { Stage } from "./stage"
 
 // entry point and frame clock
 
-export { mount, useStage } from "./mount"
+export { mount, useStage, useLateFrame } from "./mount"
 export { useFrame } from "onejs-react"
 
 // transforms
