@@ -291,7 +291,7 @@ The container fetches the bytes and builds a dynamic font from them (OneJS
 `Network.LoadFontFromUrl`), one per file however many ask, so `preload` and
 `unload` take fonts as they take pictures. A family's name is not a font: no
 font is installed by name, and `fontFamily: "Arial"` says so once and draws
-in the default face.
+in the default face. `cli/fixtures/font` is a cart with its own font.
 
 ```tsx
 const title = useFont("fonts/Display.ttf")

@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "runtime": "1.2.0",
+    "name": "Font",
+    "entry": "index.tsx",
+    "preload": ["fonts/"]
+}
