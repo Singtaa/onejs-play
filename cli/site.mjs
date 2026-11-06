@@ -43,12 +43,37 @@ export function token(root = process.cwd()) {
 }
 
 /**
+ * A read from the site, asked a second time when the connection died under it.
+ *
+ * `git` runs under spawnSync, so a push holds the event loop for as long as it
+ * takes and fetch cannot notice the site closing an idle keep-alive connection
+ * meanwhile. The next request goes out on that connection and dies: ECONNRESET
+ * on Windows, where it loses the race outright (CI, 6 Nov 2026), or "other side
+ * closed". The pool has dropped the dead connection by then, so asking again
+ * opens a fresh one. Only for reads, which are safe to repeat
+ * (site-connection.test.ts).
+ */
+export async function readFromSite(url, init = {}) {
+    try {
+        return await fetch(url, init)
+    } catch (error) {
+        if (!droppedConnection(error)) throw error
+        return fetch(url, init)
+    }
+}
+
+/** Whether a fetch failed because its connection was closed under it, rather than the site being unreachable. */
+export function droppedConnection(error) {
+    return error instanceof TypeError && ["ECONNRESET", "EPIPE", "UND_ERR_SOCKET"].includes(error.cause?.code)
+}
+
+/**
  * The account's own carts, Unlisted and Private ones included: what "which
  * carts do I have" needs. A repo with two carts is two rows. The site's
  * public list leaves out every cart that is not Public.
  */
 export async function mine(bearer) {
-    const response = await fetch(`${siteOrigin()}/api/me/carts`, { headers: { authorization: `Bearer ${bearer}` } })
+    const response = await readFromSite(`${siteOrigin()}/api/me/carts`, { headers: { authorization: `Bearer ${bearer}` } })
     const body = await json(response)
     if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
     return body
@@ -104,7 +129,7 @@ async function json(response) {
 /** GET /api/games/<sid>: head, live, buildError and the rest. */
 export async function status(sid, { bearer } = {}) {
     const headers = bearer ? { authorization: `Bearer ${bearer}` } : {}
-    const response = await fetch(`${siteOrigin()}/api/games/${sid}`, { headers })
+    const response = await readFromSite(`${siteOrigin()}/api/games/${sid}`, { headers })
     const body = await json(response)
     if (!response.ok) throw new Error(body.error ?? `${response.status} from the site`)
     return body
@@ -234,7 +259,7 @@ export function describePush(head, s, left) {
 
 /** GET /api/version: what the site runs, including the runtime pin. */
 export async function version() {
-    const response = await fetch(`${siteOrigin()}/api/version`)
+    const response = await readFromSite(`${siteOrigin()}/api/version`)
     return json(response)
 }
 
