@@ -135,6 +135,13 @@ export interface InputSink {
     touchMove(pointerId: number, viewportX: number, viewportY: number): void
     touchUp(pointerId: number, viewportX: number, viewportY: number, canceled?: boolean): void
     /**
+     * A browser event that grants the page user activation: a keydown, a
+     * mouse button going down, a finger or pen lifting (adapter.ts). Its frame
+     * is the one in which share.ts may ask the browser for the share sheet or
+     * the clipboard.
+     */
+    activate(): void
+    /**
      * Focus was lost, so release everything held.
      *
      * Without this, alt-tabbing while holding a key leaves it held forever,
@@ -150,6 +157,14 @@ export interface ContainerInput {
     readonly backend: InputBackend
     /** Call once per frame, before game logic. */
     beginFrame(): void
+    /**
+     * Whether this frame saw a press that grants user activation (share.ts):
+     * one applied at this frame's boundary, or one waiting for the next. The
+     * second is a press a Button's onClick answers before the container's
+     * frame drains it, since Unity's loop and the container's are two
+     * callbacks of one animation frame, in either order.
+     */
+    activated(): boolean
     /** Clears everything. For hot reload and game restart. */
     reset(): void
 }
@@ -170,6 +185,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     private _modifiers = 0
     /** Keys that went down this frame, in the order they did. See note 5. */
     private _pressedInOrder: string[] = []
+    private _activationFrame = -1
+    private _activationsQueued = 0
 
     private _buttons = 0
     /** Whether the press now held began on UI; meaningful while a button is down. */
@@ -245,6 +262,18 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     blur(): void {
         this._queue.push(() => this._applyBlur())
+    }
+
+    activate(): void {
+        this._activationsQueued++
+        this._queue.push(() => {
+            this._activationsQueued--
+            this._activationFrame = this._frame
+        })
+    }
+
+    activated(): boolean {
+        return this._activationFrame === this._frame || this._activationsQueued > 0
     }
 
     // applied at the frame boundary
@@ -384,6 +413,8 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     reset(): void {
         this._queue = []
+        this._activationFrame = -1
+        this._activationsQueued = 0
         this._touches = []
         this._keys.clear()
         this._pressedInOrder = []

@@ -19,6 +19,7 @@
 import type * as api from "./index"
 import { stageOf, type Stage } from "./stage"
 import { createContainerInput, type ContainerInput } from "./input"
+import { setPressCheck } from "./share"
 import { createPressProbe } from "./over-ui"
 import { setAssetBase } from "./asset"
 import { setPlayContext, type PlayContext } from "./play"
@@ -166,6 +167,8 @@ export function getCurrentRuntime(): HostRuntime | null {
 export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     const input = createContainerInput({ overUI: createPressProbe(options.root) })
     if (options.inputSource !== "host") setInputBackend(input.backend)
+    // A browser's rule for share() and copy(), so only where the browser feeds input.
+    setPressCheck(options.inputSource !== "host" ? () => input.activated() : null)
     setAssetBase(options.assetBase ?? null)
     setPlayContext(options.play ?? null)
 
@@ -243,6 +246,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             remount = null
             callbacks.clear()
             setInputBackend(null)
+            setPressCheck(null)
             setAssetBase(null)
             setPlayContext(null)
             if (current === oj) {

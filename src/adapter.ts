@@ -31,6 +31,7 @@
 
 import type { InputSink } from "./input"
 import { setPageHidden } from "./play"
+import { setShareBrowser, type ShareData } from "./share"
 
 /**
  * Keys whose browser default would fight the game.
@@ -89,9 +90,18 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         return [event.clientX, event.clientY]
     }
 
+    /*
+     * The events that grant a page user activation, which share.ts needs, as
+     * HTML defines them: a keydown other than Escape, a mouse button going
+     * down, and a touch or pen lifting. A finger going down grants nothing on
+     * a phone, so a share asked for in the frame a touch began would be
+     * refused there; the tap counts in the frame it ends, which is also the
+     * frame a Button's onClick fires in.
+     */
     const onKeyDown = (event: any) => {
         if (preventDefault && PREVENT_DEFAULT_CODES.has(event.code)) event.preventDefault()
         sink.keyDown(event.code)
+        if (event.key !== "Escape") sink.activate()
     }
     const onKeyUp = (event: any) => { sink.keyUp(event.code) }
     // A touch drives both paths. UI Toolkit needs the pointer so a tap can press
@@ -108,11 +118,13 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         const [x, y] = at(event)
         sink.pointerDown(event.button, x, y)
         if (isTouch(event)) sink.touchDown(event.pointerId, x, y)
+        if (event.pointerType === "mouse") sink.activate()
     }
     const onPointerUp = (event: any) => {
         const [x, y] = at(event)
         sink.pointerUp(event.button, x, y)
         if (isTouch(event)) sink.touchUp(event.pointerId, x, y, event.type === "pointercancel")
+        if (event.type === "pointerup" && event.pointerType !== "mouse") sink.activate()
     }
     const onWheel = (event: any) => {
         if (preventDefault) event.preventDefault()
@@ -149,6 +161,14 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     view.document?.addEventListener?.("visibilitychange", onVisibility)
     if (view.document?.hidden === true) setPageHidden(true)
 
+    // The share sheet and the clipboard, called by share.ts in the frame of a press.
+    const nav = view.navigator
+    setShareBrowser({
+        share: typeof nav?.share === "function" ? (data: ShareData) => nav.share(data) : null,
+        canShare: typeof nav?.canShare === "function" ? (data: ShareData) => nav.canShare(data) : null,
+        copy: typeof nav?.clipboard?.writeText === "function" ? (text: string) => nav.clipboard.writeText(text) : null,
+    })
+
     return () => {
         view.removeEventListener("keydown", onKeyDown, capture)
         view.removeEventListener("keyup", onKeyUp, capture)
@@ -159,5 +179,6 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         view.removeEventListener("wheel", onWheel, wheelOptions)
         view.removeEventListener("blur", onBlur)
         view.document?.removeEventListener?.("visibilitychange", onVisibility)
+        setShareBrowser(null)
     }
 }

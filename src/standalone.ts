@@ -25,12 +25,33 @@
 import { createRuntime, getCurrentRuntime, type ContainerRuntime } from "./runtime"
 import { createHostInputBackend, IDLE_INPUT, NO_INPUT_WARNING } from "./hostinput"
 import { createPressProbe } from "./over-ui"
+import { setShareBrowser, type ShareBrowser } from "./share"
 import { setInputBackend } from "onejs-unity/input"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
 // no runtime binding is created.
 // eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
+
+/**
+ * share() and copy() in an ejected cart: no share sheet, and Unity's own
+ * clipboard, which is the system's in a desktop or phone player. Not in a
+ * WebGL player, where Unity keeps it inside the canvas and the page's
+ * clipboard never sees it, so a copy there answers "refused" rather than a
+ * "copied" nobody can paste.
+ */
+export function unityClipboard(unity: any = globalThis.CS?.UnityEngine): ShareBrowser {
+    let web = true
+    try {
+        web = unity?.GUIUtility === undefined || unity.Application.platform === unity.RuntimePlatform.WebGLPlayer
+    } catch {
+        // No answer is not a clipboard.
+    }
+    return {
+        share: null,
+        copy: web ? null : async (text: string) => { unity.GUIUtility.systemCopyBuffer = text },
+    }
+}
 
 /** The standalone runtime, if mount() has started one. */
 let standalone: ContainerRuntime | null = null
@@ -174,6 +195,7 @@ export function startStandalone(): ContainerRuntime {
         console.warn(NO_INPUT_WARNING)
         setInputBackend(IDLE_INPUT)
     }
+    setShareBrowser(unityClipboard())
 
     let last = { width: size?.width ?? 0, height: size?.height ?? 0, dpr: pixelRatio() }
     // null rather than 0 for "no frame yet": a timestamp of exactly 0 is a
@@ -207,6 +229,7 @@ export function startStandalone(): ContainerRuntime {
     globalThis.__onTeardown?.(() => {
         standalone?.dispose()
         standalone = null
+        setShareBrowser(null)
     })
 
     return standalone
