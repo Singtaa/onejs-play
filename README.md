@@ -897,6 +897,8 @@ points every command at another origin; `OJ_HOME` moves the cache. `push` and `s
 
 ```bash
 npm test          # vitest, including ojplay test over every example (needs Chrome and the network)
+npm run test:unit # everything but the two *.e2e.test.ts files, which drive Chrome
+npm run test:e2e  # just those two
 npm run typecheck # tsc twice: strict, then strict off as the Play editor compiles oj (tsconfig.loose.json)
 ```
 
@@ -908,8 +910,12 @@ four-core CI runner, always one on Windows; `OJ_SWEEP_LIMIT` overrides it), and
 a run with no result after three minutes is interrupted and fails with what it
 printed. The sweep ends by printing Chrome's start times (median, p90, worst,
 against the limit) and the run lengths. About two and a half minutes on a
-four-core runner, five on Windows; `npx vitest run --exclude
-cli/examples.e2e.test.ts` skips it while iterating on something else.
+four-core runner, five on Windows; `npm run test:unit` skips it while iterating on something else.
+
+CI runs `test:unit` and then `test:e2e` as two steps rather than `npm test`.
+Run together, the e2e files' software-rendered Chrome starved the unit workers
+on a Windows runner: a worker's report to vitest went unanswered for vitest's
+60 s limit, and the run went red with every test passing.
 
 An example written for the next runtime line, whose API the live runtime does
 not have yet, says so in its oj.json: `"runtime": "1.2"` is the oldest line it

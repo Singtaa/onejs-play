@@ -91,6 +91,11 @@ jobs:
 
       - run: npm run lint --if-present
 
-      # --if-present: a package with no test script yet is not a failure here,
-      # so this workflow starts gating tests the day they are added.
-      - run: npm run test --if-present
+      # Two steps, unit files first and the e2e files after, so they never share
+      # the runner. The e2e files drive headless Chrome drawing in software,
+      # and beside the unit workers they starved a Windows runner three times
+      # on 6 Nov 2026: a worker's report to vitest went unanswered for its
+      # 60 s limit and the run went red with every test passing.
+      - run: npm run test:unit
+
+      - run: npm run test:e2e

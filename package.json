@@ -33,6 +33,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.loose.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude \"**/*.e2e.test.ts\"",
+    "test:e2e": "vitest run .e2e.test",
     "test:watch": "vitest"
   },
   "dependencies": {
