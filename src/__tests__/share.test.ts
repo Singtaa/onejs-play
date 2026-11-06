@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createDomInputAdapter } from "../adapter"
 import { createRuntime } from "../runtime"
-import { copy, setPressCheck, setShareBrowser, share, type ShareBrowser } from "../share"
+import { copy, setPressCheck, setShareBrowser, share } from "../share"
 import { unityClipboard } from "../standalone"
 
 /**
