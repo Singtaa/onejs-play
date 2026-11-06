@@ -93,6 +93,10 @@ export type {
 export { useSwipe, SWIPE_THRESHOLD } from "./gesture"
 export type { SwipeDirection, SwipeOptions } from "./gesture"
 
+// Thumb controls for phones: sticks under a thumb, pads that stay put.
+export { useStick, usePad, Stick, Pad } from "./stick"
+export type { StickState, PadState, StickOptions } from "./stick"
+
 // math
 
 export { Mathf } from "./mathf"

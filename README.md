@@ -25,6 +25,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `mount.ts` | `mount()` and `useStage()` |
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
+| `stick.tsx` | `useStick`, `usePad`, `<Stick>`, `<Pad>`: thumb controls for phones, read off `input.touches` |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
 | `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
 | `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes; `unload`: the pictures and models it no longer needs, freed |
