@@ -757,3 +757,78 @@ describe("what the cold review asked of behaviour", () => {
         w.dispose()
     })
 })
+
+describe("what the second cold read found", () => {
+    it("moves a kinematic body by a velocity it holds, through a rewind, and throws on moving a static one", async () => {
+        const w = await floored()
+        const lift = w.box({ at: [0, 1, 0], size: [2, 0.2, 2], kinematic: true })
+        lift.velocity = [0, 1, 0]
+        expect(lift.velocity).toEqual([0, 1, 0])
+        run(w, 60)
+        expect(lift.position[1]).toBeCloseTo(2, 2)
+        const saved = w.snapshot()
+        run(w, 30)
+        w.restore(saved)
+        run(w, 60)
+        expect(lift.position[1]).toBeCloseTo(3, 2)
+        lift.addVelocity([0, -1, 0])
+        run(w, 30)
+        expect(lift.position[1]).toBeCloseTo(3, 2)
+        expect(() => lift.push([0, 1, 0])).toThrow(/kinematic/)
+        const wall = w.box({ at: [5, 1, 0] })
+        expect(() => { wall.velocity = [1, 0, 0] }).toThrow(/static/)
+        expect(() => wall.push([1, 0, 0])).toThrow(/static/)
+        expect(() => wall.addVelocity([1, 0, 0])).toThrow(/static/)
+        w.dispose()
+    })
+
+    it("tells a standing character, and the ball, when a ball hits the character", async () => {
+        const w = await floored()
+        const me = w.character({ at: [0, 0, 0] })
+        const ball = w.sphere({ at: [3, 1, 0], radius: 0.2, dynamic: true })
+        ball.velocity = [-10, 0, 0]
+        const mine: unknown[] = [], balls: unknown[] = []
+        let speed = 0
+        me.onTouch((other, contact) => { if (other === ball) { mine.push(other); speed = contact.speed } })
+        ball.onTouch((other) => { balls.push(other) })
+        run(w, 60)
+        expect(mine).toEqual([ball])
+        expect(speed).toBeCloseTo(10, 0)
+        expect(balls).toContain(me)
+        w.dispose()
+    })
+
+    it("walks along the ground, so an up in a walk does not lift the character", async () => {
+        const w = await floored()
+        const me = w.character({ at: [0, 0, 0] })
+        me.walk([1, 5, 0])
+        run(w, 60)
+        expect(me.position[1]).toBeCloseTo(0, 1)
+        expect(me.position[0]).toBeCloseTo(1, 1)
+        expect(me.grounded).toBe(true)
+        w.dispose()
+    })
+
+    it("lets go of the actor of a body a rewind takes away, and finds characters in an overlap", async () => {
+        const w = await floored()
+        const saved = w.snapshot()
+        let gone = 0
+        const actor = { destroy: () => { gone++ } } as any
+        const later = w.box({ at: [0, 3, 0], actor })
+        w.restore(saved)
+        expect(later.alive).toBe(false)
+        expect(gone).toBe(1)
+        const me = w.character({ at: [2, 0, 0] })
+        expect(w.overlap(shape.sphere({ radius: 1 }), [2, 0.8, 0])).toContain(me)
+        w.dispose()
+    })
+
+    it("turns a body by one angle, the rest 0", async () => {
+        const w = await floored()
+        const b = w.box({ at: [0, 1, 0], rotation: { pitch: 20 } })
+        b.rotation = { yaw: 90 }
+        expect(b.rotation.yaw).toBeCloseTo(90, 3)
+        expect(b.rotation.pitch).toBeCloseTo(0, 3)
+        w.dispose()
+    })
+})

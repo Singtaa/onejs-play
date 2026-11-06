@@ -277,3 +277,45 @@ describe("2D visibility, seen from above", () => {
         expect(wrong).toBe(0)
     })
 })
+
+describe("what the second cold read found, in 2D", () => {
+    it("puts a character's element on its middle, where the element's centre is", async () => {
+        const placed: ElementPlacement[][] = []
+        setElementPlacer((list) => placed.push(list.map((p) => ({ ...p }))))
+        try {
+            const w = await floored()
+            w.character({ at: [100, 600], height: 160, actor: { name: "hero" } })
+            ;(w as unknown as { syncActors(): void }).syncActors()
+            expect(near(placed.at(-1)![0]!.at, [100, 520], 1.5)).toBe(true)
+            w.dispose()
+        } finally {
+            setElementPlacer(null)
+        }
+    })
+
+    it("skips a 2D character or body in a query", async () => {
+        const w = await floored()
+        const me = w.character({ at: [100, 600] })
+        const crate = w.box({ at: [300, 520], size: [40, 40] })
+        expect(w.raycast([0, 520], [400, 520])?.body).toBe(me)
+        expect(w.raycast([0, 520], [400, 520], { skip: [me] })?.body).toBe(crate)
+        expect(w.raycast([0, 520], [400, 520], { skip: [me, crate] })).toBeNull()
+        w.dispose()
+    })
+
+    it("walks every way in a world with no gravity, and only across in one with it", async () => {
+        const top = await createWorld2D({ gravity: [0, 0] })
+        const a = top.character({ at: [100, 100] })
+        a.walk([0, -300])
+        run(top, 60)
+        expect(a.position[1]).toBeLessThan(-150)
+        top.dispose()
+        const side = await floored()
+        const b = side.character({ at: [100, 600] })
+        b.walk([300, -300])
+        run(side, 60)
+        expect(b.position[1]).toBeCloseTo(600, 0)
+        expect(b.position[0]).toBeGreaterThan(350)
+        side.dispose()
+    })
+})

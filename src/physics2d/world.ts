@@ -22,10 +22,16 @@
 import { loadRapier2D, type Rapier2D } from "./rapier"
 import { placeElements, resolveElement, type ElementActor, type ElementPlacement } from "./elements"
 import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim, type Defaults, type Placement } from "../physics/core"
-import type { Layer, Filter } from "../physics3d/world"
+import type { Layer } from "../physics3d/world"
 
-export type { Layer, Filter } from "../physics3d/world"
+export type { Layer } from "../physics3d/world"
 export type { ElementActor } from "./elements"
+
+/** Which bodies a query sees: only these layers, and never these layers or bodies. */
+export interface Filter2D {
+    only?: readonly Layer[]
+    skip?: readonly (Layer | Body2D | Character2D)[]
+}
 
 /** A point or a vector on the stage, in pixels: [x, y], y down. */
 export type Vec2 = [number, number]
@@ -149,7 +155,10 @@ export interface Body2D {
     position: Vec2
     /** Degrees, clockwise. */
     rotation: number
-    /** Pixels per second. */
+    /**
+     * Pixels per second. A kinematic body holds a velocity it is given and
+     * moves by it every step: a lift, a platform, a door. A static one throws.
+     */
     velocity: Vec2
     readonly dynamic: boolean
     readonly kinematic: boolean
@@ -162,9 +171,9 @@ export interface Body2D {
     tag: unknown
     /** False once destroyed, or rewound out of existence by `world.restore`. */
     readonly alive: boolean
-    /** A shove, in kilogram pixels per second, so a heavy body moves less. */
+    /** A shove, in kilogram pixels per second, so a heavy body moves less: at the default density a 100 px crate is 500 kg, so `addVelocity` is usually what a game wants. Dynamic bodies only. */
     push(impulse: Vec2): void
-    /** A change of speed whatever the mass: `addVelocity([0, -500])` throws anything up at 500 px/s more. */
+    /** A change of speed whatever the mass: `addVelocity([0, -500])` throws anything up at 500 px/s more. A kinematic body adds it to the velocity it holds. */
     addVelocity(velocity: Vec2): void
     /** Each time something starts touching it, after the step. Returns an unsubscribe. */
     onTouch(handler: (other: Body2D | Character2D, contact: Contact2D) => void): () => void
@@ -196,7 +205,7 @@ export interface Character2D {
     walk(velocity: Vec2): void
     /** Up, as high as `height` pixels against the world's gravity. Call it while `grounded` for one jump. */
     jump(height: number): void
-    /** Puts its feet exactly at `at`. `world.clearSpot` finds somewhere it fits. */
+    /** Puts its feet exactly at `at`. `world.clearSpot` finds where its middle fits; its feet are half its height below. */
     teleport(at: Vec2): void
     onTouch(handler: (other: Body2D | Character2D, contact: Contact2D) => void): () => void
     onTouchEnd(handler: (other: Body2D | Character2D) => void): () => void
@@ -235,20 +244,24 @@ export interface Motions2D extends Places2D {
     within: number
 }
 
-export interface ClearSpot2DOptions extends Filter {
+export interface ClearSpot2DOptions extends Filter2D {
     /** How far from `near` to look, in pixels. 1000 by default. */
     within?: number
 }
 
-export interface Slide2DOptions extends Filter {
+export interface Slide2DOptions extends Filter2D {
+    /** 30 by default. */
     radius?: number
+    /** Feet to the top of its head. 160 by default. */
     height?: number
+    /** The tallest ledge it walks up. 30 by default. */
     stepHeight?: number
+    /** The steepest slope it climbs, in degrees. 45 by default. */
     slope?: number
 }
 
 /** How far `world.visibility` sees, and what it sees past. */
-export interface Sight2DOptions extends Filter {
+export interface Sight2DOptions extends Filter2D {
     /** In pixels. 1000 by default. */
     within?: number
 }
@@ -268,14 +281,14 @@ export interface World2D {
     outline(options: OutlineOptions): Body2D
     character(options?: Character2DOptions): Character2D
     /** The first thing on the line from `from` to `to`, or null. */
-    raycast(from: Vec2, to: Vec2, filter?: Filter): Hit2D | null
+    raycast(from: Vec2, to: Vec2, filter?: Filter2D): Hit2D | null
     /** Whether nothing the filter sees is between `from` and `target`; a body as the target is looked at in its middle and does not hide itself. */
-    canSee(from: Vec2, target: Vec2 | Body2D | Character2D, filter?: Filter): boolean
+    canSee(from: Vec2, target: Vec2 | Body2D | Character2D, filter?: Filter2D): boolean
     /** A shape moved from `from` to `to`: where it first meets something, or null. */
-    sweep(shape: Shape2D, from: Vec2, to: Vec2, filter?: Filter): Hit2D | null
+    sweep(shape: Shape2D, from: Vec2, to: Vec2, filter?: Filter2D): Hit2D | null
     /** Every body a shape placed at `at` overlaps. */
-    overlap(shape: Shape2D, at: Vec2, filter?: Filter): Body2D[]
-    /** The nearest place to `near` where a shape fits without overlapping anything solid, or null when nowhere `within` does. */
+    overlap(shape: Shape2D, at: Vec2, filter?: Filter2D): (Body2D | Character2D)[]
+    /** The nearest place to `near` where a shape centred there fits without overlapping anything solid, or null when nowhere `within` does. */
     clearSpot(shape: Shape2D, near: Vec2, options?: ClearSpot2DOptions): Vec2 | null
     /** A character's move without a character: where it ends and whether it stands. */
     slide(from: Vec2, delta: Vec2, options?: Slide2DOptions): Slid2D
@@ -369,7 +382,8 @@ function dim2(pixelsPerMeter: number): Dim<Vec2, number | undefined, ElementActo
             }
             placeElements(out)
         },
-        release: () => {},
+        release: () => false,
+        characterActorAt: "middle",
     }
 }
 

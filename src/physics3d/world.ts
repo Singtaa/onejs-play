@@ -145,8 +145,13 @@ export interface Body {
     readonly world: World
     /** Its centre. Assign to teleport it; a kinematic body travels there over the next step. */
     position: Vec3
-    rotation: Readonly<Rotation>
-    /** Metres per second. */
+    get rotation(): Readonly<Rotation>
+    /** Any angle left out is 0: `body.rotation = { yaw: 90 }`. */
+    set rotation(rotation: Partial<Rotation>)
+    /**
+     * Metres per second. A kinematic body holds a velocity it is given and
+     * moves by it every step: a lift, a platform, a door. A static one throws.
+     */
     velocity: Vec3
     readonly dynamic: boolean
     readonly kinematic: boolean
@@ -159,9 +164,9 @@ export interface Body {
     tag: unknown
     /** False once destroyed, or rewound out of existence by `world.restore`. */
     readonly alive: boolean
-    /** A shove, in kilogram metres per second, so a heavy body moves less: `push([0, 500, 0])` throws a 500 kg crate up at 1 m/s. */
+    /** A shove, in kilogram metres per second, so a heavy body moves less: `push([0, 500, 0])` throws a 500 kg crate up at 1 m/s. Dynamic bodies only. */
     push(impulse: Vec3): void
-    /** A change of speed whatever the mass: `addVelocity([0, 5, 0])` throws anything up at 5 m/s more. */
+    /** A change of speed whatever the mass: `addVelocity([0, 5, 0])` throws anything up at 5 m/s more. A kinematic body adds it to the velocity it holds. */
     addVelocity(velocity: Vec3): void
     /** Each time something starts touching it, after the step. Returns an unsubscribe. */
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
@@ -199,7 +204,7 @@ export interface Character {
     walk(velocity: Vec3): void
     /** Up, as high as `height` metres against the world's gravity. Call it while `grounded` for one jump. */
     jump(height: number): void
-    /** Puts its feet exactly at `at`. `world.clearSpot` finds somewhere it fits. */
+    /** Puts its feet exactly at `at`. `world.clearSpot` finds where its middle fits; its feet are half its height below. */
     teleport(at: Vec3): void
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
     onTouchEnd(handler: (other: Body | Character) => void): () => void
@@ -317,9 +322,9 @@ export interface World {
     /** A shape moved from `from` to `to`: where it first meets something, or null. */
     sweep(shape: Shape, from: Vec3, to: Vec3, filter?: Filter): Hit | null
     /** Every body a shape placed at `at` overlaps. */
-    overlap(shape: Shape, at: Vec3, filter?: Filter): Body[]
+    overlap(shape: Shape, at: Vec3, filter?: Filter): (Body | Character)[]
     /**
-     * The nearest place to `near`, at its height, where a shape fits without
+     * The nearest place to `near`, at its height, where a shape centred there fits without
      * overlapping anything solid, or null when nowhere `within` does.
      */
     clearSpot(shape: Shape, near: Vec3, options?: ClearSpotOptions): Vec3 | null
@@ -405,7 +410,8 @@ const DIM3: Dim<Vec3, Partial<Rotation> | undefined, Actor> = {
         : kind === "sphere" ? new r.Ball(d[0]!)
             : new r.Capsule(capsuleHalf(d[0]!, d[1]!), d[0]!),
     place: (list) => placeActors(list as unknown as ActorPlacement[]),
-    release: (actor) => actor.destroy(),
+    release: (actor) => { actor.destroy(); return true },
+    characterActorAt: "feet",
 }
 
 /** Shapes as values, taking the options the world's bodies take: `shape.capsule({ radius: 0.3, height: 1.6 })`. Usable once any world exists. */

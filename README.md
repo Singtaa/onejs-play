@@ -465,6 +465,17 @@ Things that are not obvious from the code:
 - **`slide` keeps a walker per shape.** A sensor capsule in no collision group
   on a fixed body, which no query or contact sees; `restore` drops them with
   the orphans and they are made again when next asked for.
+- **A kinematic body glides by a held velocity.** Writing `velocity` on one
+  stores it, and each step moves its next position by it before the pipeline
+  runs (`stepGlide`), so a lift needs one line; the snapshot keeps it. Static
+  bodies throw on velocity, `push` and `addVelocity`, rather than ignore them.
+- **A character hears both kinds of touch.** Its controller reports what it
+  walks into; what a dynamic body runs into it with comes from the engine's
+  contact events, deduplicated against the controller's through one set of
+  touching handles, which the 5 cm check ends either way.
+- **`walk` is along the ground.** The wish loses its component along up
+  before it is applied, unless gravity is zero (a top-down world), where it
+  walks every way.
 - **`visibility` is rays, refined.** A fan of 128 rays across the floor at eye
   height, plus one at each collider in range so a thin pillar between two of
   them is not missed. Where neighbours meet different things the gap is halved

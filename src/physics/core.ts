@@ -39,8 +39,14 @@ export interface Dim<V extends readonly number[], R, A> {
     shape(r: any, kind: string, dims: readonly number[]): any
     /** Moves every listed actor to its body, in one go if the host can. */
     place(list: readonly Placement<V, A>[]): void
-    /** What happens to a destroyed body's actor: a 3D actor goes with it; a 2D element is React's, and stays. */
-    release(actor: A): void
+    /**
+     * What happens to the actor of a body that is gone: a 3D actor goes with
+     * it, and this is true; a 2D element is React's and stays, and this is
+     * false, so the body keeps it and carries it again if a rewind revives it.
+     */
+    release(actor: A): boolean
+    /** Where a character's actor goes: its feet in 3D, where a model's origin is; its middle in 2D, where an element's centre is. */
+    readonly characterActorAt: "feet" | "middle"
 }
 
 export interface Placement<V, A> {
@@ -229,6 +235,8 @@ export class WorldCore<V extends readonly number[], R, A> {
     /** Every body and character, by its collider's handle. */
     readonly byCollider = new Map<number, Thing<V, R, A>>()
     readonly characters = new Set<CharacterCore<V, R, A>>()
+    /** Kinematic bodies moving at a velocity the game set, each step. */
+    readonly gliding = new Set<BodyCore<V, R, A>>()
     readonly stepSeconds: number
     private accumulated = 0
     steps = 0
@@ -621,7 +629,8 @@ export class WorldCore<V extends readonly number[], R, A> {
 
     step(): void {
         this.live()
-        // Characters walk first, each by its held wish for exactly one step.
+        // Kinematic bodies glide and characters walk first, each by what it holds, for exactly one step.
+        for (const b of this.gliding) b.stepGlide(this.stepSeconds)
         for (const c of this.characters) c.stepWalk(this.stepSeconds)
         // The pipeline itself, as World.step calls it, without World.step's
         // mapNewSoftBodies: that wraps what the engine made on its own (pieces a
@@ -643,16 +652,22 @@ export class WorldCore<V extends readonly number[], R, A> {
                 if (b.trigger) b.emitTrigger(started, a)
                 return
             }
-            // A character's touches come from its controller, which sees them
-            // whether or not the engine generated a contact.
-            if (a.kind === "character" || b.kind === "character") return
+            // A character's touches come from its controller, which sees what
+            // the character walks into. What a dynamic body runs into a
+            // character with, the controller never sees, so that comes from here.
+            if (a instanceof CharacterCore || b instanceof CharacterCore) {
+                if (!started) return
+                const [character, other] = a instanceof CharacterCore ? [a, b] : [b as CharacterCore<V, R, A>, a]
+                if (other instanceof BodyCore && other.dynamic) character.touchedBy(other, () => this.contactOf(h1, h2, a, b))
+                return
+            }
             if (!started) {
                 a.emitTouchEnd(b)
                 b.emitTouchEnd(a)
                 return
             }
             if (!a.listening && !b.listening) return
-            const contact = this.contactOf(h1, h2, a as BodyCore<V, R, A>, b as BodyCore<V, R, A>)
+            const contact = this.contactOf(h1, h2, a, b)
             a.emitTouch(b, contact)
             b.emitTouch(a, contact)
         })
@@ -665,7 +680,7 @@ export class WorldCore<V extends readonly number[], R, A> {
      * the pair's reduced mass is the change of speed, which is (1 + bounce)
      * times the speed they met at.
      */
-    private contactOf(h1: number, h2: number, a: BodyCore<V, R, A>, b: BodyCore<V, R, A>): ContactOf<V> {
+    private contactOf(h1: number, h2: number, a: { inverseMass(): number }, b: { inverseMass(): number }): ContactOf<V> {
         const d = this.dim
         let point: V | null = null, impulse = 0
         const c1 = this.raw.getCollider(h1), c2 = this.raw.getCollider(h2)
@@ -704,6 +719,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         const engine: Uint8Array = this.raw.takeSnapshot()
         const own: Record<number, number[]> = {}
         for (const c of this.characters) own[c.colliderHandle] = c.saveState()
+        for (const b of this.gliding) own[b.colliderHandle] = b.saveState()
         const text = asciiBytes(JSON.stringify(own))
         const out = new Uint8Array(engine.length + text.length + 4)
         out.set(engine, 0)
@@ -737,6 +753,8 @@ export class WorldCore<V extends readonly number[], R, A> {
         for (const [handle, w] of [...this.byCollider]) {
             if (restored.getCollider(handle) === null || restored.getCollider(handle) === undefined) {
                 w.markGone()
+                w.releaseActor()
+                this.gliding.delete(w as BodyCore<V, R, A>)
                 this.byCollider.delete(handle)
                 this.characters.delete(w as CharacterCore<V, R, A>)
                 this.bury(w)
@@ -753,6 +771,7 @@ export class WorldCore<V extends readonly number[], R, A> {
             c.rebuildController()
             c.loadState(own[c.colliderHandle])
         }
+        for (const w of this.byCollider.values()) if (w instanceof BodyCore && w.kinematic) w.loadState(own[w.colliderHandle])
         old.free()
     }
 
@@ -776,6 +795,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         this.byCollider.delete(w.colliderHandle)
         this.fresh.delete(w.colliderHandle)
         if (w instanceof CharacterCore) this.characters.delete(w)
+        else this.gliding.delete(w)
         this.bury(w)
     }
 
@@ -862,8 +882,36 @@ export class BodyCore<V extends readonly number[], R, A> {
     /** The middle of it, where `canSee` looks. */
     middle(): V { return this.position }
 
-    get velocity(): V { return fromE(this.d, this.d.a(this.rb().linvel())) }
-    set velocity(v: V) { this.rb().setLinvel(this.d.e(toE(this.d, v)), true) }
+    /** A kinematic body's velocity, held: it moves by this every step until changed. */
+    private held: EVec | null = null
+
+    get velocity(): V {
+        if (this.kinematic && this.held !== null) return fromE(this.d, this.held)
+        return fromE(this.d, this.d.a(this.rb().linvel()))
+    }
+    set velocity(v: V) {
+        const rb = this.rb()
+        if (this.dynamic) rb.setLinvel(this.d.e(toE(this.d, v)), true)
+        else if (this.kinematic) this.hold(toE(this.d, v))
+        else throw new Error(`[oj] a static ${this.kind} does not move; make it kinematic to move it, or dynamic to let the simulation`)
+    }
+
+    /** Holds a kinematic body's velocity, gliding it every step while it is not still. */
+    private hold(v: EVec | null): void {
+        this.held = v !== null && v.some((x) => x !== 0) ? v : null
+        if (this.held === null) this.world.gliding.delete(this)
+        else this.world.gliding.add(this)
+    }
+
+    /** One step of a kinematic body's held velocity, from wherever it is going next. */
+    stepGlide(dt: number): void {
+        if (this.held === null || this.gone) return
+        const rb = this.world.raw.getRigidBody(this.bodyHandle)
+        rb.setNextKinematicTranslation(this.d.e(add(this.d.a(rb.nextTranslation()), scale(this.held, dt))))
+    }
+
+    saveState(): number[] { return this.held ?? [] }
+    loadState(s: number[] | undefined): void { this.hold(s !== undefined && s.length === this.d.n ? s : null) }
 
     get mass(): number { return this.rb().mass() }
     set mass(m: number) { this.collider().setMass(m) }
@@ -872,11 +920,16 @@ export class BodyCore<V extends readonly number[], R, A> {
     get bounce(): number { return this.collider().restitution() }
     set bounce(b: number) { this.collider().setRestitution(b) }
 
-    push(impulse: V): void { this.rb().applyImpulse(this.d.e(toE(this.d, impulse)), true) }
+    push(impulse: V): void {
+        if (!this.dynamic) throw new Error(`[oj] push moves a dynamic body, which has a mass; this ${this.kind} is ${this.kinematic ? "kinematic: set its velocity instead" : "static"}`)
+        this.rb().applyImpulse(this.d.e(toE(this.d, impulse)), true)
+    }
 
     addVelocity(v: V): void {
         const rb = this.rb()
-        rb.setLinvel(this.d.e(add(this.d.a(rb.linvel()), toE(this.d, v))), true)
+        if (this.dynamic) rb.setLinvel(this.d.e(add(this.d.a(rb.linvel()), toE(this.d, v))), true)
+        else if (this.kinematic) this.hold(add(this.held ?? zero(this.d), toE(this.d, v)))
+        else throw new Error(`[oj] a static ${this.kind} does not move; make it kinematic to move it, or dynamic to let the simulation`)
     }
 
     /** 0 for anything the simulation does not move, which no touch can slow. */
@@ -932,8 +985,12 @@ export class BodyCore<V extends readonly number[], R, A> {
         this.world.raw.removeRigidBody(this.rb())
         this.world.forget(this)
         this.gone = true
-        if (this.actor !== null) this.d.release(this.actor)
-        this.actor = null
+        this.releaseActor()
+    }
+
+    /** Lets its actor go with it, or keeps an actor that stays (see Dim.release). */
+    releaseActor(): void {
+        if (this.actor !== null && this.d.release(this.actor)) this.actor = null
     }
 
     revive(): void { this.gone = false }
@@ -1086,7 +1143,10 @@ export class CharacterCore<V extends readonly number[], R, A> {
         // lost 3% of every walk, and froze outright when placed on the floor).
         const standing = this.isGrounded && this.fall <= 0
         this.fall = standing ? 0 : this.fall + g * dt
-        const wish = scale(add(this.wish, scale(d.up, this.fall)), dt)
+        // Walking is along the ground: up and down are a jump's and gravity's.
+        // With no gravity there is no ground, and it walks every way.
+        const along = g === 0 ? this.wish : sub(this.wish, scale(d.up, dot(this.wish, d.up)))
+        const wish = scale(add(along, scale(d.up, this.fall)), dt)
         const collider = this.world.raw.getCollider(this.colliderHandle)
         this.controller.computeColliderMovement(collider, d.e(wish), this.world.r.QueryFilterFlags.EXCLUDE_SENSORS, this.walkGroups)
         const m = d.a(this.controller.computedMovement())
@@ -1121,7 +1181,8 @@ export class CharacterCore<V extends readonly number[], R, A> {
         const d = this.d
         const now = new Set<number>()
         const n = this.controller.numComputedCollisions()
-        const asked = add(this.wish, scale(d.up, this.fall))
+        const g = dot(d.a(this.world.raw.gravity), d.up)
+        const asked = add(g === 0 ? this.wish : sub(this.wish, scale(d.up, dot(this.wish, d.up))), scale(d.up, this.fall))
         for (let i = 0; i < n; i++) {
             const hit = this.controller.computedCollision(i)
             const handle = hit?.collider?.handle
@@ -1177,7 +1238,23 @@ export class CharacterCore<V extends readonly number[], R, A> {
 
     onTouch(handler: (other: any, contact: ContactOf<V>) => void): () => void {
         this.touchHandlers.add(handler)
+        // So the engine reports what runs into it as well as what it walks into.
+        this.world.raw.getCollider(this.colliderHandle).setActiveEvents(this.world.r.ActiveEvents.COLLISION_EVENTS)
         return () => { this.touchHandlers.delete(handler) }
+    }
+
+    /**
+     * A dynamic body ran into it: a touch, unless it is already touching.
+     * Its end comes from the character's own check for what is still within
+     * 5 cm, as a touch the controller found does.
+     */
+    touchedBy(other: BodyCore<V, R, A>, contact: () => ContactOf<V>): void {
+        if (this.gone || this.touching.has(other.colliderHandle)) return
+        this.touching.add(other.colliderHandle)
+        if (!this.listening && !other.listening) return
+        const c = contact()
+        this.emitTouch(other, c)
+        other.emitTouch(this, c)
     }
 
     onTouchEnd(handler: (other: any) => void): () => void {
@@ -1197,7 +1274,7 @@ export class CharacterCore<V extends readonly number[], R, A> {
 
     placement(): Placement<V, A> | null {
         if (this.actor === null || this.gone) return null
-        return { actor: this.actor, at: this.position, rotation: null }
+        return { actor: this.actor, at: this.d.characterActorAt === "middle" ? this.middle() : this.position, rotation: null }
     }
 
     syncActor(): void {
@@ -1216,8 +1293,11 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.world.raw.removeRigidBody(this.rb())
         this.world.forget(this)
         this.markGone()
-        if (this.actor !== null) this.d.release(this.actor)
-        this.actor = null
+        this.releaseActor()
+    }
+
+    releaseActor(): void {
+        if (this.actor !== null && this.d.release(this.actor)) this.actor = null
     }
 
     revive(): void {
