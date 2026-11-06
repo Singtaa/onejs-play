@@ -413,9 +413,14 @@ room.name, room.nameOf(id)   // the signed-in handle, or a guest name like "Bris
 
 Quick play lets the site pick the room: `useRoom({ max: 12 }, handlers)` joins
 the newest room of this cart with a seat, or starts one. `room.roomName` is the
-room it chose, for an invite link; the host calls `room.setJoinable(false)`
-while a match is under way so nobody is dropped into the middle of it, and
-`{ pool: "teams", max: 8 }` keeps a mode's players together.
+room it chose; the host calls `room.setJoinable(false)` while a match is under
+way so nobody is dropped into the middle of it, and `{ pool: "teams", max: 8 }`
+keeps a mode's players together.
+
+`room.inviteUrl` is a link to the cart's page that brings a friend into this
+room (`?room=q.ffa.3`), while it has a seat and is joinable; otherwise they are
+matched as anybody else. Runs from the editor get rooms of their own, so
+testing a change never puts you in a match with the cart's players.
 
 A dropped connection that comes back within a minute gets its own id and name
 back, so a game keeps its score; `onJoin` says `back`. A page that is hidden (a

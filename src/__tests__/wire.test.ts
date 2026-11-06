@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { EMPTY_ROOM, applyWire, isHost, type RoomState } from "../wire"
+import { EMPTY_ROOM, applyWire, inviteLink, invitedRoom, isHost, type RoomState } from "../wire"
 
 /**
  * The rules a relay client follows, tested without a socket.
@@ -210,5 +210,25 @@ describe("isHost", () => {
      */
     it("is true when the room has said nothing yet", () => {
         expect(isHost(EMPTY_ROOM)).toBe(true)
+    })
+})
+
+describe("invites", () => {
+    it("asks for the invited room only when it is one of this pool's", () => {
+        expect(invitedRoom("q.ffa.3", "ffa")).toBe("q.ffa.3")
+        expect(invitedRoom("q.teams.3", "ffa")).toBe("")
+        expect(invitedRoom(undefined, "ffa")).toBe("")
+    })
+
+    it("puts a quick play room on the cart's page, and nothing on a named room's", () => {
+        expect(inviteLink("https://play.onejs.com/sai/gunyard", true, "q.ffa.3")).toBe("https://play.onejs.com/sai/gunyard?room=q.ffa.3")
+        expect(inviteLink("https://play.onejs.com/c/abc?x=1", true, "q.ffa.3")).toBe("https://play.onejs.com/c/abc?x=1&room=q.ffa.3")
+        expect(inviteLink("https://play.onejs.com/sai/chat", false, "lobby")).toBe("https://play.onejs.com/sai/chat")
+    })
+
+    it("has no link before the room is known or with no site behind the game", () => {
+        expect(inviteLink("https://play.onejs.com/sai/gunyard", true, "")).toBe("")
+        expect(inviteLink(undefined, true, "q.ffa.3")).toBe("")
+        expect(inviteLink("", false, "lobby")).toBe("")
     })
 })

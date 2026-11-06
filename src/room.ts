@@ -45,9 +45,14 @@
  *
  * `useRoom({ max: 12 })` asks the site for a room rather than naming one: the
  * newest room of this cart's pool that has a seat and whose host has not said
- * `room.setJoinable(false)`, or a new one. `room.roomName` says which, for an
- * invite link, and a reconnect goes back to that room rather than being
- * matched again. `pool` keeps modes apart (`{ pool: "teams", max: 8 }`).
+ * `room.setJoinable(false)`, or a new one. `room.roomName` says which, and a
+ * reconnect goes back to that room rather than being matched again. `pool`
+ * keeps modes apart (`{ pool: "teams", max: 8 }`).
+ *
+ * `room.inviteUrl` is the cart's page with that room on it (`?room=`):
+ * whoever opens it is sent to the same room while it has a seat and is
+ * joinable, and matched as usual when it has not. The editor's runs have
+ * rooms of their own, apart from the cart's players.
  *
  *     const room = useRoom("lobby", {
  *         onMessage: (from, data) => others.set(from, data),
@@ -57,7 +62,7 @@
  */
 
 import { useEffect, useRef, useState } from "react"
-import { EMPTY_ROOM, applyWire, isHost as roomIsHost } from "./wire"
+import { EMPTY_ROOM, applyWire, invitedRoom, inviteLink, isHost as roomIsHost } from "./wire"
 import type { RoomState, Wire } from "./wire"
 import { getPlayContext, socketUrl, isPageHidden, onPageHidden } from "./play"
 
@@ -132,6 +137,12 @@ export interface Room {
     /** The room you are in: the name you gave, or the one quick play chose. "" before the welcome. */
     readonly roomName: string
     /**
+     * A link that brings a friend into this room: the cart's page, with the
+     * room on it for quick play. "" before the welcome, and with no site
+     * behind the game.
+     */
+    readonly inviteUrl: string
+    /**
      * Whether quick play may send more players here. The host's call (a match
      * under way, say), ignored from anybody else; an empty room starts open.
      */
@@ -199,6 +210,7 @@ export function useRoom(where: string | QuickPlay, options: RoomOptions = {}): R
             get hostId() { return live.current.hostId },
             get name() { return live.current.name },
             get roomName() { return live.current.room !== "" ? live.current.room : live.current.connected ? name : "" },
+            get inviteUrl() { return inviteLink(getPlayContext()?.page, quick !== null, this.roomName) },
             setJoinable(on: boolean) {
                 const ws = socket.current
                 if (ws === null || ws.readyState !== 1) return
@@ -258,9 +270,12 @@ export function useRoom(where: string | QuickPlay, options: RoomOptions = {}): R
          * and its own seat instead of being matched into another.
          */
         let joined = ""
+        // The room an invite link named, asked for until a welcome says where this hook is.
+        const invited = quick === null ? "" : invitedRoom(context.room, quick.pool)
         const address = () => joined !== ""
             ? `${socketUrl(`/rooms/${encodeURIComponent(joined)}`)}?${query}`
-            : `${socketUrl(`/rooms/${encodeURIComponent(name)}`)}?${query}${quick === null ? "" : `&quick=${quick.max}`}`
+            : `${socketUrl(`/rooms/${encodeURIComponent(name)}`)}?${query}${quick === null ? ""
+                : `&quick=${quick.max}${invited === "" ? "" : `&at=${encodeURIComponent(invited)}`}`}`
 
         closed.current = false
         let retry = RETRY_MIN_MS

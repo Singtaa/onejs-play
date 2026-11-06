@@ -173,3 +173,25 @@ export function applyWire(state: RoomState, wire: Wire): { state: RoomState; eve
             return { state, events }
     }
 }
+
+/**
+ * The room an invite link named, when it is one quick play made in this pool
+ * (`q.<pool>.<n>`), else "". The site checked its shape before handing it
+ * over; the pool is checked here, since the link names one.
+ */
+export function invitedRoom(room: string | undefined, pool: string): string {
+    return room !== undefined && room.startsWith(`q.${pool}.`) ? room : ""
+}
+
+/**
+ * The address to send a friend so they land in this room: the cart's page,
+ * with the quick play room on it. A named room needs nothing on it, since
+ * everybody who opens the page joins that room anyway. "" with no site
+ * behind the game, and for quick play before the room is known.
+ */
+export function inviteLink(page: string | undefined, quick: boolean, roomName: string): string {
+    if (page === undefined || page === "") return ""
+    if (!quick) return page
+    if (roomName === "") return ""
+    return `${page}${page.includes("?") ? "&" : "?"}room=${encodeURIComponent(roomName)}`
+}

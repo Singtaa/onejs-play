@@ -27,6 +27,10 @@ export interface PlayContext {
      * page. Leaderboards here are for fun, and are described that way.
      */
     token?: string
+    /** The quick play room an invite link named, which useRoom asks for first. */
+    room?: string
+    /** The cart's page on the site, which `room.inviteUrl` is made from. */
+    page?: string
 }
 
 let context: PlayContext | null = null
