@@ -22,7 +22,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | Module | Contents |
 |---|---|
 | `index.ts` | The game-facing surface, aliased to `oj` |
-| `mount.ts` | `mount()` and `useStage()` |
+| `mount.ts` | `mount()`, `useStage()` and `useLateFrame()`, the late phase of the frame clock |
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stick.tsx` | `useStick`, `usePad`, `<Stick>`, `<Pad>`: thumb controls for phones, read off `input.touches` |
@@ -42,7 +42,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
-| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows and lights |
+| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
@@ -50,7 +50,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
 | `show.ts` | `show`: a value, a table or a graph beside the line that made it, in the OJPlay editor; a log line on change anywhere else |
 | `container.ts` | The host-facing surface, `ojplay/container` |
-| `runtime.ts` | Container-side: builds the `oj` object a game receives, and runs each frame in three phases: the frame (`useFrame`), the step (worlds), late (cameras) |
+| `runtime.ts` | Container-side: builds the `oj` object a game receives, and runs each frame in three phases: the frame (`useFrame`), the step (worlds), late (cameras). Given `pendingCompiles`, it holds every phase behind the cart's first screen until its programs have drawn once, at most `FIRST_DRAW_CAP` (2 s), then starts with a 1/60 frame |
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `input.ts` | Container-side: the input backend onejs-unity reads through, with the pointer lock's state (asked in a press's frame, else on the next press) |
@@ -427,10 +427,18 @@ Three things that are not obvious from the code:
   wrong as text, which `scene.mesh` and `set` throw as an `[oj]` error. A typed
   array crosses as it is, so a `set` each frame copies nothing in JS. One that
   became a collider refuses `set`, since a collider is made once.
+  `scene.mesh(data, { depthOnly: true })` asks `SetDepthOnly` before the
+  first vertices, and throws where the host cannot (an older OneJS, or HDRP),
+  since a depth-only fan drawn in colour would be seen.
 - **A scatter has no actors.** `scene.scatter` sends every copy in one
   Float32Array, and the bridge draws them as instanced chunks with no
   GameObject, so copies cost a draw call a chunk rather than a GameObject
   each, and have nothing an actor has (collider, pick, animation).
+- **`scene.texture` is lent, not owned.** It is onejs-react's `LentTexture`:
+  each program or pass that reads it acquires it once and releases it when
+  it stops, and the scene counts its own readers, so a release after the
+  scene is disposed, or one too many, never takes a reader from the next
+  scene. The bridge draws the scene into it only while one is counted.
 - **The panel goes transparent while a scene is live.** `mount` reads its
   backdrop through `useBackdrop`, which is an external store rather than an
   effect, because a scene is created in a child's effect, which React runs

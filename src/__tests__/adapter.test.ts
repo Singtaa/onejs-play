@@ -388,3 +388,51 @@ describe("pointer lock", () => {
         expect(page.view.total()).toBe(0)
     })
 })
+
+describe("input.pointerType through the page", () => {
+    const press = (pointerType: string) => ({ pointerType, pointerId: 7, button: 0, buttons: 1, clientX: 5, clientY: 5 })
+
+    it("guesses from the page's primary pointer until a press says, then is the last press's", () => {
+        let coarse = true
+        const view = fakeView({ matchMedia: (q: string) => ({ matches: q === "(pointer: coarse)" && coarse }) })
+        const input = createContainerInput()
+        const detach = createDomInputAdapter(input.sink, { view })
+        expect(b(input).GetPointerType()).toBe("touch")
+        coarse = false
+        expect(b(input).GetPointerType(), "a tablet's mode can change it").toBe("mouse")
+        view.fire("pointerdown", press("touch"))
+        view.fire("pointerup", press("touch"))
+        input.beginFrame()
+        expect(b(input).GetPointerType()).toBe("touch")
+        view.fire("pointerdown", press("pen"))
+        input.beginFrame()
+        expect(b(input).GetPointerType()).toBe("pen")
+        view.fire("pointerdown", press("mouse"))
+        input.beginFrame()
+        expect(b(input).GetPointerType()).toBe("mouse")
+        view.fire("pointerdown", press("kinect"))
+        input.beginFrame()
+        expect(b(input).GetPointerType(), "a type it does not know changes nothing").toBe("mouse")
+        detach()
+    })
+
+    it("is no press for a moved mouse, and keeps the last press across a restart", () => {
+        const view = fakeView({ matchMedia: () => ({ matches: false }) })
+        const input = createContainerInput()
+        const detach = createDomInputAdapter(input.sink, { view })
+        view.fire("pointerdown", press("touch"))
+        view.fire("pointerup", press("touch"))
+        input.beginFrame()
+        view.fire("pointermove", { pointerType: "mouse", pointerId: 1, button: -1, buttons: 0, clientX: 50, clientY: 50 })
+        input.beginFrame()
+        expect(b(input).GetPointerType()).toBe("touch")
+        input.reset()
+        expect(b(input).GetPointerType()).toBe("touch")
+        detach()
+        expect(b(input).GetPointerType()).toBe("touch")
+    })
+
+    it("is the mouse with no page to ask", () => {
+        expect(b(createContainerInput()).GetPointerType()).toBe("mouse")
+    })
+})

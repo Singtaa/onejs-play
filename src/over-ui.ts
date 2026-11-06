@@ -26,7 +26,8 @@
  * A View the size of the stage with a press handler of its own (a camera's
  * drag, a tap-to-jump area) answers every press, so every press read as UI
  * and a stick beside it went dead with nothing said (learn Mac's lesson 1,
- * runtime-1.3.md section 10b). An element with the class `oj-world` is the
+ * runtime-1.3.md section 10b). A `<View passThrough>`, or any element with
+ * the class `oj-world` it adds, is the
  * game's: the walk passes over it and keeps looking above it, so a button
  * inside it is still UI. The class is asked only of an element that has a
  * handler, so a press costs nothing more until one does. When the element
@@ -35,19 +36,24 @@
  * also right.
  */
 
+import { PASS_THROUGH_CLASS } from "onejs-react"
+
 /** The handlers that make an element something a press is for. */
 export const PRESS_EVENTS: readonly string[] = ["click", "pointerdown", "pointerup", "mousedown", "mouseup", "change"]
 
 /** How far up the tree to look: deeper than any HUD, shallow enough to bound a walk that went wrong. */
 const MAX_DEPTH = 64
 
-/** The class that makes an element the game's: a press through it is not over UI. */
-export const WORLD_CLASS = "oj-world"
+/**
+ * The class that makes an element the game's: a press through it is not over
+ * UI. What `<View passThrough>` adds, so the prop and the class are one marker.
+ */
+export const WORLD_CLASS = PASS_THROUGH_CLASS
 
 /** Said once, the first time an element about the stage's size answers a press. */
 export const STAGE_SIZED_HINT = "[oj] Every press reads as overUI here: a View the size of the stage has a press handler, "
     + "so input.mouse.overUI, touch.overUI and useStick treat the whole screen as UI. "
-    + `If its presses are the game's (a camera drag, a tap anywhere), give it className="${WORLD_CLASS}".`
+    + `If its presses are the game's (a camera drag, a tap anywhere), give it passThrough (<View passThrough>).`
 
 /** Each side at least this share of the stage's reads as the stage's size. */
 const STAGE_SHARE = 0.9

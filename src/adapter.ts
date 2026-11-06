@@ -165,6 +165,9 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     const onPointerDown = (event: any) => {
         const [x, y] = at(event)
         sink.pointerDown(event.button, x, y)
+        // A tap's pointerdown says "touch"; the browser's compatibility mouse
+        // events that follow it are not listened to, so it never reads as a click.
+        sink.pointerType(event.pointerType)
         if (isTouch(event)) sink.touchDown(event.pointerId, x, y)
         if (event.pointerType === "mouse") sink.activate()
     }
@@ -223,6 +226,11 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
         doc.addEventListener("pointerlockerror", onLockError)
     }
     sink.setPointerLock(lockHost)
+    // The page's primary pointer, read each time until a press says, since a
+    // tablet's mode can change it. A touchscreen laptop guesses the mouse.
+    sink.setPointerGuess(typeof view.matchMedia === "function"
+        ? () => view.matchMedia("(pointer: coarse)")?.matches === true ? "touch" : "mouse"
+        : null)
 
     // The share sheet and the clipboard, called by share.ts in the frame of a press.
     const nav = view.navigator
@@ -250,6 +258,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
             if (isLocked()) doc.exitPointerLock()
         }
         sink.setPointerLock(null)
+        sink.setPointerGuess(null)
         setShareBrowser(null)
     }
 }

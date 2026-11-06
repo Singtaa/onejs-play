@@ -162,6 +162,16 @@ export interface InputSink {
     /** The browser said the pointer is locked to the game, or no longer is. */
     pointerLocked(locked: boolean): void
     /**
+     * A press's pointer, a pointerdown's `pointerType`: "mouse", "touch" or
+     * "pen" (anything else is ignored). `input.pointerType` reads the last.
+     */
+    pointerType(type: string): void
+    /**
+     * What `input.pointerType` reads before any press: the page's guess at its
+     * device ("(pointer: coarse)"), or null for "mouse".
+     */
+    setPointerGuess(guess: (() => "mouse" | "touch") | null): void
+    /**
      * Focus was lost, so release everything held.
      *
      * Without this, alt-tabbing while holding a key leaves it held forever,
@@ -212,6 +222,10 @@ class ContainerInputImpl implements ContainerInput, InputSink {
     /** A lock() asked for outside a press, waiting for the next one. */
     private _lockArmed = false
     private _locked = false
+
+    /** The last press's pointer, kept across a restart: the device has not changed. */
+    private _pointerType: "mouse" | "touch" | "pen" | null = null
+    private _pointerGuess: (() => "mouse" | "touch") | null = null
 
     private _buttons = 0
     /** Whether the press now held began on UI; meaningful while a button is down. */
@@ -318,6 +332,15 @@ class ContainerInputImpl implements ContainerInput, InputSink {
 
     pointerLocked(locked: boolean): void {
         this._queue.push(() => { this._locked = locked })
+    }
+
+    pointerType(type: string): void {
+        if (type !== "mouse" && type !== "touch" && type !== "pen") return
+        this._queue.push(() => { this._pointerType = type })
+    }
+
+    setPointerGuess(guess: (() => "mouse" | "touch") | null): void {
+        this._pointerGuess = guess
     }
 
     /**
@@ -570,6 +593,7 @@ class ContainerInputImpl implements ContainerInput, InputSink {
             LockMouse: () => this._lock(),
             UnlockMouse: () => this._unlock(),
             IsMouseLocked: () => this._locked,
+            GetPointerType: () => this._pointerType ?? this._pointerGuess?.() ?? "mouse",
         }
     }
 

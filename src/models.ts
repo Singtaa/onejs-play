@@ -23,7 +23,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetUrl } from "./asset"
-import { toRGBA, type ColorInput } from "onejs-react"
+import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
@@ -80,6 +80,17 @@ export interface MeshModelOptions extends MeshData {
     color?: ColorInput
 }
 
+/** How a mesh model draws, fixed when it is made. */
+export interface MeshDrawOptions {
+    /**
+     * Writes depth and no colour: it hides what is behind it without being
+     * seen, as a shadow cut out of the world does. Drawn before the opaque
+     * models so its depth is down first, it casts no shadow, and its colour
+     * and alpha draw nothing.
+     */
+    depthOnly?: boolean
+}
+
 /**
  * A `set`: new positions, and anything else that changes. Indices left out
  * stay as they were. Normals, colours and UVs come with every set that changes
@@ -100,6 +111,12 @@ export interface MeshModel extends Model {
     /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
     destroy(): void
 }
+
+/**
+ * The scene as a texture, for a program to read: `textures={{ scene: scene.texture }}`.
+ * While any program reads it, the scene draws only into it, and not to the screen.
+ */
+export type SceneTexture = LentTexture
 
 /** One copy in a scatter. y, yaw (degrees) and scale default to 0, 0 and 1. */
 export interface ScatterCopy {
@@ -219,7 +236,23 @@ export interface AmbientOptions {
     intensity?: number
 }
 
-/** Fog that thickens from `near` to `far`, in the background colour unless given one. */
+/**
+ * A sky behind the world: a gradient from the horizon up to `top` and down to
+ * `bottom`, the sun's disc where the scene's sun shines from, in its colour,
+ * and stars. Every field defaults, so `scene.sky()` is a clear day.
+ */
+export interface SkyOptions {
+    top?: ColorInput
+    horizon?: ColorInput
+    /** Below the horizon. The horizon's colour when left out. */
+    bottom?: ColorInput
+    /** The disc: `size` degrees across, with a glow reaching `glow` degrees out. `false` for none. */
+    sun?: { size?: number, glow?: number } | false
+    /** From 0, none, to 1. */
+    stars?: number
+}
+
+/** Fog that thickens from `near` to `far`, in the sky's horizon colour or else the background's unless given one. */
 export interface FogOptions {
     color?: ColorInput
     near?: number
@@ -233,6 +266,8 @@ export interface SceneOptions {
     ambient?: AmbientOptions
     /** The colour behind the world. */
     background?: ColorInput
+    /** A sky behind the world instead of the background colour. */
+    sky?: SkyOptions | false
     /** Off unless asked for. */
     fog?: FogOptions | false
 }
@@ -245,8 +280,11 @@ export interface Scene {
      *
      *     const land = scene.mesh({ positions, indices, color: "#6b8f4e" })
      *     scene.spawn(land)
+     *
+     * `{ depthOnly: true }` makes one that hides what is behind it and draws
+     * nothing itself.
      */
-    mesh(options: MeshModelOptions): MeshModel
+    mesh(data: MeshModelOptions, options?: MeshDrawOptions): MeshModel
     /**
      * Copies of a model that never move: a forest, rocks, grass. Far cheaper
      * than spawning each, and with nothing an actor has: no collider, no pick,
@@ -257,6 +295,19 @@ export interface Scene {
      *     const forest = scene.scatter(pine, trees)
      */
     scatter(model: Model, copies: readonly ScatterCopy[] | Float32Array): Scatter
+    /**
+     * The scene drawn into a texture instead of the screen, for a program to
+     * read: a colour grade, a blur, an outline over the whole world.
+     *
+     *     <ShaderProgram program={grade} textures={{ scene: scene.texture }}
+     *         style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }} />
+     *
+     * The first program that reads it points the camera at it, and the last to
+     * stop gives the scene back to the screen, so it costs nothing until read.
+     * While read, the scene is only where a program draws it. Each frame it is
+     * drawn just before the programs are, so they read this frame's picture.
+     */
+    readonly texture: SceneTexture
     pointLight(options: PointLightOptions): PointLight
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
@@ -270,6 +321,16 @@ export interface Scene {
     background(color: ColorInput): void
     /** Changes the fog, only what it names, or `false` to clear it. */
     fog(options: FogOptions | false): void
+    /**
+     * A sky behind the world, changing only what it names, or `false` for the
+     * background colour again. `scene.sky()` is a clear day.
+     *
+     *     scene.sky({ top: "#0b1a3a", horizon: "#f4a261", sun: { size: 2 } })
+     *
+     * With fog, the horizon fades into the fog's colour, and fog given no
+     * colour of its own takes the sky's horizon, so the ground and the sky meet.
+     */
+    sky(options?: SkyOptions | false): void
     /**
      * Holds every actor's clips and dissolves where they are, for a pause menu.
      * Each actor keeps its own `speed` for when the scene goes again. The camera
@@ -289,6 +350,7 @@ export const SCENE_DEFAULTS = deepFreeze({
     ambient: { sky: "#b8c6d9", ground: "#4a443d", intensity: 0.9 },
     background: "#14181d",
     fog: { near: 10, far: 40 },
+    sky: { top: "#2f6fd6", horizon: "#cfe6f7", sun: { size: 2, glow: 12 }, stars: 0 },
     pointLight: { color: "#ffffff", intensity: 1, range: 10 },
 })
 
@@ -406,6 +468,26 @@ function indexList(list: MeshData["indices"] | undefined): Uint32Array | Uint16A
 
 function rootElement(): any {
     return getCurrentRuntime()?.root ?? globalThis.__root
+}
+
+/** Said once: a host without AcquireSceneTexture. */
+let saidNoSceneTexture = false
+/** Said once: a host without SetSky. */
+let saidNoSky = false
+
+type SkyNow = { top: ColorInput, horizon: ColorInput, bottom?: ColorInput, sun: { size: number, glow: number } | false, stars: number }
+
+/** `o` over `was` (or the defaults), every colour parsed so a typo throws before anything changes. */
+function nextSky(was: SkyNow | null, o: SkyOptions, d: typeof SCENE_DEFAULTS): SkyNow {
+    const base: SkyNow = was ?? { ...d.sky, sun: { ...d.sky.sun } }
+    const sun = o.sun === undefined ? base.sun
+        : o.sun === false ? false
+        : { ...(base.sun || d.sky.sun), ...o.sun }
+    const next: SkyNow = { ...base, ...o, sun, stars: o.stars ?? base.stars }
+    rgb(next.top, "sky top")
+    rgb(next.horizon, "sky horizon")
+    if (next.bottom !== undefined) rgb(next.bottom, "sky bottom")
+    return next
 }
 
 /** Any colour oj takes as the three sRGB floats the bridge takes. `what` names it in the error. */
@@ -537,6 +619,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     let sunNow = options.sun === false ? null : { ...d.sun, ...options.sun }
     let ambientNow = { ...d.ambient, ...options.ambient }
     let fogNow = options.fog === undefined || options.fog === false ? null : { ...d.fog, ...options.fog }
+    let skyNow = options.sky === undefined || options.sky === false ? null : nextSky(null, options.sky, d)
     rgb(backgroundColor, "background")
     if (sunNow !== null) rgb(sunNow.color, "sun color")
     rgb(ambientNow.sky, "ambient sky")
@@ -559,7 +642,22 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const applyAmbient = () => b.SetAmbient(...rgb(ambientNow.sky), ...rgb(ambientNow.ground), ambientNow.intensity)
     const applyFog = () => {
         if (fogNow === null) b.SetFog(false, 0, 0, 0, 0, 0)
-        else b.SetFog(true, ...rgb(fogNow.color ?? backgroundColor), fogNow.near, fogNow.far)
+        else b.SetFog(true, ...rgb(fogNow.color ?? skyNow?.horizon ?? backgroundColor), fogNow.near, fogNow.far)
+    }
+    // Nothing is sent for a scene that never has a sky, so an older host hears nothing of it.
+    let skySent = false
+    const applySky = () => {
+        if (skyNow === null && !skySent) return
+        if (typeof b.SetSky !== "function") {
+            if (!saidNoSky) console.warn("[oj] scene.sky needs a newer OneJS: this host's ModelBridge has no sky (it came after 3.9.18), so the scene keeps its background colour.")
+            saidNoSky = true
+            return
+        }
+        skySent = true
+        if (skyNow === null) { b.SetSky(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); return }
+        const sun = skyNow.sun
+        b.SetSky(true, ...rgb(skyNow.top), ...rgb(skyNow.horizon), ...rgb(skyNow.bottom ?? skyNow.horizon),
+            sun ? sun.size : 0, sun ? sun.glow : 0, skyNow.stars)
     }
 
     b.BeginScene()
@@ -568,6 +666,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     applyAmbient()
     b.SetBackground(...rgb(backgroundColor))
     applyFog()
+    applySky()
 
     // Animation updates itself in play mode; the edit-mode preview has to step it.
     const preview = globalThis.__isPlaying === false
@@ -651,9 +750,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return actor
     }
 
-    const mesh = (o: MeshModelOptions): MeshModel => {
+    const mesh = (o: MeshModelOptions, draw: MeshDrawOptions = {}): MeshModel => {
         if (typeof b.CreateMesh !== "function") {
             throw new Error("[oj] scene.mesh needs a newer OneJS: this host's ModelBridge cannot make a model from arrays (CreateMesh came after 3.9.18).")
+        }
+        if (draw.depthOnly === true && typeof b.SetDepthOnly !== "function") {
+            throw new Error("[oj] scene.mesh depthOnly needs a newer OneJS: this host's ModelBridge cannot draw a mesh as depth alone (SetDepthOnly came after 3.9.18).")
         }
         const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
         // The streams a model is made with are its streams for good.
@@ -671,6 +773,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         const id: number = b.CreateMesh(normals, colors, uvs, ...color)
         try {
+            if (draw.depthOnly === true && !b.SetDepthOnly(id)) {
+                throw new Error("[oj] scene.mesh depthOnly: this host draws models with a renderer that cannot write depth without colour (HDRP), so it would be seen.")
+            }
             write(o, "scene.mesh")
         } catch (e) {
             b.Unload(id)
@@ -741,6 +846,28 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
     }
 
+    // Readers this scene counted, so a release after the scene is gone, or one
+    // too many, never takes a reader from the next scene.
+    let readers = 0
+    const texture: SceneTexture = Object.freeze({
+        [LENT_TEXTURE]: true as const,
+        acquire() {
+            if (disposed) return null
+            if (typeof b.AcquireSceneTexture !== "function") {
+                if (!saidNoSceneTexture) console.warn("[oj] scene.texture needs a newer OneJS: this host's ModelBridge cannot draw the scene into a texture (it came after 3.9.18), so the program reads nothing.")
+                saidNoSceneTexture = true
+                return null
+            }
+            readers++
+            return b.AcquireSceneTexture()
+        },
+        release() {
+            if (disposed || readers === 0) return
+            readers--
+            b.ReleaseSceneTexture()
+        },
+    })
+
     const pointLight = (o: PointLightOptions): PointLight => {
         let position = vec3(o.position)
         let color = o.color ?? d.pointLight.color
@@ -766,6 +893,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         spawn,
         mesh,
         scatter,
+        texture,
         pointLight,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
@@ -797,6 +925,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (next?.color !== undefined) rgb(next.color, "fog color")
             fogNow = next
             applyFog()
+        },
+        sky(o = {}) {
+            skyNow = o === false ? null : nextSky(skyNow, o, d)
+            applySky()
+            // Fog with no colour of its own is the sky's horizon, so it follows.
+            if (fogNow !== null && fogNow.color === undefined) applyFog()
         },
         get paused() { return paused },
         set paused(on: boolean) {

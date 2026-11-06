@@ -92,7 +92,22 @@ export interface HostRuntime {
      * Not on oj's declarations. Errors as `onFrame`'s.
      */
     onLateFrame(callback: FrameCallback): () => void
+    /**
+     * The cart's first screen has committed (mount calls it): where the host
+     * compiles programs off the frame, the clock holds from here until they
+     * have drawn once or FIRST_DRAW_CAP seconds pass, so a program's first
+     * draw and the cart's first frame are one frame. Once per runtime; later
+     * calls, and programs mounted later, hold nothing. Not on oj's declarations.
+     */
+    armFirstDraw(): void
+    /** True while the clock holds for the first screen's programs. */
+    readonly holding: boolean
+    /** Calls back when a hold ends, returning an unsubscribe. */
+    onHoldChange(callback: () => void): () => void
 }
+
+/** The longest the first screen's programs hold the clock, in seconds (Tachi: keep the 2 s cap). */
+export const FIRST_DRAW_CAP = 2
 
 /**
  * A host runtime that also carries the whole oj surface.
@@ -147,6 +162,14 @@ export interface RuntimeOptions {
      * a backend with nothing feeding it and read no input at all.
      */
     inputSource?: "container" | "host"
+    /**
+     * How many of the page's programs are still compiling (OneJS's
+     * `SLProgramBridge.PendingCompiles`). Given, the clock holds behind the
+     * cart's first screen until it reads 0 (see `armFirstDraw`), asked once a
+     * frame only while it holds. Left out (natively, where a program compiles
+     * as it is made), nothing holds.
+     */
+    pendingCompiles?: () => number
 }
 
 /** What the container holds. Games only ever see `oj`. */
@@ -211,6 +234,26 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     setPlayContext(options.play ?? null)
 
     const time: TimeState = { now: 0, dt: 0, realDt: 0, frame: 0 }
+
+    // The first screen's hold: "idle" until the cart's first commit arms it,
+    // "holding" until its programs have drawn or the cap passes, then "done".
+    let hold: "idle" | "holding" | "done" = options.pendingCompiles ? "idle" : "done"
+    let heldFor = 0
+    const holdListeners = new Set<() => void>()
+    const endHold = () => {
+        hold = "done"
+        for (const listener of [...holdListeners]) listener()
+        holdListeners.clear()
+    }
+    // A host's count that cannot be read (an older OneJS) is no reason to wait.
+    const pending = (): number => {
+        try {
+            const n = Number(options.pendingCompiles!())
+            return Number.isFinite(n) ? n : 0
+        } catch {
+            return 0
+        }
+    }
     let stage = stageOf(options.viewport?.width ?? 0, options.viewport?.height ?? 0, options.viewport?.pixelRatio)
 
     // The three phases, in the order beginFrame runs them.
@@ -269,6 +312,17 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             lates.add(callback)
             return () => lates.delete(callback)
         },
+        armFirstDraw() {
+            if (hold === "idle") hold = "holding"
+        },
+        get holding() {
+            return hold === "holding"
+        },
+        onHoldChange(callback) {
+            if (hold === "done") return () => {}
+            holdListeners.add(callback)
+            return () => holdListeners.delete(callback)
+        },
     }
     current = oj
     // onejs-react's useFrame runs on this runtime's frames, so it pauses with
@@ -283,6 +337,13 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         input,
 
         beginFrame(dtSeconds: number, realSeconds: number = dtSeconds) {
+            if (hold === "holding") {
+                heldFor += realSeconds
+                if (pending() > 0 && heldFor < FIRST_DRAW_CAP) return
+                endHold()
+                // The first frame is a normal one, not the time held.
+                dtSeconds = realSeconds = 1 / 60
+            }
             time.dt = dtSeconds
             time.realDt = realSeconds
             time.now += dtSeconds
@@ -302,6 +363,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
         },
         dispose() {
             remount = null
+            holdListeners.clear()
             callbacks.clear()
             steps.clear()
             lates.clear()

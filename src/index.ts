@@ -54,7 +54,7 @@ export type { Stage } from "./stage"
 
 // entry point and frame clock
 
-export { mount, useStage } from "./mount"
+export { mount, useStage, useLateFrame } from "./mount"
 export { useFrame } from "onejs-react"
 
 // transforms
@@ -69,7 +69,7 @@ export type { PathSink } from "./transform"
 // onejs-unity/input/backend.ts and ./input.ts.
 
 export { input, resolveKeyName, keyNameFromDomCode } from "onejs-unity/input"
-export type { Keyboard, Mouse, Gamepad, Touch } from "onejs-unity/input"
+export type { Keyboard, Mouse, Gamepad, Touch, PointerType } from "onejs-unity/input"
 
 // Sound, over Unity's AudioSource rather than WebAudio. WebAudio exists only in
 // a browser, so a game built on it could never leave the web, which is why the
@@ -104,8 +104,8 @@ export type { Nav, NavOptions } from "./nav/nav"
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
 export type {
     Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
-    Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions,
-    MeshData, MeshModelOptions, MeshUpdate, MeshModel, Numbers, Scatter, ScatterCopy,
+    Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions, SkyOptions,
+    MeshData, MeshModelOptions, MeshDrawOptions, MeshUpdate, MeshModel, Numbers, Scatter, ScatterCopy, SceneTexture,
 } from "./models"
 
 // Gestures over `input`, so a game does not rewrite the same state machine.

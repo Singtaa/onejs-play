@@ -21,6 +21,8 @@ let answer: string
 let unloads: boolean
 // What Scatter answers: a handle, or 0 for a model it cannot draw that way.
 let scatterAnswer: number | null
+// What SetDepthOnly answers: false where the renderer cannot mask colour.
+let depthAnswer: boolean
 
 function recorder(): any {
     let next = 40
@@ -32,6 +34,7 @@ function recorder(): any {
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return answer
                 if (name === "Unload") return unloads
+                if (name === "SetDepthOnly") return depthAnswer
                 if (name === "Height") return 2.5
                 return undefined
             }
@@ -52,6 +55,7 @@ beforeEach(() => {
     answer = ""
     unloads = true
     scatterAnswer = null
+    depthAnswer = true
     savedCS = (globalThis as any).CS
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: recorder() } } }
 })
@@ -232,5 +236,36 @@ describe("scene.scatter", () => {
         dispose()
         rocks.destroy()
         expect(of("DestroyScatter")).toHaveLength(1)
+    })
+})
+
+describe("scene.mesh depthOnly", () => {
+    it("makes the model depth alone before it holds any vertices, and only when asked", () => {
+        const s = scene()
+        s.mesh(SQUARE)
+        expect(of("SetDepthOnly")).toHaveLength(0)
+        const fan = s.mesh(SQUARE, { depthOnly: true })
+        expect(of("SetDepthOnly")).toEqual([["SetDepthOnly", fan.id]])
+        const order = calls.map((c) => c[0]).filter((n) => n === "SetDepthOnly" || n === "SetMesh")
+        expect(order.slice(-2)).toEqual(["SetDepthOnly", "SetMesh"])
+    })
+
+    it("throws, keeping nothing, where the renderer cannot draw depth without colour", () => {
+        depthAnswer = false
+        const s = scene()
+        expect(() => s.mesh(SQUARE, { depthOnly: true })).toThrow(/cannot write depth without colour/)
+        expect(of("Unload")).toHaveLength(1)
+        expect(of("SetMesh")).toHaveLength(0)
+    })
+
+    it("throws before making anything on a OneJS without SetDepthOnly", () => {
+        const bridge = recorder()
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, {
+            get: (_t, name: string) => name === "SetDepthOnly" ? undefined : bridge[name],
+        }) } } }
+        const s = scene()
+        expect(() => s.mesh(SQUARE, { depthOnly: true })).toThrow(/depthOnly needs a newer OneJS/)
+        expect(of("CreateMesh")).toHaveLength(0)
+        expect(() => s.mesh(SQUARE)).not.toThrow()
     })
 })

@@ -22,7 +22,9 @@ const { mount } = await import("../mount")
 const { setInputBackend } = await import("onejs-unity/input")
 
 function Cart(_: { n: number }) { return null }
-const cartIn = (presented: ReactElement) => (presented.props as { children: ReactElement }).children
+// The cart sits inside the presenter and the FirstScreen that arms the first-draw clock.
+const childOf = (e: ReactElement) => (e.props as { children: ReactElement }).children
+const cartIn = (presented: ReactElement) => childOf(childOf(presented))
 
 afterEach(() => { rendered.length = 0; setInputBackend(null) })
 
