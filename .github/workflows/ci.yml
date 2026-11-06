@@ -13,7 +13,9 @@ on:
         default: ""
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # The Chrome a dispatched run names is part of the group, so runs on two
+  # Chrome builds go side by side rather than cancelling each other.
+  group: ci-${{ github.ref }}-${{ inputs.chrome }}
   cancel-in-progress: true
 
 jobs:
