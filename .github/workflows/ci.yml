@@ -11,11 +11,15 @@ on:
         description: "A Chrome for Testing version to run the e2e on, instead of the runner image's Chrome"
         required: false
         default: ""
+      sample:
+        description: "A label that keeps samples of one setup from cancelling each other"
+        required: false
+        default: ""
 
 concurrency:
   # The Chrome a dispatched run names is part of the group, so runs on two
   # Chrome builds go side by side rather than cancelling each other.
-  group: ci-${{ github.ref }}-${{ inputs.chrome }}
+  group: ci-${{ github.ref }}-${{ inputs.chrome }}-${{ inputs.sample }}
   cancel-in-progress: true
 
 jobs:
