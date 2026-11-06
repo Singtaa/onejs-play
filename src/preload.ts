@@ -4,7 +4,7 @@
  * Every loader already fetches lazily, on the first ask. `preload` asks
  * early, for the files a game knows it will need before it can start (a
  * level's models, its music), so the first frame that uses them does not
- * wait. Pictures and models land in the same caches the loaders share, so a
+ * wait. Pictures, models and fonts land in the same caches the loaders share, so a
  * later `useTexture` or `useModel` of the same name is instant; anything
  * else is fetched once so the browser holds it.
  *
@@ -17,11 +17,12 @@
  */
 
 import { loadTextAsync } from "onejs-unity/assets"
-import { assetInfo, assetNames, assetUrl, forgetTexture, loadTexture } from "./asset"
+import { assetInfo, assetNames, assetUrl, forgetFont, forgetTexture, loadFont, loadTexture } from "./asset"
 import { forgetModel, loadModel } from "./models"
 
 const IMAGE = /\.(png|jpe?g|svg)$/i
 const MODEL = /\.glb$/i
+const FONT = /\.(ttf|otf)$/i
 
 /** Each name, with a folder ("music/") opened into the build's files under it. */
 export function preloadNames(names: readonly string[]): string[] {
@@ -43,6 +44,7 @@ export async function preload(names: readonly string[], onProgress?: (got: numbe
     await Promise.all(files.map(async (name) => {
         if (IMAGE.test(name)) await loadTexture(name)
         else if (MODEL.test(name)) await loadModel(name)
+        else if (FONT.test(name)) await loadFont(name)
         else await loadTextAsync(assetUrl(name))
         got += size(name)
         onProgress?.(got, total)
@@ -51,7 +53,7 @@ export async function preload(names: readonly string[], onProgress?: (got: numbe
 
 /**
  * Lets go of files the game no longer needs, so their memory comes back:
- * pictures and models the loaders hold are freed, and the next use loads them
+ * pictures, models and fonts the loaders hold are freed, and the next use loads them
  * again. Takes the same names as preload, folders included:
  *
  *     unload(["levels/1/"])
@@ -65,5 +67,6 @@ export async function unload(names: readonly string[]): Promise<void> {
     await Promise.all(preloadNames(names).map(async (name) => {
         if (IMAGE.test(name)) await forgetTexture(name)
         else if (MODEL.test(name)) await forgetModel(name)
+        else if (FONT.test(name)) await forgetFont(name)
     }))
 }

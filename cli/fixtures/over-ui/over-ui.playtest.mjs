@@ -20,6 +20,17 @@ async function after(cart, send) {
     }, { timeoutMs: 3000, what: "the press to reach the cart" })
 }
 
+/**
+ * The button's clicks once they reach `want`, or what they are after 3 s. A
+ * Button's onClick fires on the release, which a slow renderer (Windows CI,
+ * 6 Nov) delivers a frame after the press `after` returns on, so reading the
+ * count with the press saw 0.
+ */
+async function clicksReaching(cart, want) {
+    const read = async () => JSON.parse(await cart.eval("JSON.stringify(globalThis.__clicks)"))
+    return cart.until(async () => ((await read()) >= want ? read() : null), { timeoutMs: 3000, what: `the button's clicks to reach ${want}` }).catch(read)
+}
+
 function expect(what, got, want) {
     if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
 }
@@ -27,7 +38,7 @@ function expect(what, got, want) {
 export default async function (cart) {
     const onButton = await after(cart, () => cart.click(...BUTTON))
     expect("a click on the button", onButton.presses.map((p) => [p.by, p.overUI]), [["mouse", true]])
-    expect("the button's clicks", onButton.clicks, 1)
+    expect("the button's clicks", await clicksReaching(cart, 1), 1)
     const onGame = await after(cart, () => cart.click(...GAME))
     expect("a click on the game", onGame.presses.map((p) => [p.by, p.overUI]), [["mouse", false]])
 
@@ -42,7 +53,7 @@ export default async function (cart) {
     const thumbOnButton = await after(cart, tap(...BUTTON))
     const touched = thumbOnButton.presses.filter((p) => p.by === "touch")
     expect("a thumb on the button: over UI, and the stick", touched.map((p) => [p.overUI, p.stick]), [[true, false]])
-    expect("the button's clicks after the tap", thumbOnButton.clicks, 2)
+    expect("the button's clicks after the tap", await clicksReaching(cart, 2), 2)
 
     // A thumb on the game's left half: the game's, and the stick takes it.
     const onGameByThumb = await after(cart, tap(...GAME))

@@ -27,8 +27,8 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stick.tsx` | `useStick`, `usePad`, `<Stick>`, `<Pad>`: thumb controls for phones, read off `input.touches` |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
-| `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `useFlipbook`, `loadSheet`: a game's own files |
-| `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes; `unload`: the pictures and models it no longer needs, freed |
+| `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `loadFont`, `useFont`, `useFlipbook`, `loadSheet`: a game's own files |
+| `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes; `unload`: the pictures, models and fonts it no longer needs, freed |
 | `audio.ts` | onejs-unity's `audio`, with `load` taking a bare file name, and `useSound` |
 | `scores.ts` | `scores` and `useLeaderboard` |
 | `room.ts` | `useRoom`: other people, over a relay |
@@ -280,6 +280,21 @@ before the first byte.
 
 ```tsx
 await preload(["models/ship.glb", "music/"], (got, total) => setBar(got / total))
+```
+
+**Fonts.** `loadFont(name)` resolves to a font from one of the cart's
+`.ttf` or `.otf` files, and `useFont(name)` returns it, or null while it
+loads, as `loadTexture` and `useTexture` do. Apply one with `fontFamily`,
+which is inherited, so a font on a container reaches every Text inside it.
+The container fetches the bytes and builds a dynamic font from them (OneJS
+`Network.LoadFontFromUrl`), one per file however many ask, so `preload` and
+`unload` take fonts as they take pictures. A family's name is not a font: no
+font is installed by name, and `fontFamily: "Arial"` says so once and draws
+in the default face.
+
+```tsx
+const title = useFont("fonts/Display.ttf")
+<View style={{ fontFamily: title }}><Text text="Level 1" /></View>
 ```
 
 **Loading first.** oj.json's `preload` lists files the cart needs before its

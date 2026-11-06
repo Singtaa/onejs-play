@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from "react"
 import { loadImageAsync, loadTextAsync } from "onejs-unity/assets"
-import type { SheetConfig, Texture } from "onejs-react"
+import type { Font, SheetConfig, Texture } from "onejs-react"
 import { setFileLoader } from "./physics3d/sources"
 
 // Type-level redeclaration only, so dynamic host globals typecheck;
@@ -47,6 +47,12 @@ let usedCarts = ""
 
 /** One texture load per URL for the life of a host, shared by every component that asks. */
 const textures = new Map<string, Promise<Texture>>()
+
+/** One font load per URL for the life of a host, as textures are. */
+const fonts = new Map<string, Promise<Font>>()
+
+/** The fonts already built, by URL, so useFont hands a preloaded one to its first render. */
+const builtFonts = new Map<string, Font>()
 
 /** A file a build ships: its SHA-256 and its size in bytes. */
 export type AssetEntry = readonly [sha256: string, bytes: number]
@@ -77,6 +83,8 @@ export function setAssetBase(next: string | null, options: { usedCarts?: string 
     names = []
     // A new host is a new Run, and a file may have changed under its name since.
     textures.clear()
+    fonts.clear()
+    builtFonts.clear()
 }
 
 /**
@@ -99,6 +107,8 @@ export function setAssetMap(next: Record<string, AssetEntry> | null, options: { 
     store = typeof options.store === "string" && options.store !== "" ? options.store.replace(/\/+$/, "") : null
     startup = Array.isArray(options.startup) ? options.startup.filter((n) => typeof n === "string") : []
     textures.clear()
+    fonts.clear()
+    builtFonts.clear()
 }
 
 /** The files this build loads before the cart appears (oj.json's preload list); empty for most carts. */
@@ -248,6 +258,79 @@ export function useTexture(name: string): Texture | null {
     }, [name])
 
     return texture
+}
+
+// fonts
+
+/**
+ * Loads one of this game's fonts (a .ttf or .otf file), for text to draw with.
+ * Apply it with `fontFamily`; a font on a container reaches every Text inside
+ * it, as on the web:
+ *
+ *     const title = await loadFont("fonts/Display.ttf")
+ *     <View style={{ fontFamily: title }}>...</View>
+ *
+ * The container fetches the file's bytes and builds a font from them, one per
+ * file however many ask, so `preload` in oj.json covers fonts too.
+ */
+export function loadFont(name: string): Promise<Font> {
+    const url = assetUrl(name)
+    let loading = fonts.get(url)
+    if (loading === undefined) {
+        loading = fontFrom(url, name)
+        fonts.set(url, loading)
+        loading.then((font) => { if (fonts.get(url) === loading) builtFonts.set(url, font) }, () => {})
+        // Forgotten on failure, so a file added after the first ask still loads.
+        loading.catch(() => { if (fonts.get(url) === loading) fonts.delete(url) })
+    }
+    return loading
+}
+
+async function fontFrom(url: string, name: string): Promise<Font> {
+    const load = globalThis.CS?.OneJS?.Network?.LoadFontFromUrl
+    if (typeof load !== "function") throw new Error(`[oj] could not load ${name}: loading a font needs a OneJS newer than 3.9.18`)
+    const font = await load(url)
+    if (font === null || font === undefined) throw new Error(`[oj] could not load ${name} as a font (the console says why)`)
+    return font as Font
+}
+
+/**
+ * The hook form: the font, or null for the frame or two its file takes, when
+ * text draws in the default face. A font already built, by `preload` or an
+ * earlier ask, is there on the first render. As useTexture, not cancelled on
+ * unmount.
+ */
+export function useFont(name: string): Font | null {
+    const [font, setFont] = useState<Font | null>(() => builtFont(name))
+
+    useEffect(() => {
+        let live = true
+        setFont(builtFont(name))
+        loadFont(name).then(
+            (loaded) => { if (live) setFont(loaded) },
+            (error) => console.error(`[oj] could not load ${name}:`, error),
+        )
+        return () => { live = false }
+    }, [name])
+
+    return font
+}
+
+/** The font already built from a file, or null: what useFont's first render shows. */
+export function builtFont(name: string): Font | null {
+    return builtFonts.get(assetUrl(name)) ?? null
+}
+
+/** Lets go of a font loadFont holds, so its memory comes back; text using it draws in the default face. */
+export async function forgetFont(name: string): Promise<void> {
+    const url = assetUrl(name)
+    const loading = fonts.get(url)
+    if (loading === undefined) return
+    fonts.delete(url)
+    builtFonts.delete(url)
+    const font = await loading.catch(() => null)
+    const destroy = (globalThis as { CS?: any }).CS?.UnityEngine?.Object?.Destroy
+    if (font !== null && typeof destroy === "function") destroy(font)
 }
 
 // flipbook

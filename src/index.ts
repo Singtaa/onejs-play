@@ -120,7 +120,7 @@ export type { Rng, Random } from "./random"
 
 // a game's own files
 
-export { assetUrl, assetInfo, setAssetMap, loadTexture, useTexture, useFlipbook, loadSheet } from "./asset"
+export { assetUrl, assetInfo, setAssetMap, loadTexture, useTexture, loadFont, useFont, useFlipbook, loadSheet } from "./asset"
 export { preload, unload } from "./preload"
 /**
  * Highlighted code, for any game that wants to show its own source.
@@ -287,6 +287,7 @@ export type {
 
 export type {
     Texture,
+    Font,
     ViewStyle,
     PointerEventData,
     WheelEventData,
