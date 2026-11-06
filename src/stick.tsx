@@ -22,7 +22,8 @@
  * circle that is down while a finger is on it. Both read `input.touches`, so
  * the frame loop that reads the keyboard reads them, and a mouse never moves
  * one. A thumb that lands on a pad belongs to the pad, never to the stick
- * whose half it is in.
+ * whose half it is in, and one that lands on UI that answers presses (a
+ * button over the play area, `touch.overUI`) belongs to neither.
  *
  * The objects are live and read in a frame loop: nothing re-renders as a
  * thumb moves. `<Stick>` and `<Pad>` draw them, positioned absolutely in
@@ -67,7 +68,10 @@ export interface PadState {
 }
 
 /** The slice of a touch the controls read, so a test can hand in plain objects. */
-export type TouchPoint = Pick<Touch, "fingerId" | "position" | "phase">
+export type TouchPoint = Pick<Touch, "fingerId" | "position" | "phase"> & Partial<Pick<Touch, "overUI">>
+
+/** A touch that came down now, on the game rather than on a button over it. */
+const landed = (t: TouchPoint) => t.phase === "began" && t.overUI !== true
 
 /** Every pad mounted now, so a stick can leave a thumb that landed on one. */
 const pads = new Set<PadState>()
@@ -96,7 +100,7 @@ export function readStick(s: StickState, touches: readonly TouchPoint[], owns: (
         s.y = 0
     }
     if (!s.active) {
-        const t = touches.find((t) => t.phase === "began" && owns(t.position.x, t.position.y) && !onPad(t.position.x, t.position.y))
+        const t = touches.find((t) => landed(t) && owns(t.position.x, t.position.y) && !onPad(t.position.x, t.position.y))
         if (t === undefined) return
         s.active = true
         s.finger = t.fingerId
@@ -126,7 +130,7 @@ export function readPad(p: PadState, touches: readonly TouchPoint[]): void {
     const mine = p.finger >= 0 ? touches.find((t) => t.fingerId === p.finger) : undefined
     if (p.finger >= 0 && (mine === undefined || ended(mine))) p.finger = -1
     if (p.finger < 0) {
-        const t = touches.find((t) => t.phase === "began" && (t.position.x - p.x) ** 2 + (t.position.y - p.y) ** 2 <= p.radius * p.radius)
+        const t = touches.find((t) => landed(t) && (t.position.x - p.x) ** 2 + (t.position.y - p.y) ** 2 <= p.radius * p.radius)
         if (t !== undefined) p.finger = t.fingerId
     }
     p.down = p.finger >= 0

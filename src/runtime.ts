@@ -19,6 +19,7 @@
 import type * as api from "./index"
 import { stageOf, type Stage } from "./stage"
 import { createContainerInput, type ContainerInput } from "./input"
+import { createPressProbe } from "./over-ui"
 import { setAssetBase } from "./asset"
 import { setPlayContext, type PlayContext } from "./play"
 import { setInputBackend } from "onejs-unity/input"
@@ -163,7 +164,7 @@ export function getCurrentRuntime(): HostRuntime | null {
 }
 
 export function createRuntime(options: RuntimeOptions): ContainerRuntime {
-    const input = createContainerInput()
+    const input = createContainerInput({ overUI: createPressProbe(options.root) })
     if (options.inputSource !== "host") setInputBackend(input.backend)
     setAssetBase(options.assetBase ?? null)
     setPlayContext(options.play ?? null)

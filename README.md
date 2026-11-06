@@ -156,6 +156,16 @@ Before they existed, a handler typed as `any` accepted `localX` happily and got
 that. Its `ChangeEventData` sibling carries `value`, not `newValue`, which
 broke every slider in Particle Lab the same way.
 
+**A press on a button is not a game input.** `input.mouse.overUI` and
+`touch.overUI` say whether a press began on UI that answers it: an element
+with a click, pointer or change handler under the point, or above it in the
+tree. The container asks the panel once per press (`src/over-ui.ts`, through
+OneJS's `__eventAPI.listens`), so a stage-sized View around the HUD, which
+answers nothing, does not count. A game that fires on `leftButton` checks
+`!input.mouse.overUI`, and `useStick` and `usePad` leave a thumb that came down
+on UI alone. Gunyard's Invite button fired the gun before this, and the cart
+tested the button's rectangle twice to stop it.
+
 Reading through `input` also gets touch for free, since the same code sees
 `input.touches`. A swipe is `useSwipe(onSwipe)` from `gesture.ts`: it follows
 one finger or a mouse drag through `input`, fires once per gesture past a
