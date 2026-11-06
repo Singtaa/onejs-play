@@ -42,7 +42,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
-| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows and lights |
+| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows and lights, and the scene as a texture a program reads |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
@@ -431,6 +431,11 @@ Three things that are not obvious from the code:
   Float32Array, and the bridge draws them as instanced chunks with no
   GameObject, so copies cost a draw call a chunk rather than a GameObject
   each, and have nothing an actor has (collider, pick, animation).
+- **`scene.texture` is lent, not owned.** It is onejs-react's `LentTexture`:
+  each program or pass that reads it acquires it once and releases it when
+  it stops, and the scene counts its own readers, so a release after the
+  scene is disposed, or one too many, never takes a reader from the next
+  scene. The bridge draws the scene into it only while one is counted.
 - **The panel goes transparent while a scene is live.** `mount` reads its
   backdrop through `useBackdrop`, which is an external store rather than an
   effect, because a scene is created in a child's effect, which React runs
