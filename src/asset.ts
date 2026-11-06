@@ -72,6 +72,8 @@ let startup: readonly string[] = []
 
 /** Every file name the build ships: the map's, or the names alone when ojplay built it with no map. */
 let names: readonly string[] = []
+// Whether the build said which files it has, an empty list included: then a name it lacks is not there.
+let listed = false
 
 /** Called by the host. Games have no reason to touch this. */
 export function setAssetBase(next: string | null, options: { usedCarts?: string } = {}): void {
@@ -81,6 +83,7 @@ export function setAssetBase(next: string | null, options: { usedCarts?: string 
     store = null
     startup = []
     names = []
+    listed = false
     // A new host is a new Run, and a file may have changed under its name since.
     textures.clear()
     fonts.clear()
@@ -104,6 +107,7 @@ export function setAssetBase(next: string | null, options: { usedCarts?: string 
 export function setAssetMap(next: Record<string, AssetEntry> | null, options: { store?: string, startup?: readonly string[], names?: readonly string[] } = {}): void {
     files = next ?? {}
     names = next !== null ? Object.keys(next) : Array.isArray(options.names) ? options.names.filter((n) => typeof n === "string") : []
+    listed = next !== null || Array.isArray(options.names)
     store = typeof options.store === "string" && options.store !== "" ? options.store.replace(/\/+$/, "") : null
     startup = Array.isArray(options.startup) ? options.startup.filter((n) => typeof n === "string") : []
     textures.clear()
@@ -127,6 +131,16 @@ function extensionOf(name: string): string {
 export function assetInfo(name: string): { sha256: string, bytes: number } | undefined {
     const entry = files[cleanName(name)]
     return entry === undefined ? undefined : { sha256: entry[0], bytes: entry[1] }
+}
+
+/**
+ * Whether this build ships `name`: true or false when the build listed its
+ * files (a site build's map, or the cart's folder in ojplay's), and null when
+ * it listed none and only asking can tell (a Unity project).
+ */
+export function assetShipped(name: string): boolean | null {
+    if (!listed) return null
+    return assetInfo(name) !== undefined || names.includes(cleanName(name))
 }
 
 /** Every name this build ships, from its file map or, built by ojplay, the cart's folder: what `preload("folder/")` opens. */
@@ -524,18 +538,29 @@ export function useFlipbook(ref: { current: any }, name: string): void {
  * fetched where the file has an address, read from disk in a Unity project.
  */
 export async function loadAssetBytes(name: string): Promise<Uint8Array> {
-    const url = assetUrl(name)
-    if (url.includes("://") || !isResolvedPath(url)) {
+    const file = assetFile(name)
+    if (file === null) {
+        const url = assetUrl(name)
         const response = await (globalThis as any).fetch(url)
         if (!response.ok) throw new Error(`[oj] ${name}: ${url} answered ${response.status}`)
         return new Uint8Array(await response.arrayBuffer())
     }
     const CS = (globalThis as any).CS
     // The C# byte[] crosses once, as base64, rather than a crossing a byte.
-    const binary: string = (globalThis as any).atob(CS.System.Convert.ToBase64String(CS.System.IO.File.ReadAllBytes(url)))
+    const binary: string = (globalThis as any).atob(CS.System.Convert.ToBase64String(CS.System.IO.File.ReadAllBytes(file)))
     const out = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
     return out
+}
+
+/**
+ * Where one of this game's files is on disk, which only a Unity project has,
+ * or null where it has an address to fetch instead. For a reader that can
+ * open the file where it is rather than carry its bytes into JS.
+ */
+export function assetFile(name: string): string | null {
+    const url = assetUrl(name)
+    return !url.includes("://") && isResolvedPath(url) ? url : null
 }
 
 /** A path on disk, which only a Unity project hands back: absolute, with no scheme. */

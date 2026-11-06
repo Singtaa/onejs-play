@@ -291,9 +291,10 @@ function findExpression(spec) {
 
 /**
  * Builds the folder, fetches the container, serves both and boots a browser.
- * Resolves to a started Game; the caller closes it.
+ * Resolves to a started Game; the caller closes it. `light` gives the page a
+ * light host, for `ojplay bake`.
  */
-export async function start(root, { headless = true, gpu = false, window: size, runtime: pinned, say = () => {} } = {}) {
+export async function start(root, { headless = true, gpu = false, window: size, runtime: pinned, light = false, say = () => {} } = {}) {
     const built = await build(root)
     say(`built ${built.entry}: ${(built.code.length / 1024).toFixed(1)} KB`)
     for (const w of built.warnings) say(`warning: ${w}`)
@@ -308,7 +309,7 @@ export async function start(root, { headless = true, gpu = false, window: size, 
     say(`runtime ${runtimeVersion}`)
 
     const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion }
-    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, site, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion) })
+    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, site, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion), light })
     server.bundle = built.code
     say(`serving ${server.url}`)
 

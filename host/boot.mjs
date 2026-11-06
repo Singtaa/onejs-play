@@ -20,9 +20,10 @@
  * @param {object} options.manifest What `__ojPlay.load` is handed beside the source
  * @param {string} options.bundle   JS declaring `function bundle()` that resolves to the game's source
  * @param {string} options.report   JS declaring `function report(type, payload)`; type is "ready" (payload has ms) or "error" (payload has message)
+ * @param {string} [options.light]  JS declaring `const lightHost`, what the container is handed to hear each named bake (ojplay/container's LightHost); none by default
  * @returns {string} the script body; the document supplies `canvas` (id c) and `status` (id s)
  */
-export function containerBoot({ runtime, manifest, bundle, report }) {
+export function containerBoot({ runtime, manifest, bundle, report, light = "const lightHost = null" }) {
     return `
 const status = document.getElementById("s")
 const canvas = document.getElementById("c")
@@ -109,6 +110,7 @@ function load(src) {
 
 ${bundle}
 ${report}
+${light}
 
 /*
  * Hands a bundle to the container. Negative means it did not start.
@@ -123,6 +125,11 @@ ${report}
  * the way it always did.
  */
 function startGame(source) {
+    // Before the cart runs, since a cart can name its bake in its first render.
+    // A container older than the light host has no setLightHost, and the host
+    // then hears nothing.
+    const container = globalThis.__ojContainer
+    if (lightHost !== null && container && typeof container.setLightHost === "function") container.setLightHost(lightHost)
     const flush = globalThis.__ojApi && globalThis.__ojApi.flushSync
     const hand = () => globalThis.__ojPlay.load(source, manifest)
     const ms = typeof flush === "function" ? flush(hand) : hand()

@@ -1,10 +1,26 @@
 /**
- * SHA-256, for the one place the light record needs a file's hash and the
- * build's file map does not carry it (a cart run by `ojplay run`, or in a
- * Unity project). Plain arithmetic, since QuickJS has no `crypto.subtle`, and
- * the same digest the site's map holds, so a file saved on one host is current
- * on the others.
+ * SHA-256, for the places the light record needs a hash the build's file map
+ * does not carry: a file model in a cart run by `ojplay run` or in a Unity
+ * project, and every `scene.mesh` model. The same digest the site's map holds,
+ * so a file saved on one host is current on the others.
+ *
+ * `sha256` takes the host's own digest: the browser's `crypto.subtle`, else
+ * OneJS's C# (`ModelBridge.Sha256`), since QuickJS has neither. The arithmetic
+ * below is for a host with neither, because it is slow where it would run:
+ * about half a millisecond a kilobyte under QuickJS (125 ms for a 240 KB
+ * glTF, 8.6 s at the site's 16 MB limit, measured on an M4 Pro).
  */
+
+/** The SHA-256 of `bytes`, as 64 lowercase hex digits, by the fastest digest the host has. */
+export async function sha256(bytes: Uint8Array, bridge?: { Sha256?: (bytes: Uint8Array) => unknown }): Promise<string> {
+    const subtle = (globalThis as any).crypto?.subtle
+    if (typeof subtle?.digest === "function") {
+        const digest = new Uint8Array(await subtle.digest("SHA-256", bytes))
+        return Array.from(digest, (x) => x.toString(16).padStart(2, "0")).join("")
+    }
+    if (typeof bridge?.Sha256 === "function") return String(bridge.Sha256(bytes))
+    return sha256Hex(bytes)
+}
 
 const K = new Uint32Array([
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -17,7 +33,7 @@ const K = new Uint32Array([
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ])
 
-/** The SHA-256 of `bytes`, as 64 lowercase hex digits. */
+/** The SHA-256 of `bytes`, as 64 lowercase hex digits, in plain arithmetic. */
 export function sha256Hex(bytes: Uint8Array): string {
     const bits = bytes.length * 8
     // The message, a 1 bit, zeros, and its length in bits as a 64-bit big-endian number.

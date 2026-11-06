@@ -17,12 +17,12 @@ const script = containerBoot({
 
 interface Started { start: (source: string) => number; loaded: () => string | null }
 
-function startGameWith(globalThisShim: object): Started {
+function startGameWith(globalThisShim: object, lightHost: object | null = null): Started {
     const at = script.indexOf("function startGame(source)")
     expect(at, "startGame is gone from host/boot.mjs").toBeGreaterThan(-1)
     const body = script.slice(at, script.indexOf("\n}\n", at) + 2)
-    return new Function("globalThis", "manifest", `let loadedSource = null\n${body}
-        return { start: startGame, loaded: () => loadedSource }`)(globalThisShim, { name: "Pop" }) as Started
+    return new Function("globalThis", "manifest", "lightHost", `let loadedSource = null\n${body}
+        return { start: startGame, loaded: () => loadedSource }`)(globalThisShim, { name: "Pop" }, lightHost) as Started
 }
 
 describe("startGame", () => {
@@ -51,5 +51,25 @@ describe("startGame", () => {
         ms = -1
         expect(started.start("broken")).toBe(-1)
         expect(started.loaded()).toBe("good")
+    })
+
+    it("hands the container the page's light host before the cart runs, and loads on a container without one", () => {
+        const order: string[] = []
+        const host = { baked() {} }
+        const started = startGameWith({
+            __ojContainer: { setLightHost: (h: object) => order.push(h === host ? "host" : "another") },
+            __ojPlay: { load: () => { order.push("load"); return 1 } },
+        }, host)
+        started.start("cart")
+        expect(order).toEqual(["host", "load"])
+        expect(startGameWith({ __ojContainer: {}, __ojPlay: { load: () => 5 } }, host).start("cart")).toBe(5)
+        const untouched: string[] = []
+        startGameWith({ __ojContainer: { setLightHost: () => untouched.push("set") }, __ojPlay: { load: () => 1 } }).start("cart")
+        expect(untouched, "a page with no light host leaves the container's alone").toEqual([])
+    })
+
+    it("declares no light host unless the page gives one", () => {
+        expect(script).toContain("const lightHost = null")
+        expect(containerBoot({ runtime: "/r", manifest: {}, bundle: "", report: "", light: "const lightHost = { baked() {} }" })).not.toContain("const lightHost = null")
     })
 })

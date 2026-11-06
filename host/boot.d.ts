@@ -7,6 +7,8 @@ export interface ContainerBootOptions {
     bundle: string
     /** JS declaring `function report(type, payload)`: "ready" with `ms`, or "error" with `message`. */
     report: string
+    /** JS declaring `const lightHost`: the LightHost the container hears each named bake through. None by default. */
+    light?: string
 }
 
 /** The boot script both the sandbox document and `oj run` inline. */

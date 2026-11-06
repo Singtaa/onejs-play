@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
-import { sha256Hex } from "../sha256"
+import { afterEach, vi } from "vitest"
+import { sha256, sha256Hex } from "../sha256"
 
 const node = (b: Uint8Array) => createHash("sha256").update(b).digest("hex")
 
@@ -16,5 +17,27 @@ describe("sha256Hex", () => {
         }
         const big = new Uint8Array(1 << 20).map((_, i) => (i * 2654435761) >>> 24)
         expect(sha256Hex(big)).toBe(node(big))
+    })
+})
+
+describe("sha256", () => {
+    const abc = new TextEncoder().encode("abc")
+    const ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    afterEach(() => vi.unstubAllGlobals())
+
+    it("takes the browser's digest first, of only the view's own bytes", async () => {
+        const bridge = { Sha256: vi.fn(() => "bridge") }
+        const view = new Uint8Array([0, 97, 98, 99, 0]).subarray(1, 4)
+        expect(await sha256(view, bridge)).toBe(ABC)
+        expect(bridge.Sha256).not.toHaveBeenCalled()
+    })
+
+    it("takes OneJS's where there is no crypto.subtle, as under QuickJS, and plain arithmetic where neither is", async () => {
+        vi.stubGlobal("crypto", undefined)
+        const bridge = { Sha256: vi.fn((b: Uint8Array) => b.length === 3 ? ABC : "wrong") }
+        expect(await sha256(abc, bridge)).toBe(ABC)
+        expect(bridge.Sha256).toHaveBeenCalledOnce()
+        expect(await sha256(abc, {})).toBe(ABC)
+        expect(await sha256(abc)).toBe(ABC)
     })
 })

@@ -92,7 +92,37 @@ const TYPES = {
  * the site posts to its parent frame, this prints to the console, which is
  * where the command line is listening.
  */
-function hostPage(manifest) {
+/**
+ * The page's light host, for `ojplay bake`: it keeps each named bake the
+ * container tells it of, by name, the newest start replacing an older one, and
+ * the file a bake here finished with. The command line reads them through
+ * `__ojLocal.lights()` and `__ojLocal.lightFile(name)`. Page-scoped rather
+ * than global, since the container sweeps globals it did not make.
+ */
+export const LIGHT_RECORDER = `const lightBakes = new Map()
+const lightHost = {
+    begun(name) { lightBakes.set(name, { state: "baking", started: performance.now(), ms: 0, why: "", file: null }) },
+    baked(light) { const bake = lightBakes.get(light.name); if (bake) bake.file = light.bytes },
+    ended(name, end) {
+        const bake = lightBakes.get(name)
+        if (!bake) return
+        bake.state = end.how
+        bake.why = end.why || ""
+        bake.ms = Math.round(performance.now() - bake.started)
+    },
+}
+function lightsSaid() {
+    return JSON.stringify([...lightBakes].map(([name, b]) => ({ name, state: b.state, why: b.why, ms: b.ms, bytes: b.file ? b.file.length : 0 })))
+}
+function lightFileSaid(name) {
+    const file = lightBakes.has(name) ? lightBakes.get(name).file : null
+    if (!file) return ""
+    let binary = ""
+    for (let i = 0; i < file.length; i += 0x8000) binary += String.fromCharCode(...file.subarray(i, i + 0x8000))
+    return btoa(binary)
+}`
+
+function hostPage(manifest, { light = false } = {}) {
     const boot = containerBoot({
         runtime: "/runtime",
         manifest,
@@ -105,6 +135,7 @@ function hostPage(manifest) {
         report: `function report(type, payload) {
     console.log(type === "ready" ? "[oj-local] ready " + payload.ms : "[oj-local] error " + payload.message)
 }`,
+        ...(light ? { light: LIGHT_RECORDER } : {}),
     })
     return `<!doctype html>
 <html lang="en">
@@ -130,7 +161,10 @@ globalThis.__ojLocal = {
         const ms = startGame(await bundle())
         report(ms < 0 ? "error" : "ready", ms < 0 ? { message: "the cart failed to start" } : { ms })
         return ms
-    },
+    },${light ? `
+    // What ojplay bake reads: each named bake so far, and a finished one's file as base64.
+    lights: lightsSaid,
+    lightFile: lightFileSaid,` : ""}
 }
 </script>
 </body>
@@ -147,9 +181,10 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
  * request so a rebuild is one refetch. `refused` hears why each asset
  * request the site would 404 was refused. The host page carries the game
  * origin's Content Security Policy for `site`, so what the site would refuse
- * is refused here too.
+ * is refused here too. With `light`, the page keeps the named bakes the
+ * container tells it of (LIGHT_RECORDER), for `ojplay bake`.
  */
-export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, port = 0, refused = () => {}, fetchStreaming = null }) {
+export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, port = 0, refused = () => {}, fetchStreaming = null, light = false }) {
     // When the browser first asked for the page, so a navigate that times out
     // can say whether the page was ever asked for, rather than leave a slow
     // machine, a slow server and a stuck browser reading the same.
@@ -160,7 +195,7 @@ export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, po
         if (url === "/") {
             pageAskedAt ??= Date.now()
             res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store", "content-security-policy": gameCsp(site) })
-            return res.end(hostPage(manifest))
+            return res.end(hostPage(manifest, { light }))
         }
         if (url === "/bundle.js") return send(200, bundle(), TYPES[".js"])
         // Chrome asks for one unprompted, and a 404 is logged as a network

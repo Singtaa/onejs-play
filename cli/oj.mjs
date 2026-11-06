@@ -10,6 +10,7 @@
  *   ojplay typecheck        tsc --noEmit against the same oj the site builds with
  *   ojplay run              build, then run the cart in the real container in a local Chrome
  *   ojplay test <script>    run, then drive the cart from a script that reads, clicks and asserts
+ *   ojplay bake [script]    run, and write the light files the cart's scene.bake(name) calls baked here
  *   ojplay status           what the site is running: head, live, why they differ, and each branch's preview
  *   ojplay list             every cart on the account
  *   ojplay push             git push the branch the clone is on with OJ_TOKEN: main goes live, any other becomes a preview;
@@ -31,6 +32,7 @@ import { cloneCart, login, logout } from "./login.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
+import { bake } from "./bake.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
 import { filterProcess, prePush, setupStore } from "./store.mjs"
@@ -79,6 +81,13 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
                           --headed, --window, --for, --gpu as above
+  bake [script.mjs]     run the cart on this machine's GPU (with a script, drive it first, as test
+                          does), wait for every scene.bake(name) to end, and write each light file
+                          baked here into the cart; print each name, its size and how long it took.
+                          Exits 0 when every file was written or already current, 1 when one failed
+                          or had not finished within --for seconds (default 60), 3 when the cart
+                          named no light file in its first 5 s
+                          --headed, --window as above
   status                main's build, its tip, why they differ, and each cart with what it runs
                           and who can play it (--sid <id>; --json for scripts)
   list                  every cart on the account, a repo's carts each on a line (--json)
@@ -121,7 +130,7 @@ ${BIN} ${OWN_VERSION}
 /** What git runs, set up by init (cli/store.mjs); never typed. */
 const GIT_RUNS = ["filter-process", "pre-push"]
 
-const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help", ...GIT_RUNS]
+const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "bake", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help", ...GIT_RUNS]
 
 const say = (line) => console.error(`[${BIN}] ${line}`)
 
@@ -145,7 +154,7 @@ async function main() {
 
     // What oj.json uses and .oj/carts lacks (a fresh clone, or an edit by
     // hand), fetched before anything builds it.
-    if (["build", "typecheck", "run", "test"].includes(command) && placeOf(root) === "cart") {
+    if (["build", "typecheck", "run", "test", "bake"].includes(command) && placeOf(root) === "cart") {
         const fetched = await fetchUsed(root)
         if (fetched.length > 0) {
             say(`fetched ${fetched.join(", ")} into .oj/carts`)
@@ -328,6 +337,13 @@ async function main() {
                 stop(game)
             }
         }
+        case "bake":
+            return bake(root, {
+                script: args[0],
+                seconds: Number(flags.for ?? 60),
+                say,
+                options: { headless: flags.headed !== true, window: size, runtime: flags.runtime && String(flags.runtime) },
+            })
         case "list": {
             const { handle, carts } = await mine(token(root))
             if (flags.json === true) {

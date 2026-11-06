@@ -35,7 +35,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `room.ts` | `useRoom`: other people, over a relay |
 | `wire.ts` | What each relay message does to a room's state (peers, host), kept testable apart from the socket |
 | `physics/` | What 2D and 3D share: `core.ts` is the one world, body, character and shape implementation behind both, generic over a dimension adapter; `sight.ts` is `visibility`'s geometry across one plane; `use-stepped.ts` steps a world on the frame clock |
-| `light/` | Baked light's plain parts, no engine (PlaySite docs/lightmapping.md): `record.ts` is what a saved light was baked for, its fingerprint, the layout it was baked at and the first difference in the console line's words; `png.ts` reads and writes that record in the file's `tEXt` chunk; `sha256.ts` hashes a model's file where the build's file map does not; `probes.ts` places the probe grid (OneJS's ModelBridge blends it for a moving actor); `host.ts` hands a host a light file baked here, with its console line (`setLightHost`, on `ojplay/container`); `atlas.ts` packs each static actor's rectangle, lowering the detail to fit, and lays each model out once at its smallest actor's density; `unwrap.ts` cuts a model into xatlas charts and packs them at that density, giving the second UV set and each output vertex's source vertex; `bake.ts` is `scene.bake`'s half of a bake: it reads each static model's triangles from ModelBridge, unwraps and lays them out (a named bake in its record's order), hands back each model's unwrap, and then starts the bake or shows a saved light file whose record and layout match |
+| `light/` | Baked light's plain parts, no engine (PlaySite docs/lightmapping.md): `record.ts` is what a saved light was baked for, its fingerprint, the layout it was baked at and the first difference in the console line's words; `png.ts` reads and writes that record in the file's `tEXt` chunk; `sha256.ts` hashes a model where the build's file map does not, by the browser's digest, else OneJS's C# (`ModelBridge.Sha256`, and `FileSha256` for a file on disk), and only last in JS, which takes half a millisecond a kilobyte under QuickJS; `probes.ts` places the probe grid (OneJS's ModelBridge blends it for a moving actor); `host.ts` hands a host a light file baked here, with its console line, and each named bake's start and end (`setLightHost`, on `ojplay/container`); `atlas.ts` packs each static actor's rectangle, lowering the detail to fit, and lays each model out once at its smallest actor's density; `unwrap.ts` cuts a model into xatlas charts and packs them at that density, giving the second UV set and each output vertex's source vertex; `bake.ts` is `scene.bake`'s half of a bake: it reads each static model's triangles from ModelBridge, unwraps and lays them out (a named bake in its record's order), hands back each model's unwrap, and then starts the bake or shows a saved light file whose record and layout match |
 | `physics2d/` | `useWorld2D`, `createWorld2D`, `shape2D`: 2D physics over Rapier 2D, in stage pixels, y down. `world.ts` is the API, `elements.ts` moves the elements bodies carry (one `ElementPlacer` crossing per step) |
 | `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `car.ts` is `world.car` over Rapier's ray-cast vehicle, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
 | `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
@@ -824,6 +824,7 @@ ojplay build --unity --out <dir>   # for OneJS, a cart at a Unity project's root
 ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
 ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
+ojplay bake [script.mjs]   # run on the GPU and write each light file scene.bake(name) baked here into the cart
 ojplay status          # main's build, why the tip differs, and each cart with what it runs and who can play it (--json for scripts)
 ojplay list            # every cart on the account, a repo's carts each on a line
 ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
@@ -926,6 +927,19 @@ a screenshot lands in `.oj/failed.png`; call `shot(file)` for one otherwise.
 `examples/wordie/playtest.mjs` is the one to
 copy from. With no script, `ojplay test` lets the cart run `--for` seconds
 (default 2) and applies the same checks.
+
+**`ojplay bake` writes the light files a cart names.** It runs the cart on
+this machine's GPU with the page given a light host (`LIGHT_RECORDER` in
+`cli/local.mjs`, handed to the container by `host/boot.mjs` before the cart
+runs), drives it with the script first when there is one, and waits until
+every `scene.bake(name)` has ended and stayed ended for a second. A file that
+was current is left alone; one baked here is written under its name, which
+must be a `.png` in the cart's own folders. Each name is printed with its size
+and how long it took. Exit 0 when every file was written or current, 1 when
+one failed, stopped or had not finished within `--for` seconds (60 by
+default), and 3 when no named bake began in the first 5 seconds. A run that
+logs a console error writes nothing, and a container without `setLightHost`
+exits 1, since it cannot say whether the cart bakes.
 
 **A pressed key is its own press.** `press`, `hold` and `type` wait for the
 container to run a frame after each key goes down and after it comes up. A

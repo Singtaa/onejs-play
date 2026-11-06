@@ -22,16 +22,16 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { assetInfo, assetNames, assetUrl, loadAssetBytes } from "./asset"
+import { assetFile, assetInfo, assetShipped, assetUrl, loadAssetBytes } from "./asset"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
 import { beginBake, ChartCache, lightFile, loadLight, PATHS_PER_FRAME, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
-import { lightBakedHere } from "./light/host"
+import { lightBakedHere, lightBegun, lightEnded, type BakeEnd } from "./light/host"
 import { bakedHereLine, type BakedHere, type LightRecord } from "./light/record"
-import { sha256Hex } from "./light/sha256"
+import { sha256 } from "./light/sha256"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
 // eslint-disable-next-line no-shadow-restricted-names
@@ -1000,12 +1000,16 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const fileShas = new Map<Model, Promise<string>>()
     const identify = async (model: Model): Promise<{ name: string, sha: string }> => {
         const name = modelNames.get(model)
-        if (name === undefined) return { name: "scene.mesh", sha: sha256Hex(meshBytes.get(model)?.() ?? new Uint8Array(0)) }
+        if (name === undefined) return { name: "scene.mesh", sha: await sha256(meshBytes.get(model)?.() ?? new Uint8Array(0), b) }
         const mapped = assetInfo(name)?.sha256
         if (mapped !== undefined) return { name, sha: mapped }
         let sha = fileShas.get(model)
         if (sha === undefined) {
-            sha = loadAssetBytes(name).then(sha256Hex)
+            // On disk, OneJS hashes the file where it is; elsewhere its bytes come to the host's digest.
+            const file = assetFile(name)
+            sha = file !== null && typeof b.FileSha256 === "function"
+                ? Promise.resolve().then(() => String(b.FileSha256(file)))
+                : loadAssetBytes(name).then((bytes) => sha256(bytes, b))
             fileShas.set(model, sha)
         }
         return { name, sha: await sha }
@@ -1013,8 +1017,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
 
     // A named light file's bytes, or null when the cart does not have it.
     const readNamed = async (name: string): Promise<SavedFile> => {
-        const listed = assetNames()
-        if (listed.length > 0 && assetInfo(name) === undefined && !listed.includes(name)) return readSaved(null)
+        if (assetShipped(name) === false) return readSaved(null)
         return readSaved(await loadAssetBytes(name).catch(() => null))
     }
 
@@ -1027,21 +1030,25 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let finish!: () => void
         const done = new Promise<void>((resolve) => { finish = resolve })
         const handle: Bake = Object.freeze({ get progress() { return progress }, done })
+        if (name !== undefined) lightBegun(name)
         if (typeof b.BeginBake !== "function") {
             if (!saidNoBake) console.warn("[oj] scene.bake needs a newer OneJS: this host's ModelBridge cannot bake light, so the scene keeps its ambient light.")
             saidNoBake = true
             progress = 1
+            if (name !== undefined) lightEnded(name, { how: "failed", why: "this host's ModelBridge cannot bake light" })
             finish()
             return handle
         }
         let stopped = false
         let stopFrame: (() => void) | null = null
         const me = {
-            stop() {
+            // With no end, it was stopped from outside: a later bake, or the scene going.
+            stop(end: BakeEnd = { how: "stopped" }) {
                 if (stopped) return
                 stopped = true
                 stopFrame?.()
                 if (baking === me) baking = null
+                if (name !== undefined) lightEnded(name, end)
                 finish()
             },
         }
@@ -1050,7 +1057,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         const give = (why: string) => {
             console.warn(`[oj] scene.bake: ${why}. The scene keeps its ambient light.`)
             progress = 1
-            me.stop()
+            me.stop({ how: "failed", why })
         }
         const run = async () => {
             let items = bakeItems()
@@ -1078,7 +1085,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                     const why = loadLight(b, plan, file.png)
                     if (why === "") {
                         progress = 1
-                        return me.stop()
+                        return me.stop({ how: "current" })
                     }
                     here = { why: "unreadable", detail: why }
                 }
@@ -1091,11 +1098,16 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 if (p < 0) return me.stop()
                 progress = p
                 if (p < 1) return
-                if (here !== null) {
-                    const bytes = lightFile(b, { ...record!, layout: plan.layout })
-                    if (bytes !== null) lightBakedHere({ name: name!, line: bakedHereLine(name!, here), bytes })
+                if (here === null) return me.stop({ how: "baked" })
+                const bytes = lightFile(b, { ...record!, layout: plan.layout })
+                if (bytes === null) {
+                    // Lit, so not give's line: the light is showing, only the file is missing.
+                    const why = "its light is showing, but could not be read back as a file to save"
+                    console.warn(`[oj] scene.bake: ${name} ${why}.`)
+                    return me.stop({ how: "failed", why })
                 }
-                me.stop()
+                lightBakedHere({ name: name!, line: bakedHereLine(name!, here), bytes })
+                me.stop({ how: "baked" })
             })
         }
         run().catch((e: unknown) => {

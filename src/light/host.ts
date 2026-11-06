@@ -17,8 +17,21 @@ export interface BakedLight {
     readonly bytes: Uint8Array
 }
 
+/**
+ * How a named bake ended: its file was current and is showing, it baked here
+ * (after `baked` had the file), it failed and the console said why, or it
+ * stopped unfinished because a later bake replaced it or the scene went.
+ */
+export type BakeEnd = { how: "current" } | { how: "baked" } | { how: "failed", why: string } | { how: "stopped" }
+
 export interface LightHost {
     baked(light: BakedLight): void
+    /**
+     * Each named bake as it starts and as it ends, for a host that waits on
+     * them, as `ojplay bake` does. A name baked again starts again.
+     */
+    begun?(name: string): void
+    ended?(name: string, end: BakeEnd): void
 }
 
 let host: LightHost | null = null
@@ -28,12 +41,26 @@ export function setLightHost(next: LightHost | null): void {
     host = next
 }
 
+/** A named bake started. */
+export function lightBegun(name: string): void {
+    tell(() => host?.begun?.(name), name)
+}
+
+/** A named bake ended. */
+export function lightEnded(name: string, end: BakeEnd): void {
+    tell(() => host?.ended?.(name, end), name)
+}
+
 /** Says the line, then hands the host the file. A host that throws costs the cart nothing. */
 export function lightBakedHere(light: BakedLight): void {
     console.warn(light.line)
+    tell(() => host?.baked(light), light.name)
+}
+
+function tell(call: () => void, name: string): void {
     try {
-        host?.baked(light)
+        call()
     } catch (e) {
-        console.warn(`[oj] the host could not take ${light.name}: ${e instanceof Error ? e.message : String(e)}`)
+        console.warn(`[oj] the host could not take ${name}: ${e instanceof Error ? e.message : String(e)}`)
     }
 }

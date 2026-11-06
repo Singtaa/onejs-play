@@ -18,7 +18,7 @@ import { XATLAS_VERSION } from "../light/xatlas.version"
 import { decodeLightMesh, PATHS_PER_FRAME } from "../light/bake"
 import { readText, writeText } from "../light/png"
 import { parseSaved, type SavedLight } from "../light/record"
-import { setLightHost, type BakedLight } from "../light/host"
+import { setLightHost, type BakedLight, type BakeEnd } from "../light/host"
 import { setAssetBase, setAssetMap } from "../asset"
 
 type Call = [string, ...unknown[]]
@@ -31,6 +31,7 @@ let beginAnswer: string
 // What StepBake answers, in turn; the last repeats.
 let steps: number[]
 let loadAnswer: string
+let lightFileAnswer: string
 // The cart's files by name, as its origin serves them.
 let served: Map<string, Uint8Array>
 let fetched: string[]
@@ -64,7 +65,8 @@ function recorder(): any {
                 if (name === "LightMesh") return refused.has(args[0] as number) ? "" : squareMesh()
                 if (name === "BeginBake") return beginAnswer
                 if (name === "StepBake") return steps.length > 1 ? steps.shift() : steps[0]
-                if (name === "LightFile") return PIXEL
+                if (name === "LightFile") return lightFileAnswer
+                if (name === "FileSha256") return "c".repeat(64)
                 if (name === "LoadLight") return loadAnswer
                 if (name === "Load") return ++next
                 if (name === "Clips") return ""
@@ -91,6 +93,7 @@ beforeEach(() => {
     beginAnswer = ""
     steps = [1]
     loadAnswer = ""
+    lightFileAnswer = PIXEL
     served = new Map()
     fetched = []
     baked = []
@@ -448,6 +451,19 @@ describe("scene.bake with a name", () => {
         expect(baked[0]!.line).toMatch(/is not in the cart yet/)
     })
 
+    it("asks for no file when the build listed the cart's files and there were none, which a 404 would fail a run for", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        setAssetMap(null, { names: [] })
+        const s = scene()
+        room(s, [0])
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(fetched).toEqual([])
+        expect(baked[0]!.line).toMatch(/is not in the cart yet/)
+    })
+
     it("names a file model as it was loaded, by its file map hash, or by its bytes' hash where there is no map", async () => {
         vi.spyOn(console, "warn").mockImplementation(() => {})
         const crate = new Uint8Array([1, 2, 3, 4])
@@ -508,6 +524,120 @@ describe("scene.bake with a name", () => {
 
     it("refuses an empty name", () => {
         expect(() => scene().bake("")).toThrow(/name the light file/)
+    })
+})
+
+describe("scene.bake for a host that waits on it", () => {
+    const NAME = "room.light.png"
+    let told: string[]
+    beforeEach(() => {
+        told = []
+        const tell = (end: BakeEnd) => end.how === "failed" ? `failed: ${end.why}` : end.how
+        setLightHost({
+            baked: (light) => { baked.push(light); told.push(`baked ${light.name}`) },
+            begun: (name) => told.push(`begun ${name}`),
+            ended: (name, end) => told.push(`ended ${name} ${tell(end)}`),
+        })
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+    })
+
+    it("tells each named bake's start, then its file, then its end", async () => {
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        const light = s.bake(NAME)
+        expect(told).toEqual([`begun ${NAME}`])
+        await started()
+        frame()
+        await light.done
+        expect(told).toEqual([`begun ${NAME}`, `baked ${NAME}`, `ended ${NAME} baked`])
+    })
+
+    it("tells a current file's end, and nothing of a bake with no name", async () => {
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        let light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        served.set(NAME, baked[0]!.bytes)
+        dispose()
+        told = []
+        const t = scene()
+        t.spawn(t.mesh(SQUARE), { static: true })
+        await t.bake(NAME).done
+        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} current`])
+        told = []
+        light = t.bake()
+        await vi.waitFor(() => expect(of("BeginBake").length).toBe(2))
+        frame()
+        await light.done
+        expect(told).toEqual([])
+    })
+
+    it("tells a failure with the console's reason, and a stop when a later bake or the scene's end cuts it short", async () => {
+        let s = scene()
+        await s.bake(NAME).done
+        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} failed: nothing in the scene is static. Spawn what never moves with { static: true }, or give it a static body`])
+
+        dispose()
+        told = []
+        steps = [0.5]
+        s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        s.bake(NAME)
+        await started()
+        frame()
+        s.bake("other.light.png")
+        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} stopped`, "begun other.light.png"])
+        dispose()
+        expect(told.at(-1)).toBe("ended other.light.png stopped")
+    })
+
+    it("fails a finished bake whose light cannot be read back, saying the light is showing", async () => {
+        lightFileAnswer = ""
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(baked).toEqual([])
+        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} failed: its light is showing, but could not be read back as a file to save`])
+    })
+
+    it("fails a named bake on a host without the baker", async () => {
+        const older = recorder()
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "BeginBake" ? undefined : older[name] }) } } }
+        await scene().bake(NAME).done
+        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} failed: this host's ModelBridge cannot bake light`])
+    })
+
+    it("keeps telling the cart's bakes when the host throws", async () => {
+        setLightHost({ baked: () => {}, begun: () => { throw new Error("full") } })
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(vi.mocked(console.warn).mock.calls.map((c) => String(c[0]))).toContain(`[oj] the host could not take ${NAME}: full`)
+    })
+})
+
+describe("a file model in a Unity project", () => {
+    it("is hashed by OneJS where it lies on disk, so its bytes never cross into JS", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        setAssetBase("/project/Assets/Cart")
+        const { loadModel } = await import("../models")
+        const s = scene()
+        s.spawn(await loadModel("crate.glb"), { static: true })
+        const light = s.bake("room.light.png")
+        await started()
+        frame()
+        await light.done
+        expect(of("FileSha256")).toEqual([["FileSha256", "/project/Assets/Cart/crate.glb"]])
+        expect(fetched.filter((u) => u.endsWith("crate.glb"))).toEqual([])
+        expect((parseSaved(readText(baked[0]!.bytes)) as SavedLight).actors[0]!.slice(0, 2)).toEqual(["crate.glb", "c".repeat(64)])
     })
 })
 
