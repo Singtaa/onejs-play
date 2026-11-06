@@ -5,15 +5,15 @@
  * Null until the engine has loaded, which is one fetch the first time a cart
  * makes a world and nothing after. Stepped at a fixed rate every frame, after
  * the frame's own callbacks have moved things, and then every body's actor is
- * put where its body is. Disposed with the component.
+ * put where its body is, or, when frames come faster than steps, between the
+ * last two steps. Disposed with the component.
  */
 
 import { useEffect, useState } from "react"
 import { getCurrentRuntime } from "../runtime"
 
 interface Stepped {
-    advance(seconds: number): number
-    syncActors(): void
+    frame(seconds: number): void
     dispose(): void
 }
 
@@ -32,9 +32,7 @@ export function useSteppedWorld<W>(hook: string, create: () => Promise<W>): W | 
             made = stepped
             const runtime = getCurrentRuntime()
             if (runtime === null) console.warn(`[oj] ${hook}: no frame clock here, so the world will not step itself. Call world.step() from your own loop.`)
-            stop = runtime?.onFrame((dt) => {
-                if (stepped.advance(dt) > 0) stepped.syncActors()
-            })
+            stop = runtime?.onFrame((dt) => stepped.frame(dt))
             setWorld(w)
         }, (e) => console.error(`[oj] ${hook}: the physics engine did not load. ${e instanceof Error ? e.message : String(e)}`))
         return () => {

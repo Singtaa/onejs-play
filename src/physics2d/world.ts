@@ -418,6 +418,10 @@ function dim2(pixelsPerMeter: number): Dim<Vec2, number | undefined, ElementActo
         rotOut: (rad) => tidy(rad / RAD),
         rotate: (rad: number, v) => [Math.cos(rad) * v[0]! - Math.sin(rad) * v[1]!, Math.sin(rad) * v[0]! + Math.cos(rad) * v[1]!],
         unrotate: (rad: number, v) => [Math.cos(rad) * v[0]! + Math.sin(rad) * v[1]!, -Math.sin(rad) * v[0]! + Math.cos(rad) * v[1]!],
+        blend: (a: number, b: number, t: number) => {
+            const turn = Math.atan2(Math.sin(b - a), Math.cos(b - a))
+            return a + turn * t
+        },
         ring: (near, radius, a) => [near[0] + Math.sin(a) * radius, near[1] + Math.cos(a) * radius],
         shape: (r, kind, d) => kind === "box" ? new r.Cuboid(d[0]! / 2, d[1]! / 2)
             : kind === "circle" ? new r.Ball(d[0]!)

@@ -8,6 +8,7 @@ import path from "node:path"
 import { setWasmModule } from "../../wasm"
 import { RAPIER_VERSION } from "../rapier.version"
 import { createWorld2D, type World2D, type Body2D } from "../world"
+import { setElementPlacer, type ElementPlacement } from "../elements"
 
 const WA = (globalThis as any).WebAssembly
 
@@ -99,5 +100,30 @@ describe("2D riding", () => {
         expect(c.position[1]).toBeCloseTo(p.position[1] - 25, -1)
         expect(c.grounded).toBe(true)
         w.dispose()
+    })
+})
+
+describe("2D drawing between steps", () => {
+    it("moves and turns an element on every frame at 120 Hz", async () => {
+        const element = { style: {} }
+        const seen: ElementPlacement[] = []
+        setElementPlacer((list) => { for (const p of list) if (p.element === element) seen.push({ ...p }) })
+        try {
+            const w = await createWorld2D({ gravity: [0, 0] }) as any
+            const b = w.box({ dynamic: true, actor: element })
+            b.velocity = [600, 0]
+            raw(b).setAngvel(Math.PI, true)
+            for (let i = 0; i < 120; i++) w.frame(1 / 120)
+            const tail = seen.slice(-40)
+            for (let i = 1; i < tail.length; i++) {
+                expect(tail[i]!.at[0] - tail[i - 1]!.at[0]).toBeCloseTo(5, 1)
+                // Half a turn a second, clockwise: 1.5 degrees a frame.
+                const turn = ((tail[i]!.degrees! - tail[i - 1]!.degrees! + 540) % 360) - 180
+                expect(turn).toBeCloseTo(1.5, 1)
+            }
+            w.dispose()
+        } finally {
+            setElementPlacer(null)
+        }
     })
 })

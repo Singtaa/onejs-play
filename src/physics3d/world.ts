@@ -457,6 +457,13 @@ const DIM3: Dim<Vec3, Partial<Rotation> | undefined, Actor> = {
     rotOut: (q) => fromQuat(q),
     rotate: (q: Quat, v) => rotate(q, v as Vec3),
     unrotate: (q: Quat, v) => rotate({ x: -q.x, y: -q.y, z: -q.z, w: q.w }, v as Vec3),
+    blend: (a: Quat, b: Quat, t: number) => {
+        // Normalised linear, the short way round: between two steps the turn is small, where this and a slerp agree.
+        const s = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w < 0 ? -1 : 1
+        const x = a.x + (s * b.x - a.x) * t, y = a.y + (s * b.y - a.y) * t, z = a.z + (s * b.z - a.z) * t, w = a.w + (s * b.w - a.w) * t
+        const n = Math.hypot(x, y, z, w)
+        return { x: x / n, y: y / n, z: z / n, w: w / n }
+    },
     ring: (near, radius, a) => [near[0] + Math.sin(a) * radius, near[1], near[2] + Math.cos(a) * radius],
     shape: (r, kind, d) => kind === "box" ? new r.Cuboid(d[0]! / 2, d[1]! / 2, d[2]! / 2)
         : kind === "sphere" ? new r.Ball(d[0]!)

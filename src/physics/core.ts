@@ -37,6 +37,8 @@ export interface Dim<V extends readonly number[], R, A> {
     rotate(rot: any, v: Readonly<EVec>): EVec
     /** An engine vector turned back by an engine rotation: `rotate`'s inverse. */
     unrotate(rot: any, v: Readonly<EVec>): EVec
+    /** An engine rotation `t` of the way from `a` to `b`, the short way round. */
+    blend(a: any, b: any, t: number): any
     /** The point `radius` world units from `near`, `angle` radians round, on the ground. */
     ring(near: Readonly<V>, radius: number, angle: number): V
     /** The engine's shape for a shape value: `dims` in metres. */
@@ -211,6 +213,8 @@ interface Handlers {
 }
 
 const MAX_STEPS_PER_FRAME = 4
+/** Actors are drawn between steps once frames are this much shorter than a step, smoothed: a 90 Hz screen and up, at 60 steps a second. */
+const BLEND_BELOW = 0.8
 
 /**
  * The gap a character's controller keeps from everything it touches, in
@@ -464,6 +468,8 @@ export class WorldCore<V extends readonly number[], R, A> {
 
     markFresh(colliderHandle: number): void {
         this.fresh.add(colliderHandle)
+        const w = this.byCollider.get(colliderHandle)
+        if (w !== undefined) this.snapped.add(w)
         this.stillEpoch++
         this.raw.propagateModifiedBodyPositionsToColliders()
     }
@@ -846,7 +852,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         return { point, speed }
     }
 
-    /** Advances by a frame's time, in whole fixed steps. The hooks call it from the frame clock. */
+    /** Advances by a frame's time, in whole fixed steps. */
     advance(seconds: number): number {
         if (this.disposed) return 0
         this.accumulated = Math.min(this.accumulated + seconds, this.stepSeconds * MAX_STEPS_PER_FRAME)
@@ -855,8 +861,68 @@ export class WorldCore<V extends readonly number[], R, A> {
             this.step()
             this.accumulated -= this.stepSeconds
             n++
+            if (this.blending) this.recordPoses()
         }
         return n
+    }
+
+    // ---------- drawing between steps ----------
+
+    /** The frame's length, smoothed, seconds: whether frames come faster than steps. */
+    private frameSeconds = 0
+    /**
+     * Whether actors are drawn between the last two steps. Only when frames
+     * come faster than steps (a 120 Hz screen): at 60 Hz each frame steps
+     * once and draws the step it took, as without this.
+     */
+    private blending = false
+    /** Each placed thing's placement after the step before last and after the last one. */
+    private poses = new Map<Thing<V, R, A>, { from: Placement<V, A>, to: Placement<V, A> }>()
+    /** Things put somewhere by hand since the last step: drawn there, not slid there. */
+    private snapped = new Set<Thing<V, R, A>>()
+
+    /**
+     * A frame: advances by its time, then puts every actor where it is to be
+     * drawn. The hooks call it from the frame clock.
+     */
+    frame(seconds: number): void {
+        if (this.disposed) return
+        this.frameSeconds = this.frameSeconds === 0 ? seconds : this.frameSeconds * 0.9 + seconds * 0.1
+        const blend = this.frameSeconds < this.stepSeconds * BLEND_BELOW
+        if (blend !== this.blending) {
+            this.blending = blend
+            this.poses.clear()
+            if (blend) this.recordPoses()
+        }
+        const n = this.advance(seconds)
+        if (!this.blending) {
+            if (n > 0) this.syncActors()
+            return
+        }
+        // A step behind the engine at most: between where the last two steps left each thing, by how far into the next one this frame is.
+        const t = Math.min(1, this.accumulated / this.stepSeconds), d = this.dim
+        const list: Placement<V, A>[] = []
+        for (const [w, p] of this.poses) {
+            if (!w.alive || p.to.actor !== w.actor) continue
+            const at = p.from.at.map((x, i) => x + (p.to.at[i]! - x) * t) as unknown as V
+            const rotation = p.to.rotation === null || p.from.rotation === null ? p.to.rotation : d.blend(p.from.rotation, p.to.rotation, t)
+            list.push({ actor: p.to.actor, at, rotation })
+        }
+        if (list.length > 0) d.place(list)
+    }
+
+    /** After a step: what each placed thing's placement was and now is. */
+    private recordPoses(): void {
+        const seen = new Set<Thing<V, R, A>>()
+        for (const w of this.byCollider.values()) {
+            const p = w.placement()
+            if (p === null) continue
+            seen.add(w)
+            const had = this.poses.get(w)
+            this.poses.set(w, { from: had === undefined || this.snapped.has(w) ? p : had.to, to: p })
+        }
+        for (const w of this.poses.keys()) if (!seen.has(w)) this.poses.delete(w)
+        this.snapped.clear()
     }
 
     // ---------- rewind ----------
@@ -904,6 +970,8 @@ export class WorldCore<V extends readonly number[], R, A> {
         const old = this.raw
         this.raw = restored
         this.fresh.clear()
+        // Rewound, everything is drawn where it now is, not slid back there.
+        this.poses.clear()
         this.stillEpoch++
         for (const [handle, w] of [...this.byCollider]) {
             if (restored.getCollider(handle) === null || restored.getCollider(handle) === undefined) {
