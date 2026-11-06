@@ -189,6 +189,23 @@ export function tipOf(root) {
 }
 
 /**
+ * Why a later `ojplay push` refuses a flag that only chooses for a repo's
+ * first push, or null. `s` is the repo's status and `sid` its first cart.
+ * Asked for privacy the repo or cart no longer has, the push would put a
+ * build where the flag meant it not to be, so nothing is pushed.
+ */
+export function firstPushOnly(s, sid, { private: hidden = false, unlisted = false } = {}) {
+    if (hidden && s.repoPublic) {
+        return `${s.url} is a public repo, and --private only chooses for a repo's first push. Nothing was pushed: make its source private in a cart's Settings first`
+    }
+    const cart = (s.carts ?? []).find((c) => c.cart === sid)
+    if (unlisted && cart?.visibility === "public") {
+        return `${s.url} is Public, and --unlisted only chooses for a repo's first push. Nothing was pushed: make it Unlisted in its Settings first`
+    }
+    return null
+}
+
+/**
  * What `ojplay push` says after pushing a branch other than main: `before`
  * is what that branch's cart ran before the push (null for a new branch),
  * `tip` the commit pushed, `s` the status after it. A push of a branch with

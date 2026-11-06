@@ -51,7 +51,7 @@ beforeEach(async () => {
             created.push({ body, auth: req.headers.authorization })
             if (taken) return send(409, { error: "You already have a cart called \"Pop Rocks\".", name: "Pop Rocks", sid: "bbbbbbbbbbbb", url: "/@owner/pop-rocks" })
             if (privateRefused && body.private === true) return send(403, { error: "A repo's source is public for now. Private repos are coming soon." })
-            return send(200, { sid: SID, url: "/@owner/pop-rocks", repoPublic: body.private !== true, clone: cloneUrl() })
+            return send(200, { sid: SID, url: "/@owner/pop-rocks", repoPublic: body.private !== true, ...(body.visibility ? { visibility: body.visibility } : {}), clone: cloneUrl() })
         }
         if (req.url === `/api/games/${SID}`) {
             const head = mainOf(bare())
@@ -89,9 +89,9 @@ function made(name = "Pop Rocks") {
     return { code, said, cart: path.join(dir, "pop-rocks") }
 }
 
-async function push(root: string, signIn?: (dir: string) => Promise<number>, hidden = false) {
+async function push(root: string, signIn?: (dir: string) => Promise<number>, hidden = false, visibility?: string) {
     const said: string[] = []
-    const code = await firstPush(root, { say: (l: string) => said.push(l), private: hidden, ...(signIn ? { signIn } : {}) })
+    const code = await firstPush(root, { say: (l: string) => said.push(l), private: hidden, visibility, ...(signIn ? { signIn } : {}) })
     return { code, said }
 }
 
@@ -175,6 +175,14 @@ describe("the first ojplay push makes the cart on the site", () => {
         expect(code).toBe(0)
         expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true, private: true }, auth: `Bearer ${TOKEN}` }])
         expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (private repo)`)
+    })
+
+    it("asks for an Unlisted first cart with --unlisted, in the create itself, and says it is one", async () => {
+        const { cart } = made()
+        const { code, said } = await push(cart, undefined, false, "unlisted")
+        expect(code).toBe(0)
+        expect(created).toEqual([{ body: { name: "Pop Rocks", empty: true, visibility: "unlisted" }, auth: `Bearer ${TOKEN}` }])
+        expect(said[0]).toBe(`made @owner/pop-rocks on ${host()} (public repo, unlisted cart)`)
     })
 
     it("pushes nothing when the site refuses a private repo to this account", async () => {

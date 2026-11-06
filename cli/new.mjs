@@ -77,11 +77,15 @@ export function newCart(parent, name, { say }) {
  * name included. `private` asks for a private repo, which the site refuses
  * (403) to an account without private repos, making nothing.
  */
-export async function createEmpty(name, bearer, { private: hidden = false } = {}) {
+export async function createEmpty(name, bearer, { private: hidden = false, visibility } = {}) {
+    // Who can play the first cart goes with the create, so the site writes it
+    // with the repo and a cart asked for Unlisted is never Public for a moment
+    // (learn Mac, 6 Nov 2026: Public for three minutes before a settings call).
+    const asked = { name, empty: true, ...(hidden ? { private: true } : {}), ...(visibility ? { visibility } : {}) }
     const response = await fetch(`${siteOrigin()}/api/games`, {
         method: "POST",
         headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-        body: JSON.stringify(hidden ? { name, empty: true, private: true } : { name, empty: true }),
+        body: JSON.stringify(asked),
     })
     const text = await response.text()
     let body
@@ -94,7 +98,7 @@ export async function createEmpty(name, bearer, { private: hidden = false } = {}
  * one, because origin is a cart on the site and the push is the usual one;
  * else the exit code. `signIn` is the login it runs when there is none.
  */
-export async function firstPush(root, { say, signIn = (dir) => login(dir), private: hidden = false }) {
+export async function firstPush(root, { say, signIn = (dir) => login(dir), private: hidden = false, visibility }) {
     if (run(["rev-parse", "--git-dir"], root).status !== 0) {
         say(`this folder is not a git repository: git init && git add -A && git commit -m "First commit", then ${COMMAND} push`)
         return 1
@@ -123,7 +127,7 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir), priva
         bearer = tokenOf(root)
     }
 
-    const made = await createEmpty(name, bearer, { private: hidden })
+    const made = await createEmpty(name, bearer, { private: hidden, visibility })
     if (made.status === 409) {
         const where = made.body.url ? ` at ${siteOrigin()}${made.body.url}` : ""
         say(`you already have a cart called "${made.body.name ?? name}",${where}`)
@@ -133,7 +137,12 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir), priva
     if (made.status !== 200) throw new Error(made.body.error ?? `${made.status} from the site`)
     // Whether its source is private is the site's answer: public unless
     // --private asked and the account may, or private repos are on for everyone.
-    const audience = typeof made.body.repoPublic === "boolean" ? ` (${made.body.repoPublic ? "public" : "private"} repo)` : ""
+    // And its first cart's, when it is not the Public a cart starts as.
+    const repoSaid = typeof made.body.repoPublic === "boolean" ? `${made.body.repoPublic ? "public" : "private"} repo` : null
+    const cartSaid = made.body.visibility && made.body.visibility !== "public" && made.body.visibility !== (made.body.repoPublic === false ? "private" : null)
+        ? `${made.body.visibility} cart` : null
+    const parts = [repoSaid, cartSaid].filter(Boolean)
+    const audience = parts.length ? ` (${parts.join(", ")})` : ""
     say(`made ${made.body.url.replace(/^\//, "")} on ${new URL(siteOrigin()).host}${audience}`)
 
     // Origin before the push, so a push that fails (the network, a file the

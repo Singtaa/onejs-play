@@ -720,6 +720,7 @@ ojplay list            # every cart on the account, a repo's carts each on a lin
 ojplay login           # print a play.onejs.com link; after Allow there, this machine can push
 ojplay logout          # forget that login, here and on the site
 ojplay push            # push the branch you are on: every cart following it moves, a branch with none gets an Unlisted one; exit 1 if the tip did not build or nothing was committed
+ojplay push --unlisted # a cart's first push: its first cart Unlisted rather than Public
 ojplay new "Name"      # start a cart here: the starter in a new git repo, no account; its first push makes it on the site
 ojplay clone @h/name   # clone a cart; git pull and push in it work with OJ_TOKEN or the login
 ojplay runtime         # fetch the container into ~/.onejs-play (--runtime <version>)
@@ -735,7 +736,10 @@ there is no login), sets `origin` and pushes `main` with its upstream. With
 `--private` it asks for a private repo instead, whose first cart is Private,
 which the site makes only for an account with private repos and otherwise
 refuses, making and pushing nothing; on a later push to a public repo,
-`--private` pushes nothing and says so. The
+`--private` pushes nothing and says so. With `--unlisted` the first cart is
+Unlisted from the moment the repo is made, never in the site's list until its
+owner makes it Public; on a later push to a repo whose main cart is Public,
+`--unlisted` pushes nothing and says so. The
 site makes it empty because its usual create commits the starter, which a
 history begun here could never fast forward onto. A name the account already
 has is refused there, with that cart's address, and nothing is made.

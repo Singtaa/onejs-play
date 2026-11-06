@@ -26,7 +26,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
-import { cloneSource, currentBranch, describeBranchPush, describePush, describeStatus, following, git, mine, sidOf, siteOrigin, status, tipOf, token, tokenOf, uncommitted, version } from "./site.mjs"
+import { cloneSource, currentBranch, describeBranchPush, describePush, describeStatus, firstPushOnly, following, git, mine, sidOf, siteOrigin, status, tipOf, token, tokenOf, uncommitted, version } from "./site.mjs"
 import { cloneCart, login, logout } from "./login.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
@@ -87,12 +87,14 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           then login --wait <code> collects; --name names the device)
   logout                forget the login, here and on the site
   push                  git push the branch you are on: every cart that follows it moves to
-                          the new build. A branch with no cart gets one, Unlisted, with an
-                          address of its own. Exits 1 if the tip failed to build, or if
-                          nothing was pushed because the changes are not committed. The
-                          first push of a cart made with new makes its repo on the site,
-                          public, after a login if there is none (--private makes the repo
-                          private, for an account with private repos)
+                          the new build. A branch other than main with no cart gets one,
+                          Unlisted, with an address of its own. Exits 1 if the tip failed to
+                          build, or if nothing was pushed because the changes are not
+                          committed. The first push of a cart made with new makes its repo
+                          on the site, after a login if there is none, and its first cart,
+                          on main: Public, or Unlisted with --unlisted. --private makes the
+                          repo private and that cart Private, for an account with private
+                          repos. Both choose only on that first push
   new <name>            start a cart in ./<name>: the starter, a git repository and init's
                           tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then
@@ -344,15 +346,15 @@ async function main() {
             return 0
         }
         case "push": {
-            const first = await firstPush(root, { say, private: flags.private === true })
+            const first = await firstPush(root, { say, private: flags.private === true, visibility: flags.unlisted === true ? "unlisted" : undefined })
             if (first !== null) return first
             const bearer = token(root)
             const sid = flags.sid ? String(flags.sid) : await sidOf(root, bearer)
             const left = uncommitted(root)
             const before = await status(sid, { bearer })
-            // Asked for a repo whose source is already public, it would push into the open.
-            if (flags.private === true && before.repoPublic) {
-                say(`${before.url} is a public repo, and --private only chooses for a repo's first push. Nothing was pushed: make its source private in a cart's Settings first`)
+            const refused = firstPushOnly(before, sid, { private: flags.private === true, unlisted: flags.unlisted === true })
+            if (refused !== null) {
+                say(refused)
                 return 1
             }
             // The branch the clone is on: every cart following it moves, and a branch with none gets one.

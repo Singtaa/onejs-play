@@ -20,6 +20,7 @@ const FLAGS = {
     version: "switch",
     "no-wait": "switch",
     private: "switch",
+    unlisted: "switch",
     gpu: "switch",
     site: "value",
     root: "value",

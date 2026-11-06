@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { describe, it, expect } from "vitest"
-import { currentBranch, describeBranchPush, describePush, describeStatus, uncommitted } from "./site.mjs"
+import { currentBranch, describeBranchPush, describePush, describeStatus, firstPushOnly, uncommitted } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
 
 /**
@@ -181,5 +181,25 @@ describe("ojplay push on a branch, read aloud", () => {
         spawnSync("git", ["init", "-q", "-b", "night-level", dir])
         expect(currentBranch(dir)).toBe("night-level")
         fs.rmSync(dir, { recursive: true, force: true })
+    })
+})
+
+/**
+ * `--private` and `--unlisted` choose for a repo's first push only. On a later
+ * one they refuse when the repo or its first cart is open, since the push
+ * would put a build where the flag meant it not to be.
+ */
+describe("a later push asked for --private or --unlisted", () => {
+    const sid = "aaaaaaaaaaaa"
+    it("refuses --unlisted when the first cart is Public, and --private when the repo is public", () => {
+        expect(firstPushOnly(repo("a", "a"), sid, { unlisted: true })).toBe(`${address} is Public, and --unlisted only chooses for a repo's first push. Nothing was pushed: make it Unlisted in its Settings first`)
+        expect(firstPushOnly(repo("a", "a"), sid, { private: true })).toMatch(/is a public repo, and --private only chooses/)
+    })
+
+    it("pushes when the cart is already what was asked for, or nothing was asked", () => {
+        const unlisted = repo("a", "a", null, [{ ...first("a"), visibility: "unlisted" }])
+        expect(firstPushOnly(unlisted, sid, { unlisted: true })).toBeNull()
+        expect(firstPushOnly({ ...repo("a", "a"), repoPublic: false }, sid, { private: true })).toBeNull()
+        expect(firstPushOnly(repo("a", "a"), sid, {})).toBeNull()
     })
 })
