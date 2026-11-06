@@ -204,3 +204,89 @@ describe("random used directly", () => {
         expect(random("x").int(0, 1000)).toBe(random("x").int(0, 1000))
     })
 })
+
+/**
+ * FNV-1a over each sample's float64 bytes: one engine computing a sample a bit
+ * differently changes it. This function, bundled, gave the same two numbers in
+ * Chrome 157 and in OneJS's native QuickJS on 6 Nov (PlaySite/docs/runtime-1.3.md
+ * section 6). Changing it or the noise changes them; move all three together.
+ */
+function hashNoiseSamples(seed: string, layers: number): string {
+    const n = random(seed).noise({ layers })
+    const bytes = new Uint8Array(8)
+    const view = new DataView(bytes.buffer)
+    let h = 0x811c9dc5
+    for (let i = 0; i < 10000; i++) {
+        const x = (i % 100) * 0.173 - 7.1
+        const y = Math.floor(i / 100) * 0.219 - 9.3
+        view.setFloat64(0, i % 2 === 0 ? n(x, y) : n(x, y, i * 0.031))
+        for (const b of bytes) h = Math.imul(h ^ b, 16777619) >>> 0
+    }
+    return h.toString(16).padStart(8, "0")
+}
+
+describe("noise", () => {
+    it("gives the same samples for one seed and other samples for another", () => {
+        const a = random("island 1").noise()
+        const b = random("island 1").noise()
+        const c = random("island 2").noise()
+        const at = [[0.3, 0.7], [12.5, -3.25], [100.1, 4]] as const
+        expect(at.map(([x, y]) => a(x, y))).toEqual(at.map(([x, y]) => b(x, y)))
+        expect(at.map(([x, y]) => a(x, y))).not.toEqual(at.map(([x, y]) => c(x, y)))
+    })
+
+    it("stays within -1 to 1, flat, in space and with layers", () => {
+        for (const layers of [1, 4, 16]) {
+            const n = random(7).noise({ layers })
+            let lo = Infinity, hi = -Infinity
+            for (let i = 0; i < 20000; i++) {
+                const x = i * 0.0731, y = i * 0.0517, z = i * 0.0193
+                for (const v of [n(x, y), n(x, y, z)]) { lo = Math.min(lo, v); hi = Math.max(hi, v) }
+            }
+            expect(lo).toBeGreaterThanOrEqual(-1)
+            expect(hi).toBeLessThanOrEqual(1)
+            // It uses the range rather than sitting near 0.
+            expect(hi - lo).toBeGreaterThan(0.8)
+        }
+    })
+
+    it("is smooth: a small step changes the value a little", () => {
+        const n = random("smooth").noise()
+        for (let i = 0; i < 1000; i++) {
+            const x = i * 0.37, y = i * 0.11
+            expect(Math.abs(n(x + 0.001, y) - n(x, y))).toBeLessThan(0.02)
+            expect(Math.abs(n(x, y, 2 + 0.001) - n(x, y, 2))).toBeLessThan(0.02)
+        }
+    })
+
+    it("adds detail with layers, and samples a third axis apart from the flat field", () => {
+        const one = random("hills").noise()
+        const four = random("hills").noise({ layers: 4 })
+        expect(four(3.3, 1.7)).not.toBe(one(3.3, 1.7))
+        expect(one(3.3, 1.7, 0.4)).not.toBe(one(3.3, 1.7))
+    })
+
+    it("draws nothing from its generator", () => {
+        const plain = random("parent")
+        const noisy = random("parent")
+        noisy.noise({ layers: 3 })(1, 2)
+        expect([noisy.next(), noisy.int(0, 100), noisy.pick(["a", "b", "c"])])
+            .toEqual([plain.next(), plain.int(0, 100), plain.pick(["a", "b", "c"])])
+    })
+
+    it("gives a fork its own field", () => {
+        const rng = random("world")
+        expect(rng.fork("caves").noise()(5.5, 2.5)).not.toBe(rng.noise()(5.5, 2.5))
+    })
+
+    it("refuses layers that are not a whole number from 1 to 16", () => {
+        for (const layers of [0, 17, 2.5, NaN]) {
+            expect(() => random(1).noise({ layers })).toThrow(/layers.*1 to 16/)
+        }
+    })
+
+    it("hashes 10k samples to the number the other engines are held to", () => {
+        expect(hashNoiseSamples("parity", 1)).toBe("960ecbe1")
+        expect(hashNoiseSamples("parity", 4)).toBe("ea942b43")
+    })
+})

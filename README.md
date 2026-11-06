@@ -44,7 +44,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `models.ts` | `useScene`, `useModel`: `.glb` models behind the panel, with a sun, shadows and lights |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
-| `random.ts` | `random`: a shared generator, and called with a seed, a seeded one |
+| `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
 | `theme.ts` | The default look of the controls the runtime provides |
 | `code.ts`, `code-view.tsx` | `tokenize` and `<Code>`: TypeScript highlighting for a game that shows source |
 | `show.ts` | `show`: a value, a table or a graph beside the line that made it, in the OJPlay editor; a log line on change anywhere else |

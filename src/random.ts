@@ -21,6 +21,27 @@
  * Random is a static global, not a seeded instance.
  */
 
+import { simplex2D, simplex3D } from "onejs-unity/proc/noise"
+
+/** Options for `rng.noise()`. */
+export interface NoiseOptions {
+    /**
+     * How many layers of detail: each one adds the same noise at twice the
+     * frequency and half the weight, and the sum is rescaled to stay in -1 to 1.
+     * A whole number from 1 (smooth hills, the default) to 16.
+     */
+    layers?: number
+}
+
+/**
+ * A smooth noise field: nearby points give nearby values, from -1 to 1, the
+ * same everywhere for one seed. Two numbers sample it flat, three in space
+ * (use the third as time to animate a flat field).
+ */
+export type Noise = (x: number, y: number, z?: number) => number
+
+const MAX_LAYERS = 16
+
 export interface Rng {
     /** Next float in [0, 1). */
     next(): number
@@ -44,6 +65,15 @@ export interface Rng {
      * consuming draws from the other.
      */
     fork(label: string): Rng
+    /**
+     * A smooth noise field seeded by this generator (simplex noise), for
+     * terrain, clouds and wobble. It draws nothing from this generator, so
+     * `int`, `range` and the rest return what they would have without it, and
+     * every call gives the same field: fork first for another one,
+     * `rng.fork("caves").noise()`. Features are about 1 unit across, so divide
+     * coordinates by the size you want: `n(x / 50, z / 50)`.
+     */
+    noise(options?: NoiseOptions): Noise
 }
 
 /** Hashes a string seed into a 32-bit integer. */
@@ -143,9 +173,31 @@ function createRng(seed?: string | number): Rng {
         fork(label: string): Rng {
             return createRng(xmur3(`${seedInt}:${label}`))
         },
+
+        noise(options: NoiseOptions = {}): Noise {
+            return createNoise(xmur3(`${seedInt}:noise`), options)
+        },
     }
 
     return rng
+}
+
+/**
+ * A noise field from a 32-bit seed. onejs-unity's simplex is reused: it runs on
+ * arithmetic, Math.floor and Math.sqrt only, which every engine computes
+ * exactly, so one seed gives the same field in Chrome, Node and QuickJS.
+ */
+function createNoise(seedInt: number, options: NoiseOptions): Noise {
+    const layers = options.layers ?? 1
+    if (!Number.isInteger(layers) || layers < 1 || layers > MAX_LAYERS) {
+        throw new Error(`[oj] noise({ layers }) takes a whole number from 1 to ${MAX_LAYERS}, and was given ${String(layers)}`)
+    }
+    const fbm = { octaves: layers, lacunarity: 2, persistence: 0.5 }
+    const flat = simplex2D({ seed: seedInt })
+    const deep = simplex3D({ seed: seedInt })
+    const sample2 = layers === 1 ? flat.sample : flat.fbm(fbm).sample
+    const sample3 = layers === 1 ? deep.sample : deep.fbm(fbm).sample
+    return (x, y, z) => z === undefined ? sample2(x, y) : sample3(x, y, z)
 }
 
 // The methods are closures over their own stream, so copying them onto the factory
