@@ -239,6 +239,33 @@ describe("a character", () => {
         w.dispose()
     })
 
+    it("covers the whole distance across open floor, teleported every frame or not", async () => {
+        const { w, me } = await walking()
+        run(w, 2)
+        for (let i = 0; i < 120; i++) { me.move([4 / 60, 0, 0]); w.step() }
+        expect(me.position[0]).toBeCloseTo(8, 1)
+        // Gunyard's way: positions are the game's, so it places, then moves, every frame.
+        let at: Vec3 = [-8, 0, -4]
+        for (let i = 0; i < 120; i++) {
+            me.teleport(at)
+            me.move([4 / 60 * Math.SQRT1_2, 0, 4 / 60 * Math.SQRT1_2])
+            at = me.position
+        }
+        expect(Math.hypot(at[0] + 8, at[2] + 4)).toBeCloseTo(8, 1)
+        w.dispose()
+    })
+
+    it("pressed 10 degrees into a wall, travels its whole face", async () => {
+        const { w, me } = await walking()
+        w.box({ at: [0, 1, 3], size: [40, 2, 1], layer: "wall" })
+        me.teleport([-8, 0, 2.5 - 0.3 - 0.05])
+        run(w, 2)
+        const a = (10 * Math.PI) / 180
+        for (let i = 0; i < 240; i++) { me.move([Math.cos(a) * 4 / 60, 0, Math.sin(a) * 4 / 60]); w.step() }
+        expect(me.position[0]).toBeGreaterThan(-8 + 16 * Math.cos(a) - 0.3)
+        w.dispose()
+    })
+
     it("teleport onto open floor lands exactly there, feet on the floor", async () => {
         const { w, me } = await walking()
         me.teleport([-4, 0, 3])
@@ -248,12 +275,13 @@ describe("a character", () => {
         w.dispose()
     })
 
-    it("teleport lands it clear of whatever it would stand inside", async () => {
+    it("teleport goes exactly where asked, and clearSpot is what finds room", async () => {
         const { w, me } = await walking()
         w.box({ at: [5, 1, 5], size: [2, 2, 2], layer: "wall" })
         me.teleport([5, 0, 5])
-        const p = me.position
-        expect(Math.max(Math.abs(p[0] - 5), Math.abs(p[2] - 5))).toBeGreaterThanOrEqual(1.3 - 1e-6)
+        expect(near(me.position, [5, 0, 5])).toBe(true)
+        const spot = w.clearSpot(shape.capsule(0.3, 1.6), [5, 0.81, 5], { only: ["wall"] })
+        expect(Math.max(Math.abs(spot[0] - 5), Math.abs(spot[2] - 5))).toBeGreaterThanOrEqual(1.3 - 1e-6)
         w.dispose()
     })
 
@@ -359,17 +387,37 @@ describe("shapes outside any world, and rewind", () => {
         w.dispose()
     })
 
-    it("a body destroyed since the snapshot stays gone", async () => {
+    it("a body destroyed since the snapshot comes back, behind the same handle", async () => {
         const w = await floored()
-        const a = w.box({ at: [0, 5, 0], dynamic: true })
+        const a = w.box({ at: [0, 5, 0], dynamic: true, tag: "coin" })
+        const touched: unknown[] = []
+        a.onTouch((other) => touched.push(other))
         const snap = w.snapshot()
         a.destroy()
-        w.restore(snap)
         expect(a.alive).toBe(false)
-        expect(w.bodies.length).toBe(1)
-        let count = 0
-        ;(w as any).raw.forEachRigidBody(() => count++)
-        expect(count).toBe(1)
+        w.restore(snap)
+        expect(a.alive).toBe(true)
+        expect(a.tag).toBe("coin")
+        expect(near(a.position, [0, 5, 0])).toBe(true)
+        expect(w.bodies).toContain(a)
+        run(w, 120)
+        expect(a.position[1]).toBeLessThan(0.6)
+        expect(touched.length).toBe(1)
+        w.dispose()
+    })
+
+    it("a body made since the snapshot is destroyed by restore, and a character comes back walking", async () => {
+        const w = await floored()
+        const me = w.character({ at: [0, 0, 0] })
+        run(w, 2)
+        const snap = w.snapshot()
+        const later = w.box({ at: [3, 1, 0] })
+        me.destroy()
+        w.restore(snap)
+        expect(later.alive).toBe(false)
+        expect(me.alive).toBe(true)
+        for (let i = 0; i < 30; i++) { me.move([0, 0, 2 / 60]); w.step() }
+        expect(me.position[2]).toBeGreaterThan(0.9)
         w.dispose()
     })
 
@@ -441,3 +489,44 @@ function rotate(q: { x: number, y: number, z: number, w: number }, v: Vec3): Vec
     const ix = w * v[0] + y * v[2] - z * v[1], iy = w * v[1] + z * v[0] - x * v[2], iz = w * v[2] + x * v[1] - y * v[0], iw = -x * v[0] - y * v[1] - z * v[2]
     return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x]
 }
+
+describe("what the cold review asked of behaviour", () => {
+    it("destroying a body destroys its actor with it", async () => {
+        const w = await floored()
+        let gone = 0
+        const actor = { destroy: () => { gone++ } } as any
+        const b = w.box({ at: [0, 1, 0], actor })
+        b.destroy()
+        expect(gone).toBe(1)
+        expect(b.actor).toBeNull()
+        w.dispose()
+    })
+
+    it("the larger bounce of two bodies wins, so a ball bounces off a dead floor", async () => {
+        const w = await floored()
+        const ball = w.sphere({ at: [0, 3, 0], radius: 0.25, dynamic: true, bounce: 0.9 })
+        let peak = 0, landed = false
+        for (let i = 0; i < 240; i++) {
+            w.step()
+            const y = ball.position[1]
+            if (y < 0.3) landed = true
+            if (landed) peak = Math.max(peak, y)
+        }
+        expect(peak).toBeGreaterThan(1.5)
+        w.dispose()
+    })
+
+    it("says once when a filter names a layer no body has been on, and matches nothing", async () => {
+        const w = await floored()
+        w.box({ at: [0, 1, 2], size: [4, 2, 0.5], layer: "wall" })
+        run(w, 1)
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        expect(w.raycast([0, 1, 0], [0, 1, 5], { only: ["walls"] })).toBeNull()
+        expect(w.raycast([0, 1, 0], [0, 1, 5], { only: ["walls"] })).toBeNull()
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(String(warn.mock.calls[0]![0])).toContain("walls")
+        expect(w.raycast([0, 1, 0], [0, 1, 5], { only: ["wall"] })).not.toBeNull()
+        warn.mockRestore()
+        w.dispose()
+    })
+})

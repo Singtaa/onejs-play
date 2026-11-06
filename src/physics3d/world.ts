@@ -183,7 +183,7 @@ export interface Character {
      * ["player"] }` walks through other players. Leave the floor in.
      */
     move(delta: Vec3, filter?: Filter): void
-    /** Puts its feet at `at`, pushed out of anything it would stand inside. */
+    /** Puts its feet exactly at `at`. `world.clearSpot` finds somewhere it fits. */
     teleport(at: Vec3): void
     onTouch(handler: (other: Body | Character, contact: BodyContact) => void): () => void
     destroy(): void
@@ -252,8 +252,9 @@ export interface World {
     /** Every body's state, to hand back to `restore`. */
     snapshot(): Uint8Array
     /**
-     * Back to a snapshot. Bodies that exist now and then go back to where they
-     * were; a body made since is destroyed; one destroyed since stays gone.
+     * Back to a snapshot. Every body goes back to where it was, behind the
+     * handle the game holds: one destroyed since comes back (without its
+     * actor, which went with it), and one made since is destroyed.
      */
     restore(snapshot: Uint8Array): void
     gravity: Vec3
@@ -362,6 +363,13 @@ class WorldImpl implements World {
     readonly r: Rapier
     private readonly queue: any
     private readonly layers = new Map<Layer, number>()
+    private readonly unknownLayers = new Set<Layer>()
+    /**
+     * Bodies destroyed, by collider handle, so `restore` can bring one back
+     * with the handle the game already holds. The most recent 4096, since a
+     * snapshot older than that many destructions is not a rewind a game makes.
+     */
+    readonly buried = new Map<number, BodyImpl | CharacterImpl>()
     /** Every body and character, by its collider's handle. */
     readonly byCollider = new Map<number, BodyImpl | CharacterImpl>()
     readonly characters = new Set<CharacterImpl>()
@@ -403,14 +411,25 @@ class WorldImpl implements World {
         return ((this.layerBit(layer) << 16) | 0xffff) >>> 0
     }
 
+    /** A layer a filter names: its bit, or 0 for one no body has been on, said once. */
+    private filterBit(layer: Layer): number {
+        const bit = this.layers.get(layer)
+        if (bit !== undefined) return bit
+        if (!this.unknownLayers.has(layer)) {
+            this.unknownLayers.add(layer)
+            console.warn(`[oj] no body has been on a layer called "${layer}" yet, so a filter naming it matches nothing. Layers so far: ${[...this.layers.keys()].join(", ") || "none"}.`)
+        }
+        return 0
+    }
+
     queryGroups(filter: Filter | undefined): number | undefined {
         const only = filter?.only
         let mask = 0xffff
         if (only !== undefined) {
             mask = 0
-            for (const l of only) mask |= this.layerBit(l)
+            for (const l of only) mask |= this.filterBit(l)
         }
-        for (const s of filter?.skip ?? []) if (typeof s === "string") mask &= ~this.layerBit(s)
+        for (const s of filter?.skip ?? []) if (typeof s === "string") mask &= ~this.filterBit(s)
         return mask === 0xffff ? undefined : ((0xffff << 16) | mask) >>> 0
     }
 
@@ -433,7 +452,8 @@ class WorldImpl implements World {
         bodyDesc.setTranslation(at[0], at[1], at[2]).setRotation(toQuat(o.rotation))
         const rb = this.raw.createRigidBody(bodyDesc)
         const layer = o.layer ?? DEFAULTS.layer
-        desc.setFriction(o.friction ?? DEFAULTS.friction).setRestitution(o.bounce ?? DEFAULTS.bounce)
+        // The larger bounce of two bodies wins, so a ball does not die on a floor with none.
+        desc.setFriction(o.friction ?? DEFAULTS.friction).setRestitution(o.bounce ?? DEFAULTS.bounce).setRestitutionCombineRule(r.CoefficientCombineRule.Max)
             .setSensor(o.trigger === true).setCollisionGroups(this.groupsFor(layer))
         if (o.mass !== undefined) desc.setMass(o.mass)
         // Every pair is reported, so a trigger hears a character and a wall hears a kinematic door.
@@ -683,20 +703,31 @@ class WorldImpl implements World {
         this.live()
         const restored = this.r.World.restoreSnapshot(snapshot)
         if (restored === null || restored === undefined) throw new Error("[oj] that snapshot is not one this world's engine can read")
-        // What the game knows of is what the world holds: a body nobody has a
-        // handle to any more (destroyed since) leaves the restored world too.
-        const known = new Set([...this.byCollider.values()].map((w) => w.bodyHandle))
+        // A body destroyed since the snapshot comes back, behind the handle the
+        // game already holds (its actor went with it, so it has none). One made
+        // since is destroyed. Anything else in the snapshot is no body of this world's.
+        const holders = new Map<number, BodyImpl | CharacterImpl>()
+        for (const w of [...this.byCollider.values(), ...this.buried.values()]) holders.set(w.bodyHandle, w)
         const orphans: number[] = []
-        restored.forEachRigidBody((rb: any) => { if (!known.has(rb.handle)) orphans.push(rb.handle) })
+        restored.forEachRigidBody((rb: any) => { if (!holders.has(rb.handle)) orphans.push(rb.handle) })
         for (const h of orphans) restored.removeRigidBody(restored.getRigidBody(h))
         const old = this.raw
         this.raw = restored
+        this.fresh.clear()
         for (const [handle, w] of [...this.byCollider]) {
             if (restored.getCollider(handle) === null || restored.getCollider(handle) === undefined) {
                 w.markGone()
                 this.byCollider.delete(handle)
                 this.characters.delete(w as CharacterImpl)
+                this.bury(w)
             }
+        }
+        for (const [handle, w] of [...this.buried]) {
+            if (restored.getCollider(handle) === null || restored.getCollider(handle) === undefined) continue
+            this.buried.delete(handle)
+            w.revive()
+            this.byCollider.set(handle, w)
+            if (w instanceof CharacterImpl) this.characters.add(w)
         }
         for (const c of this.characters) c.rebuildController()
         old.free()
@@ -720,6 +751,12 @@ class WorldImpl implements World {
         this.byCollider.delete(w.colliderHandle)
         this.fresh.delete(w.colliderHandle)
         if (w instanceof CharacterImpl) this.characters.delete(w)
+        this.bury(w)
+    }
+
+    private bury(w: BodyImpl | CharacterImpl): void {
+        this.buried.set(w.colliderHandle, w)
+        if (this.buried.size > 4096) this.buried.delete(this.buried.keys().next().value!)
     }
 
     dispose(): void {
@@ -871,8 +908,20 @@ class BodyImpl implements Body {
         this.world.raw.removeRigidBody(this.rb())
         this.world.forget(this)
         this.gone = true
+        this.actor?.destroy()
+        this.actor = null
     }
+
+    revive(): void { this.gone = false }
 }
+
+/**
+ * The gap a character's controller keeps from everything it touches. Its
+ * capsule floats this far above where its feet are said to be: a character
+ * placed with its feet exactly on a floor would start inside the gap, and the
+ * controller stalls from inside it (Gunyard's fighters froze mid-floor).
+ */
+const SKIN = 0.01
 
 class CharacterImpl implements Character {
     readonly kind = "character" as const
@@ -900,7 +949,7 @@ class CharacterImpl implements Character {
         this.actor = o.actor ?? null
         this.tag = o.tag
         const at = o.at ?? [0, 0, 0]
-        const rb = world.raw.createRigidBody(r.RigidBodyDesc.kinematicPositionBased().setTranslation(at[0], at[1] + this.height / 2, at[2]))
+        const rb = world.raw.createRigidBody(r.RigidBodyDesc.kinematicPositionBased().setTranslation(at[0], at[1] + this.height / 2 + SKIN, at[2]))
         const collider = world.raw.createCollider(
             r.ColliderDesc.capsule(capsuleHalf(this.radius, this.height), this.radius)
                 .setCollisionGroups(world.groupsFor(this.layer))
@@ -916,7 +965,7 @@ class CharacterImpl implements Character {
     /** The controller holds the world's sets, so a restored world needs a new one. */
     rebuildController(): void {
         this.controller?.free()
-        const c = this.world.raw.createCharacterController(0.01)
+        const c = this.world.raw.createCharacterController(SKIN)
         c.enableAutostep(this.o.step ?? DEFAULTS.character.step, this.radius / 2, false)
         c.enableSnapToGround(this.o.snap ?? DEFAULTS.character.snap)
         const slope = ((this.o.slope ?? DEFAULTS.character.slope) * Math.PI) / 180
@@ -935,14 +984,19 @@ class CharacterImpl implements Character {
 
     get position(): Vec3 {
         const t = this.rb().nextTranslation()
-        return vec3([t.x, t.y - this.height / 2, t.z])
+        return vec3([t.x, t.y - this.height / 2 - SKIN, t.z])
     }
 
     move(delta: Vec3, filter?: Filter): void {
         const rb = this.rb()
         const dt = this.world.frameSeconds
         const g = this.world.raw.gravity.y
-        this.fall = this.isGrounded && this.fall <= 0 ? g * dt : this.fall + g * dt
+        // Standing, it does not push down into the floor: snap-to-ground keeps
+        // it there, and a downward wish into a floor it rests on made Rapier's
+        // controller drop a frame's movement now and then (Gunyard's fighters
+        // lost 3% of every walk, and froze outright when placed on the floor).
+        const standing = this.isGrounded && this.fall <= 0
+        this.fall = standing ? 0 : this.fall + g * dt
         const wish = { x: delta[0], y: delta[1] + this.fall * dt, z: delta[2] }
         const collider = this.world.raw.getCollider(this.colliderHandle)
         this.controller.computeColliderMovement(collider, wish, this.r.QueryFilterFlags.EXCLUDE_SENSORS, this.world.queryGroups(filter), this.world.queryPredicate(filter))
@@ -989,17 +1043,15 @@ class CharacterImpl implements Character {
     }
 
     teleport(at: Vec3): void {
-        // Tested a little above where it will stand: feet resting on a floor
-        // touch it, and a touch counts as an overlap, which would walk the
-        // character away from a perfectly good spot.
-        const lift = 0.02
-        const clear = this.world.clearSpot(shape.capsule(this.radius, this.height), [at[0], at[1] + this.height / 2 + lift, at[2]], { skip: [this] })
-        const spot: Vec3 = [clear[0], clear[1] - lift, clear[2]]
+        // Exactly where asked; finding somewhere clear is clearSpot's job.
+        const spot: Vec3 = [at[0], at[1] + this.height / 2 + SKIN, at[2]]
         this.rb().setTranslation(xyz(spot), true)
         this.rb().setNextKinematicTranslation(xyz(spot))
         this.world.markFresh(this.colliderHandle)
         this.fall = 0
-        this.isGrounded = false
+        // Standing if there is ground within its skin, so a character placed on
+        // a floor walks off as one that walked there would.
+        this.isGrounded = this.world.sweep(shape.capsule(this.radius, this.height), spot, [spot[0], spot[1] - 2 * SKIN, spot[2]], { skip: [this] }) !== null
         this.touching.clear()
     }
 
@@ -1035,6 +1087,13 @@ class CharacterImpl implements Character {
         this.world.raw.removeRigidBody(this.rb())
         this.world.forget(this)
         this.markGone()
+        this.actor?.destroy()
+        this.actor = null
+    }
+
+    revive(): void {
+        this.gone = false
+        this.rebuildController()
     }
 }
 
