@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createServer, type Server } from "node:http"
-import { droppedConnection, status } from "./site.mjs"
+import { droppedConnection, git, status } from "./site.mjs"
 
 /**
  * A connection the site dropped while ojplay was not looking.
@@ -59,3 +59,27 @@ describe("a site connection that went stale", () => {
         expect(droppedConnection(Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } }))).toBe(true)
     })
 })
+
+/**
+ * The cause of the failure above, removed. git ran under spawnSync, which
+ * holds the event loop for a whole push, so nothing could see a connection
+ * close meanwhile. A timer that keeps ticking through a slow git says the
+ * loop is running.
+ */
+describe("git", () => {
+    it("leaves the event loop running while it works", async () => {
+        let ticks = 0
+        const timer = setInterval(() => ticks++, 50)
+        try {
+            expect(await git(["-c", "alias.wait=!sleep 1", "wait"])).toBe(0)
+        } finally {
+            clearInterval(timer)
+        }
+        expect(ticks).toBeGreaterThanOrEqual(5)
+    })
+
+    it("answers git's exit code", async () => {
+        expect(await git(["-c", "alias.fail=!exit 3", "fail"])).toBe(3)
+    })
+})
+

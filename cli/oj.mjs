@@ -360,14 +360,14 @@ async function main() {
             if (branch !== "main") {
                 const tip = tipOf(root)
                 const was = following(before, branch)[0]?.live ?? null
-                const code = git(["push", "origin", branch], { cwd: root, bearer })
+                const code = await git(["push", "origin", branch], { cwd: root, bearer })
                 if (code !== 0) return code
                 const said = describeBranchPush(branch, was, tip, await status(sid, { bearer }), left)
                 for (const line of said.lines) say(line)
                 return said.code
             }
             const { head } = before
-            const code = git(["push", "origin", "main"], { cwd: root, bearer })
+            const code = await git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
             const said = describePush(head, await status(sid, { bearer }), left)
             for (const line of said.lines) say(line)
@@ -378,7 +378,7 @@ async function main() {
         case "clone": {
             const { url, dir } = cloneSource(args[0], args[1])
             const bearer = tokenOf(root)
-            const code = cloneCart(url, dir, { bearer })
+            const code = await cloneCart(url, dir, { bearer })
             if (code !== 0) {
                 if (!bearer) say(`a private repo needs a login first: ${COMMAND} login, or set OJ_TOKEN`)
                 return code

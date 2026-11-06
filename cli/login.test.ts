@@ -273,7 +273,7 @@ describe("what the Allow page shows", () => {
 describe("a clone ojplay makes", () => {
     let remote = ""
     let clone = ""
-    beforeEach(() => {
+    beforeEach(async () => {
         const src = path.join(dir, "src")
         const run = (...args: string[]) => expect(spawnSync("git", args, { cwd: dir }).status).toBe(0)
         run("init", "-q", src)
@@ -283,7 +283,7 @@ describe("a clone ojplay makes", () => {
         remote = path.join(dir, "remote.git")
         run("clone", "-q", "--bare", src, remote)
         clone = path.join(dir, "clone")
-        expect(cloneCart(remote, clone, { quiet: true })).toBe(0)
+        expect(await cloneCart(remote, clone, { quiet: true })).toBe(0)
     })
 
     it("keeps the site's helper in its own config, after a reset, and no token", () => {

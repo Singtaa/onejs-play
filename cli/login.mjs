@@ -103,8 +103,8 @@ export function helperFor(files) {
  * helper first resets the list, as configureGit's does. Answers git's exit
  * code.
  */
-export function cloneCart(url, dir, { bearer, quiet = false } = {}) {
-    const code = git(["clone", ...(quiet ? ["-q"] : []), url, dir], { bearer })
+export async function cloneCart(url, dir, { bearer, quiet = false } = {}) {
+    const code = await git(["clone", ...(quiet ? ["-q"] : []), url, dir], { bearer })
     if (code !== 0) return code
     pointAtLogin(dir)
     return 0
@@ -117,8 +117,8 @@ export function cloneCart(url, dir, { bearer, quiet = false } = {}) {
  * me"). The token stays out of .gitmodules and the submodule's config, as it
  * does for a clone.
  */
-export function submoduleCart(url, project, folder, { bearer } = {}) {
-    const code = git(["-C", project, "submodule", "--quiet", "add", url, folder], { bearer })
+export async function submoduleCart(url, project, folder, { bearer } = {}) {
+    const code = await git(["-C", project, "submodule", "--quiet", "add", url, folder], { bearer })
     if (code !== 0) return code
     pointAtLogin(path.join(project, folder))
     return 0
