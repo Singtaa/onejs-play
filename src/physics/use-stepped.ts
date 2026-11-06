@@ -3,18 +3,26 @@
  * useWorld2D both are.
  *
  * Null until the engine has loaded, which is one fetch the first time a cart
- * makes a world and nothing after. Stepped at a fixed rate every frame, after
- * the frame's own callbacks have moved things, and then every body's actor is
- * put where its body is, or, when frames come faster than steps, between the
- * last two steps. Disposed with the component.
+ * makes a world and nothing after. Stepped at a fixed rate in the frame's
+ * step phase, after every frame callback has moved things and before late,
+ * and then every body's actor is put where its body is, or, when frames come
+ * faster than steps, ahead of it. Disposed with the component.
  */
 
 import { useEffect, useState } from "react"
-import { getCurrentRuntime } from "../runtime"
+import { getCurrentRuntime, type HostRuntime } from "../runtime"
 
 interface Stepped {
     frame(seconds: number): void
     dispose(): void
+}
+
+/**
+ * Steps a world in `runtime`'s step phase, returning the unsubscribe. The
+ * phase, not when the world loaded, puts it after the cart's frame callbacks.
+ */
+export function stepOn(runtime: HostRuntime, stepped: Stepped): () => void {
+    return runtime.onStep((dt) => stepped.frame(dt))
 }
 
 export function useSteppedWorld<W>(hook: string, create: () => Promise<W>): W | null {
@@ -32,7 +40,7 @@ export function useSteppedWorld<W>(hook: string, create: () => Promise<W>): W | 
             made = stepped
             const runtime = getCurrentRuntime()
             if (runtime === null) console.warn(`[oj] ${hook}: no frame clock here, so the world will not step itself. Call world.step() from your own loop.`)
-            stop = runtime?.onFrame((dt) => stepped.frame(dt))
+            stop = runtime === null ? undefined : stepOn(runtime, stepped)
             setWorld(w)
         }, (e) => console.error(`[oj] ${hook}: the physics engine did not load. ${e instanceof Error ? e.message : String(e)}`))
         return () => {
