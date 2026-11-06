@@ -91,6 +91,7 @@ export type {
     World, WorldOptions, Body, Character, Shape, Hit, Filter, Layer, BodyContact,
     BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, MeshOptions, MeshSource, Place, SweepMotion,
 } from "./physics3d/world"
+export type { Nav, NavOptions } from "./nav/nav"
 
 // 3D models behind the cart's UI.
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"

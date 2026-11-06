@@ -37,6 +37,9 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-deterministic": "0.21.0",
+    "@recast-navigation/core": "0.44.0",
+    "@recast-navigation/generators": "0.44.0",
+    "@recast-navigation/wasm": "0.44.0",
     "esbuild": ">=0.25.0"
   },
   "peerDependencies": {

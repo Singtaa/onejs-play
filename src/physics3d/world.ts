@@ -24,6 +24,7 @@ import { fromQuat, toQuat, type Quat } from "./rotation"
 import { placeActors, type ActorPlacement } from "./actors"
 import { glbTriangles, type Triangles } from "./gltf"
 import { loadFileBytes, modelUrls } from "./sources"
+import { buildNav, type Nav, type NavOptions } from "../nav/nav"
 
 /** A collision layer, named by use. Up to 16 in one world. */
 export type Layer = string
@@ -227,6 +228,12 @@ export interface World {
      */
     mesh(source: MeshSource, options?: MeshOptions): Promise<Body>
     character(options?: CharacterOptions): Character
+    /**
+     * Paths over this world's floor, built from every static, solid body:
+     * walls, crates and mesh levels, as they are now. A level that changes
+     * builds a new one.
+     */
+    nav(options?: NavOptions): Promise<Nav>
     /** The first thing on the line from `from` to `to`, or null. */
     raycast(from: Vec3, to: Vec3, filter?: Filter): Hit | null
     /** Whether nothing the filter sees is between two points. */
@@ -456,7 +463,21 @@ class WorldImpl implements World {
         this.live()
         const k = o.scale ?? 1
         const vertices = k === 1 ? t.vertices : t.vertices.map((v) => v * k)
-        return this.makeBody("mesh", this.r.ColliderDesc.trimesh(vertices, t.indices), o)
+        const body = this.makeBody("mesh", this.r.ColliderDesc.trimesh(vertices, t.indices), o) as BodyImpl
+        body.meshTriangles = { vertices, indices: t.indices }
+        return body
+    }
+
+    async nav(o: NavOptions = {}): Promise<Nav> {
+        this.live()
+        const vertices: number[] = [], indices: number[] = []
+        for (const w of this.byCollider.values()) {
+            if (!(w instanceof BodyImpl) || w.dynamic || w.kinematic || w.trigger) continue
+            if (o.only !== undefined && !o.only.includes(w.layer)) continue
+            w.appendTriangles(vertices, indices)
+        }
+        if (indices.length === 0) throw new Error("[oj] world.nav: no static bodies to walk on" + (o.only ? ` in layers ${o.only.join(", ")}` : ""))
+        return buildNav(new Float32Array(vertices), new Uint32Array(indices), o)
     }
 
     character(o: CharacterOptions = {}): Character {
@@ -807,6 +828,33 @@ class BodyImpl implements Body {
 
     markGone(): void { this.gone = true }
 
+    /** A mesh body's own triangles, in its local frame. */
+    meshTriangles: Triangles | null = null
+
+    /**
+     * Its surface as triangles in the world, facing out (counter-clockwise
+     * from outside), which is what tells a navigation mesh floor from wall.
+     * A sphere or capsule stands in as its bounding box.
+     */
+    appendTriangles(vertices: number[], indices: number[]): void {
+        const c = this.collider()
+        const q = c.rotation(), t = c.translation()
+        const put = (v: Readonly<Vec3>) => {
+            const p = rotate(q, v)
+            vertices.push(p[0] + t.x, p[1] + t.y, p[2] + t.z)
+        }
+        if (this.meshTriangles !== null) {
+            const base = vertices.length / 3, mv = this.meshTriangles.vertices
+            for (let i = 0; i < mv.length; i += 3) put([mv[i]!, mv[i + 1]!, mv[i + 2]!])
+            for (const i of this.meshTriangles.indices) indices.push(base + i)
+            return
+        }
+        const h = halfExtentsOf(c)
+        const base = vertices.length / 3
+        for (const [x, y, z] of BOX_CORNERS) put([x * h[0], y * h[1], z * h[2]])
+        for (const i of BOX_FACES) indices.push(base + i)
+    }
+
     destroy(): void {
         if (this.gone) return
         this.world.raw.removeRigidBody(this.rb())
@@ -972,6 +1020,18 @@ class CharacterImpl implements Character {
         this.world.forget(this)
         this.markGone()
     }
+}
+
+const BOX_CORNERS: readonly Vec3[] = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]]
+/** Two triangles a face, each counter-clockwise seen from outside, so every normal points out. */
+const BOX_FACES = [0, 3, 2, 0, 2, 1, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 3, 7, 6, 3, 6, 2, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5]
+
+/** A collider's half extents: a box's own, a sphere's or capsule's bounding box. */
+function halfExtentsOf(c: any): Vec3 {
+    const s = c.shape
+    if (s.halfExtents !== undefined) return [s.halfExtents.x, s.halfExtents.y, s.halfExtents.z]
+    if (s.halfHeight !== undefined) return [s.radius, s.halfHeight + s.radius, s.radius]
+    return [s.radius, s.radius, s.radius]
 }
 
 async function trianglesOf(source: MeshSource): Promise<Triangles> {
