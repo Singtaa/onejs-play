@@ -230,6 +230,20 @@ describe("a character", () => {
         high.w.dispose()
     })
 
+    it("climbs nothing with step 0, not even a ledge it would otherwise walk up", async () => {
+        const w = await floored()
+        const me = w.character({ at: [0, 0, 0], step: 0 })
+        // Off, not set to zero: a zero-height autostep still pays for its casts.
+        expect((me as any).controller.autostepEnabled()).toBe(false)
+        expect((w.character({ at: [5, 0, 0] }) as any).controller.autostepEnabled()).toBe(true)
+        w.box({ at: [0, 0.1, 3], size: [4, 0.2, 2], layer: "step" })
+        run(w, 2)
+        for (let i = 0; i < 60; i++) { me.move([0, 0, 1 / 60]); w.step() }
+        expect(me.position[2]).toBeLessThan(2)
+        expect(me.position[1]).toBeCloseTo(0, 2)
+        w.dispose()
+    })
+
     it("falls off an edge", async () => {
         const { w, me } = await walking()
         walk(w, me, [1, 0, 0], 200, 6)

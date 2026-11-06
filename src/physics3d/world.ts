@@ -966,7 +966,11 @@ class CharacterImpl implements Character {
     rebuildController(): void {
         this.controller?.free()
         const c = this.world.raw.createCharacterController(SKIN)
-        c.enableAutostep(this.o.step ?? DEFAULTS.character.step, this.radius / 2, false)
+        // Climbing costs the controller extra casts at every contact, about 40%
+        // of a walking move, so a character that climbs nothing does not pay it.
+        const step = this.o.step ?? DEFAULTS.character.step
+        if (step > 0) c.enableAutostep(step, this.radius / 2, false)
+        else c.disableAutostep()
         c.enableSnapToGround(this.o.snap ?? DEFAULTS.character.snap)
         const slope = ((this.o.slope ?? DEFAULTS.character.slope) * Math.PI) / 180
         c.setMaxSlopeClimbAngle(slope)
