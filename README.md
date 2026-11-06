@@ -37,6 +37,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders |
 | `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies |
 | `wasm.ts` | Where a WebAssembly engine comes from on each host: OneJS's native link, a module handed over, or StreamingAssets |
+| `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
 | `models.ts` | `useScene`, `useModel`: `.glb` models behind the panel, with a sun, shadows and lights |

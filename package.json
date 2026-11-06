@@ -65,6 +65,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./container": "./src/container.ts",
+    "./node": "./src/node.ts",
     "./build/game": {
       "types": "./build/game.d.ts",
       "default": "./build/game.mjs"
