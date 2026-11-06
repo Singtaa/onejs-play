@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "runtime": "1.0.0",
+    "name": "Pointer",
+    "entry": "index.tsx",
+    "controls": ["mouse", "touch"]
+}
