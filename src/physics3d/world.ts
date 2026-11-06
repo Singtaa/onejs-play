@@ -232,7 +232,7 @@ export interface Character {
     destroy(): void
 }
 
-/** What `world.car` takes. Every number has a default that drives like a small road car. */
+/** What `world.car` takes. Every number has a default: a small car at a game's pace rather than a road car's. */
 export type CarOptions = CarOptionsOf<Actor>
 
 /** One wheel of a car, for a model that follows it. */

@@ -103,7 +103,7 @@ describe("2D riding", () => {
     })
 })
 
-describe("2D drawing ahead of the step", () => {
+describe("2D drawing between steps", () => {
     it("moves and turns an element on every frame at 120 Hz", async () => {
         const element = { style: {} }
         const seen: ElementPlacement[] = []
@@ -119,23 +119,27 @@ describe("2D drawing ahead of the step", () => {
                 body.push({ x: b.position[0], degrees: b.rotation })
             }
             const tail = seen.slice(-40), under = body.slice(-40)
-            let ahead = 0
+            let behind = 0
             for (let i = 1; i < tail.length; i++) {
                 expect(tail[i]!.at[0] - tail[i - 1]!.at[0]).toBeCloseTo(5, 1)
                 // Half a turn a second, clockwise: 1.5 degrees a frame.
                 const turn = ((tail[i]!.degrees! - tail[i - 1]!.degrees! + 540) % 360) - 180
                 expect(turn).toBeCloseTo(1.5, 1)
-                // Drawn ahead of the last step, moving and turning, never behind it.
-                const lead = tail[i]!.at[0] - under[i]!.x
-                const leadTurn = ((tail[i]!.degrees! - under[i]!.degrees + 540) % 360) - 180
-                expect(lead).toBeGreaterThanOrEqual(-1e-6)
-                expect(leadTurn).toBeGreaterThanOrEqual(-1e-4)
-                if (lead > 2) {
-                    ahead++
-                    expect(leadTurn).toBeCloseTo(1.5, 1)
+                // Drawn between the last two steps, moving and turning: never
+                // past the last, never more than a step (10 px, 3 degrees) behind it.
+                const lag = under[i]!.x - tail[i]!.at[0]
+                const lagTurn = ((under[i]!.degrees - tail[i]!.degrees! + 540) % 360) - 180
+                expect(lag).toBeGreaterThanOrEqual(-1e-3)
+                expect(lag).toBeLessThanOrEqual(10 + 1e-3)
+                expect(lagTurn).toBeGreaterThanOrEqual(-1e-4)
+                expect(lagTurn).toBeLessThanOrEqual(3 + 1e-4)
+                if (lag > 2) {
+                    behind++
+                    // Turned as far behind as it moved: 3 degrees to a step's 10 px.
+                    expect(lagTurn).toBeCloseTo(lag * 0.3, 1)
                 }
             }
-            expect(ahead).toBeGreaterThan(15)
+            expect(behind).toBeGreaterThan(15)
             w.dispose()
         } finally {
             setElementPlacer(null)

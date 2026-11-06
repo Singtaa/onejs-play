@@ -1,7 +1,8 @@
 /**
  * world.car, driven from a script at 60 steps a second: the drive test of
- * PlaySite/docs/physics.md §9 as assertions, each against what a small road
- * car does, plus the car's place in the family (rewind, destroy, wheels).
+ * PlaySite/docs/physics.md §9 as assertions, each against what a small car
+ * does at a game's pace (50 km/h in about 2 s rather than a road car's 6),
+ * plus the car's place in the family (rewind, destroy, wheels).
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -32,13 +33,14 @@ async function track(o: CarOptions = {}, extra?: (w: World) => void): Promise<{ 
     return { w, car }
 }
 
-describe("world.car drives like a small road car", () => {
+describe("world.car drives like a small car at a game's pace", () => {
     it("reaches 95% of top speed in about the seconds asked, and no faster than top speed", async () => {
         const { w, car } = await track()
         car.drive(1, 0)
+        // 4 s by default.
         const t = until(w, () => car.speed >= 0.95 * 30)
-        expect(t).toBeGreaterThan(7)
-        expect(t).toBeLessThan(9)
+        expect(t).toBeGreaterThan(3.5)
+        expect(t).toBeLessThan(4.5)
         run(w, 600)
         expect(car.speed).toBeGreaterThan(29)
         expect(car.speed).toBeLessThan(30.5)
@@ -268,17 +270,19 @@ describe("world.car in the family", () => {
         const turned = () => ((axle(car.wheels[0]!.rotation) - axle(car.body.rotation) + 540) % 360) - 180
         car.drive(0, 1)
         w.step()
-        // A third of a second to full lock: one step is under 2 degrees of 32.
+        // A third of a second to full lock: one step is under 2.5 degrees of 40.
         expect(turned()).toBeLessThan(2.5)
         run(w, 30)
-        expect(turned()).toBeGreaterThan(30)
+        // Full lock at a crawl: 40 degrees by default.
+        expect(turned()).toBeGreaterThan(38)
+        expect(turned()).toBeLessThan(40.5)
         car.drive(1, 0)
         until(w, () => car.speed * KMH >= 90)
         car.drive(1, 1)
         run(w, 30)
-        // At 90 km/h the lock is under a third of a crawl's.
-        expect(turned()).toBeLessThan(11)
-        expect(turned()).toBeGreaterThan(4)
+        // At 90 km/h the lock is about a quarter of a crawl's: 10.6 degrees.
+        expect(turned()).toBeLessThan(12)
+        expect(turned()).toBeGreaterThan(5)
         w.dispose()
     })
 })
@@ -352,8 +356,9 @@ describe("world.car places the wheel models it is given", () => {
                 const c = seen[0]![f]!
                 for (let i = 0; i < 4; i++) {
                     const o = offset(seen[i + 1]![f]!.at, c.at, c.rotation)
-                    // The springs settle as it accelerates: within a millimetre of where the last step had them.
-                    expect(Math.hypot(o[0]! - truth[i]![0]!, o[1]! - truth[i]![1]!, o[2]! - truth[i]![2]!)).toBeLessThan(1e-3)
+                    // The springs settle as it accelerates: within 2 mm of where the last step had them,
+                    // the chassis being drawn up to a step before it.
+                    expect(Math.hypot(o[0]! - truth[i]![0]!, o[1]! - truth[i]![1]!, o[2]! - truth[i]![2]!)).toBeLessThan(2e-3)
                 }
                 // Rolling: the wheel turned since the frame before, steps or no step.
                 expect(near(seen[3]![f]!.rotation, seen[3]![f - 1]!.rotation)).toBeLessThan(1 - 1e-6)
