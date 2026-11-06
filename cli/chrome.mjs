@@ -318,8 +318,15 @@ export class Browser {
         const ask = (what, method, params) => this.send(method, params, undefined, 5000).then((r) => r, (e) => ({ failed: `${what} did not answer either (${e.message.replace(/^CDP /, "")})` }))
         const page = await ask("the page", "Runtime.evaluate", { expression: "location.href + ' ' + document.readyState", returnByValue: true })
         const history = await ask("its history", "Page.getNavigationHistory", {})
+        // Where a late request spent its time: before connecting is the
+        // proxy decision and the lookup, after it the server.
+        const timing = page.failed ? null : await ask("its timing", "Runtime.evaluate", {
+            expression: "(() => { const n = performance.getEntriesByType('navigation')[0]; if (!n) return ''; const s = (t) => (t / 1000).toFixed(1); return `fetch ${s(n.fetchStart)} s, connect ${s(n.connectStart)} s, request ${s(n.requestStart)} s, response ${s(n.responseStart)} s` })()",
+            returnByValue: true,
+        })
         const said = []
         said.push(page.failed ?? `the page is at ${page.result?.value}`)
+        if (timing?.result?.value) said.push(`its navigation timing: ${timing.result.value}`)
         if (history.failed) said.push(history.failed)
         else said.push(`history ${history.entries.map((e) => e.url).join(" > ")}`)
         const tail = this.stderr().trim().split("\n").slice(-3).join(" | ")

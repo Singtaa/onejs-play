@@ -49,14 +49,18 @@ describe("the CLI's CDP calls", () => {
     // 2026): what the page says afterwards is the only clue to which half hung.
     it("describes a page that answers, and one that does not, after a navigate that hung", async () => {
         vi.useFakeTimers()
-        const { b, sent, answer } = browser()
+        const { b, sent } = browser()
         b.stderr = () => "first line\nlast line\n"
         const answered = b.describe()
-        await vi.advanceTimersByTimeAsync(0)
-        answer("Runtime.evaluate", { result: { value: "about:blank complete" } })
-        await vi.advanceTimersByTimeAsync(0)
-        answer("Page.getNavigationHistory", { entries: [{ url: "about:blank" }] })
-        await expect(answered).resolves.toBe("the page is at about:blank complete; history about:blank; chrome's stderr ends: first line | last line")
+        // Each question is asked once the one before it is answered.
+        const asked = async (method: string, nth: number) => {
+            for (let i = 0; i < 20 && sent.filter((m) => m.method === method).length <= nth; i++) await vi.advanceTimersByTimeAsync(0)
+            return sent.filter((m) => m.method === method)[nth].id
+        }
+        b.receive({ id: await asked("Runtime.evaluate", 0), result: { result: { value: "about:blank complete" } } })
+        b.receive({ id: await asked("Page.getNavigationHistory", 0), result: { entries: [{ url: "about:blank" }] } })
+        b.receive({ id: await asked("Runtime.evaluate", 1), result: { result: { value: "fetch 0.0 s, connect 31.2 s, request 31.2 s, response 31.3 s" } } })
+        await expect(answered).resolves.toBe("the page is at about:blank complete; its navigation timing: fetch 0.0 s, connect 31.2 s, request 31.2 s, response 31.3 s; history about:blank; chrome's stderr ends: first line | last line")
 
         sent.length = 0
         b.stderr = () => ""
