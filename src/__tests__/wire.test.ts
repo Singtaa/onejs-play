@@ -25,7 +25,7 @@ function session(...wires: Parameters<typeof applyWire>[1][]) {
 describe("applyWire", () => {
     it("takes an id, a peer list and a host from the welcome", () => {
         const { state } = session({ t: "welcome", id: 7, peers: [3, 4], host: 3 })
-        expect(state).toEqual({ id: 7, peers: [3, 4], connected: true, hostId: 3, name: "", names: {} })
+        expect(state).toEqual({ id: 7, peers: [3, 4], connected: true, hostId: 3, name: "", names: {}, room: "" })
     })
 
     it("reports open before host, so a game knows who it is first", () => {
@@ -111,7 +111,7 @@ describe("applyWire", () => {
     })
 
     it("ignores a message with no id where one is required", () => {
-        const before: RoomState = { id: 1, peers: [2], connected: true, hostId: 1, name: "", names: {} }
+        const before: RoomState = { id: 1, peers: [2], connected: true, hostId: 1, name: "", names: {}, room: "" }
         expect(applyWire(before, { t: "join" }).state).toBe(before)
         expect(applyWire(before, { t: "leave" }).state).toBe(before)
     })
@@ -139,6 +139,12 @@ describe("applyWire", () => {
             { t: "join", id: 2, name: "Calm Newt", back: false },
             { t: "join", id: 2, name: "Calm Newt", back: true },
         ])
+    })
+
+    it("keeps the room quick play chose, so a reconnect goes back to it", () => {
+        const { state } = session({ t: "welcome", id: 3, peers: [1, 2], host: 1, name: "a", names: {}, room: "q.quick.7" })
+        expect(state.room).toBe("q.quick.7")
+        expect(session({ t: "welcome", id: 3, peers: [], host: 3 }).state.room).toBe("")
     })
 
     it("keeps working with a room too old to send names", () => {
@@ -175,14 +181,14 @@ describe("applyWire", () => {
     })
 
     it("ignores a batch inside a batch and anything in one that is not a message", () => {
-        const before: RoomState = { id: 1, peers: [], connected: true, hostId: 1, name: "", names: {} }
+        const before: RoomState = { id: 1, peers: [], connected: true, hostId: 1, name: "", names: {}, room: "" }
         const { state, events } = applyWire(before, { t: "batch", m: [null as never, { t: "batch", m: [{ t: "msg", from: 2, d: 1 }] }] })
         expect(state).toBe(before)
         expect(events).toEqual([])
     })
 
     it("carries on past a message it does not know", () => {
-        const before: RoomState = { id: 1, peers: [], connected: true, hostId: 1, name: "", names: {} }
+        const before: RoomState = { id: 1, peers: [], connected: true, hostId: 1, name: "", names: {}, room: "" }
         const { state, events } = applyWire(before, { t: "something-new" })
         expect(state).toBe(before)
         expect(events).toEqual([])
@@ -191,11 +197,11 @@ describe("applyWire", () => {
 
 describe("isHost", () => {
     it("is true when the room has named you", () => {
-        expect(isHost({ id: 4, peers: [], connected: true, hostId: 4, name: "", names: {} })).toBe(true)
+        expect(isHost({ id: 4, peers: [], connected: true, hostId: 4, name: "", names: {}, room: "" })).toBe(true)
     })
 
     it("is false when the room has named somebody else", () => {
-        expect(isHost({ id: 4, peers: [7], connected: true, hostId: 7, name: "", names: {} })).toBe(false)
+        expect(isHost({ id: 4, peers: [7], connected: true, hostId: 7, name: "", names: {}, room: "" })).toBe(false)
     })
 
     /**

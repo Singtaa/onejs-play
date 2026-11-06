@@ -41,6 +41,14 @@
  * its score. A page that is hidden (a locked phone) stops being host, so the
  * round clock moves to somebody who is still playing.
  *
+ * QUICK PLAY
+ *
+ * `useRoom({ max: 12 })` asks the site for a room rather than naming one: the
+ * newest room of this cart's pool that has a seat and whose host has not said
+ * `room.setJoinable(false)`, or a new one. `room.roomName` says which, for an
+ * invite link, and a reconnect goes back to that room rather than being
+ * matched again. `pool` keeps modes apart (`{ pool: "teams", max: 8 }`).
+ *
  *     const room = useRoom("lobby", {
  *         onMessage: (from, data) => others.set(from, data),
  *         onLeave: (id) => others.delete(id),
@@ -55,6 +63,14 @@ import { getPlayContext, socketUrl, isPageHidden, onPageHidden } from "./play"
 
 /** Anything JSON can carry. Messages are serialised, so functions are not. */
 export type RoomMessage = unknown
+
+/** Quick play: let the site pick a room with a seat (see the header). */
+export interface QuickPlay {
+    /** How many players a room is filled to, 2 to 24. Default 24. */
+    max?: number
+    /** Which queue: games with modes keep each apart. 1 to 16 of a-z, 0-9 and "-". Default "quick". */
+    pool?: string
+}
 
 /** How often a client says it is still there. Well under the room's timeout. */
 const HEARTBEAT_MS = 25_000
@@ -113,6 +129,13 @@ export interface Room {
     readonly name: string
     /** What the room calls a peer, or "" for an id it has not named. */
     nameOf(id: number): string
+    /** The room you are in: the name you gave, or the one quick play chose. "" before the welcome. */
+    readonly roomName: string
+    /**
+     * Whether quick play may send more players here. The host's call (a match
+     * under way, say), ignored from anybody else; an empty room starts open.
+     */
+    setJoinable(on: boolean): void
     /**
      * Sends to everyone else, or to one peer when `to` is given.
      *
@@ -140,7 +163,13 @@ export function validRoomName(name: string): boolean {
  * a second. `connected` and `peers` are also mirrored into state, so a
  * component that wants to render a player list re-renders when one changes.
  */
-export function useRoom(name: string, options: RoomOptions = {}): Room {
+export function useRoom(where: string | QuickPlay, options: RoomOptions = {}): Room {
+    // A string is a room's name; an object is quick play in a pool. Keyed as
+    // one string, so the effect below reconnects only when it changes.
+    const quick = typeof where === "string" ? null : { pool: where.pool ?? "quick", max: Math.floor(where.max ?? 24) }
+    const name = typeof where === "string" ? where : quick!.pool
+    const key = quick === null ? `room:${name}` : `quick:${quick.pool}:${quick.max}`
+
     /**
      * Forces a render when the room's shape changes.
      *
@@ -169,6 +198,16 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             get peers() { return live.current.peers },
             get hostId() { return live.current.hostId },
             get name() { return live.current.name },
+            get roomName() { return live.current.room !== "" ? live.current.room : live.current.connected ? name : "" },
+            setJoinable(on: boolean) {
+                const ws = socket.current
+                if (ws === null || ws.readyState !== 1) return
+                try {
+                    ws.send(JSON.stringify({ t: "joinable", on }))
+                } catch (error) {
+                    console.warn("[oj] could not tell the room:", error)
+                }
+            },
             nameOf(id: number) { return id === live.current.id ? live.current.name : live.current.names[id] ?? "" },
             /**
              * True when alone, so a single player game still runs.
@@ -199,13 +238,12 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
     }
 
     useEffect(() => {
-        if (!validRoomName(name)) {
-            console.warn(`[oj] "${name}" is not a usable room name`)
+        if (quick === null ? !validRoomName(name) : !/^[a-z0-9-]{1,16}$/.test(name)) {
+            console.warn(`[oj] "${name}" is not a usable ${quick === null ? "room name" : "quick play pool"}`)
             return
         }
         const context = getPlayContext()
-        const base = socketUrl(`/rooms/${encodeURIComponent(name)}`)
-        if (base === null || context === null) {
+        if (socketUrl("/rooms") === null || context === null) {
             // No site behind the game, which is the ejected case. Everything
             // stays offline and send() is a no-op rather than a crash.
             return
@@ -213,7 +251,16 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
         // This hook's seat, kept across its own reconnects so a dropped
         // connection comes back as the same player (same id and name).
         const seat = Math.random().toString(36).slice(2, 12) || "s"
-        const url = `${base}?v=${PROTOCOL}&seat=${seat}${context.token === undefined ? "" : `&token=${encodeURIComponent(context.token)}`}`
+        const query = `v=${PROTOCOL}&seat=${seat}${context.token === undefined ? "" : `&token=${encodeURIComponent(context.token)}`}`
+        /**
+         * The room quick play put this hook in, once a welcome has said.
+         * Reconnects go there, so a dropped player returns to its own match
+         * and its own seat instead of being matched into another.
+         */
+        let joined = ""
+        const address = () => joined !== ""
+            ? `${socketUrl(`/rooms/${encodeURIComponent(joined)}`)}?${query}`
+            : `${socketUrl(`/rooms/${encodeURIComponent(name)}`)}?${query}${quick === null ? "" : `&quick=${quick.max}`}`
 
         closed.current = false
         let retry = RETRY_MIN_MS
@@ -239,7 +286,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
         const open = () => {
             let ws: WebSocket
             try {
-                ws = new WebSocket(url)
+                ws = new WebSocket(address())
             } catch (error) {
                 console.warn("[oj] could not reach the room:", error)
                 return
@@ -282,6 +329,7 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
                     return
                 }
                 const { state: next, events } = applyWire(live.current, wire)
+                if (quick !== null && next.room !== "") joined = next.room
                 if (next !== live.current) {
                     apply(next)
                     render()
@@ -331,8 +379,10 @@ export function useRoom(name: string, options: RoomOptions = {}): Room {
             ws?.close()
         }
         // Deliberately keyed on the room alone: the handlers live in a ref, so
-        // a parent re-rendering does not disconnect everyone.
-    }, [name])
+        // a parent re-rendering does not disconnect everyone. `key` is `name`
+        // and `quick` as one string, since a QuickPlay object is new each render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [key])
 
     return facade.current
 }

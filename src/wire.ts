@@ -33,6 +33,8 @@ export interface RoomState {
     name: string
     /** What the room calls everybody else, by id. */
     names: Readonly<Record<number, string>>
+    /** The room's name as the room says it: the one quick play chose. "" when it did not say. */
+    room: string
 }
 
 /** A message off the wire. Every field optional: it came from the network. */
@@ -51,6 +53,8 @@ export interface Wire {
     back?: boolean
     /** On `batch`: the messages, in the order they were sent. */
     m?: Wire[]
+    /** On `welcome`, for quick play: the room this socket was sent to. */
+    room?: string
 }
 
 /**
@@ -67,7 +71,7 @@ export type RoomEvent =
     | { t: "message"; from: number; data: unknown }
     | { t: "dropped"; reason: string; detail: string }
 
-export const EMPTY_ROOM: RoomState = { id: 0, peers: [], connected: false, hostId: null, name: "", names: {} }
+export const EMPTY_ROOM: RoomState = { id: 0, peers: [], connected: false, hostId: null, name: "", names: {}, room: "" }
 
 /** True when this peer owns shared state, including when it is the only one. */
 export function isHost(state: RoomState): boolean {
@@ -105,6 +109,7 @@ export function applyWire(state: RoomState, wire: Wire): { state: RoomState; eve
                 hostId: wire.host ?? null,
                 name: typeof wire.name === "string" ? wire.name : "",
                 names: wire.names !== undefined && typeof wire.names === "object" && wire.names !== null ? { ...wire.names } : {},
+                room: typeof wire.room === "string" ? wire.room : "",
             })
             // Before the host event, because a game's first frame wants to know
             // who it is before it is told what it owns.

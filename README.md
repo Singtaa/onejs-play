@@ -410,6 +410,12 @@ room.id, room.peers, room.connected, room.isHost, room.hostId
 room.name, room.nameOf(id)   // the signed-in handle, or a guest name like "Brisk Otter"
 ```
 
+Quick play lets the site pick the room: `useRoom({ max: 12 }, handlers)` joins
+the newest room of this cart with a seat, or starts one. `room.roomName` is the
+room it chose, for an invite link; the host calls `room.setJoinable(false)`
+while a match is under way so nobody is dropped into the middle of it, and
+`{ pool: "teams", max: 8 }` keeps a mode's players together.
+
 A dropped connection that comes back within a minute gets its own id and name
 back, so a game keeps its score; `onJoin` says `back`. A page that is hidden (a
 locked phone, a tab in the background) stops being host, so whatever the host
