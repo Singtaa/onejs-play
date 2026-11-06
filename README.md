@@ -837,7 +837,7 @@ points every command at another origin; `OJ_HOME` moves the cache. `push` and `s
 
 ```bash
 npm test          # vitest, including ojplay test over every example (needs Chrome and the network)
-npm run typecheck # tsc --noEmit
+npm run typecheck # tsc twice: strict, then strict off as the Play editor compiles oj (tsconfig.loose.json)
 ```
 
 `npm test` runs `ojplay test` on every example and CLI fixture, in the CLI's own
