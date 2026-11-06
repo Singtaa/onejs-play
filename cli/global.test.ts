@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { localCopy, newer, updateNotice } from "./global.mjs"
+import { handOff, localCopy, newer, unknownToCopy, updateNotice } from "./global.mjs"
 import { BIN, INSTALL, PACKAGE } from "../build/command.mjs"
 
 /**
@@ -10,6 +10,7 @@ import { BIN, INSTALL, PACKAGE } from "../build/command.mjs"
  * the update line, at most once a day and never when npm cannot be reached.
  */
 
+const OWN = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")).version
 const made: string[] = []
 afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }) })
 const scratch = () => {
@@ -29,6 +30,59 @@ describe("the hand-off", () => {
         expect(localCopy(scratch())).toBeNull()
         // This package, run from its own folder, is not handed to itself.
         expect(localCopy(path.resolve(import.meta.dirname, ".."))).toBeNull()
+    })
+})
+
+/**
+ * A cart's own copy that predates a flag: learn Mac's `push --unlisted` handed
+ * to a 0.14.0 (6 Nov 2026). The flag is judged here, against the copy's own
+ * reader, before the copy runs, so a push meant Unlisted never runs as one that
+ * is not.
+ */
+describe("a flag the cart's copy does not know", () => {
+    /** A cart whose copy reads only `knows`, and leaves a mark when it runs. */
+    function cartWith(version: string, knows: string[] | null) {
+        const cart = scratch()
+        const own = path.join(cart, "node_modules", ...PACKAGE.split("/"))
+        fs.mkdirSync(path.join(own, "cli"), { recursive: true })
+        fs.writeFileSync(path.join(own, "package.json"), JSON.stringify({ name: PACKAGE, version }))
+        fs.writeFileSync(path.join(own, "cli", "oj.mjs"), `import fs from "node:fs"\nfs.writeFileSync(${JSON.stringify(path.join(cart, "ran"))}, process.argv.slice(2).join(" "))\n`)
+        if (knows !== null) {
+            fs.writeFileSync(path.join(own, "cli", "args.mjs"), `const KNOWS = ${JSON.stringify(knows)}
+export function parse(argv) {
+    const flags = {}
+    for (const w of argv) if (w.startsWith("--")) { if (!KNOWS.includes(w.slice(2))) throw new Error("unknown flag " + w); flags[w.slice(2)] = true }
+    return { flags }
+}
+`)
+        }
+        return { cart, ran: () => fs.existsSync(path.join(cart, "ran")) }
+    }
+
+    afterEach(() => { delete process.env.OJPLAY_HANDED_OFF; process.exitCode = undefined })
+
+    it("is refused before the copy runs, naming both versions and the update, so push --unlisted never pushes", async () => {
+        const { cart, ran } = cartWith("0.13.0", ["private", "json"])
+        const said: string[] = []
+        expect(await handOff(cart, ["push", "--unlisted"], { say: (l) => said.push(l) })).toBe(true)
+        expect(ran()).toBe(false)
+        expect(process.exitCode).toBe(1)
+        expect(said).toHaveLength(1)
+        expect(said[0]).toBe(`this cart's ${PACKAGE} is 0.13.0, which has no --unlisted (this ${BIN} is ${OWN}). Nothing ran: update it with npm install ${PACKAGE}@latest in the cart, or leave the flag out`)
+    })
+
+    it("hands off as before when the copy knows every flag given", async () => {
+        const { cart, ran } = cartWith("0.14.0", ["private"])
+        expect(await handOff(cart, ["push", "--private"], { say: () => {} })).toBe(true)
+        expect(ran()).toBe(true)
+        expect(process.exitCode).toBeUndefined()
+    })
+
+    it("refuses any flag to a copy that cannot say which it knows, and none without flags", async () => {
+        const { cart } = cartWith("0.9.0", null)
+        const local = localCopy(cart)!
+        expect(await unknownToCopy(local, ["push", "--unlisted"])).toMatch(/is 0\.9\.0, which cannot say whether it knows --unlisted\. Nothing ran/)
+        expect(await unknownToCopy(local, ["push"])).toBeNull()
     })
 })
 

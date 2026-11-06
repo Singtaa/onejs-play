@@ -719,8 +719,11 @@ frame sees exactly the events that arrived since the previous one.
 `ojplay` is this package's `bin`: `npm install -g ojplay` once, then `ojplay <command>`
 anywhere. `npx ojplay <command>` needs no install, and is what agents are told.
 Inside a cart with its own ojplay in `node_modules`, the global `ojplay` runs that
-copy, so the version that builds the cart is the one it chose; once a day at
-most, a global `ojplay` at a terminal says in one line when npm has a newer one.
+copy, so the version that builds the cart is the one it chose. A flag that
+copy does not know (its own `args.mjs` is asked first) is refused before it
+runs, naming its version and `npm install ojplay@latest`, rather than left to the
+copy to judge a flag it has never heard of (learn Mac, 6 Nov 2026: `push
+--unlisted` handed to a 0.14.0). Once a day at most, a global `ojplay` at a terminal says in one line when npm has a newer one.
 
 A cart's repository is two files, `index.tsx` and `oj.json`, because the site
 builds it and the editor's tree should be the cart and nothing else; what a

@@ -114,6 +114,7 @@ OJ_TOKEN  an access token from ${siteOrigin()}/manage/tokens, used instead of ${
 OJ_CHROME the browser binary, when it is not in the usual place
 
 Inside a cart with its own ${PACKAGE} in node_modules, ${BIN} runs that copy, so the version matches the cart.
+A flag that copy does not know is refused before it runs, with the update that brings it.
 ${BIN} ${OWN_VERSION}
 `
 

@@ -142,6 +142,8 @@ describe(`npm install -g ${PACKAGE}`, () => {
         fs.mkdirSync(path.join(cart, "hud"), { recursive: true })
         fs.writeFileSync(path.join(own, "package.json"), JSON.stringify({ name: PACKAGE, version: "0.9.0-pinned" }))
         fs.writeFileSync(path.join(own, "cli", "oj.mjs"), "console.log(`the cart's own ojplay: ${process.argv.slice(2).join(\" \")}`)\n")
+        // Every copy since 0.10.0 reads its flags with args.mjs, which the hand-off asks first.
+        fs.writeFileSync(path.join(own, "cli", "args.mjs"), "export function parse(argv) { return { flags: {} } }\n")
         const ran = await ojplay(["build", "--for", "1"], path.join(cart, "hud"))
         expect(ran.out.trim()).toBe("the cart's own ojplay: build --for 1")
         expect(ran.code).toBe(0)
