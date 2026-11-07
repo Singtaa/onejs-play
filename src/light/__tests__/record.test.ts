@@ -89,4 +89,19 @@ describe("a saved light", () => {
         expect(sameLayout(layout, layoutOf(128, 32, 24, [-1, -1, -1, 1, 9, 6, 9], [[0, 0, 10, 10], [12, 0, 10, 10]]))).toBe(false)
         expect(sameLayout(layout, layoutOf(64, 32, 24, [-1, -1, -1, 1.5, 9, 6, 9], [[0, 0, 10, 10], [12, 0, 10, 10]]))).toBe(false)
     })
+
+    it("keeps a one-page layout as it was before pages, and tells pages apart", () => {
+        const grid = [-1, -1, -1, 1, 9, 6, 9]
+        const rects = [[0, 0, 10, 10], [12, 0, 10, 10]]
+        // A file saved before pages had exactly this layout (its rectangles' hash then): it still matches.
+        expect(layout.rects).toBe("542147686b8753de")
+        expect(layoutOf(64, 32, 24, grid, rects, [0, 0])).toEqual(layout)
+        expect(layout).not.toHaveProperty("pages")
+        const paged = layoutOf(64, 32, 24, grid, rects, [0, 1])
+        expect(paged.pages).toBe(2)
+        expect(sameLayout(layout, paged)).toBe(false)
+        expect(sameLayout(paged, layoutOf(64, 32, 24, grid, rects, [1, 0]))).toBe(false)
+        expect(parseSaved(JSON.stringify({ ...saved, layout: paged }))).toEqual({ ...saved, layout: paged })
+        expect(parseSaved(JSON.stringify({ ...saved, layout: { ...layout, pages: 1 } }))).toBe("its light record is missing a field")
+    })
 })

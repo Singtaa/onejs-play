@@ -18,7 +18,7 @@
 
 import type { Triangles } from "../physics3d/gltf"
 import { instantiateWasm } from "../wasm"
-import { DEFAULT_DETAIL, layoutAtlas, MAX_ATLAS, type LaidActor, type Layout } from "./atlas"
+import { DEFAULT_DETAIL, layoutAtlas, MAX_ATLAS, MAX_PAGES, type LaidActor, type Layout } from "./atlas"
 import { XATLAS_VERSION, XATLAS_WASM_SHA256 } from "./xatlas.version"
 
 export const XATLAS_MODULE = { name: "xatlas", version: XATLAS_VERSION, sha256: XATLAS_WASM_SHA256 } as const
@@ -160,8 +160,8 @@ export interface LightLayout extends Layout {
  * lower detail that fits the atlas, each model unwrapped once (atlas.ts,
  * layoutAtlas). Null when the scene cannot fit even at MIN_DETAIL.
  */
-export function layoutLight(charts: readonly Charts[], actors: readonly LaidActor[], detail = DEFAULT_DETAIL, max = MAX_ATLAS): LightLayout | null {
-    const layout = layoutAtlas(actors, charts.map((c) => c.area), (m, density) => charts[m]!.size(density), detail, max)
+export function layoutLight(charts: readonly Charts[], actors: readonly LaidActor[], detail = DEFAULT_DETAIL, max = MAX_ATLAS, pages = MAX_PAGES): LightLayout | null {
+    const layout = layoutAtlas(actors, charts.map((c) => c.area), (m, density) => charts[m]!.size(density), detail, max, pages)
     if (layout === null) return null
     return { ...layout, unwraps: layout.densities.map((density, m) => density === 0 ? null : charts[m]!.unwrap(density)) }
 }

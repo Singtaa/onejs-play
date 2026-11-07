@@ -218,6 +218,7 @@ describe("laying out a bake", () => {
             expect([r[2], r[3]]).toEqual([pack(i, l.detail).width, pack(i, l.detail).height])
         })
         for (let i = 0; i < l.rects.length; i++) for (let j = 0; j < i; j++) {
+            if (l.page[i] !== l.page[j]) continue
             const [a, b] = [l.rects[i]!, l.rects[j]!]
             expect(a[0] < b[0] + b[2] + GUTTER && b[0] < a[0] + a[2] + GUTTER && a[1] < b[1] + b[3] + GUTTER && b[1] < a[1] + a[3] + GUTTER).toBe(false)
         }

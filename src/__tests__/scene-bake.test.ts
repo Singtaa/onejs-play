@@ -34,6 +34,8 @@ let beginAnswer: string
 let steps: number[]
 // What BakePhase answers: 1 the probes, 2 the lightmap while they read back, 3 the lightmap.
 let phase: number
+// What BakePage answers: the page the lightmap is on.
+let page: number
 let loadAnswer: string
 let lightFileAnswer: string
 // Calls LightFile answers "" before lightFileAnswer: its read landing, as on WebGPU.
@@ -72,6 +74,7 @@ function recorder(): any {
                 if (name === "BeginBake") return beginAnswer
                 if (name === "StepBake") return steps.length > 1 ? steps.shift() : steps[0]
                 if (name === "BakePhase") return phase
+                if (name === "BakePage") return page
                 if (name === "LightFile") return lightFileWaits-- > 0 ? "" : lightFileAnswer
                 if (name === "FileSha256") return "c".repeat(64)
                 if (name === "LoadLight") return loadAnswer
@@ -100,6 +103,7 @@ beforeEach(() => {
     beginAnswer = ""
     steps = [1]
     phase = 1
+    page = 0
     loadAnswer = ""
     lightFileAnswer = PIXEL
     lightFileWaits = 0
@@ -161,7 +165,7 @@ describe("scene.bake", () => {
         expect(uv).toBeInstanceOf(Float32Array)
         expect((indices as Uint32Array).length).toBe(6)
 
-        const [, actors, copies, grid, width, height, detail, samples] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number]
+        const [, actors, copies, grid, width, height, pages, detail, samples] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number, number]
         expect(Array.from(actors.slice(0, 1))).toEqual([still.id])
         expect(actors.length).toBe(5)
         expect(copies.length).toBe(12)
@@ -176,6 +180,7 @@ describe("scene.bake", () => {
         expect(actors[1]! / copies[2]!).toBeCloseTo(2, 1)
         expect(width).toBeGreaterThan(0)
         expect(height).toBeGreaterThan(0)
+        expect(pages).toBe(1)
         expect(detail).toBeGreaterThan(0)
         expect(samples).toBe(256)
         // The box round the copies and the static actor, a metre past it: x from -7 to 5.
@@ -259,6 +264,40 @@ describe("scene.bake", () => {
         // Then it reads them again: one 5 ms over halves it.
         runtime.beginFrame(1 / 60, 1 / 60 + 0.005)
         expect(asked().at(-1)).toBe(TILE_BUDGET.min)
+    })
+
+    it("does not read the frames after the bake finishes a page either", async () => {
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.1]
+        phase = 3
+        s.bake()
+        await started()
+        for (let i = 0; i <= TILE_BUDGET.warmup; i++) runtime.beginFrame(1 / 60, 1 / 60)
+        const asked = () => of("StepBake").map((c) => c[1])
+        page = 1
+        for (let i = 0; i < TILE_BUDGET.phaseSkip; i++) runtime.beginFrame(1 / 60, 2 / 60)
+        expect(asked().slice(-TILE_BUDGET.phaseSkip)).toEqual(Array.from({ length: TILE_BUDGET.phaseSkip }, () => TILE_BUDGET.min + 1))
+    })
+
+    it("puts what does not fit one page on the next, at the detail asked, the page in each offset's whole part", async () => {
+        const s = scene()
+        const ground = s.mesh(SQUARE)
+        // Three 18 m squares: 432 texels a side at 24 texels a metre, one a page.
+        const placed = [0, 20, 40].map((x) => s.spawn(ground, { static: true, position: [x, 0, 0], scale: 9 }))
+        s.bake()
+        await started()
+        const [, actors, , , width, height, pages, detail] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number]
+        expect(pages).toBe(3)
+        expect(detail).toBe(24)
+        expect(width).toBeLessThanOrEqual(512)
+        expect(height).toBeLessThanOrEqual(512)
+        const onPage = placed.map((_, i) => Math.floor(actors[i * 5 + 3]!))
+        expect([...onPage].sort()).toEqual([0, 1, 2])
+        for (let i = 0; i < 3; i++) {
+            const within = actors[i * 5 + 3]! - onPage[i]!
+            expect(within + actors[i * 5 + 1]!).toBeLessThanOrEqual(1 + 1e-6)
+        }
     })
 
     it("says why and resolves when nothing is static, leaving the bridge alone", async () => {
@@ -365,10 +404,10 @@ describe("scene.bake", () => {
 
 describe("scene.bake with a name", () => {
     const NAME = "room.light.png"
-    /** Two squares on the ground, spawned in the order given. */
-    const room = (s: ReturnType<typeof scene>, xs: readonly number[]) => {
+    /** Squares on the ground, spawned in the order given: 2 m, or 18 m (432 texels, one a page) at `scale` 9. */
+    const room = (s: ReturnType<typeof scene>, xs: readonly number[], scale = 1) => {
         const ground = s.mesh(SQUARE)
-        return xs.map((x) => s.spawn(ground, { static: true, position: [x, 0, 0] }))
+        return xs.map((x) => s.spawn(ground, { static: true, position: [x, 0, 0], scale }))
     }
     const recordOf = (bytes: Uint8Array) => parseSaved(readText(bytes)) as SavedLight
     /** A fresh scene, as the next Run is. */
@@ -379,10 +418,10 @@ describe("scene.bake with a name", () => {
     }
 
     /** Bakes the room here and returns the file the host was handed. */
-    async function bakeAndSave(xs: readonly number[]): Promise<Uint8Array> {
+    async function bakeAndSave(xs: readonly number[], scale = 1): Promise<Uint8Array> {
         vi.spyOn(console, "warn").mockImplementation(() => {})
         const s = scene()
-        room(s, xs)
+        room(s, xs, scale)
         const light = s.bake(NAME)
         await started()
         frame()
@@ -423,14 +462,29 @@ describe("scene.bake with a name", () => {
         await light.done
         expect(light.progress).toBe(1)
         expect(of("BeginBake")).toEqual([])
-        const [, file, actors, copies, grid, width, height] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number]
+        const [, file, actors, copies, grid, width, height, pages] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number, number]
         expect(Buffer.from(file, "base64")).toEqual(Buffer.from(served.get(NAME)!))
         expect(Array.from(actors).filter((_, i) => i % 5 === 0)).toEqual([a!.id, b!.id])
         expect(copies.length).toBe(0)
         expect(grid.length).toBe(7)
         expect(width).toBe(recordOf(served.get(NAME)!).layout.atlas[0])
         expect(height).toBe(recordOf(served.get(NAME)!).layout.atlas[1])
+        expect(pages).toBe(1)
         expect(baked).toEqual([])
+    })
+
+    it("saves the pages a bake used in its record, and loads its file onto as many", async () => {
+        served.set(NAME, await bakeAndSave([0, 20, 40], 9))
+        const saved = recordOf(served.get(NAME)!)
+        expect(saved.layout.pages).toBe(3)
+        expect(saved.layout.atlas[2]).toBe(24)
+        const s = again()
+        room(s, [0, 20, 40], 9)
+        await s.bake(NAME).done
+        expect(of("BeginBake")).toEqual([])
+        const [, , actors, , , width, height, pages] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number, number]
+        expect([width, height, pages]).toEqual([saved.layout.atlas[0], saved.layout.atlas[1], 3])
+        expect(Array.from(actors).filter((_, i) => i % 5 === 3).map(Math.floor).sort()).toEqual([0, 1, 2])
     })
 
     it("gives each actor the rectangle it was baked with, whatever order the scene spawned them in", async () => {

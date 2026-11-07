@@ -20,7 +20,7 @@ import type { Model, Rotation, Vec3 } from "../models"
 import type { Triangles } from "../physics3d/gltf"
 import { rotate, toQuat } from "../physics3d/rotation"
 import { modelUrls } from "../physics3d/sources"
-import { DEFAULT_DETAIL } from "./atlas"
+import { DEFAULT_DETAIL, MAX_PAGES } from "./atlas"
 import { readText, writeText } from "./png"
 import { probeGrid } from "./probes"
 import { compareRows, difference, layoutOf, matches, parseSaved, recordOf, rowOf, sameLayout, type BakedHere, type LightInputs, type LightRecord, type SavedLayout, type SavedLight, type StaticActor } from "./record"
@@ -124,8 +124,10 @@ export interface LightPlan {
     actors: Float32Array
     copies: Float32Array
     grid: Float32Array
+    /** Each page's size, and how many. */
     width: number
     height: number
+    pages: number
     detail: number
     layout: SavedLayout
 }
@@ -168,7 +170,7 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
 
     const charts = usable.map((m) => charted[models.indexOf(m)]!)
     const layout = layoutLight(charts.map((c) => c.charts), baked.map((item) => ({ model: usable.indexOf(item.model), scale: item.scale })), DEFAULT_DETAIL)
-    if (layout === null) return "its static surface is too large for the atlas even at one texel a metre"
+    if (layout === null) return `its static surface is too large for ${MAX_PAGES} pages of light even at one texel a metre`
 
     for (let m = 0; m < usable.length; m++) {
         const unwrap = layout.unwraps[m]
@@ -181,7 +183,8 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
     const min: Vec3 = [Infinity, Infinity, Infinity], max: Vec3 = [-Infinity, -Infinity, -Infinity]
     baked.forEach((item, i) => {
         const [x, y, w, h] = layout.rects[i]!
-        const st = [w / layout.width, h / layout.height, x / layout.width, y / layout.height]
+        // The page rides in the offset's whole part: an offset within a page is under 1, so page 0's is as before pages.
+        const st = [w / layout.width, h / layout.height, x / layout.width + layout.page[i]!, y / layout.height]
         if (item.actor !== undefined) actors.push(item.actor, ...st)
         else copies.push(item.copy![0], item.copy![1], ...st)
         const c = charts[usable.indexOf(item.model)]!
@@ -199,14 +202,14 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
     const grid = [...g.origin, g.spacing, ...g.counts]
     return {
         actors: new Float32Array(actors), copies: new Float32Array(copies), grid: new Float32Array(grid),
-        width: layout.width, height: layout.height, detail: layout.detail,
-        layout: layoutOf(layout.width, layout.height, layout.detail, grid, layout.rects),
+        width: layout.width, height: layout.height, pages: layout.pages, detail: layout.detail,
+        layout: layoutOf(layout.width, layout.height, layout.detail, grid, layout.rects, layout.page),
     }
 }
 
 /** Starts baking the plan: "" when it started, or why not. */
 export function beginBake(bridge: any, plan: LightPlan): string {
-    return String(bridge.BeginBake(plan.actors, plan.copies, plan.grid, plan.width, plan.height, plan.detail, BAKE_SAMPLES))
+    return String(bridge.BeginBake(plan.actors, plan.copies, plan.grid, plan.width, plan.height, plan.pages, plan.detail, BAKE_SAMPLES))
 }
 
 /** What reading a named light file found. */
@@ -241,7 +244,7 @@ export function whyBakeHere(file: SavedFile, now: LightRecord, plan: LightPlan):
 
 /** Shows a saved bake laid out as `plan`: "" when its light is showing, or why not. */
 export function loadLight(bridge: any, plan: LightPlan, png: Uint8Array): string {
-    return String(bridge.LoadLight(toBase64(png), plan.actors, plan.copies, plan.grid, plan.width, plan.height))
+    return String(bridge.LoadLight(toBase64(png), plan.actors, plan.copies, plan.grid, plan.width, plan.height, plan.pages))
 }
 
 /** The finished bake as a light file carrying `saved`, or null while the bridge has nothing finished or its read has not landed. */
