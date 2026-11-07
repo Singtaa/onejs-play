@@ -34,13 +34,6 @@ declare const globalThis: any
 export const BAKE_SAMPLES = 256
 
 /**
- * Paths of the bake a frame: about 4 ms of a desktop GPU's time (the spike
- * traced about 33,000 paths a millisecond, docs/lightmapping.md S2). What a
- * phone's share should be is measured on real phones (§7).
- */
-export const PATHS_PER_FRAME = 131_072
-
-/**
  * Frames a finished bake waits for its light file. The bridge reads the
  * lightmap back asynchronously where the GPU can (WebGPU and WebGL 2), landing
  * a frame or a few later, and LightFile answers "" until it does.
