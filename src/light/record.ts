@@ -46,7 +46,7 @@ export interface LightInputs {
 
 /** `scene.bake`'s options, each given or defaulted (docs/lightmapping.md §8). */
 export interface BakeOptionValues {
-    /** Times light bounces off surfaces before it stops: 0 is the sky alone. */
+    /** Times light bounces off surfaces before it stops: 0 is the sky and the sun's light off the first thing it meets. */
     bounces: number
     /** Paths a texel. */
     samples: number

@@ -362,7 +362,8 @@ export interface Scene {
      *     scene.bake("yard.light.png", { bounces: 3, occlusion: 0.5 })
      *
      * - `bounces`: times light bounces before it stops, 0 to 8: 0 is the sky
-     *   alone, more is brighter and softer in corners, and a little slower. 2.
+     *   and the sun's light off the first thing it meets; more carries the
+     *   sky's light on round corners and under cover, a little slower. 2.
      * - `samples`: paths a texel, 1 to 4096: more is smoother and slower. 256.
      * - `occlusion`: extra darkening in corners and where things touch, within
      *   a metre, 0 to 1. 0.
