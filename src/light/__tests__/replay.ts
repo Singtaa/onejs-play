@@ -31,13 +31,16 @@ export interface RecordedRun {
     name: string
     /** The display's refresh interval, ms. */
     refresh: number
-    lag: number
     /** Each frame's interval as the budget saw it, ms. */
     intervals: number[]
     /** Each frame's traced paths, to the bake's end. */
     traced: number[]
-    /** The GPU's room a frame in paths, each cap the run is replayed at, with the budget of the day's replay at it. */
-    caps: { cap: number; old: Replayed }[]
+    /**
+     * The GPUs the run is replayed on: a queue of `lag` frames and `cap` paths of room a frame,
+     * each with the path budget of the day's replay on it. The recorded runs fit every lag
+     * from 1 to 3 equally, so each is replayed at each.
+     */
+    gpus: { lag: number; cap: number; old: Replayed }[]
 }
 
 /** The paths a tile of a bake traces. */
@@ -88,11 +91,11 @@ export interface Replayed {
 
 /**
  * Bakes the recorded bake to the end under a budget that answers paths a
- * frame (a tile budget's tiles times tilePaths), on the GPU of `run` with
- * `cap` paths of room a frame.
+ * frame (a tile budget's tiles times tilePaths), on the GPU of `run` with a
+ * queue of `lag` frames and `cap` paths of room a frame.
  */
-export function replay(budget: { frame(ms: number | null): number; readonly baselineMs: number | null }, bake: RecordedBake, run: RecordedRun, cap: number, overMs = 4): Replayed {
-    const game = run.intervals.map((ms, i) => ms > run.refresh + overMs && (run.traced[i - run.lag] ?? 0) > cap ? run.refresh : ms)
+export function replay(budget: { frame(ms: number | null): number; readonly baselineMs: number | null }, bake: RecordedBake, run: RecordedRun, lag: number, cap: number, overMs = 4): Replayed {
+    const game = run.intervals.map((ms, i) => ms > run.refresh + overMs && (run.traced[i - lag] ?? 0) > cap ? run.refresh : ms)
     const work = bakeWork(bake)
     const traced: number[] = []
     let interval: number | null = null
@@ -101,7 +104,7 @@ export function replay(budget: { frame(ms: number | null): number; readonly base
     while (!work.done && traced.length < 10_000) {
         const i = traced.length
         traced.push(work.step(budget.frame(interval)))
-        interval = (game[i] ?? run.refresh) + ((traced[i - run.lag + 1] ?? 0) > cap ? run.refresh : 0)
+        interval = (game[i] ?? run.refresh) + ((traced[i - lag + 1] ?? 0) > cap ? run.refresh : 0)
         ms += interval
         if (budget.baselineMs !== null && interval > budget.baselineMs + overMs) over++
     }

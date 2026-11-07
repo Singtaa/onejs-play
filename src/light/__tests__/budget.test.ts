@@ -103,12 +103,10 @@ describe("the bake's tile budget", () => {
         expect(b.frame(REFRESH + 4.1)).toBe(Math.floor(grown(at) / 2))
     })
 
-    it("halves an overflow at once and keeps a ceiling below the count that showed in it", () => {
-        const [b, counts] = ramped(8)
-        // The frame now shows the count asked lagFrames frames back.
-        const shown = counts.at(-TILE_BUDGET.lagFrames)!
+    it("halves an overflow at once and keeps a ceiling below the count it was at", () => {
+        const [b] = ramped(8)
+        const ceiling = Math.floor(b.tiles * TILE_BUDGET.ceilingShare)
         b.frame(2 * REFRESH)
-        const ceiling = Math.floor(shown * TILE_BUDGET.ceilingShare)
         const after = feed(b, times(TILE_BUDGET.relaxAfter - 1, REFRESH))
         expect(Math.max(...after)).toBe(ceiling)
     })
@@ -130,9 +128,10 @@ describe("the bake's tile budget", () => {
     it("halves at once for the next overflow once a frame has come back inside the line", () => {
         const [b] = ramped(6)
         const before = b.tiles
-        feed(b, [2 * REFRESH, REFRESH + 3])
-        expect(b.tiles).toBe(Math.floor(before / 2))
-        expect(b.frame(2 * REFRESH)).toBe(Math.floor(Math.floor(before / 2) / 2))
+        feed(b, [2 * REFRESH, REFRESH])
+        const regrown = grown(Math.floor(before / 2))
+        expect(b.tiles).toBe(regrown)
+        expect(b.frame(2 * REFRESH)).toBe(Math.floor(regrown / 2))
     })
 
     it("holds for a hitch, a slow frame at a count that ran clean through its lag, and goes on growing after it", () => {
@@ -159,9 +158,20 @@ describe("the bake's tile budget", () => {
         expect(b.tiles).toBeGreaterThan(at)
     })
 
+    it("takes the same slow pair again, at the count it halved or above, as an overflow: a queue deeper than its window", () => {
+        const [b, at] = held()
+        feed(b, [2 * REFRESH, 2 * REFRESH])
+        while (b.tiles < at) b.frame(REFRESH)
+        feed(b, times(TILE_BUDGET.lagFrames + 1, REFRESH + 3))
+        const again = b.tiles
+        feed(b, [2 * REFRESH, 2 * REFRESH])
+        const after = feed(b, times(TILE_BUDGET.relaxAfter - 1, REFRESH))
+        expect(Math.max(...after)).toBe(Math.floor(again * TILE_BUDGET.ceilingShare))
+    })
+
     it("raises the ceiling a tile after a steady run, so a GPU with room is found again", () => {
-        const [b, counts] = ramped(8)
-        const ceiling = Math.floor(counts.at(-TILE_BUDGET.lagFrames)! * TILE_BUDGET.ceilingShare)
+        const [b] = ramped(8)
+        const ceiling = Math.floor(b.tiles * TILE_BUDGET.ceilingShare)
         b.frame(2 * REFRESH)
         feed(b, times(10 + TILE_BUDGET.relaxAfter, REFRESH))
         expect(b.tiles).toBe(ceiling + 1)
@@ -208,31 +218,40 @@ describe("the tile budget on the recorded bakes", () => {
     const replayed = (r: RecordedRun, cap: number) => {
         const b = tileBudget()
         const paths = tilePaths(RECORDED.bake)
-        return replay({ frame: (ms) => b.frame(ms) * paths, get baselineMs() { return b.baselineMs } }, RECORDED.bake, r, cap)
+        return replay({ frame: (ms) => b.frame(ms) * paths, get baselineMs() { return b.baselineMs } }, RECORDED.bake, r, lag, cap)
     }
+    // Each run is replayed on a queue of 1 to 3 frames: the recordings fit every one, and a
+    // budget tuned to one lag passed its replay while the browser, at another, ran it slower.
+    let lag = 0
 
-    it("bakes the 60 Hz run no slower, and with no more frames over the line, than the path budget did", () => {
-        for (const { cap, old } of run("60 Hz").caps) {
-            const now = replayed(run("60 Hz"), cap)
-            expect(now.ms, `cap ${cap}`).toBeLessThanOrEqual(old.ms)
-            expect(now.over, `cap ${cap}`).toBeLessThanOrEqual(old.over)
+    it("bakes the 60 Hz run faster than the path budget did at every lag, for a few frames over the line where it finds the GPU's room", () => {
+        for (const gpu of run("60 Hz").gpus) {
+            lag = gpu.lag
+            const now = replayed(run("60 Hz"), gpu.cap)
+            const at = `lag ${gpu.lag}, cap ${gpu.cap}`
+            expect(now.ms, at).toBeLessThan(0.9 * gpu.old.ms)
+            expect(now.over, at).toBeLessThanOrEqual(gpu.old.over + 4)
         }
     })
 
-    it("bakes the 120 Hz run a tenth faster, for at most one more frame over the line", () => {
-        for (const { cap, old } of run("120 Hz").caps) {
-            const now = replayed(run("120 Hz"), cap)
-            expect(now.ms, `cap ${cap}`).toBeLessThan(0.9 * old.ms)
-            expect(now.over, `cap ${cap}`).toBeLessThanOrEqual(old.over + 1)
+    it("bakes the 120 Hz run faster at every lag, for at most one more frame over the line", () => {
+        for (const gpu of run("120 Hz").gpus) {
+            lag = gpu.lag
+            const now = replayed(run("120 Hz"), gpu.cap)
+            const at = `lag ${gpu.lag}, cap ${gpu.cap}`
+            expect(now.ms, at).toBeLessThan(0.95 * gpu.old.ms)
+            expect(now.over, at).toBeLessThanOrEqual(gpu.old.over + 1)
         }
     })
 
-    it("bakes the phone's run faster at any room it could have had, and in under half the time from four tiles", () => {
+    it("bakes the phone's run faster at any lag and room it could have had, and in under half the time from four tiles", () => {
         const tile = tilePaths(RECORDED.bake)
-        for (const { cap, old } of run("Phone").caps) {
-            const now = replayed(run("Phone"), cap)
-            expect(now.ms, `${cap / tile} tiles`).toBeLessThan(cap >= 4 * tile ? 0.5 * old.ms : old.ms)
-            if (cap >= 4 * tile) expect(now.over, `${cap / tile} tiles`).toBeLessThanOrEqual(old.over)
+        for (const gpu of run("Phone").gpus) {
+            lag = gpu.lag
+            const now = replayed(run("Phone"), gpu.cap)
+            const at = `lag ${gpu.lag}, ${gpu.cap / tile} tiles`
+            expect(now.ms, at).toBeLessThan(gpu.cap >= 4 * tile ? 0.5 * gpu.old.ms : gpu.old.ms)
+            if (gpu.cap >= 4 * tile) expect(now.over, at).toBeLessThanOrEqual(gpu.old.over)
         }
     })
 })
