@@ -16,7 +16,7 @@ import { RAPIER_VERSION } from "../physics3d/rapier.version"
 import { createWorld } from "../physics3d/world"
 import { XATLAS_VERSION } from "../light/xatlas.version"
 import { decodeLightMesh, FILE_READ_FRAMES } from "../light/bake"
-import { PATH_BUDGET } from "../light/budget"
+import { TILE_BUDGET } from "../light/budget"
 import { readText, writeText } from "../light/png"
 import { parseSaved, type SavedLight } from "../light/record"
 import { bakeAgain, setLightHost, type BakedLight, type BakeEnd } from "../light/host"
@@ -210,7 +210,7 @@ describe("scene.bake", () => {
         frame()
         expect(light.progress).toBe(0.25)
         // The warm-up's count: no frame has a baseline yet.
-        expect(of("StepBake")[0]).toEqual(["StepBake", PATH_BUDGET.min])
+        expect(of("StepBake")[0]).toEqual(["StepBake", TILE_BUDGET.min])
         frame()
         expect(light.progress).toBe(0.5)
         frame()
@@ -221,22 +221,22 @@ describe("scene.bake", () => {
         expect(of("StepBake").length).toBe(3)
     })
 
-    it("sizes each frame's paths from the frames' real intervals, from a bake started before the first frame", async () => {
+    it("sizes each frame's tiles from the frames' real intervals, from a bake started before the first frame", async () => {
         const s = scene()
         s.spawn(s.mesh(SQUARE), { static: true })
         steps = [0.1]
         s.bake()
         await started()
         // The cart's first frames are its load: two long ones, then the game's own.
-        const real = [0.4, 0.3, ...Array.from({ length: PATH_BUDGET.warmup - 2 }, () => 1 / 60)]
+        const real = [0.4, 0.3, ...Array.from({ length: TILE_BUDGET.warmup - 2 }, () => 1 / 60)]
         for (const r of real) runtime.beginFrame(1 / 60, r)
         const asked = () => of("StepBake").map((c) => c[1])
-        expect(asked()).toEqual([...Array.from({ length: PATH_BUDGET.warmup - 1 }, () => PATH_BUDGET.min), PATH_BUDGET.start])
+        expect(asked()).toEqual(Array.from({ length: TILE_BUDGET.warmup }, () => TILE_BUDGET.min))
         // The baseline is the game's interval, not the load's: one at it grows the count, one 5 ms over halves it.
         runtime.beginFrame(1 / 60, 1 / 60)
-        expect(asked().at(-1)).toBe(Math.floor(PATH_BUDGET.start * PATH_BUDGET.grow))
+        expect(asked().at(-1)).toBe(TILE_BUDGET.min + 1)
         runtime.beginFrame(1 / 60, 1 / 60 + 0.005)
-        expect(asked().at(-1)).toBe(Math.floor(PATH_BUDGET.start * PATH_BUDGET.grow / 2))
+        expect(asked().at(-1)).toBe(TILE_BUDGET.min)
     })
 
     it("says why and resolves when nothing is static, leaving the bridge alone", async () => {

@@ -29,7 +29,7 @@ import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
 import { beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
-import { pathBudget } from "./light/budget"
+import { tileBudget } from "./light/budget"
 import { lightBakedHere, lightBegun, lightEnded, offerAgain, type BakeEnd } from "./light/host"
 import { bakedHereLine, type BakedHere, type LightRecord } from "./light/record"
 import { sha256 } from "./light/sha256"
@@ -1105,7 +1105,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const why = beginBake(b, plan)
             if (why !== "") return give(why)
             let fileFrames = 0
-            const budget = pathBudget()
+            const budget = tileBudget()
             stopFrame = everyFrame((intervalMs) => {
                 const p = Number(b.StepBake(budget.frame(intervalMs)))
                 // Below 0: the bridge's bake went, cleared by a later one or by the scene.
