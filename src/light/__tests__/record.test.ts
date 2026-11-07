@@ -116,13 +116,16 @@ describe("a saved light", () => {
         const rects = [[0, 0, 10, 10], [12, 0, 10, 10]]
         // Hashed exactly as before pages (its rectangles' hash then), so a one-page layout never changes with them.
         expect(layout.rects).toBe("542147686b8753de")
-        expect(layoutOf(64, 32, 24, grid, rects, [0, 0])).toEqual(layout)
+        expect(layoutOf(64, 32, 24, grid, rects, 1)).toEqual(layout)
         expect(layout).not.toHaveProperty("pages")
-        const paged = layoutOf(64, 32, 24, grid, rects, [0, 1])
+        // The rectangles are the sheet's, so the same ones on 2 pages are hashed alike, and the pages tell the layouts apart.
+        const paged = layoutOf(64, 32, 24, grid, rects, 2)
         expect(paged.pages).toBe(2)
+        expect(paged.rects).toBe(layout.rects)
         expect(sameLayout(layout, paged)).toBe(false)
-        expect(sameLayout(paged, layoutOf(64, 32, 24, grid, rects, [1, 0]))).toBe(false)
+        expect(sameLayout(paged, layoutOf(64, 32, 24, grid, rects, 4))).toBe(false)
         expect(parseSaved(JSON.stringify({ ...saved, layout: paged }))).toEqual({ ...saved, layout: paged })
+        expect(parseSaved(JSON.stringify({ ...saved, layout: { ...layout, pages: 3 } }))).toBe("its light record is missing a field")
         expect(parseSaved(JSON.stringify({ ...saved, layout: { ...layout, pages: 1 } }))).toBe("its light record is missing a field")
     })
 })

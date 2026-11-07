@@ -14,6 +14,7 @@ import { createRuntime } from "../runtime"
 import { setWasmModule } from "../wasm"
 import { RAPIER_VERSION } from "../physics3d/rapier.version"
 import { createWorld } from "../physics3d/world"
+import { sheetOf } from "../light/atlas"
 import { XATLAS_VERSION } from "../light/xatlas.version"
 import { decodeLightMesh, FILE_READ_FRAMES } from "../light/bake"
 import { TILE_BUDGET } from "../light/budget"
@@ -280,24 +281,30 @@ describe("scene.bake", () => {
         expect(asked().slice(-TILE_BUDGET.phaseSkip)).toEqual(Array.from({ length: TILE_BUDGET.phaseSkip }, () => TILE_BUDGET.min + 1))
     })
 
-    it("puts what does not fit one page on the next, at the detail asked, the page in each offset's whole part", async () => {
+    it("packs what does not fit one page into the sheet at the detail asked, its offsets in pages, a rectangle across the seam", async () => {
         const s = scene()
         const ground = s.mesh(SQUARE)
-        // Three 18 m squares: 432 texels a side at 24 texels a metre, one a page.
-        const placed = [0, 20, 40].map((x) => s.spawn(ground, { static: true, position: [x, 0, 0], scale: 9 }))
+        // A small square, and one of 30 m: 720 texels at 24 texels a metre, bigger than a page.
+        s.spawn(ground, { static: true, position: [0, 0, 40], scale: 15 })
+        s.spawn(ground, { static: true, position: [40, 0, 0] })
         s.bake()
         await started()
         const [, actors, , , width, height, pages, detail] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number]
-        expect(pages).toBe(3)
-        expect(detail).toBe(24)
+        expect([pages, detail]).toEqual([4, 24])
+        const sheet = sheetOf(width, height, pages)
         expect(width).toBeLessThanOrEqual(512)
-        expect(height).toBeLessThanOrEqual(512)
-        const onPage = placed.map((_, i) => Math.floor(actors[i * 5 + 3]!))
-        expect([...onPage].sort()).toEqual([0, 1, 2])
-        for (let i = 0; i < 3; i++) {
-            const within = actors[i * 5 + 3]! - onPage[i]!
-            expect(within + actors[i * 5 + 1]!).toBeLessThanOrEqual(1 + 1e-6)
+        expect(sheet.width).toBeLessThanOrEqual(1022)
+        const st = Array.from({ length: 2 }, (_, i) => Array.from(actors.subarray(i * 5 + 1, i * 5 + 5)))
+        // Scale and offset in pages: the sheet's texels over a page's, so a whole sheet is a little under 2.
+        for (const [w, h, x, y] of st) {
+            expect(x! + w!).toBeLessThanOrEqual(sheet.width / width + 1e-6)
+            expect(y! + h!).toBeLessThanOrEqual(sheet.height / height + 1e-6)
         }
+        const big = st[0]!
+        expect(big[0]! * width).toBeGreaterThanOrEqual(720)
+        // It starts on the first page and ends on the second: across the seam, one rectangle.
+        expect(big[2]!).toBeLessThan(1)
+        expect(big[2]! + big[0]!).toBeGreaterThan(1)
     })
 
     it("says why and resolves when nothing is static, leaving the bridge alone", async () => {
@@ -476,15 +483,18 @@ describe("scene.bake with a name", () => {
     it("saves the pages a bake used in its record, and loads its file onto as many", async () => {
         served.set(NAME, await bakeAndSave([0, 20, 40], 9))
         const saved = recordOf(served.get(NAME)!)
-        expect(saved.layout.pages).toBe(3)
+        expect(saved.layout.pages).toBe(4)
         expect(saved.layout.atlas[2]).toBe(24)
         const s = again()
         room(s, [0, 20, 40], 9)
         await s.bake(NAME).done
         expect(of("BeginBake")).toEqual([])
         const [, , actors, , , width, height, pages] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number, number]
-        expect([width, height, pages]).toEqual([saved.layout.atlas[0], saved.layout.atlas[1], 3])
-        expect(Array.from(actors).filter((_, i) => i % 5 === 3).map(Math.floor).sort()).toEqual([0, 1, 2])
+        expect([width, height, pages]).toEqual([saved.layout.atlas[0], saved.layout.atlas[1], 4])
+        // Three 18 m squares, two to a row of the sheet: the third's offset is on the second column, past the split.
+        const x = Array.from(actors).filter((_, i) => i % 5 === 3).sort()
+        expect(x.slice(0, 2)).toEqual([0, 0])
+        expect(x[2]!).toBeGreaterThan((width - 1) / width)
     })
 
     it("bakes with the options given, records them, and loads the file only for the same options", async () => {

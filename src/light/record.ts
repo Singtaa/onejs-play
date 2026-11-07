@@ -144,9 +144,9 @@ export interface SavedLayout {
     /** The atlas's width and height in texels, and its texels a metre: each page's. */
     atlas: [number, number, number]
     /**
-     * How many pages, when more than one. A one-page layout has no `pages`, and
-     * its rectangles are hashed without theirs, so it is the layout a file had
-     * before there were pages, and such a file still matches.
+     * How many pages, when more than one: 2 or 4 (atlas.ts's sheet). A one-page
+     * layout has no `pages`, so it is the layout a file had before there were
+     * pages, and such a file still matches.
      */
     pages?: number
     /** The probe grid's origin, spacing and three counts. */
@@ -161,16 +161,15 @@ export interface SavedLight extends LightRecord {
 }
 
 /**
- * The layout of pages `width` by `height` at `detail`, a probe grid, and each
- * rectangle as x, y, width and height in texels on its page (`page`, all 0
- * when not given).
+ * The layout of `pages` pages `width` by `height` at `detail`, a probe grid,
+ * and each rectangle as x, y, width and height in texels of the sheet the
+ * pages make.
  */
-export function layoutOf(width: number, height: number, detail: number, grid: readonly number[], rects: readonly (readonly number[])[], page: readonly number[] = []): SavedLayout {
-    const pages = Math.max(0, ...page) + 1
+export function layoutOf(width: number, height: number, detail: number, grid: readonly number[], rects: readonly (readonly number[])[], pages = 1): SavedLayout {
     const layout: SavedLayout = {
         atlas: [width, height, detail],
         grid: [...grid] as SavedLayout["grid"],
-        rects: hash16(JSON.stringify(pages === 1 ? rects : rects.map((r, i) => [page[i] ?? 0, ...r]))),
+        rects: hash16(JSON.stringify(rects)),
     }
     if (pages > 1) layout.pages = pages
     return layout
@@ -202,7 +201,7 @@ export function parseSaved(text: string | null): SavedLight | string {
         && (r.sun === null || isNumbers(r.sun, 7)) && isNumbers(r.ambient, 6)
         && OPTION_NAMES.every((k) => typeof r[k] === "number")
         && r.layout !== null && typeof r.layout === "object" && isNumbers(r.layout.atlas, 3) && isNumbers(r.layout.grid, 7) && typeof r.layout.rects === "string"
-        && (r.layout.pages === undefined || (Number.isInteger(r.layout.pages) && r.layout.pages > 1))
+        && (r.layout.pages === undefined || r.layout.pages === 2 || r.layout.pages === 4)
         && r.actors.every((a: unknown) => Array.isArray(a) && a.length === 9 && typeof a[0] === "string" && typeof a[1] === "string" && a.slice(2).every((v: unknown) => typeof v === "number"))
     return ok ? r as SavedLight : "its light record is missing a field"
 }

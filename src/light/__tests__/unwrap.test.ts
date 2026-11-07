@@ -4,7 +4,7 @@ import path from "node:path"
 import vm from "node:vm"
 import { glbTriangles } from "../../physics3d/gltf"
 import { setWasmModule } from "../../wasm"
-import { GUTTER, layoutAtlas } from "../atlas"
+import { DEFAULT_DETAIL, GUTTER, layoutAtlas, MAX_ATLAS } from "../atlas"
 import { chartModel, layoutLight, type Unwrap } from "../unwrap"
 import { XATLAS_VERSION, XATLAS_WASM_IMPORTS, XATLAS_WASM_SHA256 } from "../xatlas.version"
 
@@ -218,7 +218,6 @@ describe("laying out a bake", () => {
             expect([r[2], r[3]]).toEqual([pack(i, l.detail).width, pack(i, l.detail).height])
         })
         for (let i = 0; i < l.rects.length; i++) for (let j = 0; j < i; j++) {
-            if (l.page[i] !== l.page[j]) continue
             const [a, b] = [l.rects[i]!, l.rects[j]!]
             expect(a[0] < b[0] + b[2] + GUTTER && b[0] < a[0] + a[2] + GUTTER && a[1] < b[1] + b[3] + GUTTER && b[1] < a[1] + a[3] + GUTTER).toBe(false)
         }
@@ -237,9 +236,11 @@ describe("laying out a bake", () => {
             return fake([80], 2)(m, density)
         }
         const l = layoutAtlas([{ model: 0, scale: 1 }], [6400], pack)!
-        // 512 / 80 is 6.4: never packed at 24.
-        expect(Math.max(...asked)).toBeLessThan(7)
-        expect(l).toEqual(layoutAtlas([{ model: 0, scale: 1 }], [0], fake([80], 2)))
+        // The sheet's 1022 texels over 80 m is 12.8: never packed at 24.
+        expect(Math.max(...asked)).toBeLessThan(13.5)
+        // A full search bisects from 24 and floors to a tenth, so it can land a tenth lower: never higher.
+        expect(l.detail).toBeGreaterThanOrEqual(layoutAtlas([{ model: 0, scale: 1 }], [0], fake([80], 2))!.detail)
+        expect(l.rects[0]).toEqual([0, 0, ...Object.values(fake([80], 2)(0, l.detail))])
     })
 
     it("measures a model's surface for that bound", async () => {
@@ -251,6 +252,19 @@ describe("laying out a bake", () => {
 
     it("refuses an actor with no scale", () => {
         expect(() => layoutAtlas([{ model: 0, scale: 0 }], [1], fake([1], 2))).toThrow(/positive number/)
+    })
+
+    it("lays Crate Yard out at 7.9 texels a metre on its own glbs, where one page holds 3.3", async () => {
+        const dir = path.join(ROOT, "examples/crate-yard")
+        const charts = await Promise.all(["ground", "wall", "ramp"].map((m) => chartModel(glbTriangles(fs.readFileSync(path.join(dir, `${m}.glb`))))))
+        const actors = [0, 1, 1, 1, 1, 2].map((model) => ({ model, scale: 1 }))
+        const one = layoutLight(charts, actors, DEFAULT_DETAIL, MAX_ATLAS, 1)!
+        const sheet = layoutLight(charts, actors)!
+        // Its 80 m ground is one rectangle, and the sheet takes it across all four pages: separate pages, each
+        // holding a rectangle whole, held it to 5.1, the ground alone on one page.
+        expect([one.pages, one.detail]).toEqual([1, 3.3])
+        expect([sheet.pages, sheet.detail]).toEqual([4, 7.9])
+        for (const c of charts) c.dispose()
     })
 
     it("unwraps each model at its layout's density, the room and its crates in one atlas", async () => {

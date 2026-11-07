@@ -217,8 +217,8 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
     const min: Vec3 = [Infinity, Infinity, Infinity], max: Vec3 = [-Infinity, -Infinity, -Infinity]
     baked.forEach((item, i) => {
         const [x, y, w, h] = layout.rects[i]!
-        // The page rides in the offset's whole part: an offset within a page is under 1, so page 0's is as before pages.
-        const st = [w / layout.width, h / layout.height, x / layout.width + layout.page[i]!, y / layout.height]
+        // In pages: the sheet's second column starts at 1 less the seam, and one page's are as before pages.
+        const st = [w / layout.width, h / layout.height, x / layout.width, y / layout.height]
         if (item.actor !== undefined) actors.push(item.actor, ...st)
         else copies.push(item.copy![0], item.copy![1], ...st)
         const c = charts[usable.indexOf(item.model)]!
@@ -237,7 +237,7 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
     return {
         actors: new Float32Array(actors), copies: new Float32Array(copies), grid: new Float32Array(grid),
         width: layout.width, height: layout.height, pages: layout.pages, detail: layout.detail,
-        layout: layoutOf(layout.width, layout.height, layout.detail, grid, layout.rects, layout.page),
+        layout: layoutOf(layout.width, layout.height, layout.detail, grid, layout.rects, layout.pages),
     }
 }
 
