@@ -22,8 +22,9 @@ const SETS = {
     },
     "crate-yard": {
         crate: [box([1, 1, 1], WOOD)],
-        // The yard: 80 m square, 1 m deep, and the walls round it.
-        ground: [box([80, 1, 80], [0.3, 0.33, 0.3, 1])],
+        // The yard: 80 m square, 1 m deep, and the walls round it. No bottom face: nothing sees it, and baked
+        // light would give it half the yard's texels. Its physics box is still 1 m deep.
+        ground: [box([80, 1, 80], [0.3, 0.33, 0.3, 1], [0, 0, 0], { bottom: false })],
         wall: [box([80, 2, 1], [0.55, 0.52, 0.48, 1])],
         ramp: [box([6, 1, 10], [0.85, 0.62, 0.2, 1])],
         // The chassis as world.car makes it by default, 1.8 by 0.5 by 4, with a
@@ -48,8 +49,8 @@ for (const [dir, models] of Object.entries(SETS)) {
     for (const [name, parts] of Object.entries(models)) writeModel(path.join(ROOT, "examples", dir), name, parts)
 }
 
-/** A box `size` wide, high and deep, its middle at `at`. */
-function box(size, color, at = [0, 0, 0]) {
+/** A box `size` wide, high and deep, its middle at `at`; `bottom: false` leaves out the face looking down. */
+function box(size, color, at = [0, 0, 0], { bottom = true } = {}) {
     // Six faces, four corners each, so every face has its own flat normal.
     const FACES = [
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
@@ -61,6 +62,7 @@ function box(size, color, at = [0, 0, 0]) {
     ]
     const positions = [], normals = [], indices = []
     for (const [n, u, v] of FACES) {
+        if (!bottom && n[1] === -1) continue
         const base = positions.length / 3
         for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
             for (let i = 0; i < 3; i++) positions.push(at[i] + 0.5 * size[i] * (n[i] + su * u[i] + sv * v[i]))
