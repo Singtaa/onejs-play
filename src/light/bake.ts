@@ -40,6 +40,13 @@ export const BAKE_SAMPLES = 256
  */
 export const PATHS_PER_FRAME = 131_072
 
+/**
+ * Frames a finished bake waits for its light file. The bridge reads the
+ * lightmap back asynchronously where the GPU can (WebGPU and WebGL 2), landing
+ * a frame or a few later, and LightFile answers "" until it does.
+ */
+export const FILE_READ_FRAMES = 120
+
 /** A static thing to bake into: an actor, or one copy of a scatter. */
 export interface BakeItem {
     model: Model
@@ -244,7 +251,7 @@ export function loadLight(bridge: any, plan: LightPlan, png: Uint8Array): string
     return String(bridge.LoadLight(toBase64(png), plan.actors, plan.copies, plan.grid, plan.width, plan.height))
 }
 
-/** The finished bake as a light file carrying `saved`, or null when the bridge has nothing finished. */
+/** The finished bake as a light file carrying `saved`, or null while the bridge has nothing finished or its read has not landed. */
 export function lightFile(bridge: any, saved: SavedLight): Uint8Array | null {
     const text = String(bridge.LightFile())
     if (text === "") return null

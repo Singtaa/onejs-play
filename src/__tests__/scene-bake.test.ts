@@ -15,7 +15,7 @@ import { setWasmModule } from "../wasm"
 import { RAPIER_VERSION } from "../physics3d/rapier.version"
 import { createWorld } from "../physics3d/world"
 import { XATLAS_VERSION } from "../light/xatlas.version"
-import { decodeLightMesh, PATHS_PER_FRAME } from "../light/bake"
+import { decodeLightMesh, FILE_READ_FRAMES, PATHS_PER_FRAME } from "../light/bake"
 import { readText, writeText } from "../light/png"
 import { parseSaved, type SavedLight } from "../light/record"
 import { setLightHost, type BakedLight, type BakeEnd } from "../light/host"
@@ -32,6 +32,8 @@ let beginAnswer: string
 let steps: number[]
 let loadAnswer: string
 let lightFileAnswer: string
+// Calls LightFile answers "" before lightFileAnswer: its read landing, as on WebGPU.
+let lightFileWaits: number
 // The cart's files by name, as its origin serves them.
 let served: Map<string, Uint8Array>
 let fetched: string[]
@@ -65,7 +67,7 @@ function recorder(): any {
                 if (name === "LightMesh") return refused.has(args[0] as number) ? "" : squareMesh()
                 if (name === "BeginBake") return beginAnswer
                 if (name === "StepBake") return steps.length > 1 ? steps.shift() : steps[0]
-                if (name === "LightFile") return lightFileAnswer
+                if (name === "LightFile") return lightFileWaits-- > 0 ? "" : lightFileAnswer
                 if (name === "FileSha256") return "c".repeat(64)
                 if (name === "LoadLight") return loadAnswer
                 if (name === "Load") return ++next
@@ -94,6 +96,7 @@ beforeEach(() => {
     steps = [1]
     loadAnswer = ""
     lightFileAnswer = PIXEL
+    lightFileWaits = 0
     served = new Map()
     fetched = []
     baked = []
@@ -593,14 +596,34 @@ describe("scene.bake for a host that waits on it", () => {
         expect(told.at(-1)).toBe("ended other.light.png stopped")
     })
 
+    it("waits the frames a finished bake's light file takes to read back, then saves it", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        lightFileWaits = 3
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        const light = s.bake(NAME)
+        await started()
+        for (let i = 0; i < 3; i++) frame()
+        expect(baked).toEqual([])
+        expect(told).toEqual([`begun ${NAME}`])
+        frame()
+        await light.done
+        expect(of("LightFile").length).toBe(4)
+        expect(baked.length).toBe(1)
+        expect(told).toEqual([`begun ${NAME}`, `baked ${NAME}`, `ended ${NAME} baked`])
+    })
+
     it("fails a finished bake whose light cannot be read back, saying the light is showing", async () => {
         lightFileAnswer = ""
         const s = scene()
         s.spawn(s.mesh(SQUARE), { static: true })
         const light = s.bake(NAME)
         await started()
+        for (let i = 1; i < FILE_READ_FRAMES; i++) frame()
+        expect(told).toEqual([`begun ${NAME}`])
         frame()
         await light.done
+        expect(of("LightFile").length).toBe(FILE_READ_FRAMES)
         expect(baked).toEqual([])
         expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} failed: its light is showing, but could not be read back as a file to save`])
     })

@@ -28,7 +28,7 @@ import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
-import { beginBake, ChartCache, lightFile, loadLight, PATHS_PER_FRAME, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
+import { beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, PATHS_PER_FRAME, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
 import { lightBakedHere, lightBegun, lightEnded, type BakeEnd } from "./light/host"
 import { bakedHereLine, type BakedHere, type LightRecord } from "./light/record"
 import { sha256 } from "./light/sha256"
@@ -1092,6 +1092,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             }
             const why = beginBake(b, plan)
             if (why !== "") return give(why)
+            let fileFrames = 0
             stopFrame = everyFrame(() => {
                 const p = Number(b.StepBake(PATHS_PER_FRAME))
                 // Below 0: the bridge's bake went, cleared by a later one or by the scene.
@@ -1100,6 +1101,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 if (p < 1) return
                 if (here === null) return me.stop({ how: "baked" })
                 const bytes = lightFile(b, { ...record!, layout: plan.layout })
+                // The lightmap's read can land a few frames after the bake finishes.
+                if (bytes === null && ++fileFrames < FILE_READ_FRAMES) return
                 if (bytes === null) {
                     // Lit, so not give's line: the light is showing, only the file is missing.
                     const why = "its light is showing, but could not be read back as a file to save"
