@@ -42,6 +42,9 @@ function CrateYard() {
             from: at,
             body: world.box({ at, size: [CRATE, CRATE, CRATE], dynamic: true, mass: 40, actor: scene.spawn(m.crate, { scale: CRATE }) }),
         }))
+        // The ground, the walls and the ramp never move, so they take baked light; the crates and the car
+        // move, and take it where they stand.
+        scene.bake("crate-yard.light.png")
         const wheel = () => scene.spawn(m.wheel)
         const car = world.car({ at: START, actor: scene.spawn(m.car), wheels: [wheel(), wheel(), wheel(), wheel()] })
         yard.current = { car, crates }
