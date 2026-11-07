@@ -206,10 +206,10 @@ export function difference(saved: LightRecord, now: LightRecord): string | null 
 }
 
 /**
- * Why a named bake ran here: the file was missing, it could not be read, or
- * it was baked for a different scene.
+ * Why a named bake ran here: the file was missing, it could not be read, it
+ * was baked for a different scene, or the host asked for it again.
  */
-export type BakedHere = { why: "missing" } | { why: "unreadable", detail: string } | { why: "stale", detail: string }
+export type BakedHere = { why: "missing" } | { why: "unreadable", detail: string } | { why: "stale", detail: string } | { why: "again" }
 
 /** The console line for a named bake that ran here. */
 export function bakedHereLine(name: string, here: BakedHere): string {
@@ -217,5 +217,6 @@ export function bakedHereLine(name: string, here: BakedHere): string {
         case "missing": return `[oj] ${name} is not in the cart yet: baked here.`
         case "unreadable": return `[oj] ${name} is not a light file oj can read (${here.detail}): baked here instead.`
         case "stale": return `[oj] ${name} was baked for a different scene (${here.detail}): baked here instead.`
+        case "again": return `[oj] ${name} baked again here.`
     }
 }

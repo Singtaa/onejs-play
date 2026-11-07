@@ -4,7 +4,8 @@
  * is missing, unreadable or out of date, it says so in one console line and
  * hands the host that line with the finished file's bytes. The Play editor
  * answers with Save, which writes the bytes under the name; `ojplay bake`
- * writes them itself. A host that installs nothing gets the line alone.
+ * writes them itself. A host that installs nothing gets the line alone. The
+ * editor's Bake again asks the other way, through `bakeAgain`.
  */
 
 /** A named bake that ran here, finished. */
@@ -39,6 +40,29 @@ let host: LightHost | null = null
 /** Called by the host. Carts have no reason to touch this. */
 export function setLightHost(next: LightHost | null): void {
     host = next
+}
+
+// Each named bake a live scene would make again, by name: the scene that baked a name last answers for it.
+const offers = new Map<string, () => void>()
+
+/** A scene that baked `name` offers to bake it again; the function returned withdraws the offer. */
+export function offerAgain(name: string, again: () => void): () => void {
+    offers.set(name, again)
+    return () => {
+        if (offers.get(name) === again) offers.delete(name)
+    }
+}
+
+/**
+ * Called by the host: bakes `name` again in the scene running now, whatever
+ * its saved file says, and hands the host the new file through `baked`, as a
+ * bake here does. False when no scene running now bakes that name.
+ */
+export function bakeAgain(name: string): boolean {
+    const again = offers.get(name)
+    if (again === undefined) return false
+    again()
+    return true
 }
 
 /** A named bake started. */

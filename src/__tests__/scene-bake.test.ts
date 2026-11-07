@@ -18,7 +18,8 @@ import { XATLAS_VERSION } from "../light/xatlas.version"
 import { decodeLightMesh, FILE_READ_FRAMES, PATHS_PER_FRAME } from "../light/bake"
 import { readText, writeText } from "../light/png"
 import { parseSaved, type SavedLight } from "../light/record"
-import { setLightHost, type BakedLight, type BakeEnd } from "../light/host"
+import { bakeAgain, setLightHost, type BakedLight, type BakeEnd } from "../light/host"
+import { bakeAgain as containerBakeAgain } from "../container"
 import { setAssetBase, setAssetMap } from "../asset"
 
 type Call = [string, ...unknown[]]
@@ -523,6 +524,43 @@ describe("scene.bake with a name", () => {
         await light.done
         expect(of("LoadLight")).toEqual([])
         expect(baked[0]!.line).toMatch(/its atlas is laid out differently by this oj/)
+    })
+
+    it("bakes a current file again when the host asks, and hands the host the new file", async () => {
+        served.set(NAME, await bakeAndSave([0, 3]))
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = again()
+        room(s, [0, 3])
+        await s.bake(NAME).done
+        expect(of("LoadLight").length).toBe(1)
+        expect(of("BeginBake")).toEqual([])
+        fetched = []
+        expect(bakeAgain(NAME)).toBe(true)
+        await started()
+        frame()
+        await vi.waitFor(() => { if (baked.length === 0) throw new Error("not yet") })
+        expect(fetched).toEqual([])
+        expect(of("BeginBake").length).toBe(1)
+        expect(baked.map((l) => [l.name, l.line])).toEqual([[NAME, `[oj] ${NAME} baked again here.`]])
+        expect(recordOf(baked[0]!.bytes).actors.map((r) => r[2])).toEqual([0, 3])
+        expect(warn.mock.calls.map((c) => c[0])).toEqual([baked[0]!.line])
+        expect(containerBakeAgain).toBe(bakeAgain)
+    })
+
+    it("bakes again only a name the scene running now baked, and nothing once it goes", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        expect(bakeAgain(NAME)).toBe(false)
+        const s = scene()
+        room(s, [0])
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(bakeAgain("other.light.png")).toBe(false)
+        const next = again()
+        room(next, [0])
+        expect(bakeAgain(NAME)).toBe(false)
+        expect(of("BeginBake")).toEqual([])
     })
 
     it("refuses an empty name", () => {

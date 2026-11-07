@@ -29,7 +29,7 @@ import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
 import { beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, PATHS_PER_FRAME, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
-import { lightBakedHere, lightBegun, lightEnded, type BakeEnd } from "./light/host"
+import { lightBakedHere, lightBegun, lightEnded, offerAgain, type BakeEnd } from "./light/host"
 import { bakedHereLine, type BakedHere, type LightRecord } from "./light/record"
 import { sha256 } from "./light/sha256"
 
@@ -1021,11 +1021,16 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return readSaved(await loadAssetBytes(name).catch(() => null))
     }
 
-    const bake = (name?: string): Bake => {
+    // Each name this scene baked, offered to the host's bakeAgain until the scene goes.
+    const offered = new Map<string, () => void>()
+
+    // `again`: the host's Bake again, which bakes past a saved file, current or not.
+    const bake = (name?: string, again = false): Bake => {
         if (name !== undefined && (typeof name !== "string" || name === "")) {
             throw new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
         }
         baking?.stop()
+        if (name !== undefined) offered.set(name, offerAgain(name, () => { if (!disposed) bake(name, true) }))
         let progress = 0
         let finish!: () => void
         const done = new Promise<void>((resolve) => { finish = resolve })
@@ -1068,7 +1073,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 const scaled = (c: ColorInput) => rgb(c).map((x) => x * ambientNow.intensity) as [number, number, number]
                 const [recorded, found] = await Promise.all([
                     recordItems(items, identify, { sun, ambient: { sky: scaled(ambientNow.sky), ground: scaled(ambientNow.ground) } }),
-                    readNamed(name),
+                    again ? readSaved(null) : readNamed(name),
                 ])
                 if (!live()) return
                 record = recorded.record
@@ -1080,7 +1085,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof plan === "string") return give(plan)
             let here: BakedHere | null = null
             if (name !== undefined) {
-                here = whyBakeHere(file, record!, plan)
+                here = again ? { why: "again" } : whyBakeHere(file, record!, plan)
                 if (here === null && file.found === "saved") {
                     const why = loadLight(b, plan, file.png)
                     if (why === "") {
@@ -1125,7 +1130,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         scatter,
         texture,
         pointLight,
-        bake,
+        // Not the host's `again`: a cart that wants a fresh bake every time names no file.
+        bake: (name) => bake(name),
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
             return actors.find((a) => a.id === id) ?? null
@@ -1178,6 +1184,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         disposed = true
         stopFrame?.()
         baking?.stop()
+        for (const withdraw of offered.values()) withdraw()
+        offered.clear()
         charts.dispose()
         for (const f of fades.values()) f.done()
         fades.clear()
