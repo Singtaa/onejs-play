@@ -22,9 +22,14 @@
  * jump. The ceiling rises again after a long steady run, so one hitch from
  * elsewhere does not slow the rest of the bake.
  *
- * A browser queues a frame or two of GPU work, so the intervals right after a
- * halving still show the count before it: the count holds for `settle` frames
- * rather than halving again for the same overflow.
+ * A browser queues frames of GPU work, so the intervals after a halving still
+ * show the counts before it, for as many frames as that queue takes to drain.
+ * So it halves once an overflow: after a halving it holds until a frame comes
+ * back inside the shrink line, and halves again only when `recoverFrames`
+ * frames in a row stay over it. Measured at 120 Hz (Sai's Mac, 7 Nov),
+ * halving every slow frame took 298k paths to 29k in 11 frames where 142k ran
+ * clean, and the bake took 5.7 s where 3.4 s did at 60 Hz. budget.test.ts
+ * replays that run's intervals.
  */
 export const PATH_BUDGET = {
     /** The warm-up's count, and the floor. */
@@ -44,8 +49,8 @@ export const PATH_BUDGET = {
     relaxAfter: 60,
     /** Frames whose median may lower the baseline. */
     recent: 5,
-    /** Frames the count holds after a halving, while the GPU drains what it had queued. */
-    settle: 2,
+    /** Frames in a row still over the shrink line, after a halving, before it halves again. */
+    recoverFrames: 6,
 }
 
 export type PathBudgetTuning = typeof PATH_BUDGET
@@ -72,7 +77,8 @@ export function pathBudget(tune: PathBudgetTuning = PATH_BUDGET): PathBudget {
     let paths = tune.min
     let ceiling = tune.max
     let steady = 0
-    let settling = 0
+    // Frames still over the line since the last halving, or -1 when none is being waited out.
+    let overSince = -1
     return {
         get paths() { return paths },
         get baselineMs() { return baseline },
@@ -88,16 +94,16 @@ export function pathBudget(tune: PathBudgetTuning = PATH_BUDGET): PathBudget {
             recent.push(intervalMs)
             if (recent.length > tune.recent) recent.shift()
             if (recent.length === tune.recent) baseline = Math.min(baseline, median(recent))
-            if (settling > 0) {
-                settling--
-                return paths
-            }
             const over = intervalMs - baseline
+            if (overSince >= 0) {
+                if (over <= tune.shrinkOverMs) overSince = -1
+                else if (++overSince < tune.recoverFrames) return paths
+            }
             if (over > tune.shrinkOverMs) {
                 ceiling = Math.max(tune.min, Math.floor(paths * tune.ceilingShare))
                 paths = Math.max(tune.min, Math.floor(paths / 2))
                 steady = 0
-                settling = tune.settle
+                overSince = 0
             } else if (over <= tune.growUnderMs) {
                 if (paths >= ceiling && ++steady >= tune.relaxAfter) {
                     ceiling = Math.min(tune.max, Math.floor(ceiling * tune.grow))

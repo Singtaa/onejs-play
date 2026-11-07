@@ -1,4 +1,5 @@
 import { PATH_BUDGET, pathBudget, type PathBudget } from "../budget"
+import RECORDED from "./budget-runs.json"
 
 const REFRESH = 1000 / 60
 
@@ -87,13 +88,73 @@ describe("the bake's path budget", () => {
         expect(b.frame(REFRESH + 4.1)).toBe(Math.floor(held / 2))
     })
 
-    it("halves once for one overflow, though the GPU's queue shows it for a frame or two more", () => {
+    /** A budget past its warm-up and four growths, with the count it then asks for. */
+    function grown(): [PathBudget, number] {
         const b = pathBudget()
-        feed(b, times(PATH_BUDGET.warmup, REFRESH))
-        feed(b, times(4, REFRESH))
-        const before = b.paths
-        const counts = feed(b, times(1 + PATH_BUDGET.settle, 2 * REFRESH))
-        expect(counts).toEqual(times(1 + PATH_BUDGET.settle, Math.floor(before / 2)))
+        feed(b, times(PATH_BUDGET.warmup + 4, REFRESH))
+        return [b, b.paths]
+    }
+
+    it("halves once for one overflow, however many frames the GPU's queue shows it for", () => {
+        const [b, before] = grown()
+        const counts = feed(b, times(PATH_BUDGET.recoverFrames, 2 * REFRESH))
+        expect(counts).toEqual(times(PATH_BUDGET.recoverFrames, Math.floor(before / 2)))
+    })
+
+    it("halves again when frames stay over the line that many frames after a halving", () => {
+        const [b, before] = grown()
+        const counts = feed(b, times(PATH_BUDGET.recoverFrames + 1, 2 * REFRESH))
+        expect(counts.at(-1)).toBe(Math.floor(Math.floor(before / 2) / 2))
+    })
+
+    it("halves at once for the next overflow once a frame has come back inside the line", () => {
+        const [b, before] = grown()
+        feed(b, [2 * REFRESH, REFRESH + 3])
+        expect(b.paths).toBe(Math.floor(before / 2))
+        expect(b.frame(2 * REFRESH)).toBe(Math.floor(Math.floor(before / 2) / 2))
+    })
+
+    /**
+     * A recorded bake's frames, the bake's cost modelled on them: each recorded interval
+     * stands for the game's own, except an over-the-line one the run's own counts explain
+     * (the count `lag` frames back over `cap`), which becomes one refresh; then a frame
+     * whose count `lag` frames back is over `cap` takes one refresh more, as vsync does.
+     * Runs until the budget has traced the recorded bake's paths.
+     */
+    function replay(run: typeof RECORDED.runs[number]) {
+        const game = run.intervals.map((ms, i) => ms > run.refresh + 4 && (run.asked[i - run.lag] ?? 0) > run.cap ? run.refresh : ms)
+        const b = pathBudget()
+        const counts: number[] = []
+        let interval: number | null = null
+        let done = 0
+        let over = 0
+        let ms = 0
+        while (done < run.total && counts.length < 5000) {
+            const i = counts.length
+            const n = b.frame(interval)
+            counts.push(n)
+            done += n
+            interval = (game[i] ?? run.refresh) + ((counts[i - run.lag + 1] ?? 0) > run.cap ? run.refresh : 0)
+            ms += interval
+            if (b.baselineMs !== null && interval > b.baselineMs + PATH_BUDGET.shrinkOverMs) over++
+        }
+        return { frames: counts.length, over, ms }
+    }
+
+    it("bakes a recorded 120 Hz run in a fifth fewer frames than halving every slow frame did", () => {
+        const run = RECORDED.runs.find((r) => r.name.startsWith("120 Hz"))!
+        const now = replay(run)
+        expect(now.frames).toBeLessThanOrEqual(0.85 * run.old.frames)
+        // What it costs: a few more frames over the line while the queue drains.
+        expect(now.over).toBeLessThanOrEqual(run.old.over + 4)
+    })
+
+    it("bakes every recorded run no slower than before, with at most four more frames over the line", () => {
+        for (const run of RECORDED.runs) {
+            const now = replay(run)
+            expect(now.frames, run.name).toBeLessThanOrEqual(run.old.frames)
+            expect(now.over, run.name).toBeLessThanOrEqual(run.old.over + 4)
+        }
     })
 
     it("settles under a vsync overflow instead of climbing back into it", () => {
@@ -116,7 +177,6 @@ describe("the bake's path budget", () => {
         expect(b.paths).toBeGreaterThanOrEqual(100_000)
         const overflowed = b.paths
         b.frame(2 * REFRESH)
-        feed(b, times(PATH_BUDGET.settle, REFRESH))
         const ceiling = Math.floor(overflowed * PATH_BUDGET.ceilingShare)
         const counts = feed(b, times(PATH_BUDGET.relaxAfter - 1, REFRESH))
         expect(Math.max(...counts)).toBe(ceiling)
