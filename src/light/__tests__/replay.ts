@@ -14,6 +14,14 @@
  * `cap` is the GPU's room a frame, in paths: a run's recorded counts fit some
  * caps and not others, and a run that never found its limit (the phone's)
  * leaves a range.
+ *
+ * Two frames are slow whatever the count: the one whose step finishes the
+ * probes, and the one their read lands in, a few frames later. The switch
+ * costs the GPU, so the replay gives it to the frame its own bake switches on
+ * and takes it off the recorded one. The landing's latency is time, not work,
+ * so it lands in the recorded frame, whose stall stays where it was. The bake
+ * loop's newPhase hears of both as models.ts tells it, before reading the
+ * interval of the frame after.
  */
 
 /** The bake the runs baked: its probes and atlas, and LightBaker's tiles and samples. */
@@ -35,6 +43,10 @@ export interface RecordedRun {
     intervals: number[]
     /** Each frame's traced paths, to the bake's end. */
     traced: number[]
+    /** The recorded frame whose step finished the probes. */
+    switchAt: number
+    /** The recorded frame whose step landed the probes' read: its interval holds the landing's stall. */
+    landAt: number
     /**
      * The GPUs the run is replayed on: a queue of `lag` frames and `cap` paths of room a frame,
      * each with the path budget of the day's replay on it. The recorded runs fit every lag
@@ -58,8 +70,13 @@ export function bakeWork(BAKE: RecordedBake) {
     let rays = 0
     let tile = 0
     let sweep = 0
+    let landed = false
     return {
-        get done() { return sweep >= BAKE.sweeps },
+        get done() { return sweep >= BAKE.sweeps && landed },
+        /** LightBaker.Phase: 1 the probes' rays, 2 the tiles while the probes read back, 3 once landed, 4 finishing. */
+        get phase() { return sweep >= BAKE.sweeps ? 4 : rays < BAKE.probeRays ? 1 : landed ? 3 : 2 },
+        /** Lands the probes' read, once their rays are traced. */
+        land() { if (rays >= BAKE.probeRays) landed = true },
         /** Traces about `paths`, at least one draw, and returns the paths traced. */
         step(paths: number) {
             let spent = 0
@@ -81,6 +98,12 @@ export function bakeWork(BAKE: RecordedBake) {
     }
 }
 
+export interface ReplayedBudget {
+    frame(ms: number | null): number
+    readonly baselineMs: number | null
+    newPhase?(): void
+}
+
 export interface Replayed {
     frames: number
     /** The bake's time, its frames' intervals summed. */
@@ -92,19 +115,29 @@ export interface Replayed {
 /**
  * Bakes the recorded bake to the end under a budget that answers paths a
  * frame (a tile budget's tiles times tilePaths), on the GPU of `run` with a
- * queue of `lag` frames and `cap` paths of room a frame.
+ * queue of `lag` frames and `cap` paths of room a frame. A budget with
+ * newPhase hears each phase change as the bake loop tells it: one without is
+ * the budget the bake had before it learned of them.
  */
-export function replay(budget: { frame(ms: number | null): number; readonly baselineMs: number | null }, bake: RecordedBake, run: RecordedRun, lag: number, cap: number, overMs = 4): Replayed {
-    const game = run.intervals.map((ms, i) => ms > run.refresh + overMs && (run.traced[i - lag] ?? 0) > cap ? run.refresh : ms)
+export function replay(budget: ReplayedBudget, bake: RecordedBake, run: RecordedRun, lag: number, cap: number, overMs = 4): Replayed {
+    const explained = (ms: number, i: number) => ms > run.refresh + overMs && ((run.traced[i - lag] ?? 0) > cap || (i > run.switchAt && i <= run.switchAt + lag))
+    const game = run.intervals.map((ms, i) => explained(ms, i) ? run.refresh : ms)
     const work = bakeWork(bake)
     const traced: number[] = []
+    const switched: boolean[] = []
+    let phase = 0
     let interval: number | null = null
     let ms = 0
     let over = 0
     while (!work.done && traced.length < 10_000) {
         const i = traced.length
+        if (work.phase !== phase) budget.newPhase?.()
+        phase = work.phase
         traced.push(work.step(budget.frame(interval)))
-        interval = (game[i] ?? run.refresh) + ((traced[i - lag + 1] ?? 0) > cap ? run.refresh : 0)
+        switched.push(phase === 1 && work.phase !== 1)
+        if (i >= run.landAt) work.land()
+        const shown = i - lag + 1
+        interval = (game[i] ?? run.refresh) + ((traced[shown] ?? 0) > cap || switched[shown] ? run.refresh : 0)
         ms += interval
         if (budget.baselineMs !== null && interval > budget.baselineMs + overMs) over++
     }

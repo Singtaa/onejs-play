@@ -1106,7 +1106,13 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (why !== "") return give(why)
             let fileFrames = 0
             const budget = tileBudget()
+            let phase = 0
             stopFrame = everyFrame((intervalMs) => {
+                // Probes and the lightmap's tiles cost the GPU differently, and the frame between, or the one the
+                // probes land in, is neither's. Asked before the interval is read, as a phase can change inside a step.
+                const now = Number(b.BakePhase())
+                if (now !== phase) budget.newPhase()
+                phase = now
                 const p = Number(b.StepBake(budget.frame(intervalMs)))
                 // Below 0: the bridge's bake went, cleared by a later one or by the scene.
                 if (p < 0) return me.stop()

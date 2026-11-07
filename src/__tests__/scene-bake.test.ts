@@ -32,6 +32,8 @@ let refused: Set<number>
 let beginAnswer: string
 // What StepBake answers, in turn; the last repeats.
 let steps: number[]
+// What BakePhase answers: 1 the probes, 2 the lightmap while they read back, 3 the lightmap.
+let phase: number
 let loadAnswer: string
 let lightFileAnswer: string
 // Calls LightFile answers "" before lightFileAnswer: its read landing, as on WebGPU.
@@ -69,6 +71,7 @@ function recorder(): any {
                 if (name === "LightMesh") return refused.has(args[0] as number) ? "" : squareMesh()
                 if (name === "BeginBake") return beginAnswer
                 if (name === "StepBake") return steps.length > 1 ? steps.shift() : steps[0]
+                if (name === "BakePhase") return phase
                 if (name === "LightFile") return lightFileWaits-- > 0 ? "" : lightFileAnswer
                 if (name === "FileSha256") return "c".repeat(64)
                 if (name === "LoadLight") return loadAnswer
@@ -96,6 +99,7 @@ beforeEach(() => {
     refused = new Set()
     beginAnswer = ""
     steps = [1]
+    phase = 1
     loadAnswer = ""
     lightFileAnswer = PIXEL
     lightFileWaits = 0
@@ -235,6 +239,24 @@ describe("scene.bake", () => {
         // The baseline is the game's interval, not the load's: one at it grows the count, one 5 ms over halves it.
         runtime.beginFrame(1 / 60, 1 / 60)
         expect(asked().at(-1)).toBe(TILE_BUDGET.min + 1)
+        runtime.beginFrame(1 / 60, 1 / 60 + 0.005)
+        expect(asked().at(-1)).toBe(TILE_BUDGET.min)
+    })
+
+    it("does not read the frames after the bake changes phase, which are slow whatever its count", async () => {
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.1]
+        s.bake()
+        await started()
+        for (let i = 0; i <= TILE_BUDGET.warmup; i++) runtime.beginFrame(1 / 60, 1 / 60)
+        const asked = () => of("StepBake").map((c) => c[1])
+        expect(asked().at(-1)).toBe(TILE_BUDGET.min + 1)
+        // The probes end: the frames that show it are a refresh over, and the count holds through them.
+        phase = 2
+        for (let i = 0; i < TILE_BUDGET.phaseSkip; i++) runtime.beginFrame(1 / 60, 2 / 60)
+        expect(asked().slice(-TILE_BUDGET.phaseSkip)).toEqual(Array.from({ length: TILE_BUDGET.phaseSkip }, () => TILE_BUDGET.min + 1))
+        // Then it reads them again: one 5 ms over halves it.
         runtime.beginFrame(1 / 60, 1 / 60 + 0.005)
         expect(asked().at(-1)).toBe(TILE_BUDGET.min)
     })

@@ -192,6 +192,40 @@ describe("the bake's tile budget", () => {
         }
     })
 
+    it("starts over at a new phase: reads none of the frames that show the change, clears its ceiling, and ramps on from its count", () => {
+        const [b] = ramped(8)
+        const ceiling = Math.floor(b.tiles * TILE_BUDGET.ceilingShare)
+        b.frame(2 * REFRESH)
+        feed(b, times(TILE_BUDGET.relaxAfter - 1, REFRESH))
+        expect(b.tiles).toBe(ceiling)
+        b.newPhase()
+        // Slow as they are, the frames that show the change leave the count.
+        expect(feed(b, times(TILE_BUDGET.phaseSkip, 3 * REFRESH))).toEqual(times(TILE_BUDGET.phaseSkip, ceiling))
+        expect(b.frame(REFRESH)).toBe(grown(ceiling))
+        expect(b.frame(REFRESH)).toBe(grown(grown(ceiling)))
+    })
+
+    it("takes a slow frame soon after a new phase as an overflow of the new phase's count", () => {
+        const [b] = held()
+        const at = b.tiles
+        b.newPhase()
+        feed(b, times(TILE_BUDGET.phaseSkip, 2 * REFRESH))
+        // A hitch at a held count otherwise: here the count has not yet run clean in its phase.
+        expect(b.frame(2 * REFRESH)).toBe(Math.floor(at / 2))
+    })
+
+    it("does not start over during the warm-up, whose frames are its baseline whatever they trace", () => {
+        const plain = tileBudget()
+        const told = tileBudget()
+        const warm = [...times(TILE_BUDGET.dropped, 100), ...times(TILE_BUDGET.warmup - TILE_BUDGET.dropped, REFRESH)]
+        feed(plain, warm)
+        feed(told, warm.slice(0, 4))
+        told.newPhase()
+        feed(told, warm.slice(4))
+        expect(told.baselineMs).toBe(plain.baselineMs)
+        expect(told.frame(REFRESH)).toBe(plain.frame(REFRESH))
+    })
+
     it("stays between the floor and the cap, and ignores an interval it cannot read", () => {
         const slow = tileBudget()
         feed(slow, times(TILE_BUDGET.warmup, REFRESH))
@@ -214,44 +248,50 @@ describe("the bake's tile budget", () => {
 describe("the tile budget on the recorded bakes", () => {
     const runs = RECORDED.runs as RecordedRun[]
     const run = (prefix: string) => runs.find((r) => r.name.startsWith(prefix))!
-    /** The budget, answering paths: what the bake loop hands StepBake, in the bake's tiles. */
-    const replayed = (r: RecordedRun, cap: number) => {
+    const tile = tilePaths(RECORDED.bake)
+    /**
+     * The budget, answering paths: what the bake loop hands StepBake, in the bake's tiles. Told of
+     * each phase as models.ts tells it, or, `deaf`, not: the budget before it learned of them.
+     */
+    const replayed = (r: RecordedRun, gpu: RecordedRun["gpus"][number], deaf = false) => {
         const b = tileBudget()
-        const paths = tilePaths(RECORDED.bake)
-        return replay({ frame: (ms) => b.frame(ms) * paths, get baselineMs() { return b.baselineMs } }, RECORDED.bake, r, lag, cap)
+        return replay({
+            frame: (ms) => b.frame(ms) * tile,
+            get baselineMs() { return b.baselineMs },
+            ...(deaf ? {} : { newPhase: () => b.newPhase() }),
+        }, RECORDED.bake, r, gpu.lag, gpu.cap)
     }
     // Each run is replayed on a queue of 1 to 3 frames: the recordings fit every one, and a
     // budget tuned to one lag passed its replay while the browser, at another, ran it slower.
-    let lag = 0
+    const at = (gpu: RecordedRun["gpus"][number]) => `lag ${gpu.lag}, ${gpu.cap / tile} tiles`
 
-    it("bakes the 60 Hz run faster than the path budget did at every lag, for a few frames over the line where it finds the GPU's room", () => {
-        for (const gpu of run("60 Hz").gpus) {
-            lag = gpu.lag
-            const now = replayed(run("60 Hz"), gpu.cap)
-            const at = `lag ${gpu.lag}, cap ${gpu.cap}`
-            expect(now.ms, at).toBeLessThan(0.9 * gpu.old.ms)
-            expect(now.over, at).toBeLessThanOrEqual(gpu.old.over + 4)
-        }
-    })
-
-    it("bakes the 120 Hz run faster at every lag, for at most one more frame over the line", () => {
-        for (const gpu of run("120 Hz").gpus) {
-            lag = gpu.lag
-            const now = replayed(run("120 Hz"), gpu.cap)
-            const at = `lag ${gpu.lag}, cap ${gpu.cap}`
-            expect(now.ms, at).toBeLessThan(0.95 * gpu.old.ms)
-            expect(now.over, at).toBeLessThanOrEqual(gpu.old.over + 1)
+    it("bakes the 60 Hz and 120 Hz runs faster than the path budget did at every lag and room, in under half the time where the room is the cap", () => {
+        for (const r of [run("60 Hz"), run("120 Hz")]) {
+            for (const gpu of r.gpus) {
+                const now = replayed(r, gpu)
+                expect(now.ms, `${r.name}, ${at(gpu)}`).toBeLessThan(gpu.old.ms)
+                if (gpu.cap >= TILE_BUDGET.max * tile && gpu.lag === 1) expect(now.ms, `${r.name}, ${at(gpu)}`).toBeLessThan(0.5 * gpu.old.ms)
+                // Probing the room costs frames over the line, each shown once a frame of queue.
+                expect(now.over, `${r.name}, ${at(gpu)}`).toBeLessThanOrEqual(gpu.old.over + 8)
+            }
         }
     })
 
     it("bakes the phone's run faster at any lag and room it could have had, and in under half the time from four tiles", () => {
-        const tile = tilePaths(RECORDED.bake)
         for (const gpu of run("Phone").gpus) {
-            lag = gpu.lag
-            const now = replayed(run("Phone"), gpu.cap)
-            const at = `lag ${gpu.lag}, ${gpu.cap / tile} tiles`
-            expect(now.ms, at).toBeLessThan(gpu.cap >= 4 * tile ? 0.5 * gpu.old.ms : gpu.old.ms)
-            if (gpu.cap >= 4 * tile) expect(now.over, at).toBeLessThanOrEqual(gpu.old.over)
+            const now = replayed(run("Phone"), gpu)
+            expect(now.ms, at(gpu)).toBeLessThan(gpu.cap >= 4 * tile ? 0.5 * gpu.old.ms : gpu.old.ms)
+            if (gpu.cap >= 4 * tile) expect(now.over, at(gpu)).toBeLessThanOrEqual(gpu.old.over)
+        }
+    })
+
+    it("needs the bake's phases: deaf to them, a switch or landing mid-ramp sets a ceiling far under the room", () => {
+        // Where the room is more than the ramp had reached when the probes ended, every recorded run.
+        const roomy = [[run("60 Hz"), 64], [run("120 Hz"), 32], [run("Phone"), 8]] as const
+        for (const [r, tiles] of roomy) {
+            for (const gpu of r.gpus.filter((g) => g.cap === tiles * tile)) {
+                expect(replayed(r, gpu).ms, `${r.name}, ${at(gpu)}`).toBeLessThan(0.85 * replayed(r, gpu, true).ms)
+            }
         }
     })
 })

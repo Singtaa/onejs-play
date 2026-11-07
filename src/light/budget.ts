@@ -41,6 +41,17 @@
  *   count, and halving and lowering the ceiling for each pinned its bake at
  *   one tile a frame for 45 s.
  *
+ * A bake traces probes' rays, then the lightmap's tiles, and a path of each
+ * costs the GPU differently: a ceiling learned on one says nothing about the
+ * other. And the frames a phase changes in are slow whatever the count: on
+ * WebGL 2 (7 Nov) the first tile pass is sometimes a refresh over, and 2 or 3
+ * frames after the probes' read lands one is two over, at 12 tiles or at 51.
+ * Read as an overflow mid-ramp, the first set a 12 tile ceiling where 64 ran,
+ * and the bake took 4.5 s where it takes 1.4. So at a new phase (`newPhase`, from
+ * StepBake's BakePhase) the budget clears its ceiling, does not read the next
+ * `phaseSkip` intervals, which show that frame however deep the queue, and
+ * ramps on from its count.
+ *
  * The queue also shows one overflow for several frames, so it halves once an
  * overflow: after a halving it holds until a frame comes back inside the
  * shrink line, and halves again only when `recoverFrames` frames in a row stay
@@ -68,6 +79,8 @@ export const TILE_BUDGET = {
     recoverFrames: 6,
     /** Frames after the count grows in which a slow frame is its overflow; later, a hitch. */
     lagFrames: 2,
+    /** Intervals after a new phase the budget does not read: they show the switching frame. */
+    phaseSkip: 3,
 }
 
 export type TileBudgetTuning = typeof TILE_BUDGET
@@ -82,6 +95,8 @@ export interface TileBudget {
      * frame. Null when there is none yet. Returns the tiles to trace now.
      */
     frame(intervalMs: number | null): number
+    /** The bake moved to another phase (StepBake's BakePhase changed) since the last frame's interval was read. */
+    newPhase(): void
 }
 
 export function tileBudget(tune: TileBudgetTuning = TILE_BUDGET): TileBudget {
@@ -100,6 +115,8 @@ export function tileBudget(tune: TileBudgetTuning = TILE_BUDGET): TileBudget {
     let hitch = false
     // The count a hitch's second slow frame last halved, cleared by an overflow.
     let hitchHalved = Infinity
+    // Intervals still to pass unread after a new phase.
+    let skip = 0
 
     function halve(lowersCeiling: boolean): number {
         if (lowersCeiling) {
@@ -118,6 +135,10 @@ export function tileBudget(tune: TileBudgetTuning = TILE_BUDGET): TileBudget {
         if (baseline === null) {
             if (seen++ >= tune.dropped) warm.push(intervalMs)
             if (seen >= tune.warmup) baseline = median(warm)
+            return tiles
+        }
+        if (skip > 0) {
+            skip--
             return tiles
         }
         recent.push(intervalMs)
@@ -154,5 +175,16 @@ export function tileBudget(tune: TileBudgetTuning = TILE_BUDGET): TileBudget {
         get tiles() { return tiles },
         get baselineMs() { return baseline },
         frame,
+        newPhase() {
+            // The warm-up's own frames are its baseline, whatever they trace.
+            if (baseline === null) return
+            ceiling = tune.max
+            steady = 0
+            overSince = -1
+            hitch = false
+            hitchHalved = Infinity
+            sinceGrowth = 0
+            skip = tune.phaseSkip
+        },
     }
 }
