@@ -20,18 +20,52 @@ import type { Model, Rotation, Vec3 } from "../models"
 import type { Triangles } from "../physics3d/gltf"
 import { rotate, toQuat } from "../physics3d/rotation"
 import { modelUrls } from "../physics3d/sources"
-import { DEFAULT_DETAIL, MAX_PAGES } from "./atlas"
+import { DEFAULT_DETAIL, MAX_PAGES, MIN_DETAIL } from "./atlas"
 import { readText, writeText } from "./png"
 import { probeGrid } from "./probes"
-import { compareRows, difference, layoutOf, matches, parseSaved, recordOf, rowOf, sameLayout, type BakedHere, type LightInputs, type LightRecord, type SavedLayout, type SavedLight, type StaticActor } from "./record"
+import { compareRows, difference, layoutOf, matches, OPTION_NAMES, parseSaved, recordOf, rowOf, sameLayout, type BakedHere, type BakeOptionValues, type LightInputs, type LightRecord, type SavedLayout, type SavedLight, type StaticActor } from "./record"
 import { chartModel, layoutLight, type Charts } from "./unwrap"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
 // eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
 
-/** Paths a texel: the one quality the first version has (§7). */
-export const BAKE_SAMPLES = 256
+/** `scene.bake`'s options when not given: the bake the first version had. */
+export const BAKE_DEFAULTS: Readonly<BakeOptionValues> = Object.freeze({ bounces: 2, samples: 256, occlusion: 0, detail: DEFAULT_DETAIL })
+
+/**
+ * Each option's bounds. More bounces than 8 add nothing a player sees and
+ * lengthen every path, and 4096 paths a texel is sixteen times the default's
+ * time; past either, a number is a mistake rather than a wish.
+ */
+const OPTION_BOUNDS: Record<keyof BakeOptionValues, { min: number, max: number, whole: boolean }> = {
+    bounces: { min: 0, max: 8, whole: true },
+    samples: { min: 1, max: 4096, whole: true },
+    occlusion: { min: 0, max: 1, whole: false },
+    detail: { min: MIN_DETAIL, max: Infinity, whole: false },
+}
+
+/** `scene.bake`'s options with the defaults filled in, or a thrown error naming what is wrong with one. */
+export function bakeOptions(given: unknown): BakeOptionValues {
+    if (given === undefined) return { ...BAKE_DEFAULTS }
+    if (given === null || typeof given !== "object" || Array.isArray(given)) throw new Error("[oj] scene.bake: its options are an object, like { bounces: 3 }")
+    const o = given as Record<string, unknown>
+    for (const k of Object.keys(o)) {
+        if (!(OPTION_NAMES as readonly string[]).includes(k)) throw new Error(`[oj] scene.bake has no option ${k}: its options are ${OPTION_NAMES.join(", ")}`)
+    }
+    const values = { ...BAKE_DEFAULTS }
+    for (const k of OPTION_NAMES) {
+        const v = o[k]
+        if (v === undefined) continue
+        const { min, max, whole } = OPTION_BOUNDS[k]
+        const range = max === Infinity ? `${min} or more` : `from ${min} to ${max}`
+        if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max || (whole && !Number.isInteger(v))) {
+            throw new Error(`[oj] scene.bake: ${k} is ${whole ? "a whole number" : "a number"} ${range}, not ${typeof v === "number" ? v : JSON.stringify(v)}`)
+        }
+        values[k] = v
+    }
+    return values
+}
 
 /**
  * Frames a finished bake waits for its light file. The bridge reads the
@@ -138,7 +172,7 @@ export interface LightPlan {
  * a model and hashes what it is made of.
  */
 export async function recordItems(items: readonly BakeItem[], identify: (model: Model) => Promise<{ name: string, sha: string }>,
-    lights: Omit<LightInputs, "actors" | "detail" | "quality">): Promise<{ record: LightRecord, items: BakeItem[] }> {
+    lights: Omit<LightInputs, "actors">): Promise<{ record: LightRecord, items: BakeItem[] }> {
     const ids = await Promise.all(items.map((item) => identify(item.model)))
     const actors: StaticActor[] = items.map((item, i) => ({ model: ids[i]!.name, sha: ids[i]!.sha, position: item.position, rotation: item.rotation, scale: item.scale }))
     const rows = actors.map(rowOf)
@@ -147,7 +181,7 @@ export async function recordItems(items: readonly BakeItem[], identify: (model: 
         const r = rows[i]!
         return { ...items[i]!, position: [r[2], r[3], r[4]], rotation: { yaw: r[5], pitch: r[6], roll: r[7] }, scale: r[8] }
     })
-    return { record: recordOf({ ...lights, actors, detail: DEFAULT_DETAIL, quality: BAKE_SAMPLES }), items: placed }
+    return { record: recordOf({ ...lights, actors }), items: placed }
 }
 
 /**
@@ -155,7 +189,7 @@ export async function recordItems(items: readonly BakeItem[], identify: (model: 
  * the console. Null when `live` turned false while the charts were cut, so a
  * bake replaced meanwhile changes nothing.
  */
-export async function planLight(bridge: any, items: readonly BakeItem[], cache: ChartCache, live: () => boolean): Promise<LightPlan | string | null> {
+export async function planLight(bridge: any, items: readonly BakeItem[], cache: ChartCache, live: () => boolean, detail = DEFAULT_DETAIL): Promise<LightPlan | string | null> {
     if (items.length === 0) return "nothing in the scene is static. Spawn what never moves with { static: true }, or give it a static body"
     const models: Model[] = []
     for (const item of items) if (!models.includes(item.model)) models.push(item.model)
@@ -169,7 +203,7 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
     if (baked.length === 0) return "no static model can be baked into"
 
     const charts = usable.map((m) => charted[models.indexOf(m)]!)
-    const layout = layoutLight(charts.map((c) => c.charts), baked.map((item) => ({ model: usable.indexOf(item.model), scale: item.scale })), DEFAULT_DETAIL)
+    const layout = layoutLight(charts.map((c) => c.charts), baked.map((item) => ({ model: usable.indexOf(item.model), scale: item.scale })), detail)
     if (layout === null) return `its static surface is too large for ${MAX_PAGES} pages of light even at one texel a metre`
 
     for (let m = 0; m < usable.length; m++) {
@@ -207,9 +241,9 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
     }
 }
 
-/** Starts baking the plan: "" when it started, or why not. */
-export function beginBake(bridge: any, plan: LightPlan): string {
-    return String(bridge.BeginBake(plan.actors, plan.copies, plan.grid, plan.width, plan.height, plan.pages, plan.detail, BAKE_SAMPLES))
+/** Starts baking the plan with these options' bounces, samples and occlusion: "" when it started, or why not. */
+export function beginBake(bridge: any, plan: LightPlan, options: BakeOptionValues): string {
+    return String(bridge.BeginBake(plan.actors, plan.copies, plan.grid, plan.width, plan.height, plan.pages, plan.detail, options.samples, options.bounces, options.occlusion))
 }
 
 /** What reading a named light file found. */

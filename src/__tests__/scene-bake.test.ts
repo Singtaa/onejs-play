@@ -9,7 +9,7 @@ import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest"
-import { createScene } from "../models"
+import { createScene, type BakeOptions } from "../models"
 import { createRuntime } from "../runtime"
 import { setWasmModule } from "../wasm"
 import { RAPIER_VERSION } from "../physics3d/rapier.version"
@@ -165,7 +165,7 @@ describe("scene.bake", () => {
         expect(uv).toBeInstanceOf(Float32Array)
         expect((indices as Uint32Array).length).toBe(6)
 
-        const [, actors, copies, grid, width, height, pages, detail, samples] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number, number]
+        const [, actors, copies, grid, width, height, pages, detail, samples, bounces, occlusion] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number, number, number, number]
         expect(Array.from(actors.slice(0, 1))).toEqual([still.id])
         expect(actors.length).toBe(5)
         expect(copies.length).toBe(12)
@@ -181,8 +181,8 @@ describe("scene.bake", () => {
         expect(width).toBeGreaterThan(0)
         expect(height).toBeGreaterThan(0)
         expect(pages).toBe(1)
-        expect(detail).toBeGreaterThan(0)
-        expect(samples).toBe(256)
+        // With no options, the first version's bake.
+        expect([detail, samples, bounces, occlusion]).toEqual([24, 256, 2, 0])
         // The box round the copies and the static actor, a metre past it: x from -7 to 5.
         expect(grid.length).toBe(7)
         expect(grid[0]).toBeCloseTo(-8, 3)
@@ -418,11 +418,11 @@ describe("scene.bake with a name", () => {
     }
 
     /** Bakes the room here and returns the file the host was handed. */
-    async function bakeAndSave(xs: readonly number[], scale = 1): Promise<Uint8Array> {
+    async function bakeAndSave(xs: readonly number[], scale = 1, options?: BakeOptions): Promise<Uint8Array> {
         vi.spyOn(console, "warn").mockImplementation(() => {})
         const s = scene()
         room(s, xs, scale)
-        const light = s.bake(NAME)
+        const light = s.bake(NAME, options)
         await started()
         frame()
         await light.done
@@ -485,6 +485,114 @@ describe("scene.bake with a name", () => {
         const [, , actors, , , width, height, pages] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number, number]
         expect([width, height, pages]).toEqual([saved.layout.atlas[0], saved.layout.atlas[1], 3])
         expect(Array.from(actors).filter((_, i) => i % 5 === 3).map(Math.floor).sort()).toEqual([0, 1, 2])
+    })
+
+    it("bakes with the options given, records them, and loads the file only for the same options", async () => {
+        served.set(NAME, await bakeAndSave([0, 3], 1, { bounces: 3, samples: 64, occlusion: 0.5, detail: 12 }))
+        const [, , , , , , , detail, samples, bounces, occlusion] = of("BeginBake")[0]!
+        expect([detail, samples, bounces, occlusion]).toEqual([12, 64, 3, 0.5])
+        const saved = recordOf(served.get(NAME)!)
+        expect(saved).toMatchObject({ v: 2, bounces: 3, samples: 64, occlusion: 0.5, detail: 12 })
+        expect(saved.layout.atlas[2]).toBe(12)
+
+        let s = again()
+        room(s, [0, 3])
+        await s.bake(NAME, { detail: 12, occlusion: 0.5, samples: 64, bounces: 3 }).done
+        expect(of("LoadLight").length).toBe(1)
+        expect(of("BeginBake")).toEqual([])
+
+        s = again()
+        room(s, [0, 3])
+        const light = s.bake(NAME, { bounces: 3, samples: 64, occlusion: 0.5 })
+        await started()
+        frame()
+        await light.done
+        expect(of("LoadLight")).toEqual([])
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} was baked for a different scene (its detail changed from 12 to 24): baked here instead.`)
+    })
+
+    it("lays out at the detail asked, and says on its line when the pages could not hold it", async () => {
+        served.set(NAME, await bakeAndSave([0, 3], 1, { detail: 12 }))
+        const half = of("BeginBake")[0]![1] as Float32Array
+        let s = again()
+        room(s, [0, 3])
+        await s.bake(NAME, { detail: 12 }).done
+        s = again()
+        room(s, [0, 3])
+        const full = s.bake(NAME, { detail: 24 })
+        await started()
+        frame()
+        await full.done
+        // Twice the texels a metre, so each square's rectangle twice as wide in texels.
+        const atlas = (n: number) => (of("BeginBake")[n]![4] as number)
+        const texels = (list: Float32Array, a: number) => list[1]! * a
+        expect(texels(of("BeginBake")[0]![1] as Float32Array, atlas(0)) / texels(half, recordOf(served.get(NAME)!).layout.atlas[0])).toBeCloseTo(2, 0)
+        expect(baked[0]!.line).toMatch(/: baked here instead\.$/)
+
+        // Three 18 m squares at 64 texels a metre are 1152 a side, more than a page.
+        baked = []
+        s = again()
+        room(s, [0, 20, 40], 9)
+        const big = s.bake(NAME, { detail: 64 })
+        await started()
+        frame()
+        await big.done
+        const packed = of("BeginBake")[0]![7] as number
+        expect(packed).toBeLessThan(64)
+        expect(baked[0]!.line).toMatch(new RegExp(`, at ${packed} texels a metre, as 64 does not fit 4 pages\\.$`))
+    })
+
+    it("says the detail it lowered to on the console when the bake has no name", async () => {
+        const log = vi.spyOn(console, "log").mockImplementation(() => {})
+        const s = scene()
+        room(s, [0, 20, 40], 9)
+        s.bake({ detail: 64 })
+        await started()
+        const packed = of("BeginBake")[0]![7] as number
+        expect(log.mock.calls.map((c) => c[0])).toEqual([`[oj] scene.bake: baked at ${packed} texels a metre, as 64 does not fit 4 pages.`])
+        log.mockClear()
+        const t = again()
+        room(t, [0])
+        t.bake({ samples: 64 })
+        await started()
+        expect(of("BeginBake")[0]![8]).toBe(64)
+        expect(fetched).toEqual([])
+        expect(log).not.toHaveBeenCalled()
+    })
+
+    it("refuses an option it does not have, or one out of its range, at the call", () => {
+        const s = scene()
+        room(s, [0])
+        for (const [options, message] of [
+            [{ quality: 64 }, /has no option quality: its options are bounces, samples, occlusion, detail/],
+            [{ bounces: 9 }, /bounces is a whole number from 0 to 8, not 9/],
+            [{ bounces: 1.5 }, /bounces is a whole number from 0 to 8, not 1\.5/],
+            [{ samples: 0 }, /samples is a whole number from 1 to 4096, not 0/],
+            [{ occlusion: 2 }, /occlusion is a number from 0 to 1, not 2/],
+            [{ detail: 0.5 }, /detail is a number 1 or more, not 0\.5/],
+            [{ detail: "24" }, /detail is a number 1 or more, not "24"/],
+            [[], /options are an object/],
+        ] as const) {
+            expect(() => s.bake(NAME, options as never), JSON.stringify(options)).toThrow(message)
+        }
+        expect(() => s.bake({ bounces: 9 })).toThrow(/bounces/)
+        expect(() => s.bake({} as never, {} as never)).toThrow(/options come once/)
+        expect(() => s.bake("")).toThrow(/name the light file/)
+        expect(of("BeginBake")).toEqual([])
+    })
+
+    it("bakes here a file an older oj saved, saying so, rather than calling it unreadable", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        const old = { v: 1, baker: 1, fingerprint: "0", actors: [], sun: null, ambient: [0, 0, 0, 0, 0, 0], detail: 24, quality: 256, layout: { atlas: [64, 64, 24], grid: [0, 0, 0, 1, 2, 2, 2], rects: "0" } }
+        served.set(NAME, writeText(new Uint8Array(Buffer.from(PIXEL, "base64")), JSON.stringify(old)))
+        const s = scene()
+        room(s, [0])
+        const light = s.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        expect(of("LoadLight")).toEqual([])
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} was saved by an older oj: baked here instead.`)
     })
 
     it("gives each actor the rectangle it was baked with, whatever order the scene spawned them in", async () => {

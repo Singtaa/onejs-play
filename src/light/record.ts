@@ -40,25 +40,41 @@ export interface LightInputs {
     /** The sun's direction and colour, or null for a scene with no sun. */
     sun: { direction: readonly [number, number, number], color: readonly [number, number, number], intensity: number } | null
     ambient: { sky: readonly [number, number, number], ground: readonly [number, number, number] }
-    /** Texels a metre asked for, and samples a texel. */
-    detail: number
-    quality: number
+    /** `scene.bake`'s options, given or defaulted. */
+    options: BakeOptionValues
 }
+
+/** `scene.bake`'s options, each given or defaulted (docs/lightmapping.md §8). */
+export interface BakeOptionValues {
+    /** Times light bounces off surfaces before it stops: 0 is the sky alone. */
+    bounces: number
+    /** Paths a texel. */
+    samples: number
+    /** Extra darkening in corners and where things touch, 0 to 1. */
+    occlusion: number
+    /** Texels a metre asked for. */
+    detail: number
+}
+
+/** The options' names in the order the record keeps and the console names them. */
+export const OPTION_NAMES = ["bounces", "samples", "occlusion", "detail"] as const
 
 /** One actor as the record keeps it: model, hash, x, y, z, yaw, pitch, roll, scale, each rounded. */
 export type ActorRow = [string, string, number, number, number, number, number, number, number]
 
 /** The record a light file carries in its text chunk. */
 export interface LightRecord {
-    v: 1
+    v: 2
     baker: number
     fingerprint: string
     /** Sorted, so the order actors were spawned in does not matter. */
     actors: ActorRow[]
     sun: [number, number, number, number, number, number, number] | null
     ambient: [number, number, number, number, number, number]
+    bounces: number
+    samples: number
+    occlusion: number
     detail: number
-    quality: number
 }
 
 const round = (x: number, step: number) => {
@@ -94,13 +110,14 @@ export function recordOf(inputs: LightInputs): LightRecord {
     const sun = inputs.sun === null ? null
         : [...c(inputs.sun.direction), ...c(inputs.sun.color), round(inputs.sun.intensity, 1e-4)] as LightRecord["sun"]
     const ambient = [...c(inputs.ambient.sky), ...c(inputs.ambient.ground)] as LightRecord["ambient"]
-    const body = { v: 1 as const, baker: BAKER_VERSION, actors, sun, ambient, detail: inputs.detail, quality: inputs.quality }
+    const { bounces, samples, occlusion, detail } = inputs.options
+    const body = { v: 2 as const, baker: BAKER_VERSION, actors, sun, ambient, bounces, samples, occlusion, detail }
     return { ...body, fingerprint: fingerprintOf(body) }
 }
 
 /** A hash of everything but the fingerprint itself, as 16 hex digits. */
 function fingerprintOf(body: Omit<LightRecord, "fingerprint">): string {
-    return hash16(JSON.stringify([body.v, body.baker, body.actors, body.sun, body.ambient, body.detail, body.quality]))
+    return hash16(JSON.stringify([body.v, body.baker, body.actors, body.sun, body.ambient, ...OPTION_NAMES.map((k) => body[k])]))
 }
 
 function hash16(text: string): string {
@@ -165,6 +182,9 @@ export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
 
 const isNumbers = (x: unknown, n: number) => Array.isArray(x) && x.length === n && x.every((v) => typeof v === "number")
 
+/** parseSaved's answer for a record an older oj wrote, which a bake reads as out of date rather than unreadable. */
+export const OLDER = "it was saved by an older oj"
+
 /** A light file's text read back: the record, or why it is not one this baker wrote. */
 export function parseSaved(text: string | null): SavedLight | string {
     if (text === null) return "it holds no light record"
@@ -174,10 +194,13 @@ export function parseSaved(text: string | null): SavedLight | string {
     } catch {
         return "its light record is not JSON"
     }
-    if (r === null || typeof r !== "object" || r.v !== 1) return "its light record is of a version this oj does not read"
+    if (r === null || typeof r !== "object") return "its light record is not an object"
+    // The first record, before the options: every file that carries one is out of date, as no option was recorded.
+    if (r.v === 1) return OLDER
+    if (r.v !== 2) return "its light record is of a version this oj does not read"
     const ok = typeof r.baker === "number" && typeof r.fingerprint === "string" && Array.isArray(r.actors)
         && (r.sun === null || isNumbers(r.sun, 7)) && isNumbers(r.ambient, 6)
-        && typeof r.detail === "number" && typeof r.quality === "number"
+        && OPTION_NAMES.every((k) => typeof r[k] === "number")
         && r.layout !== null && typeof r.layout === "object" && isNumbers(r.layout.atlas, 3) && isNumbers(r.layout.grid, 7) && typeof r.layout.rects === "string"
         && (r.layout.pages === undefined || (Number.isInteger(r.layout.pages) && r.layout.pages > 1))
         && r.actors.every((a: unknown) => Array.isArray(a) && a.length === 9 && typeof a[0] === "string" && typeof a[1] === "string" && a.slice(2).every((v: unknown) => typeof v === "number"))
@@ -215,7 +238,7 @@ export function difference(saved: LightRecord, now: LightRecord): string | null 
     for (const r of left) if (!now.actors.some((n) => n[0] === r[0] && sameTransform(n, r))) return `${r[0]} at ${place(r)} is no longer there`
     if (JSON.stringify(saved.sun) !== JSON.stringify(now.sun)) return now.sun === null ? "the sun is out" : saved.sun === null ? "the sun is up" : "the sun changed"
     if (JSON.stringify(saved.ambient) !== JSON.stringify(now.ambient)) return "the ambient light changed"
-    if (saved.detail !== now.detail || saved.quality !== now.quality) return "its detail or quality changed"
+    for (const k of OPTION_NAMES) if (saved[k] !== now[k]) return `its ${k} changed from ${saved[k]} to ${now[k]}`
     return null
 }
 
@@ -225,12 +248,28 @@ export function difference(saved: LightRecord, now: LightRecord): string | null 
  */
 export type BakedHere = { why: "missing" } | { why: "unreadable", detail: string } | { why: "stale", detail: string } | { why: "again" }
 
-/** The console line for a named bake that ran here. */
-export function bakedHereLine(name: string, here: BakedHere): string {
-    switch (here.why) {
-        case "missing": return `[oj] ${name} is not in the cart yet: baked here.`
-        case "unreadable": return `[oj] ${name} is not a light file oj can read (${here.detail}): baked here instead.`
-        case "stale": return `[oj] ${name} was baked for a different scene (${here.detail}): baked here instead.`
-        case "again": return `[oj] ${name} baked again here.`
-    }
+/**
+ * The console line for a named bake that ran here, saying the detail it was
+ * baked at when that is below the detail asked: `lowered`.
+ */
+export function bakedHereLine(name: string, here: BakedHere, lowered?: Lowered): string {
+    const line = (() => {
+        switch (here.why) {
+            case "missing": return `[oj] ${name} is not in the cart yet: baked here`
+            case "unreadable": return here.detail === OLDER ? `[oj] ${name} was saved by an older oj: baked here instead` : `[oj] ${name} is not a light file oj can read (${here.detail}): baked here instead`
+            case "stale": return `[oj] ${name} was baked for a different scene (${here.detail}): baked here instead`
+            case "again": return `[oj] ${name} baked again here`
+        }
+    })()
+    return lowered === undefined ? `${line}.` : `${line}, ${loweredWords(lowered)}.`
 }
+
+/** A detail asked for that the pages could not hold, and the detail baked. */
+export interface Lowered {
+    asked: number
+    baked: number
+    pages: number
+}
+
+/** "at 3.1 texels a metre, as 24 does not fit 4 pages" */
+export const loweredWords = (l: Lowered) => `at ${l.baked} texels a metre, as ${l.asked} does not fit ${l.pages} pages`

@@ -106,6 +106,7 @@ export type {
     Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
     Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions, SkyOptions,
     MeshData, MeshModelOptions, MeshDrawOptions, MeshUpdate, MeshModel, Numbers, Scatter, ScatterCopy, SceneTexture,
+    Bake, BakeOptions,
 } from "./models"
 
 // Gestures over `input`, so a game does not rewrite the same state machine.

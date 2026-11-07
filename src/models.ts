@@ -28,10 +28,11 @@ import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
-import { beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
+import { bakeOptions, beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
+import { MAX_PAGES } from "./light/atlas"
 import { tileBudget } from "./light/budget"
 import { lightBakedHere, lightBegun, lightEnded, offerAgain, type BakeEnd } from "./light/host"
-import { bakedHereLine, type BakedHere, type LightRecord } from "./light/record"
+import { bakedHereLine, loweredWords, type BakedHere, type BakeOptionValues, type LightRecord, type Lowered } from "./light/record"
 import { sha256 } from "./light/sha256"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
@@ -162,6 +163,13 @@ export interface SpawnOptions {
      */
     static?: boolean
 }
+
+/**
+ * How `scene.bake` bakes, each optional; with none, 2 bounces, 256 samples,
+ * no extra occlusion and 24 texels a metre. A saved file is current only for
+ * the options it was baked with.
+ */
+export type BakeOptions = Partial<BakeOptionValues>
 
 /** A bake under way, from `scene.bake`. */
 export interface Bake {
@@ -350,8 +358,20 @@ export interface Scene {
      * It bakes beside the game, a little each frame: moving things are lit
      * within a few frames, the static ones from a quick draft, then finished.
      * Bake again after changing what is static, the sun or the ambient.
+     *
+     *     scene.bake("yard.light.png", { bounces: 3, occlusion: 0.5 })
+     *
+     * - `bounces`: times light bounces before it stops, 0 to 8: 0 is the sky
+     *   alone, more is brighter and softer in corners, and a little slower. 2.
+     * - `samples`: paths a texel, 1 to 4096: more is smoother and slower. 256.
+     * - `occlusion`: extra darkening in corners and where things touch, within
+     *   a metre, 0 to 1. 0.
+     * - `detail`: texels a metre. Kept by using more of the light's 4 pages,
+     *   lowered past them, which the console says. 24.
      */
-    bake(name?: string): Bake
+    bake(name?: string, options?: BakeOptions): Bake
+    /** Bakes here every time, with these options. */
+    bake(options: BakeOptions): Bake
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
     /** Moves the camera. Changes only what it names. */
@@ -1032,12 +1052,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const offered = new Map<string, () => void>()
 
     // `again`: the host's Bake again, which bakes past a saved file, current or not.
-    const bake = (name?: string, again = false): Bake => {
-        if (name !== undefined && (typeof name !== "string" || name === "")) {
-            throw new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
-        }
+    const bake = (name: string | undefined, given: BakeOptionValues, again = false): Bake => {
         baking?.stop()
-        if (name !== undefined) offered.set(name, offerAgain(name, () => { if (!disposed) bake(name, true) }))
+        if (name !== undefined) offered.set(name, offerAgain(name, () => { if (!disposed) bake(name, given, true) }))
         let progress = 0
         let finish!: () => void
         const done = new Promise<void>((resolve) => { finish = resolve })
@@ -1079,7 +1096,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 const sun = sunNow === null ? null : { direction: sunNow.direction, color: rgb(sunNow.color), intensity: sunNow.intensity }
                 const scaled = (c: ColorInput) => rgb(c).map((x) => x * ambientNow.intensity) as [number, number, number]
                 const [recorded, found] = await Promise.all([
-                    recordItems(items, identify, { sun, ambient: { sky: scaled(ambientNow.sky), ground: scaled(ambientNow.ground) } }),
+                    recordItems(items, identify, { sun, ambient: { sky: scaled(ambientNow.sky), ground: scaled(ambientNow.ground) }, options: given }),
                     again ? readSaved(null) : readNamed(name),
                 ])
                 if (!live()) return
@@ -1087,9 +1104,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 items = recorded.items
                 file = found
             }
-            const plan = await planLight(b, items, charts, live)
+            const plan = await planLight(b, items, charts, live, given.detail)
             if (plan === null || !live()) return
             if (typeof plan === "string") return give(plan)
+            const lowered: Lowered | undefined = plan.detail < given.detail ? { asked: given.detail, baked: plan.detail, pages: MAX_PAGES } : undefined
             let here: BakedHere | null = null
             if (name !== undefined) {
                 here = again ? { why: "again" } : whyBakeHere(file, record!, plan)
@@ -1102,8 +1120,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                     here = { why: "unreadable", detail: why }
                 }
             }
-            const why = beginBake(b, plan)
+            const why = beginBake(b, plan, given)
             if (why !== "") return give(why)
+            // A named bake says it on its own line, once the light is ready to save.
+            if (name === undefined && lowered !== undefined) console.log(`[oj] scene.bake: baked ${loweredWords(lowered)}.`)
             let fileFrames = 0
             const budget = tileBudget()
             let phase = 0
@@ -1131,7 +1151,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                     console.warn(`[oj] scene.bake: ${name} ${why}.`)
                     return me.stop({ how: "failed", why })
                 }
-                lightBakedHere({ name: name!, line: bakedHereLine(name!, here), bytes })
+                lightBakedHere({ name: name!, line: bakedHereLine(name!, here, lowered), bytes })
                 me.stop({ how: "baked" })
             })
         }
@@ -1148,7 +1168,16 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         texture,
         pointLight,
         // Not the host's `again`: a cart that wants a fresh bake every time names no file.
-        bake: (name) => bake(name),
+        bake: (first?: string | BakeOptions, options?: BakeOptions) => {
+            if (typeof first === "object" && first !== null) {
+                if (options !== undefined) throw new Error("[oj] scene.bake: its options come once, after the name when there is one")
+                return bake(undefined, bakeOptions(first))
+            }
+            if (first !== undefined && (typeof first !== "string" || first === "")) {
+                throw new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
+            }
+            return bake(first, bakeOptions(options))
+        },
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
             return actors.find((a) => a.id === id) ?? null

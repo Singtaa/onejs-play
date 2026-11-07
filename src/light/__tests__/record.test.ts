@@ -1,11 +1,12 @@
-import { BAKER_VERSION, bakedHereLine, difference, layoutOf, matches, parseSaved, recordOf, sameLayout, type LightInputs, type SavedLight, type StaticActor } from "../record"
+import { BAKE_DEFAULTS } from "../bake"
+import { BAKER_VERSION, bakedHereLine, difference, layoutOf, matches, OLDER, parseSaved, recordOf, sameLayout, type BakeOptionValues, type LightInputs, type SavedLight, type StaticActor } from "../record"
 
 const actor = (model: string, x: number, over: Partial<StaticActor> = {}): StaticActor => ({
     model, sha: `sha-${model}`, position: [x, 0, 0], rotation: { yaw: 0, pitch: 0, roll: 0 }, scale: 1, ...over,
 })
-const scene = (actors: StaticActor[], over: Partial<LightInputs> = {}): LightInputs => ({
+const scene = (actors: StaticActor[], over: Partial<LightInputs> = {}, options: Partial<BakeOptionValues> = {}): LightInputs => ({
     actors, sun: { direction: [0.3, -0.8, 0.5], color: [1, 0.95, 0.9], intensity: 1 },
-    ambient: { sky: [0.6, 0.7, 0.9], ground: [0.3, 0.25, 0.2] }, detail: 24, quality: 256, ...over,
+    ambient: { sky: [0.6, 0.7, 0.9], ground: [0.3, 0.25, 0.2] }, options: { ...BAKE_DEFAULTS, ...options }, ...over,
 })
 const yard = [actor("models/yard.glb", 0), actor("wall.glb", 5), actor("wall.glb", -5)]
 
@@ -37,7 +38,10 @@ describe("a light record", () => {
         expect(difference(saved, recordOf(scene(yard, { sun: { direction: [0, -1, 0], color: [1, 1, 1], intensity: 1 } })))).toBe("the sun changed")
         expect(difference(saved, recordOf(scene(yard, { sun: null })))).toBe("the sun is out")
         expect(difference(saved, recordOf(scene(yard, { ambient: { sky: [1, 1, 1], ground: [0, 0, 0] } })))).toBe("the ambient light changed")
-        expect(difference(saved, recordOf(scene(yard, { detail: 12 })))).toBe("its detail or quality changed")
+        expect(difference(saved, recordOf(scene(yard, {}, { bounces: 3 })))).toBe("its bounces changed from 2 to 3")
+        expect(difference(saved, recordOf(scene(yard, {}, { samples: 64 })))).toBe("its samples changed from 256 to 64")
+        expect(difference(saved, recordOf(scene(yard, {}, { occlusion: 0.5 })))).toBe("its occlusion changed from 0 to 0.5")
+        expect(difference(saved, recordOf(scene(yard, {}, { detail: 12 })))).toBe("its detail changed from 24 to 12")
         expect(difference({ ...saved, baker: BAKER_VERSION - 1 }, recordOf(scene(yard)))).toBe("the baker has changed since it was saved")
         // An actor's change is named before the sun's.
         expect(difference(saved, recordOf(scene([...yard, actor("crate.glb", 2)], { sun: null })))).toBe("crate.glb at [2, 0, 0] is not in it")
@@ -48,8 +52,12 @@ describe("a light record", () => {
         for (const over of [
             { sun: { direction: [0, -1, 0] as [number, number, number], color: [1, 1, 1] as [number, number, number], intensity: 1 } },
             { sun: null }, { ambient: { sky: [1, 1, 1] as [number, number, number], ground: [0, 0, 0] as [number, number, number] } },
-            { detail: 12 }, { quality: 64 },
         ]) expect(matches(saved, recordOf(scene(yard, over)))).toBe(false)
+        for (const options of [{ bounces: 0 }, { samples: 255 }, { occlusion: 0.01 }, { detail: 23.9 }]) {
+            expect(matches(saved, recordOf(scene(yard, {}, options))), JSON.stringify(options)).toBe(false)
+        }
+        // The record keeps them where the console and a reader of the file find them.
+        expect(recordOf(scene(yard, {}, { bounces: 3, occlusion: 0.5 }))).toMatchObject({ v: 2, bounces: 3, samples: 256, occlusion: 0.5, detail: 24 })
     })
 
     it("never calls two different scenes the same", () => {
@@ -62,6 +70,13 @@ describe("a light record", () => {
         expect(bakedHereLine("yard.light.png", { why: "missing" })).toBe("[oj] yard.light.png is not in the cart yet: baked here.")
         expect(bakedHereLine("yard.light.png", { why: "unreadable", detail: "it holds no light record" })).toBe("[oj] yard.light.png is not a light file oj can read (it holds no light record): baked here instead.")
         expect(bakedHereLine("yard.light.png", { why: "stale", detail: "models/yard.glb changed" })).toBe("[oj] yard.light.png was baked for a different scene (models/yard.glb changed): baked here instead.")
+        expect(bakedHereLine("yard.light.png", { why: "unreadable", detail: OLDER })).toBe("[oj] yard.light.png was saved by an older oj: baked here instead.")
+    })
+
+    it("says on the same line when the detail asked did not fit the pages", () => {
+        const lowered = { asked: 24, baked: 3.1, pages: 4 }
+        expect(bakedHereLine("yard.light.png", { why: "missing" }, lowered)).toBe("[oj] yard.light.png is not in the cart yet: baked here, at 3.1 texels a metre, as 24 does not fit 4 pages.")
+        expect(bakedHereLine("yard.light.png", { why: "again" }, lowered)).toBe("[oj] yard.light.png baked again here, at 3.1 texels a metre, as 24 does not fit 4 pages.")
     })
 })
 
@@ -76,7 +91,13 @@ describe("a saved light", () => {
     it("says why a text is not a record this baker wrote", () => {
         expect(parseSaved(null)).toBe("it holds no light record")
         expect(parseSaved("{")).toBe("its light record is not JSON")
-        expect(parseSaved(JSON.stringify({ ...saved, v: 2 }))).toMatch(/version/)
+        expect(parseSaved(JSON.stringify({ ...saved, v: 3 }))).toMatch(/version/)
+        // Before the options: out of date, not unreadable.
+        expect(parseSaved(JSON.stringify({ v: 1, baker: 1, fingerprint: "0", actors: [], sun: null, ambient: [0, 0, 0, 0, 0, 0], detail: 24, quality: 256, layout }))).toBe(OLDER)
+        for (const k of ["bounces", "samples", "occlusion", "detail"]) {
+            const { [k as keyof SavedLight]: _, ...without } = saved
+            expect(parseSaved(JSON.stringify(without)), k).toBe("its light record is missing a field")
+        }
         const { layout: _, ...bare } = saved
         expect(parseSaved(JSON.stringify(bare))).toBe("its light record is missing a field")
         expect(parseSaved(JSON.stringify({ ...saved, layout: { ...layout, grid: [0, 0, 0, 1] } }))).toBe("its light record is missing a field")
@@ -93,7 +114,7 @@ describe("a saved light", () => {
     it("keeps a one-page layout as it was before pages, and tells pages apart", () => {
         const grid = [-1, -1, -1, 1, 9, 6, 9]
         const rects = [[0, 0, 10, 10], [12, 0, 10, 10]]
-        // A file saved before pages had exactly this layout (its rectangles' hash then): it still matches.
+        // Hashed exactly as before pages (its rectangles' hash then), so a one-page layout never changes with them.
         expect(layout.rects).toBe("542147686b8753de")
         expect(layoutOf(64, 32, 24, grid, rects, [0, 0])).toEqual(layout)
         expect(layout).not.toHaveProperty("pages")
