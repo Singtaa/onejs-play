@@ -20,16 +20,16 @@
  * step. `block` and `mark` change the floor where there is no collider: a
  * fire, a road. They mark tiles stale the same way.
  *
- * Built with Recast's own per tile steps (rasterize, filter, erode, mark,
- * regions, contours, polygons, detail), the loop generateTiledNavMesh runs,
- * from functions @recast-navigation/core exports, with the marks applied
- * before the erosion so a block keeps the walker's radius off it as a wall
- * does. Not Detour's TileCache: the wasm oj ships binds no way to take a
+ * Each tile is built by `buildNavTile` (nav.ts), Recast's own per tile steps
+ * (rasterize, filter, mark, erode, regions, contours, polygons, detail), the
+ * loop generateTiledNavMesh runs, from functions @recast-navigation/core
+ * exports, with the marks applied before the erosion so a block keeps the
+ * walker's radius off it as a wall does. The solo nav is one such tile. Not Detour's TileCache: the wasm oj ships binds no way to take a
  * tile out of one, so a tile built there can never be built again.
  */
 
 import type { Vec3 } from "../models"
-import { NAV_DEFAULTS, cornersOf, floorOf, loadRecast, navReach, nearestOn, type Nav, type NavOptions, type Recast } from "./nav"
+import { NAV_DEFAULTS, buildNavTile, cornersOf, floorOf, loadRecast, navConfig, navReach, nearestOn, type Nav, type NavOptions, type NavSolid, type Recast } from "./nav"
 
 /** Where `block` and `mark` change the floor: a box, turned about y by `yaw` degrees. */
 export interface NavBox {
@@ -95,7 +95,7 @@ export interface NavSource<B extends object> {
 export interface NavGeometry {
     vertices: Float32Array
     indices: Uint32Array
-    solid?: { poly: number[], ymin: number, ymax: number }
+    solid?: NavSolid
 }
 
 /** What the budget is timed by: its own, since Recast's build timers read performance.now too, and a test replaces this one alone. */
@@ -104,8 +104,6 @@ export const navClock = { now: (): number => performance.now() }
 /** The default frame budget, milliseconds. */
 export const NAV_BUDGET = 1
 
-const RC_NULL_AREA = 0
-const RC_WALKABLE_AREA = 63
 /** 2^12 tiles and 2^10 polygons a tile share Detour's 22 bits of a polygon id. */
 const TILE_BITS = 12
 const POLY_BITS = 22 - TILE_BITS
@@ -184,23 +182,9 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         this.budget = o.budget ?? NAV_BUDGET
         const walkableRadius = Math.ceil(radius / this.cs)
         this.border = walkableRadius + 3
-        this.config = R.createRcConfig({
-            cs: this.cs, ch: this.ch,
-            tileSize: this.cells,
-            borderSize: this.border,
-            walkableRadius,
-            walkableHeight: Math.ceil(height / this.ch),
-            walkableClimb: Math.floor((o.stepHeight ?? NAV_DEFAULTS.stepHeight) / this.ch),
-            walkableSlopeAngle: o.slope ?? NAV_DEFAULTS.slope,
-        })
-        // As generateTiledNavMesh sets them: areas squared, detail distances in world units.
-        const c = this.config
-        c.width = this.cells + this.border * 2
-        c.height = this.cells + this.border * 2
-        c.minRegionArea = c.minRegionArea * c.minRegionArea
-        c.mergeRegionArea = c.mergeRegionArea * c.mergeRegionArea
-        c.detailSampleDist = c.detailSampleDist < 0.9 ? 0 : this.cs * c.detailSampleDist
-        c.detailSampleMaxError = this.ch * c.detailSampleMaxError
+        this.config = navConfig(R, this.cs, o, { tileSize: this.cells, borderSize: this.border })
+        this.config.width = this.cells + this.border * 2
+        this.config.height = this.cells + this.border * 2
         this.navMesh = new R.NavMesh()
         const params = R.NavMeshParams.create({ orig: { x: 0, y: 0, z: 0 }, tileWidth: this.tileSize, tileHeight: this.tileSize, maxTiles: 1 << TILE_BITS, maxPolys: 1 << POLY_BITS })
         if (!this.navMesh.initTiled(params)) throw new Error("[oj] world.nav: the tiled navigation mesh did not start")
@@ -352,81 +336,23 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
             }
         }
         if (!inside) return
-        const nt = tris.length / 3
-        const config = R.cloneRcConfig(this.config)
         const bmin: [number, number, number] = [x0, minY - 1, z0], bmax: [number, number, number] = [x1, maxY + 1, z1]
-        for (let i = 0; i < 3; i++) { config.set_bmin(i, bmin[i]); config.set_bmax(i, bmax[i]) }
-        const va = new R.VerticesArray(), ta = new R.TrianglesArray(), areas = new R.TriangleAreasArray()
-        const hf = R.allocHeightfield(), chf = R.allocCompactHeightfield()
-        const cset = R.allocContourSet(), pmesh = R.allocPolyMesh(), dmesh = R.allocPolyMeshDetail()
-        const ctx = this.ctx
+        const solids: NavSolid[] = []
+        for (const b of bodies) {
+            const sd = this.entries.get(b)!.solid
+            if (sd !== undefined) solids.push(sd)
+        }
         try {
-            va.copy(verts)
-            ta.copy(tris)
-            areas.resize(nt)
-            if (!R.createHeightfield(ctx, hf, config.width, config.height, bmin, bmax, this.cs, this.ch)) throw new Error("the heightfield")
-            R.markWalkableTriangles(ctx, config.walkableSlopeAngle, va, verts.length / 3, ta, nt, areas)
-            if (!R.rasterizeTriangles(ctx, va, verts.length / 3, ta, areas, nt, hf, config.walkableClimb)) throw new Error("rasterizing")
-            R.filterLowHangingWalkableObstacles(ctx, config.walkableClimb, hf)
-            R.filterLedgeSpans(ctx, config.walkableHeight, config.walkableClimb, hf)
-            R.filterWalkableLowHeightSpans(ctx, config.walkableHeight, hf)
-            if (!R.buildCompactHeightfield(ctx, config.walkableHeight, config.walkableClimb, hf, chf)) throw new Error("the compact heightfield")
-            const markBox = (xz: readonly number[], hmin: number, hmax: number, area: number) => {
-                const poly = new R.VerticesArray()
-                poly.copy([xz[0]!, 0, xz[1]!, xz[2]!, 0, xz[3]!, xz[4]!, 0, xz[5]!, xz[6]!, 0, xz[7]!])
-                R.markConvexPolyArea(ctx, poly, 4, hmin, hmax, area, chf)
-                poly.destroy()
-            }
-            // Recast rasterizes surfaces, so the floor inside a box taller than the walker reads as a room.
-            // Its inside is marked unwalkable, up to a cell below its top, which stays floor.
-            for (const b of bodies) {
-                const sd = this.entries.get(b)!.solid
-                if (sd !== undefined) markBox(sd.poly, sd.ymin - this.ch, sd.ymax - this.ch * 2, RC_NULL_AREA)
-            }
-            // Marks before the erosion, so a block is kept clear of by the walker's radius, as a wall is.
-            for (const m of this.marksByTile.get(k) ?? []) markBox(m.poly, m.hmin, m.hmax, m.area === 0 ? RC_NULL_AREA : m.area)
-            if (!R.erodeWalkableArea(ctx, config.walkableRadius, chf)) throw new Error("eroding")
-            if (!R.buildDistanceField(ctx, chf)) throw new Error("the distance field")
-            if (!R.buildRegions(ctx, chf, config.borderSize, config.minRegionArea, config.mergeRegionArea)) throw new Error("regions")
-            if (!R.buildContours(ctx, chf, config.maxSimplificationError, config.maxEdgeLen, cset, R.Recast.RC_CONTOUR_TESS_WALL_EDGES)) throw new Error("contours")
-            if (!R.buildPolyMesh(ctx, cset, config.maxVertsPerPoly, pmesh)) throw new Error("polygons")
-            const npolys = pmesh.npolys()
-            if (npolys === 0) return
-            if (npolys > 1 << POLY_BITS) throw new Error(`${npolys} polygons, more than a tile holds (${1 << POLY_BITS}); use a smaller tile`)
-            if (!R.buildPolyMeshDetail(ctx, pmesh, chf, config.detailSampleDist, config.detailSampleMaxError, dmesh)) throw new Error("the detail mesh")
-            // Plain floor is area 0; a named area keeps its number for the filter's costs. Each area is one flag bit, for `avoid`.
-            for (let i = 0; i < npolys; i++) {
-                const a = pmesh.areas(i) === RC_WALKABLE_AREA ? 0 : pmesh.areas(i)
-                pmesh.setAreas(i, a)
-                pmesh.setFlags(i, 1 << a)
-            }
-            const params = new R.NavMeshCreateParams()
-            params.setPolyMeshCreateParams(pmesh)
-            params.setPolyMeshDetailCreateParams(dmesh)
-            params.setWalkableHeight(config.walkableHeight * this.ch)
-            params.setWalkableRadius(config.walkableRadius * this.cs)
-            params.setWalkableClimb(config.walkableClimb * this.ch)
-            params.setCellSize(this.cs)
-            params.setCellHeight(this.ch)
-            params.setBuildBvTree(true)
-            params.setTileX(tx)
-            params.setTileY(tz)
-            const made = R.createNavMeshData(params)
-            params.destroy()
-            if (!made.success) throw new Error("the Detour tile")
-            const added = this.navMesh.addTile(made.navMeshData, R.Detour.DT_TILE_FREE_DATA, 0)
+            const data = buildNavTile(R, this.ctx, this.config, verts, tris, bmin, bmax, solids, [...this.marksByTile.get(k) ?? []], { x: tx, z: tz, maxPolys: 1 << POLY_BITS })
+            if (data === null) return
+            const added = this.navMesh.addTile(data, R.Detour.DT_TILE_FREE_DATA, 0)
             // The navmesh owns the bytes now and frees them with the tile; let go of the wrapper alone.
-            made.navMeshData.raw.isView = true
-            made.navMeshData.destroy()
+            data.raw.isView = true
+            data.destroy()
             if (R.statusFailed(added.status)) throw new Error(`adding it (${R.statusToReadableString(added.status)})`)
             this.built.set(k, added.tileRef)
         } catch (e) {
             console.error(`[oj] world.nav: tile ${tx}, ${tz} did not build: ${e instanceof Error ? e.message : String(e)}`)
-        } finally {
-            va.destroy(); ta.destroy(); areas.destroy()
-            R.freeHeightfield(hf); R.freeCompactHeightfield(chf)
-            R.freeContourSet(cset); R.freePolyMesh(pmesh); R.freePolyMeshDetail(dmesh)
-            R.Raw.destroy(config)
         }
     }
 

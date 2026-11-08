@@ -28,7 +28,7 @@ import { addStillActors, placeActors, type ActorPlacement } from "./actors"
 import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim } from "../physics/core"
 import { glbTriangles, type Triangles } from "./gltf"
 import { arrayModels, loadFileBytes, modelUrls } from "./sources"
-import { buildNav, type Nav, type NavOptions } from "../nav/nav"
+import { buildNav, type Nav, type NavOptions, type NavSolid } from "../nav/nav"
 import { buildTiledNav, type NavSource, type TiledNav, type TiledNavInternal } from "../nav/tiled"
 import { heightGrid, heightfieldTriangles } from "./heightfield"
 import { CAR_SIZE, CarCore, type CarOptionsOf, type CarWheelState } from "./car"
@@ -621,14 +621,16 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
             this.navs.add(nav)
             return nav
         }
-        const vertices: number[] = [], indices: number[] = []
+        const vertices: number[] = [], indices: number[] = [], solids: NavSolid[] = []
         for (const w of this.byCollider.values()) {
             if (!(w instanceof BodyCore) || w.dynamic || w.kinematic || w.trigger) continue
             if (o.only !== undefined && !o.only.includes(w.layer)) continue
             appendTriangles(w, vertices, indices)
+            const solid = solidOf(w)
+            if (solid !== undefined) solids.push(solid)
         }
         if (indices.length === 0) throw new Error("[oj] world.nav: no static bodies to walk on" + (o.only ? ` in layers ${o.only.join(", ")}` : ""))
-        return buildNav(new Float32Array(vertices), new Uint32Array(indices), o)
+        return buildNav(new Float32Array(vertices), new Uint32Array(indices), o, solids)
     }
 
     /** This world's static, solid bodies for a tiled nav: the same ones the solo nav reads. */
@@ -684,7 +686,7 @@ function appendTriangles(body: Body3, vertices: number[], indices: number[]): vo
  * capsule stands in as its bounding box, as in its triangles. A mesh or a
  * heightfield has no inside oj knows.
  */
-function solidOf(body: Body3): { poly: number[], ymin: number, ymax: number } | undefined {
+function solidOf(body: Body3): NavSolid | undefined {
     if (body.kind === "mesh" || body.kind === "heightfield") return undefined
     const c = body.collider()
     const q = c.rotation(), t = c.translation()

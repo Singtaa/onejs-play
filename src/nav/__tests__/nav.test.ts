@@ -109,4 +109,28 @@ describe("world.nav", () => {
         expect(high[1]).toBeLessThan(0.5)
         w.dispose()
     })
+
+    // PrimoEden walked its bots into boulders: the floor under a body taller than the walker read as a room.
+    for (const tiled of [false, true]) {
+        it(`has no floor inside a box, a turned box or a boulder${tiled ? ", tiled" : ""}, and keeps a low platform's top`, async () => {
+            const w = await createWorld()
+            w.box({ at: [0, -0.5, 0], size: [60, 1, 60] })
+            w.box({ at: [0, 4, 0], size: [20, 8, 20] })
+            w.box({ at: [15, 0.1, 0], size: [4, 0.2, 4] })
+            w.box({ at: [-20, 1, 0], size: [4, 2, 4], rotation: { yaw: 30 } })
+            w.sphere({ at: [0, 2, -20], radius: 2 })
+            const nav = await w.nav({ radius: 0.4, ...(tiled ? { tile: 8 } : {}) })
+            const inside = nav.nearest([3, 0, 2], 12)!
+            expect(Math.abs(inside[0]) > 10.3 || Math.abs(inside[2]) > 10.3, `${inside}`).toBe(true)
+            expect(nav.nearest([3, 0, 2], 1)).toBeNull()
+            expect(nav.nearest([-20, 0, 0], 0.5)).toBeNull()
+            expect(nav.nearest([0, 0, -20], 0.5)).toBeNull()
+            const top = nav.nearest([15, 0.3, 0], 0.2)!
+            expect(top[1]).toBeGreaterThan(0.15)
+            expect(top[1]).toBeLessThan(0.35)
+            expect(nav.path([0, 0, -26], [3, 0, 2])).toEqual([])
+            expect(nav.path([0, 0, -26], inside).length).toBeGreaterThan(0)
+            w.dispose()
+        })
+    }
 })
