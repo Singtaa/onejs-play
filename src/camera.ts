@@ -89,7 +89,10 @@
  * are only near the player. A hit facing up is ground, any steeper a wall. A
  * wall brings the camera in at once, so it never hides the target. The ground
  * comes in on a slower timing of its own, and at once when the view turns or
- * the camera would stand in it. Both go out over 0.4 s. Held short for a
+ * the camera would stand in it. While it eases in, the way back is held clear
+ * of the ground and not of `clearance`, so it can pass a sharp crest a few
+ * centimetres nearer than `clearance` for about a quarter of a second, never
+ * through it. Both go out over 0.4 s. Held short for a
  * while, the zoom itself comes in behind the camera and is given back a second
  * after nothing is in the way, so a slope does not push the camera in and out
  * with every step; a wheel notch, a pinch or a written `distance` forgets it.
