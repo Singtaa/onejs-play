@@ -455,6 +455,32 @@ describe("fields a cart writes", () => {
     })
 })
 
+describe("how steep a camera looks", () => {
+    // Review of 1.4.0, P7: a pitchRange reaching 90 looked along the up axis, where Unity's
+    // look rotation picks a roll of its own and the view turns over.
+    it("never goes past 89 degrees either way, whatever pitchRange says", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o = { pitchRange: [-90, 90] as [number, number] }
+        const c = new FollowController(me, o)
+        c.camera.pitch = 90
+        expect(c.camera.pitch).toBe(89)
+        c.frame(1 / 60, me, o, frameOf(source({ wasLeftPressed: true, leftButton: true })))
+        c.frame(1 / 60, me, o, frameOf(source({ leftButton: true, delta: { x: 0, y: -10000 } })))
+        expect(c.camera.pitch).toBe(-89)
+
+        const orbit = new OrbitController({ pitch: 95, pitchRange: [-120, 120] })
+        expect(orbit.orbit.pitch).toBe(89)
+        orbit.orbit.pitch = -100
+        expect(orbit.orbit.pitch).toBe(-89)
+    })
+
+    it("keeps a range that stays short of 89 as it was given", () => {
+        const orbit = new OrbitController({ pitchRange: [-10, 40] })
+        orbit.orbit.pitch = 60
+        expect(orbit.orbit.pitch).toBe(40)
+    })
+})
+
 describe("a follow camera given its target late", () => {
     // Finding 2: useFollowCamera(player?.actor) has no target while the model loads, and the
     // camera started at yaw 0 whichever way the target faced, so a target facing -z was

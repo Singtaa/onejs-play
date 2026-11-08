@@ -89,7 +89,7 @@ export interface OrbitView {
 }
 
 export interface OrbitLimits {
-    /** Degrees, short of straight up and down, where looking at a point turns over. */
+    /** Degrees, short of straight up and down, where looking at a point turns over: never past 89 either way. */
     pitchRange: readonly [number, number]
     /** Metres. */
     distanceRange: readonly [number, number]
@@ -118,8 +118,6 @@ export function wrapDegrees(degrees: number): number {
 }
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
-/** A value a cart gave, held to a range; one that is not a finite number keeps `current`, since NaN passes every comparison and would stay for good. */
-const hold = (v: number, lo: number, hi: number, current: number) => (Number.isFinite(v) ? clamp(v, lo, hi) : current)
 /** A start value a cart gave: its default when it is not a finite number. */
 const startOf = (v: number | undefined, fallback: number) => (v !== undefined && Number.isFinite(v) ? v : fallback)
 
@@ -477,10 +475,39 @@ class Rig {
     }
 }
 
-const limitsOf = (o: { pitchRange?: readonly [number, number], distanceRange?: readonly [number, number] }, d: OrbitLimits): OrbitLimits => ({
-    pitchRange: o.pitchRange ?? d.pitchRange,
-    distanceRange: o.distanceRange ?? d.distanceRange,
-})
+/** The steepest a camera looks: at 90 the look is along the up axis, and Unity picks a roll of its own. */
+const MAX_PITCH = 89
+
+const limitsOf = (o: { pitchRange?: readonly [number, number], distanceRange?: readonly [number, number] }, d: OrbitLimits): OrbitLimits => {
+    const p = o.pitchRange ?? d.pitchRange
+    return {
+        pitchRange: p[0] < -MAX_PITCH || p[1] > MAX_PITCH ? [Math.max(-MAX_PITCH, p[0]), Math.min(MAX_PITCH, p[1])] : p,
+        distanceRange: o.distanceRange ?? d.distanceRange,
+    }
+}
+
+/**
+ * `yaw`, `pitch` and `distance` on the object a hook returns, defined on
+ * `rest` beside its own fields: a write is held to the ranges as of the last
+ * frame, one that is not a finite number is ignored, and `wrote` is told
+ * which field took one.
+ */
+function viewFields<T extends object>(s: OrbitView, range: { limits: OrbitLimits }, wrote: (field: keyof OrbitView) => void, rest: T): T & OrbitView {
+    const field = (name: keyof OrbitView, held: (v: number) => number): PropertyDescriptor => ({
+        enumerable: true,
+        get: () => s[name],
+        set: (v: number) => {
+            if (!Number.isFinite(v)) return
+            s[name] = held(v)
+            wrote(name)
+        },
+    })
+    return Object.defineProperties(rest, {
+        yaw: field("yaw", wrapDegrees),
+        pitch: field("pitch", (v) => clamp(v, range.limits.pitchRange[0], range.limits.pitchRange[1])),
+        distance: field("distance", (v) => clamp(v, range.limits.distanceRange[0], range.limits.distanceRange[1])),
+    }) as T & OrbitView
+}
 
 export interface OrbitOptions {
     /** The point it turns around. The origin by default. */
@@ -491,7 +518,7 @@ export interface OrbitOptions {
     yaw?: number
     /** Degrees to start at, read once: write `orbit.pitch` later. 20, a little above, by default. */
     pitch?: number
-    /** Degrees. [-80, 80] by default. */
+    /** Degrees. [-80, 80] by default, and never past 89 either way. */
     pitchRange?: readonly [number, number]
     /** Metres a pinch or the wheel keeps it within. [1, 100] by default. */
     distanceRange?: readonly [number, number]
@@ -536,17 +563,11 @@ export class OrbitController {
         const target: Vec3 = o.target ? [o.target[0], o.target[1], o.target[2]] : [0, 0, 0]
         this._s = { ...view, target, eye: orbitEye(target, view), touched: false, written: false }
         const s = this._s
-        this.orbit = {
-            get yaw() { return s.yaw },
-            set yaw(v) { if (Number.isFinite(v)) s.yaw = wrapDegrees(v); s.written = true },
-            get pitch() { return s.pitch },
-            set pitch(v) { s.pitch = hold(v, range.limits.pitchRange[0], range.limits.pitchRange[1], s.pitch); s.written = true },
-            get distance() { return s.distance },
-            set distance(v) { s.distance = hold(v, range.limits.distanceRange[0], range.limits.distanceRange[1], s.distance); s.written = true },
+        this.orbit = viewFields(s, range, () => { s.written = true }, {
             get eye() { return s.eye },
             get target() { return s.target },
             bind: this._rig.bind,
-        }
+        })
     }
 
     /** One late frame. Returns whether the view moved, which re-renders the component. */
@@ -582,7 +603,7 @@ export interface FollowOptions {
     height?: number
     /** Degrees to start at, read once: write `cam.pitch` later. 15 by default. */
     pitch?: number
-    /** Degrees. [-80, 80] by default. */
+    /** Degrees. [-80, 80] by default, and never past 89 either way. */
     pitchRange?: readonly [number, number]
     /** Metres. [1.5, 30] by default. */
     distanceRange?: readonly [number, number]
@@ -648,19 +669,17 @@ export class FollowController {
         const s = this._state = newFollowState({
             yaw: wrapDegrees(startOf(target?.yaw, 0)), pitch: clamp(startOf(o.pitch, 15), pr[0], pr[1]), distance: clamp(startOf(o.distance, 5), dr[0], dr[1]),
         }, target != null)
-        this.camera = {
-            get yaw() { return s.yaw },
-            set yaw(v) { if (Number.isFinite(v)) { s.yaw = wrapDegrees(v); s.aimed = true } },
-            get pitch() { return s.pitch },
-            set pitch(v) { s.pitch = hold(v, range.limits.pitchRange[0], range.limits.pitchRange[1], s.pitch) },
-            get distance() { return s.distance },
-            set distance(v) { s.distance = hold(v, range.limits.distanceRange[0], range.limits.distanceRange[1], s.distance); s.snapReach = true },
+        this.camera = viewFields(s, range, (field) => {
+            if (field === "yaw") s.aimed = true
+            // Taken this frame rather than backed out to.
+            if (field === "distance") s.snapReach = true
+        }, {
             get heading() { return s.heading },
             get forward() { return s.forward },
             get eye() { return s.eye },
             get target() { return s.pivot },
             bind: this._rig.bind,
-        }
+        })
     }
 
     /** One late frame. Null as the target holds the camera where it is. */
