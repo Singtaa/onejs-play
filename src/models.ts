@@ -92,8 +92,12 @@ export type Tiling = number | readonly [u: number, v: number]
  * and the textures carrying the detail inside it.
  */
 export interface MeshSplat {
-    /** One to four pictures from `loadTexture`, each with its height in alpha if `heightBlend` is used. */
-    layers: readonly Texture[]
+    /**
+     * One to four pictures from `loadTexture`, each with its height in alpha
+     * if `heightBlend` is used. A layer given as `{ picture, triplanar }` is
+     * projected from the sides instead of read at the uvs (see MeshSplatLayer).
+     */
+    layers: readonly (Texture | MeshSplatLayer)[]
     /** One a layer a vertex, in the layers' order. They need not sum to 1: the shader divides by their sum. */
     weights: Numbers
     /** How often the layers repeat across a uv of 0 to 1. 1 by default. */
@@ -105,6 +109,24 @@ export interface MeshSplat {
      * the smaller, the crisper the edge. Up to 1.
      */
     heightBlend?: number
+}
+
+/**
+ * A splat layer projected onto the ground from the sides, above and the
+ * front in world space, rather than read at the mesh's uvs: for ground too
+ * steep for uvs laid flat, which stretch a picture down a cliff. Rock, say:
+ * `layers: [grass, dirt, { picture: rock, triplanar: 4 }]`.
+ */
+export interface MeshSplatLayer {
+    /** A picture from `loadTexture`. */
+    picture: Texture
+    /**
+     * Metres one repeat of the picture spans, on every face whatever its
+     * slope. The splat's `tiling` does not apply to it. A triplanar layer
+     * costs up to three reads of its picture where a layer at the uvs costs
+     * one; a face that leans squarely toward an axis takes one.
+     */
+    triplanar: number
 }
 
 export interface MeshModelOptions extends MeshData {
@@ -579,7 +601,8 @@ function floats(list: Numbers | undefined, what: string, width: number): Float32
 /** What a mesh is drawn with besides its colours: one tiled texture, a splat, or neither. Checked before anything is made. */
 interface MeshLook {
     texture: { texture: Texture, tiling: [number, number] } | null
-    splat: { layers: readonly Texture[], tiling: [number, number], heightBlend: number } | null
+    /** `triplanar` is each layer's metres a repeat, 0 for one read at the uvs. */
+    splat: { layers: readonly Texture[], triplanar: readonly number[], tiling: [number, number], heightBlend: number } | null
     /** Its pictures, tiling and blend in words, for its light's fingerprint; "" with neither. */
     fingerprint: string
 }
@@ -607,15 +630,35 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
     if (!Array.isArray(s.layers) || s.layers.length < 1 || s.layers.length > 4) {
         throw new Error(`[oj] scene.mesh splat: layers are one to four pictures from loadTexture, and these are ${Array.isArray(s.layers) ? s.layers.length : typeof s.layers}`)
     }
-    s.layers.forEach((layer, i) => picture(layer, `scene.mesh splat layer ${i}`))
+    const layers: Texture[] = [], triplanar: number[] = []
+    s.layers.forEach((layer, i) => {
+        const what = `scene.mesh splat layer ${i}`
+        // A picture is the host's object, whose proxy answers `in` from its own fields without asking C#.
+        if (layer !== null && typeof layer === "object" && "picture" in layer) {
+            const l = layer as MeshSplatLayer
+            picture(l.picture, `${what} picture`)
+            if (typeof l.triplanar !== "number" || !(l.triplanar > 0) || !Number.isFinite(l.triplanar)) {
+                throw new Error(`[oj] ${what}: triplanar is ${l.triplanar}, the metres one repeat of its picture spans, above 0`)
+            }
+            layers.push(l.picture)
+            triplanar.push(l.triplanar)
+            return
+        }
+        picture(layer, what)
+        layers.push(layer as Texture)
+        triplanar.push(0)
+    })
+    if (triplanar.some((m) => m > 0) && typeof b.SetMeshSplatTriplanar !== "function") {
+        throw new Error("[oj] scene.mesh splat triplanar needs a newer OneJS: this host's ModelBridge cannot project a layer (it came with runtime 1.6).")
+    }
     if (s.weights === undefined) throw new Error(`[oj] scene.mesh splat: weights are required, ${s.layers.length} a vertex (one a layer)`)
     const heightBlend = s.heightBlend ?? 0
     if (typeof heightBlend !== "number" || !(heightBlend >= 0 && heightBlend <= 1)) throw new Error(`[oj] scene.mesh splat: heightBlend is ${heightBlend}, and runs from 0 (the weights alone) to 1`)
     const tiling = tilingOf(s.tiling, "scene.mesh splat tiling")
     return {
         texture: null,
-        splat: { layers: s.layers, tiling, heightBlend },
-        fingerprint: `splat ${s.layers.map(identityOf).join(" ")} ${tiling.join(" ")} ${heightBlend}`,
+        splat: { layers, triplanar, tiling, heightBlend },
+        fingerprint: `splat ${layers.map(identityOf).join(" ")} ${tiling.join(" ")} ${heightBlend}` + (triplanar.some((m) => m > 0) ? ` triplanar ${triplanar.join(" ")}` : ""),
     }
 }
 
@@ -973,6 +1016,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 const l = look.splat.layers
                 const problem = String(b.SetMeshSplat(id, l[0], l[1] ?? null, l[2] ?? null, l[3] ?? null, ...look.splat.tiling, look.splat.heightBlend))
                 if (problem !== "") throw new Error(`[oj] scene.mesh splat: ${problem}`)
+                const t = look.splat.triplanar
+                if (t.some((m) => m > 0)) {
+                    const projected = String(b.SetMeshSplatTriplanar(id, t[0] ?? 0, t[1] ?? 0, t[2] ?? 0, t[3] ?? 0))
+                    if (projected !== "") throw new Error(`[oj] scene.mesh splat triplanar: ${projected}`)
+                }
             }
             if (look.texture !== null) {
                 const problem = String(b.SetMeshTexture(id, look.texture.texture, ...look.texture.tiling))
