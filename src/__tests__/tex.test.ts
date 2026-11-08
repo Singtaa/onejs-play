@@ -1,7 +1,20 @@
 import { describe, it, expect } from "vitest"
 import { tex, TexImage } from "../tex"
 import { plan, materialised } from "../tex/engine"
-import { KERNELS, parseStops } from "../tex/nodes"
+import { KERNELS, SPECS, parseStops } from "../tex/nodes"
+
+/**
+ * The parameter each Magerie op takes as its leading kind string, from its
+ * script API (`OpSpec.kindParam` in magerie-one js/src/nodes/scriptapi,
+ * branch feat/copy-ojplay-code-mac004 at aa4eafae4). Magerie's exporter
+ * writes `op(images, kind, { options })`, so a node here with another kind,
+ * or none, would put that string in a number's place.
+ */
+const MAGERIE_KINDS: Record<string, string> = {
+    noise: "type", blend: "mode", gradient: "type", solidColor: "color", sdfShape: "shape", pattern: "type",
+    scatter: "layout", invert: "channels", colorSpaceDecompose: "colorSpace", channelMath: "operation",
+    curvature: "mode", autoLevels: "mode", curves: "preset", slopeBlur: "mode", alphaMerge: "alphaChannel",
+}
 
 const passes = (img: TexImage) => plan(img.node, KERNELS)
 
@@ -44,6 +57,14 @@ describe("tex graph", () => {
         expect(parseStops(["#000", "#111", "#222", "#fff"]).map((s) => s.at)).toEqual([0, 1 / 3, 2 / 3, 1])
         expect(parseStops([{ position: 0.5, color: "#808080" }])[0]).toEqual({ at: 0.5, color: [128 / 255, 128 / 255, 128 / 255] })
         expect(() => parseStops(["green"])).toThrow(/not a colour/)
+    })
+})
+
+describe("tex against Magerie's exporter", () => {
+    it("takes a leading kind string on exactly the nodes Magerie writes one for", () => {
+        for (const [name, spec] of Object.entries(SPECS) as [string, { kind?: string }][]) {
+            expect([name, spec.kind]).toEqual([name, MAGERIE_KINDS[name]])
+        }
     })
 })
 
