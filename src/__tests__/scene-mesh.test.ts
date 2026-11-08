@@ -23,6 +23,8 @@ let unloads: boolean
 let scatterAnswer: number | null
 // What SetDepthOnly answers: false where the renderer cannot mask colour.
 let depthAnswer: boolean
+// What SetMeshTexture and SetMeshSplat answer: "" took it, anything else is what was wrong.
+let paintAnswer: string
 
 function recorder(): any {
     let next = 40
@@ -35,6 +37,7 @@ function recorder(): any {
                 if (name === "SetMesh") return answer
                 if (name === "Unload") return unloads
                 if (name === "SetDepthOnly") return depthAnswer
+                if (name === "SetMeshTexture" || name === "SetMeshSplat") return paintAnswer
                 if (name === "Height") return 2.5
                 return undefined
             }
@@ -56,6 +59,7 @@ beforeEach(() => {
     unloads = true
     scatterAnswer = null
     depthAnswer = true
+    paintAnswer = ""
     savedCS = (globalThis as any).CS
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: recorder() } } }
 })
@@ -267,5 +271,82 @@ describe("scene.mesh depthOnly", () => {
         expect(() => s.mesh(SQUARE, { depthOnly: true })).toThrow(/depthOnly needs a newer OneJS/)
         expect(of("CreateMesh")).toHaveLength(0)
         expect(() => s.mesh(SQUARE)).not.toThrow()
+    })
+})
+
+describe("scene.mesh texture and splat", () => {
+    const UVS = [0, 0, 0, 1, 1, 1, 1, 0]
+    const grass = { name: "grass" }, dirt = { name: "dirt" }, rock = { name: "rock" }
+
+    it("tiles a texture across the uvs, before the vertices, with one number for both directions or two", () => {
+        const s = scene()
+        const model = s.mesh({ ...SQUARE, uvs: UVS, texture: grass, tiling: 8 })
+        expect(of("SetMeshTexture")).toEqual([["SetMeshTexture", model.id, grass, 8, 8]])
+        const order = calls.map((c) => c[0]).filter((n) => n === "SetMeshTexture" || n === "SetMesh")
+        expect(order).toEqual(["SetMeshTexture", "SetMesh"])
+        s.mesh({ ...SQUARE, uvs: UVS, texture: grass, tiling: [2, 4] })
+        s.mesh({ ...SQUARE, uvs: UVS, texture: grass })
+        expect(of("SetMeshTexture").slice(1).map((c) => c.slice(3))).toEqual([[2, 4], [1, 1]])
+        expect(of("SetMesh").every((c) => c.length === 7), "a mesh without a splat sends the six arguments every OneJS takes").toBe(true)
+    })
+
+    it("paints a splat by weights a vertex, one a layer, and sends new weights with a set", () => {
+        const s = scene()
+        const weights = new Float32Array(8).fill(0.5)
+        const model = s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, dirt], weights, tiling: 8, heightBlend: 0.2 } })
+        const [splat] = of("SetMeshSplat")
+        expect(splat![1]).toBe(model.id)
+        expect(splat!.slice(2, 6)).toEqual([grass, dirt, null, null])
+        expect(splat![6]).toBe(8)
+        expect(splat![7]).toBe(8)
+        expect(splat![8]).toBeCloseTo(0.2, 6)
+        const [made] = of("SetMesh")
+        expect(made).toHaveLength(8)
+        expect(made![7]).toBe(weights)
+        const worn = new Float32Array([0, 1, 0, 1, 0, 1, 0, 1])
+        model.set({ positions: SQUARE.positions, weights: worn })
+        expect(of("SetMesh")[1]![7]).toBe(worn)
+        model.set({ positions: SQUARE.positions })
+        expect(of("SetMesh")[2]![7], "left out, they stay").toBeNull()
+    })
+
+    it("refuses what it cannot draw before asking the bridge, and says why", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, texture: grass })).toThrow("[oj] scene.mesh texture: a texture is read at the mesh's uvs, and it has none")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: grass, splat: { layers: [grass], weights: [1, 1, 1, 1] } })).toThrow("give texture or splat, not both")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, tiling: 4 })).toThrow("tiling repeats a texture, and this mesh has none")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: grass, tiling: 0 })).toThrow("scene.mesh tiling is 0")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: grass, tiling: [1] as any })).toThrow("give a number above 0, or [u, v]")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: null as any })).toThrow("scene.mesh texture is a null")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: grass }, { depthOnly: true })).toThrow("a depthOnly mesh draws no colour")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, dirt, rock, grass, dirt], weights: [] } })).toThrow("layers are one to four pictures from loadTexture, and these are 5")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass] } as any })).toThrow("weights are required, 1 a vertex")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], heightBlend: 2 } })).toThrow("heightBlend is 2")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, tiling: 2, splat: { layers: [grass], weights: [1, 1, 1, 1] } })).toThrow("a splat's tiling goes inside it")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, dirt], weights: [1, 1, 1] } })).toThrow("weights has 3 numbers, which is not 2 a vertex")
+        expect(of("CreateMesh"), "every refusal but the last came before a model was made").toHaveLength(1)
+        expect(of("Unload")).toHaveLength(1)
+        const plain = s.mesh({ ...SQUARE, uvs: UVS })
+        expect(() => plain.set({ positions: SQUARE.positions, weights: [1, 1, 1, 1] })).toThrow("[oj] mesh.set: weights paint a splat, and this mesh was made without one")
+    })
+
+    it("says what the bridge found wrong, and frees the model", () => {
+        const s = scene()
+        paintAnswer = "layer 0 has no pixels"
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1] } })).toThrow("[oj] scene.mesh splat: layer 0 has no pixels")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: grass })).toThrow("[oj] scene.mesh texture: layer 0 has no pixels")
+        expect(of("Unload")).toHaveLength(2)
+        expect(of("SetMesh")).toHaveLength(0)
+    })
+
+    it("needs a OneJS that can paint a mesh, and says so", () => {
+        const older = recorder()
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "SetMeshTexture" || name === "SetMeshSplat" ? undefined : older[name] }) } } }
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: grass })).toThrow("scene.mesh texture needs a newer OneJS")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1] } })).toThrow("scene.mesh splat needs a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
+        s.mesh({ ...SQUARE, uvs: UVS })
+        expect(of("CreateMesh"), "a mesh without either still draws on it").toHaveLength(1)
     })
 })

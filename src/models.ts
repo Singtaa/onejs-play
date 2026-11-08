@@ -22,8 +22,8 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { assetFile, assetInfo, assetUrl, loadAssetBytes } from "./asset"
-import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
+import { assetFile, assetInfo, assetUrl, loadAssetBytes, textureIdentity } from "./asset"
+import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture, type Texture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
@@ -75,13 +75,47 @@ export interface MeshData {
     normals?: Numbers
     /** sRGB from 0 to 1, three or four a vertex (r, g, b, and a), multiplied into the model's `color`. */
     colors?: Numbers
-    /** u and v a vertex, for a texture. */
+    /** u and v a vertex, which a `texture` or a `splat` is read at. */
     uvs?: Numbers
+}
+
+/**
+ * How often a texture repeats across a uv of 0 to 1: one number for both
+ * directions, or u and v apart. A 64 m chunk with uvs from 0 to 1 and a
+ * tiling of 8 repeats it every 8 m.
+ */
+export type Tiling = number | readonly [u: number, v: number]
+
+/**
+ * Up to four textures painted together by weights a vertex: grass, dirt, rock
+ * and sand blended across a terrain, the vertex grid saying how much of each
+ * and the textures carrying the detail inside it.
+ */
+export interface MeshSplat {
+    /** One to four pictures from `loadTexture`, each with its height in alpha if `heightBlend` is used. */
+    layers: readonly Texture[]
+    /** One a layer a vertex, in the layers' order. They need not sum to 1: the shader divides by their sum. */
+    weights: Numbers
+    /** How often the layers repeat across a uv of 0 to 1. 1 by default. */
+    tiling?: Tiling
+    /**
+     * 0 (the default) mixes the layers by the weights alone. Above 0, a layer
+     * shows where its height (the picture's alpha) plus its weight comes within
+     * this much of the highest, so stones stand out of the grass round them:
+     * the smaller, the crisper the edge. Up to 1.
+     */
+    heightBlend?: number
 }
 
 export interface MeshModelOptions extends MeshData {
     /** The whole model's colour, white by default. An alpha below 1 draws it see-through. */
     color?: ColorInput
+    /** A picture from `loadTexture`, tiled across the uvs under the colours. Needs `uvs`. */
+    texture?: Texture
+    /** How often the texture repeats across a uv of 0 to 1. 1 by default. */
+    tiling?: Tiling
+    /** Up to four pictures painted by weights a vertex, in place of `texture`. Needs `uvs`. */
+    splat?: MeshSplat
 }
 
 /** How a mesh model draws, fixed when it is made. */
@@ -97,11 +131,14 @@ export interface MeshDrawOptions {
 
 /**
  * A `set`: new positions, and anything else that changes. Indices left out
- * stay as they were. Normals, colours and UVs come with every set that changes
- * the number of vertices, if the model was made with them; otherwise they may
- * be left out and stay.
+ * stay as they were. Normals, colours, UVs and a splat's weights come with
+ * every set that changes the number of vertices, if the model was made with
+ * them; otherwise they may be left out and stay.
  */
-export type MeshUpdate = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">>
+export type MeshUpdate = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">> & {
+    /** A splat's new weights, one a layer a vertex: a path worn into the grass. */
+    weights?: Numbers
+}
 
 /** A model made from arrays: spawned, scattered and made a collider like a loaded one. */
 export interface MeshModel extends Model {
@@ -539,6 +576,70 @@ function floats(list: Numbers | undefined, what: string, width: number): Float32
     return typed
 }
 
+/** What a mesh is drawn with besides its colours: one tiled texture, a splat, or neither. Checked before anything is made. */
+interface MeshLook {
+    texture: { texture: Texture, tiling: [number, number] } | null
+    splat: { layers: readonly Texture[], tiling: [number, number], heightBlend: number } | null
+    /** Its pictures, tiling and blend in words, for its light's fingerprint; "" with neither. */
+    fingerprint: string
+}
+
+function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook {
+    const none: MeshLook = { texture: null, splat: null, fingerprint: "" }
+    if (o.texture === undefined && o.splat === undefined) {
+        if (o.tiling !== undefined) throw new Error("[oj] scene.mesh: tiling repeats a texture, and this mesh has none. Give texture, or put tiling in the splat.")
+        return none
+    }
+    if (o.texture !== undefined && o.splat !== undefined) throw new Error("[oj] scene.mesh: give texture or splat, not both. A splat's first layer is a texture of its own.")
+    const which = o.texture !== undefined ? "texture" : "splat"
+    if (o.uvs === undefined) throw new Error(`[oj] scene.mesh ${which}: a ${which} is read at the mesh's uvs, and it has none. Give uvs, two numbers a vertex.`)
+    if (draw.depthOnly === true) throw new Error(`[oj] scene.mesh ${which}: a depthOnly mesh draws no colour, so it has nothing to show a ${which} on.`)
+    if (o.texture !== undefined) {
+        if (typeof b.SetMeshTexture !== "function") throw new Error("[oj] scene.mesh texture needs a newer OneJS: this host's ModelBridge cannot put a texture on a mesh (it came with runtime 1.6).")
+        picture(o.texture, "scene.mesh texture")
+        const tiling = tilingOf(o.tiling, "scene.mesh tiling")
+        return { texture: { texture: o.texture, tiling }, splat: null, fingerprint: `texture ${identityOf(o.texture)} ${tiling.join(" ")}` }
+    }
+    if (typeof b.SetMeshSplat !== "function") throw new Error("[oj] scene.mesh splat needs a newer OneJS: this host's ModelBridge cannot paint a mesh (it came with runtime 1.6).")
+    if (o.tiling !== undefined) throw new Error("[oj] scene.mesh: a splat's tiling goes inside it, splat: { layers, weights, tiling }.")
+    const s = o.splat!
+    if (s === null || typeof s !== "object") throw new Error("[oj] scene.mesh splat is { layers, weights }")
+    if (!Array.isArray(s.layers) || s.layers.length < 1 || s.layers.length > 4) {
+        throw new Error(`[oj] scene.mesh splat: layers are one to four pictures from loadTexture, and these are ${Array.isArray(s.layers) ? s.layers.length : typeof s.layers}`)
+    }
+    s.layers.forEach((layer, i) => picture(layer, `scene.mesh splat layer ${i}`))
+    if (s.weights === undefined) throw new Error(`[oj] scene.mesh splat: weights are required, ${s.layers.length} a vertex (one a layer)`)
+    const heightBlend = s.heightBlend ?? 0
+    if (typeof heightBlend !== "number" || !(heightBlend >= 0 && heightBlend <= 1)) throw new Error(`[oj] scene.mesh splat: heightBlend is ${heightBlend}, and runs from 0 (the weights alone) to 1`)
+    const tiling = tilingOf(s.tiling, "scene.mesh splat tiling")
+    return {
+        texture: null,
+        splat: { layers: s.layers, tiling, heightBlend },
+        fingerprint: `splat ${s.layers.map(identityOf).join(" ")} ${tiling.join(" ")} ${heightBlend}`,
+    }
+}
+
+function picture(texture: unknown, what: string): void {
+    if (texture === null || typeof texture !== "object") throw new Error(`[oj] ${what} is a ${texture === null ? "null" : typeof texture}; give a picture from loadTexture`)
+}
+
+function tilingOf(tiling: Tiling | undefined, what: string): [number, number] {
+    const t = tiling ?? 1
+    const pair: [number, number] = typeof t === "number" ? [t, t] : Array.isArray(t) && t.length === 2 ? [t[0], t[1]] : [NaN, NaN]
+    if (!pair.every((n) => typeof n === "number" && n > 0 && Number.isFinite(n))) throw new Error(`[oj] ${what} is ${JSON.stringify(tiling)}; give a number above 0, or [u, v]`)
+    return pair
+}
+
+function identityOf(texture: Texture): string {
+    return textureIdentity(texture) ?? "?"
+}
+
+function utf16(text: string): Uint16Array {
+    const out = new Uint16Array(text.length)
+    for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i)
+    return out
+}
+
 function indexList(list: MeshData["indices"] | undefined): Uint32Array | Uint16Array | null {
     if (list === undefined || list === null) return null
     if (list instanceof Uint32Array || list instanceof Uint16Array) return list
@@ -845,25 +946,39 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             throw new Error("[oj] scene.mesh depthOnly needs a newer OneJS: this host's ModelBridge cannot draw a mesh as depth alone (SetDepthOnly came after 3.9.18).")
         }
         const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
+        const look = meshLook(o, draw, b)
         // The streams a model is made with are its streams for good.
         const normals = o.normals !== undefined, colors = o.colors !== undefined, uvs = o.uvs !== undefined
-        let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array, colors: Float32Array | null } | null = null
-        const write = (d: MeshUpdate, what: string) => {
+        let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array, colors: Float32Array | null, weights: Float32Array | null } | null = null
+        const write = (d: MeshUpdate, weights: Numbers | undefined, what: string) => {
             const positions = floats(d.positions, "positions", 3)
             if (positions === null) throw new Error(`[oj] ${what}: positions are required`)
             const indices = indexList(d.indices)
             const vertexColors = floats(d.colors, "colors", 1)
-            const problem = String(b.SetMesh(id, positions, indices,
-                floats(d.normals, "normals", 3), vertexColors, floats(d.uvs, "uvs", 2)))
+            if (weights !== undefined && look.splat === null) throw new Error(`[oj] ${what}: weights paint a splat, and this mesh was made without one`)
+            const splatWeights = look.splat === null ? null : floats(weights, "weights", look.splat.layers.length)
+            const streams = [id, positions, indices, floats(d.normals, "normals", 3), vertexColors, floats(d.uvs, "uvs", 2)]
+            // Six arguments to a mesh without a splat, as every OneJS before splats takes.
+            const problem = String(look.splat === null ? b.SetMesh(...streams) : b.SetMesh(...streams, splatWeights))
             if (problem !== "") throw new Error(`[oj] ${what}: ${problem}`)
-            latest = { positions, indices: indices ?? latest!.indices, colors: vertexColors ?? latest?.colors ?? null }
+            latest = { positions, indices: indices ?? latest!.indices, colors: vertexColors ?? latest?.colors ?? null, weights: splatWeights ?? latest?.weights ?? null }
         }
         const id: number = b.CreateMesh(normals, colors, uvs, ...color)
         try {
             if (draw.depthOnly === true && !b.SetDepthOnly(id)) {
                 throw new Error("[oj] scene.mesh depthOnly: this host draws models with a renderer that cannot write depth without colour (HDRP), so it would be seen.")
             }
-            write(o, "scene.mesh")
+            // Before the vertices: a splat adds its weights to them.
+            if (look.splat !== null) {
+                const l = look.splat.layers
+                const problem = String(b.SetMeshSplat(id, l[0], l[1] ?? null, l[2] ?? null, l[3] ?? null, ...look.splat.tiling, look.splat.heightBlend))
+                if (problem !== "") throw new Error(`[oj] scene.mesh splat: ${problem}`)
+            }
+            if (look.texture !== null) {
+                const problem = String(b.SetMeshTexture(id, look.texture.texture, ...look.texture.tiling))
+                if (problem !== "") throw new Error(`[oj] scene.mesh texture: ${problem}`)
+            }
+            write(o, o.splat?.weights, "scene.mesh")
         } catch (e) {
             b.Unload(id)
             throw e
@@ -882,7 +997,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set(d: MeshUpdate) {
                 if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
-                write(d, "mesh.set")
+                write(d, d.weights, "mesh.set")
                 // Its unwrap was of the old triangles; OneJS drew it unbaked as it took the new ones.
                 baker.forget(model)
             },
@@ -894,8 +1009,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         generationOf.set(model, generation)
         arrayModels.set(model, made)
         meshBytes.set(model, () => {
-            // Its colour, then its streams, each after its length: what its light depends on.
+            // Its colour, then its streams, each after its length: what its light depends on. A
+            // textured or painted mesh adds what it was painted with, since the bake bounces it.
             const parts: ArrayBufferView[] = [new Float32Array(color), latest!.positions, latest!.indices, latest!.colors ?? new Float32Array(0)]
+            if (look.fingerprint !== "") parts.push(utf16(look.fingerprint), latest!.weights ?? new Float32Array(0))
             const out = new Uint8Array(parts.reduce((n, p) => n + 4 + p.byteLength, 0))
             const view = new DataView(out.buffer)
             let at = 0

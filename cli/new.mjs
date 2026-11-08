@@ -74,8 +74,8 @@ export function newCart(parent, name, { say }) {
 
 /**
  * POST /api/games for an empty cart: { status, body }, the 409 for a taken
- * name included. `private` asks for a private repo, which the site refuses
- * (403) to an account without private repos, making nothing.
+ * name included. `private` asks for a private repo, which a site with private
+ * repos switched off refuses (403), making nothing.
  */
 export async function createEmpty(name, bearer, { private: hidden = false, visibility } = {}) {
     // Who can play the first cart goes with the create, so the site writes it
@@ -136,7 +136,7 @@ export async function firstPush(root, { say, signIn = (dir) => login(dir), priva
     }
     if (made.status !== 200) throw new Error(made.body.error ?? `${made.status} from the site`)
     // Whether its source is private is the site's answer: public unless
-    // --private asked and the account may, or private repos are on for everyone.
+    // --private asked and the site allowed it.
     // And its first cart's, when it is not the Public a cart starts as.
     const repoSaid = typeof made.body.repoPublic === "boolean" ? `${made.body.repoPublic ? "public" : "private"} repo` : null
     const cartSaid = made.body.visibility && made.body.visibility !== "public" && made.body.visibility !== (made.body.repoPublic === false ? "private" : null)

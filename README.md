@@ -43,7 +43,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
-| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`, `scene.bake`: `.glb` models, models made from arrays and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads. `scene.bake` bakes what is spawned `static`, every static body's actor (the world tells the scene, through `physics3d/actors.ts`) and every scattered copy, through `light/scene-bake.ts`; `scene.bake(name)` loads that light file when it was baked for the scene, and otherwise bakes, says why on the console and hands the host the file; `scene.bake(name, { bounces, samples, occlusion, detail })` and `scene.bake({ ... })` bake with options, each in the record |
+| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`, `scene.bake`: `.glb` models, models made from arrays (with a tiled `texture`, or a `splat` of up to four textures by weights a vertex, each fingerprinted into a baked light by its pictures' names and hashes, `textureIdentity` in `asset.ts`) and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads. `scene.bake` bakes what is spawned `static`, every static body's actor (the world tells the scene, through `physics3d/actors.ts`) and every scattered copy, through `light/scene-bake.ts`; `scene.bake(name)` loads that light file when it was baked for the scene, and otherwise bakes, says why on the console and hands the host the file; `scene.bake(name, { bounces, samples, occlusion, detail })` and `scene.bake({ ... })` bake with options, each in the record |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
@@ -841,9 +841,8 @@ with one commit, and sets `init`'s tooling up beside it, ignored. No account
 and no network. The first `push` in a cart with no `origin` makes its repo on
 the site, empty and public, under oj.json's `name` (logging in first when
 there is no login), sets `origin` and pushes `main` with its upstream. With
-`--private` it asks for a private repo instead, whose first cart is Private,
-which the site makes only for an account with private repos and otherwise
-refuses, making and pushing nothing; on a later push to a public repo,
+`--private` it asks for a private repo instead, whose first cart is Private
+(a site that refuses one makes and pushes nothing); on a later push to a public repo,
 `--private` pushes nothing and says so. With `--unlisted` the first cart is
 Unlisted from the moment the repo is made, never in the site's list until its
 owner makes it Public; on a later push to a repo whose main cart is Public,

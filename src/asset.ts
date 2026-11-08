@@ -48,6 +48,9 @@ let usedCarts = ""
 /** One texture load per URL for the life of a host, shared by every component that asks. */
 const textures = new Map<string, Promise<Texture>>()
 
+/** The name each loaded texture was asked for by, so a baked light can say which pictures its ground had. */
+const textureNames = new WeakMap<Texture, string>()
+
 /** One font load per URL for the life of a host, as textures are. */
 const fonts = new Map<string, Promise<Font>>()
 
@@ -229,10 +232,24 @@ export function loadTexture(name: string): Promise<Texture> {
     if (loading === undefined) {
         loading = loadImageAsync(url) as Promise<Texture>
         textures.set(url, loading)
+        const clean = cleanName(name)
+        loading.then((t) => { if (t !== null && typeof t === "object") textureNames.set(t, clean) }, () => {})
         // Forgotten on failure, so a file added after the first ask still loads.
         loading.catch(() => { if (textures.get(url) === loading) textures.delete(url) })
     }
     return loading
+}
+
+/**
+ * What a texture loadTexture gave is, for a fingerprint: its name and, where
+ * the build's file map has it, its contents' hash. Null for a texture from
+ * anywhere else.
+ */
+export function textureIdentity(texture: Texture): string | null {
+    const name = textureNames.get(texture)
+    if (name === undefined) return null
+    const sha = assetInfo(name)?.sha256
+    return sha === undefined ? name : `${name}#${sha}`
 }
 
 /**
