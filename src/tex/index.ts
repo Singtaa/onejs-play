@@ -236,13 +236,10 @@ async function readBytes(output: unknown): Promise<Uint8Array> {
 function bake(node: Node): Baked {
     const known = baked.get(node.id)
     if (known !== undefined) return known
-    const T = CS.UnityEngine
-    const into = new T.RenderTexture(node.width, node.height, 0, T.RenderTextureFormat.ARGB32, T.RenderTextureReadWrite.sRGB)
-    into.wrapMode = node.tiles ? T.TextureWrapMode.Repeat : T.TextureWrapMode.Clamp
-    into.filterMode = T.FilterMode.Bilinear
-    into.name = `tex ${node.op} ${node.id}`
-    into.Create()
-    const ready = draw(plan(node, KERNELS), (output) => CS.UnityEngine.Graphics.Blit(output, into)).then(() => {
+    const kept = CS.OneJS?.ShaderFX?.KeptTexture
+    if (kept === undefined || kept === null) throw new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7).")
+    const into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
+    const ready = draw(plan(node, KERNELS), (output) => kept.Fill(output, into)).then(() => {
         // A mesh handed the texture before it was drawn copied it empty.
         CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
         return into as Texture
