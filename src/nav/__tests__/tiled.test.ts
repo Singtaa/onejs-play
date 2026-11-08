@@ -73,7 +73,9 @@ describe("world.nav({ tile })", () => {
         expect(nav.pending).toBeGreaterThan(0)
         let steps = 0
         const slowest = stepUntilSettled(w, nav, () => steps++)
-        expect(slowest).toBeLessThan(2 + 3)   // the budget, plus the one tile begun inside it
+        // The budget, plus the tile begun inside it: about 2.4 ms here, and up to 6.4 on CI's
+        // Windows runner (8 Nov), so the bound is loose; spreading over steps is the point.
+        expect(slowest).toBeLessThan(2 + 10)
         const round = nav.path(from, to)
         expect(ends(round, to)).toBe(true)
         // Round a corner of the hall, 10.4 m out with the radius: 2 * hypot(10.4, 20) = 45 m at least.
