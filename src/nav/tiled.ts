@@ -474,6 +474,15 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
 
     // ---------- paths ----------
 
+    private readonly unknownAreas = new Set<string>()
+
+    /** Said once a name: a path may be asked for every frame. */
+    private unknownArea(name: string): void {
+        if (this.unknownAreas.has(name)) return
+        this.unknownAreas.add(name)
+        console.warn(`[oj] nav.path: no area called "${name}" has been marked yet, so it costs and avoids nothing. Areas so far: ${[...this.areas.keys()].join(", ") || "none"}.`)
+    }
+
     path(from: Vec3, to: Vec3, o: PathOptions = {}): Vec3[] {
         this.live()
         const f = this.filter
@@ -486,8 +495,9 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         for (const name of o.avoid ?? []) {
             const id = this.areas.get(name)
             if (id !== undefined) exclude |= 1 << id
+            else this.unknownArea(name)
         }
-        for (const name of Object.keys(o.cost ?? {})) if (!this.areas.has(name)) console.warn(`[oj] nav.path: no area called "${name}" has been marked`)
+        for (const name of Object.keys(o.cost ?? {})) if (!this.areas.has(name)) this.unknownArea(name)
         f.includeFlags = 0xffff
         f.excludeFlags = exclude
         const r = this.query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: this.reach, filter: f, maxPathPolys: 1024 })

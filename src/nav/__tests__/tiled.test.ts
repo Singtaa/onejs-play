@@ -148,6 +148,11 @@ describe("world.nav({ tile })", () => {
         const avoided = nav.path(from, to, { avoid: ["mud"] })
         for (let i = 1; i < avoided.length; i++) expect(Math.abs(avoided[i - 1]![2]) < 4.9 && Math.abs(avoided[i]![2]) < 4.9 && Math.sign(avoided[i - 1]![0]) !== Math.sign(avoided[i]![0])).toBe(false)
         expect(() => nav.path(from, to, { cost: { mud: 0 } })).toThrow(/positive/)
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        for (let i = 0; i < 3; i++) nav.path(from, to, { cost: { raod: 0.5 }, avoid: ["raod"] })
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0]![0]).toMatch(/no area called "raod".*Areas so far: mud, road/)
+        warn.mockRestore()
         w.dispose()
     })
 
