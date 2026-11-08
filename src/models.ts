@@ -1170,13 +1170,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         pointLight,
         // Not the host's `again`: a cart that wants a fresh bake every time names no file.
         bake: (first?: string | BakeOptions, options?: BakeOptions) => {
-            if (typeof first === "object" && first !== null) {
+            const unnamed = () => new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
+            // typeof "object" first: a "string" test keeps an options object, whose fields are all optional.
+            if (typeof first === "object") {
+                if (first === null) throw unnamed()
                 if (options !== undefined) throw new Error("[oj] scene.bake: its options come once, after the name when there is one")
                 return bake(undefined, bakeOptions(first))
             }
-            if (first !== undefined && (typeof first !== "string" || first === "")) {
-                throw new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
-            }
+            if (first !== undefined && (typeof first !== "string" || first === "")) throw unnamed()
             return bake(first, bakeOptions(options))
         },
         pick(x, y) {
