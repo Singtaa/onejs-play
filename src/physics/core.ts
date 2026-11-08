@@ -1547,11 +1547,15 @@ export class CharacterCore<V extends readonly number[], R, A> {
         // controller drop a frame's movement now and then (Gunyard's fighters
         // lost 3% of every walk, and froze outright when placed on the floor).
         const standing = this.isGrounded && this.fall <= 0
+        const was = standing ? 0 : this.fall
         this.fall = standing ? 0 : this.fall + g * dt
         // Walking is along the ground: up and down are a jump's and gravity's.
-        // With no gravity there is no ground, and it walks every way.
+        // With no gravity there is no ground, and it walks every way. Up and
+        // down move by the step's mean speed, which is exact under a constant
+        // gravity at any step rate: by the speed at its end, a jump topped out
+        // v dt / 2 short of its height (PrimoEden's feel.md F8, up to 1.5).
         const along = this.along(g)
-        let wish = scale(add(add(along, this.shove), scale(d.up, this.fall)), dt)
+        let wish = scale(add(add(along, this.shove), scale(d.up, (was + this.fall) / 2)), dt)
         const at = d.a(rb.nextTranslation())
         // Riding: what it stands on carries it. What that is comes from here,
         // before anything moves this step, where it and the body under it are

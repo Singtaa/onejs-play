@@ -342,12 +342,42 @@ describe("a character", () => {
         me.jump(1.2)
         let peak = 0
         for (let i = 0; i < 120; i++) { w.step(); peak = Math.max(peak, me.position[1]) }
-        expect(peak).toBeGreaterThan(1.2 * 0.95)
-        expect(peak).toBeLessThan(1.2 * 1.05)
+        // Within 1%: up to runtime 1.5 it rose v dt / 2 short, 4% here (PrimoEden's feel.md F8).
+        expect(peak).toBeGreaterThan(1.2 * 0.99)
+        expect(peak).toBeLessThan(1.2 * 1.01)
         expect(me.grounded).toBe(true)
         expect(me.position[1]).toBeCloseTo(0, 1)
         w.dispose()
     })
+
+    for (const rate of [60, 30]) {
+        it(`jumps to the height asked and lands when the formula says, at ${rate} steps a second`, async () => {
+            // PrimoEden's: WoW's 1.387 m standing jump in a gravity of 16.30.
+            const g = 16.3, h = 1.387
+            const w = await createWorld({ gravity: [0, -g, 0], rate })
+            w.box({ at: [0, -0.5, 0], size: [20, 1, 20] })
+            const me = w.character({ at: [0, 0, 0], radius: 0.3, height: 1.8 })
+            for (let i = 0; i < 10; i++) w.step()
+            const ground = me.position[1]
+            me.jump(h)
+            let peak = 0, air = 0
+            for (let i = 0; i < rate * 2; i++) {
+                w.step()
+                peak = Math.max(peak, me.position[1] - ground)
+                if (!me.grounded) air++
+            }
+            expect(Math.abs(peak - h) / h, `peak ${peak}`).toBeLessThan(0.01)
+            // In the air for 2 v / g, to within a step or two of where the landing falls.
+            const airtime = 2 * Math.sqrt(2 * g * h) / g
+            expect(Math.abs(air / rate - airtime), `airtime ${air / rate}`).toBeLessThan(2.5 / rate)
+            // And a ledge's fall takes the formula's time too: 2 m in sqrt(2 h / g).
+            me.teleport([0, 2 + ground, 0])
+            let n = 0
+            while (!me.grounded && n < rate * 2) { w.step(); n++ }
+            expect(Math.abs(n / rate - Math.sqrt(4 / g)), `fell in ${n / rate}`).toBeLessThan(2.5 / rate)
+            w.dispose()
+        })
+    }
 
     it("stops rising when its head meets a ceiling", async () => {
         const { w, me } = await walking()

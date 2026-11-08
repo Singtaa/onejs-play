@@ -153,8 +153,9 @@ describe("a 2D character", () => {
         me.jump(120)
         let top = 600
         for (let i = 0; i < 120; i++) { w.step(); top = Math.min(top, me.position[1]) }
-        expect(600 - top).toBeGreaterThan(120 * 0.95)
-        expect(600 - top).toBeLessThan(120 * 1.05)
+        // Within 1%: up to runtime 1.5 it rose v dt / 2 short, 4% at this height.
+        expect(600 - top).toBeGreaterThan(120 * 0.99)
+        expect(600 - top).toBeLessThan(120 * 1.01)
         expect(me.grounded).toBe(true)
         w.dispose()
     })
