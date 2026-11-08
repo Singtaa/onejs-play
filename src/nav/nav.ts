@@ -255,7 +255,8 @@ export async function buildNav(vertices: Float32Array, indices: Uint32Array, o: 
     try {
         data = buildNavTile(R, ctx, config, vertices, indices, bmin, bmax, solids, [], null)
     } catch (e) {
-        throw new Error(`[oj] the navigation mesh did not build: ${e instanceof Error ? e.message : String(e)}`, { cause: e })
+        // Not Error's second argument: a cart typechecks this file under its own lib, which may be older than ES2022.
+        throw Object.assign(new Error(`[oj] the navigation mesh did not build: ${e instanceof Error ? e.message : String(e)}`), { cause: e })
     } finally {
         R.Raw.destroy(config)
         ctx.destroy()
