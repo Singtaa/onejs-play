@@ -29,7 +29,7 @@
  */
 
 import type { Vec3 } from "../models"
-import { NAV_DEFAULTS, loadRecast, type Nav, type NavOptions, type Recast } from "./nav"
+import { NAV_DEFAULTS, cornersOf, floorOf, loadRecast, navReach, nearestOn, type Nav, type NavOptions, type Recast } from "./nav"
 
 /** Where `block` and `mark` change the floor: a box, turned about y by `yaw` degrees. */
 export interface NavBox {
@@ -86,9 +86,16 @@ export interface NavSource<B extends object> {
     /** Every body that may count. */
     bodies(): Iterable<B>
     /** Its triangles in the world, or null when it does not count: destroyed, a trigger, on another layer. */
-    triangles(body: B): { vertices: Float32Array, indices: Uint32Array } | null
+    triangles(body: B): NavGeometry | null
     /** Calls back with a body that changed, or null when any may have. Returns the unsubscribe. */
     watch(changed: (body: B | null) => void): () => void
+}
+
+/** A body's surface in the world, and for a box standing upright its inside, which is never floor. */
+export interface NavGeometry {
+    vertices: Float32Array
+    indices: Uint32Array
+    solid?: { poly: number[], ymin: number, ymax: number }
 }
 
 /** The default frame budget, milliseconds. */
@@ -105,6 +112,7 @@ const MAX_AREAS = 15
 interface Entry {
     vertices: Float32Array
     indices: Uint32Array
+    solid: NavGeometry["solid"]
     tiles: number[]
 }
 
@@ -196,7 +204,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         this.query = new R.NavMeshQuery(this.navMesh, { maxNodes: 8192 })
         this.filter = new R.QueryFilter()
         this.ctx = new R.RecastBuildContext()
-        this.reach = { x: Math.max(1, radius * 4), y: Math.max(2, height * 2), z: Math.max(1, radius * 4) }
+        this.reach = navReach(radius, height)
         this.unwatch = source.watch((b) => {
             if (b === null) this.rescan = true
             else this.changed.add(b)
@@ -239,7 +247,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
     private readBody(b: B): void {
         const t = this.source.triangles(b)
         if (t === null || t.indices.length === 0) return
-        const { vertices, indices } = t
+        const { vertices, indices, solid } = t
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
         for (let v = 0; v < vertices.length; v += 3) {
             const x = vertices[v]!, z = vertices[v + 2]!
@@ -253,7 +261,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
             console.error(`[oj] world.nav: a body ${(maxX - minX).toFixed(0)} by ${(maxZ - minZ).toFixed(0)} m touches ${tiles.length} tiles, more than a nav holds (${1 << TILE_BITS}); it is left out. Make the tiles larger, or the ground in chunks.`)
             return
         }
-        this.entries.set(b, { vertices, indices, tiles })
+        this.entries.set(b, { vertices, indices, solid, tiles })
         for (const k of tiles) {
             let set = this.byTile.get(k)
             if (set === undefined) this.byTile.set(k, set = new Set())
@@ -360,13 +368,20 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
             R.filterLedgeSpans(ctx, config.walkableHeight, config.walkableClimb, hf)
             R.filterWalkableLowHeightSpans(ctx, config.walkableHeight, hf)
             if (!R.buildCompactHeightfield(ctx, config.walkableHeight, config.walkableClimb, hf, chf)) throw new Error("the compact heightfield")
-            // Marks before the erosion, so a block is kept clear of by the walker's radius, as a wall is.
-            for (const m of this.marksByTile.get(k) ?? []) {
+            const markBox = (xz: readonly number[], hmin: number, hmax: number, area: number) => {
                 const poly = new R.VerticesArray()
-                poly.copy([m.poly[0]!, 0, m.poly[1]!, m.poly[2]!, 0, m.poly[3]!, m.poly[4]!, 0, m.poly[5]!, m.poly[6]!, 0, m.poly[7]!])
-                R.markConvexPolyArea(ctx, poly, 4, m.hmin, m.hmax, m.area === 0 ? RC_NULL_AREA : m.area, chf)
+                poly.copy([xz[0]!, 0, xz[1]!, xz[2]!, 0, xz[3]!, xz[4]!, 0, xz[5]!, xz[6]!, 0, xz[7]!])
+                R.markConvexPolyArea(ctx, poly, 4, hmin, hmax, area, chf)
                 poly.destroy()
             }
+            // Recast rasterizes surfaces, so the floor inside a box taller than the walker reads as a room.
+            // Its inside is marked unwalkable, up to a cell below its top, which stays floor.
+            for (const b of bodies) {
+                const sd = this.entries.get(b)!.solid
+                if (sd !== undefined) markBox(sd.poly, sd.ymin - this.ch, sd.ymax - this.ch * 2, RC_NULL_AREA)
+            }
+            // Marks before the erosion, so a block is kept clear of by the walker's radius, as a wall is.
+            for (const m of this.marksByTile.get(k) ?? []) markBox(m.poly, m.hmin, m.hmax, m.area === 0 ? RC_NULL_AREA : m.area)
             if (!R.erodeWalkableArea(ctx, config.walkableRadius, chf)) throw new Error("eroding")
             if (!R.buildDistanceField(ctx, chf)) throw new Error("the distance field")
             if (!R.buildRegions(ctx, chf, config.borderSize, config.minRegionArea, config.mergeRegionArea)) throw new Error("regions")
@@ -500,9 +515,19 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         for (const name of Object.keys(o.cost ?? {})) if (!this.areas.has(name)) this.unknownArea(name)
         f.includeFlags = 0xffff
         f.excludeFlags = exclude
-        const r = this.query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: this.reach, filter: f, maxPathPolys: 1024 })
-        if (!r.success || r.path.length === 0) return []
-        return r.path.slice(1).map((p: { x: number, y: number, z: number }) => Object.freeze([p.x, p.y, p.z]) as unknown as Vec3)
+        return cornersOf(this.query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: this.reach, filter: f, maxPathPolys: 1024 }))
+    }
+
+    nearest(point: Vec3, within?: number): Vec3 | null {
+        this.live()
+        // Any floor, an avoided area's included: what is nearest does not depend on a path's wishes.
+        this.filter.excludeFlags = 0
+        return nearestOn(this.query, point, this.reach, within, this.filter)
+    }
+
+    polygons(): { positions: Float32Array, indices: Uint32Array } {
+        this.live()
+        return floorOf(this.R, this.navMesh)
     }
 
     dispose(): void {

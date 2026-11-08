@@ -158,6 +158,60 @@ describe("world.nav({ tile })", () => {
         w.dispose()
     })
 
+    for (const tile of [undefined, 8]) {
+        it(`answers the nearest floor, its triangles, and a path that goes nowhere${tile ? ", in tiles" : ""}`, async () => {
+            const w = await walled()
+            const nav = await w.nav({ radius: 0.3, tile })
+            // On the floor, a little above it: the floor under it.
+            const on = nav.nearest([5, 0.3, -5])!
+            expect(on[0]).toBeCloseTo(5, 1)
+            expect(on[2]).toBeCloseTo(-5, 1)
+            expect(Math.abs(on[1])).toBeLessThan(0.2)
+            expect(nav.nearest([5, 0.1, -5], 0.2)).not.toBeNull()
+            expect(nav.nearest([0, 30, 0])).toBeNull()
+            expect(() => nav.nearest([0, 0, 0], -1)).toThrow(/within/)
+            // Both ends one place: the place, which the solo and tiled navs once answered with nothing.
+            expect(nav.path([5, 0, -5], [5, 0, -5])).toEqual([[expect.closeTo(5, 1), expect.closeTo(0, 1), expect.closeTo(-5, 1)]])
+            expect(nav.path([50, 0, 50], [50, 0, 50])).toEqual([])
+            // The floor as triangles, all of it at the floor's height or the wall's top.
+            const { positions, indices } = nav.polygons()
+            expect(indices.length % 3).toBe(0)
+            let area = 0
+            for (let i = 0; i < indices.length; i += 3) {
+                const a = indices[i]! * 3, b = indices[i + 1]! * 3, c = indices[i + 2]! * 3
+                const ux = positions[b]! - positions[a]!, uz = positions[b + 2]! - positions[a + 2]!
+                const vx = positions[c]! - positions[a]!, vz = positions[c + 2]! - positions[a + 2]!
+                if (positions[a + 1]! < 1) area += Math.abs(ux * vz - uz * vx) / 2
+                for (const k of [a, b, c]) expect(Math.abs(positions[k + 1]!) < 0.3 || Math.abs(positions[k + 1]! - 2) < 0.3).toBe(true)
+            }
+            // The floor less its edge's radius and the wall's footprint with a radius round it: 39.4^2 - 34.3 * 1.6.
+            const expected = 39.4 * 39.4 - 34.3 * 1.6
+            if (tile !== undefined) expect(Math.abs(area - expected) / expected).toBeLessThan(0.02)
+            w.dispose()
+        })
+    }
+
+    it("has no floor inside a box: inside a hall's walls, the nearest floor is outside them", async () => {
+        const w = await createWorld()
+        w.box({ at: [0, -0.5, 0], size: [60, 1, 60] })
+        w.box({ at: [0, 4, 0], size: [20, 8, 20] })
+        w.box({ at: [15, 0.1, 0], size: [4, 0.2, 4] })   // a low platform, still walked on
+        w.box({ at: [-20, 1, 0], size: [4, 2, 4], rotation: { yaw: 30 } })
+        const nav = await w.nav({ radius: 0.4, tile: 8 })
+        const inside = nav.nearest([3, 0, 2], 12)!
+        expect(Math.abs(inside[0]) > 10.3 || Math.abs(inside[2]) > 10.3, `${inside}`).toBe(true)
+        expect(nav.nearest([3, 0, 2], 1)).toBeNull()
+        expect(nav.nearest([-20, 0, 0], 0.5)).toBeNull()
+        // On the platform's top, as Recast's cells round it up (0.2 m, read back about 0.3), not the floor beside it.
+        const top = nav.nearest([15, 0.3, 0], 0.2)!
+        expect(top[1]).toBeGreaterThan(0.15)
+        expect(top[1]).toBeLessThan(0.35)
+        // A path into the hall has nowhere to end; to the nearest floor, it ends at the wall.
+        expect(nav.path([0, 0, -20], [3, 0, 2])).toEqual([])
+        expect(nav.path([0, 0, -20], inside).length).toBeGreaterThan(0)
+        w.dispose()
+    })
+
     it("frees what a tile held when it is built again", async () => {
         const R = await loadRecast()
         const w = await createWorld()
@@ -179,8 +233,8 @@ describe("world.nav({ tile })", () => {
         const before = top()
         churn(200)
         expect(top()).toBe(before)
-        // The instrument sees a leak: a kilobyte kept a churn moves the top.
-        churn(200, 1024)
+        // The instrument sees a leak: 64 KB kept a churn, more than the holes below the top hold, moves it.
+        churn(200, 65536)
         expect(top()).toBeGreaterThan(before)
         w.dispose()
     })

@@ -48,9 +48,19 @@ export interface Nav {
     /**
      * The corners of the shortest way from `from` to `to`, not including
      * `from` and ending at `to`, or as near it as can be reached. Empty when
-     * `from` is nowhere near the walkable floor.
+     * `from` or `to` is nowhere near the walkable floor (`nearest` finds the
+     * floor near one); `[to]` when `from` and `to` are one place on it.
      */
     path(from: Vec3, to: Vec3): Vec3[]
+    /**
+     * The closest point of the walkable floor to `point`, or null when none
+     * is within `within` metres. Without `within`, it looks as far as `path`
+     * does for its ends: four radii across and two heights up and down.
+     * `nearest(p, 0.2) !== null` asks whether p is on the floor.
+     */
+    nearest(point: Vec3, within?: number): Vec3 | null
+    /** The walkable floor as triangles, for drawing: `scene.mesh({ ...nav.polygons(), color: "#3c8" })`. */
+    polygons(): { positions: Float32Array, indices: Uint32Array }
     dispose(): void
 }
 
@@ -76,6 +86,35 @@ export function loadRecast(): Promise<Recast> {
     return loading
 }
 
+/** How far from the floor a path's ends and `nearest` look: four radii across, two heights up and down. */
+export function navReach(radius: number, height: number): { x: number, y: number, z: number } {
+    return { x: Math.max(1, radius * 4), y: Math.max(2, height * 2), z: Math.max(1, radius * 4) }
+}
+
+/** computePath's answer as oj's corners: without `from`, and `[to]` for a path that never leaves its polygon. */
+export function cornersOf(r: { success: boolean, path: { x: number, y: number, z: number }[] }): Vec3[] {
+    if (!r.success || r.path.length === 0) return []
+    const points = r.path.map((p) => Object.freeze([p.x, p.y, p.z]) as unknown as Vec3)
+    // Detour gives one point, not two, when both ends are one place.
+    return points.length === 1 ? points : points.slice(1)
+}
+
+export function nearestOn(query: any, p: Vec3, reach: { x: number, y: number, z: number }, within: number | undefined, filter?: any): Vec3 | null {
+    if (within !== undefined && !(within >= 0)) throw new Error(`[oj] nav.nearest: within is metres, not ${within}`)
+    const halfExtents = within === undefined ? reach : { x: within, y: within, z: within }
+    const r = query.findNearestPoly({ x: p[0], y: p[1], z: p[2] }, { halfExtents, filter })
+    if (!r.success || r.nearestRef === 0) return null
+    const q = r.nearestPoint
+    if (within !== undefined && Math.hypot(q.x - p[0], q.y - p[1], q.z - p[2]) > within) return null
+    return Object.freeze([q.x, q.y, q.z]) as unknown as Vec3
+}
+
+/** Every walkable triangle of a navmesh, three vertices each, for scene.mesh. */
+export function floorOf(R: Recast, navMesh: any): { positions: Float32Array, indices: Uint32Array } {
+    const [positions, indices] = R.getNavMeshPositionsAndIndices(navMesh)
+    return { positions: new Float32Array(positions), indices: new Uint32Array(indices) }
+}
+
 /** A navigation mesh over these triangles, which must face up where they are floor. */
 export async function buildNav(vertices: Float32Array, indices: Uint32Array, o: NavOptions = {}): Promise<Nav> {
     const R = await loadRecast()
@@ -92,15 +131,21 @@ export async function buildNav(vertices: Float32Array, indices: Uint32Array, o: 
     }) as any
     if (!success) throw new Error(`[oj] the navigation mesh did not build: ${error ?? "no walkable floor"}`)
     const query = new R.NavMeshQuery(navMesh)
-    const reach = { x: Math.max(1, radius * 4), y: Math.max(2, (o.height ?? NAV_DEFAULTS.height) * 2), z: Math.max(1, radius * 4) }
+    const reach = navReach(radius, o.height ?? NAV_DEFAULTS.height)
     let gone = false
+    const live = () => { if (gone) throw new Error("[oj] this nav was disposed") }
     return {
         path(from: Vec3, to: Vec3): Vec3[] {
-            if (gone) throw new Error("[oj] this nav was disposed")
-            const r = query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: reach })
-            if (!r.success || r.path.length === 0) return []
-            const points = r.path.map((p: { x: number, y: number, z: number }) => Object.freeze([p.x, p.y, p.z]) as unknown as Vec3)
-            return points.slice(1)
+            live()
+            return cornersOf(query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: reach }))
+        },
+        nearest(point: Vec3, within?: number): Vec3 | null {
+            live()
+            return nearestOn(query, point, reach, within)
+        },
+        polygons() {
+            live()
+            return floorOf(R, navMesh)
         },
         dispose() {
             if (gone) return

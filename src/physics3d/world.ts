@@ -645,7 +645,7 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
                 if (!counts(b) || this.byCollider.get(b.colliderHandle) !== b) return null
                 const vertices: number[] = [], indices: number[] = []
                 appendTriangles(b, vertices, indices)
-                return { vertices: new Float32Array(vertices), indices: new Uint32Array(indices) }
+                return { vertices: new Float32Array(vertices), indices: new Uint32Array(indices), solid: solidOf(b) }
             },
             watch: (changed) => {
                 const f = (b: Body3 | null) => changed(b)
@@ -679,6 +679,26 @@ function appendTriangles(body: Body3, vertices: number[], indices: number[]): vo
     const base = vertices.length / 3
     for (const [x, y, z] of BOX_CORNERS) put([x * h[0], y * h[1], z * h[2]])
     for (const i of BOX_FACES) indices.push(base + i)
+}
+
+/**
+ * A box body's inside, for a box standing upright (turned about y alone):
+ * its footprint's corners in x and z, and its bottom and top. A sphere or
+ * capsule stands in as its bounding box, as in its triangles. A mesh or a
+ * heightfield has no inside oj knows.
+ */
+function solidOf(body: Body3): { poly: number[], ymin: number, ymax: number } | undefined {
+    if (meshTriangles.has(body) || body.kind === "heightfield") return undefined
+    const c = body.collider()
+    const q = c.rotation(), t = c.translation()
+    if (Math.abs(rotate(q, [0, 1, 0])[1] - 1) > 1e-6) return undefined
+    const h = halfExtentsOf(c)
+    const poly: number[] = []
+    for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+        const p = rotate(q, [x * h[0], 0, z * h[2]])
+        poly.push(p[0] + t.x, p[2] + t.z)
+    }
+    return { poly, ymin: t.y - h[1], ymax: t.y + h[1] }
 }
 
 const BOX_CORNERS: readonly Vec3[] = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]]
