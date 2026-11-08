@@ -54,7 +54,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `input.ts` | Container-side: the input backend onejs-unity reads through, with the pointer lock's state (asked in a press's frame, else on the next press) |
-| `adapter.ts` | Container-side: browser events into that backend, and the canvas's pointer lock (movement as delta while locked) |
+| `adapter.ts` | Container-side: browser events into that backend, the canvas's pointer lock (movement as delta while locked), and Unity's mouse moved to a press it saw no move to, since Unity presses UI Toolkit where the mouse last moved |
 | `standalone.ts` | Starting a runtime outside a container, which is what eject needs |
 | `hostinput.ts` | Outside a container: the real InputBridge with pointer reads converted to stage pixels; the lock is Unity's Cursor, through onejs-unity |
 

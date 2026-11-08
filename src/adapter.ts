@@ -33,6 +33,14 @@
  * it was granted or let go. While locked, the browser holds clientX and
  * clientY where the lock began, so a movement goes in as movementX and
  * movementY, the only numbers that still move.
+ *
+ * Unity's WebGL player takes the mouse's position from mousemove alone, and
+ * UI Toolkit presses at that position, not at the press's own. A press with no
+ * move before it (the mouse resting over the game as it loaded, or a script's
+ * bare mousePressed) reached the element under the last move, or Unity's
+ * corner on a fresh page. So a mouse or pen press away from the last move
+ * sends Unity a mousemove to the press's point first: a pointerdown is
+ * dispatched before its compatibility mousedown, which is what Unity reads.
  */
 
 import type { InputSink, PointerLockHost } from "./input"
@@ -148,12 +156,26 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     // Unity does the same: a touch moves the mouse and appears in Input.touches.
     const isTouch = (event: any) => event.pointerType === "touch"
 
+    // Where Unity last saw the mouse, in client pixels; null before any move.
+    let unityMouse: [number, number] | null = null
+    const canTellUnity = typeof target?.dispatchEvent === "function" && typeof view.MouseEvent === "function"
+    const placeUnityMouse = (event: any) => {
+        if (unityMouse !== null && unityMouse[0] === event.clientX && unityMouse[1] === event.clientY) return
+        unityMouse = [event.clientX, event.clientY]
+        if (!canTellUnity || isLocked()) return
+        target.dispatchEvent(new view.MouseEvent("mousemove", {
+            clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY,
+            buttons: event.buttons, bubbles: true, cancelable: true, view,
+        }))
+    }
+
     // A second mouse button pressed while one is held, or one of two let go, arrives
     // as a pointermove naming that button, not as a pointerdown or pointerup: the
     // Pointer Events spec fires those only for the first press and the last release.
     // Read from `buttons`, so "both buttons walk forward" sees the second one.
     const onPointerMove = (event: any) => {
         const [x, y] = at(event)
+        if (!isTouch(event)) unityMouse = [event.clientX, event.clientY]
         if (isLocked()) sink.pointerMoveBy(event.movementX ?? 0, event.movementY ?? 0)
         else sink.pointerMove(x, y)
         if (isTouch(event)) sink.touchMove(event.pointerId, x, y)
@@ -164,6 +186,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     }
     const onPointerDown = (event: any) => {
         const [x, y] = at(event)
+        if (!isTouch(event)) placeUnityMouse(event)
         sink.pointerDown(event.button, x, y)
         // A tap's pointerdown says "touch"; the browser's compatibility mouse
         // events that follow it are not listened to, so it never reads as a click.
