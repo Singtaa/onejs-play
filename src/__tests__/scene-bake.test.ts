@@ -79,6 +79,7 @@ function recorder(): any {
                 if (name === "LightFile") return lightFileWaits-- > 0 ? "" : lightFileAnswer
                 if (name === "FileSha256") return "c".repeat(64)
                 if (name === "LoadLight") return loadAnswer
+                if (name === "BakeProblem") return "the bake's probes could not be read"
                 if (name === "Load") return ++next
                 if (name === "Clips") return ""
                 return undefined
@@ -414,6 +415,64 @@ describe("scene.bake", () => {
         s.bake()
         await vi.waitFor(() => expect(of("BeginBake").length).toBe(3))
         expect(of("LightMesh").length).toBe(2)
+    })
+
+    it("resolves done to how the bake ended: baked, failed or stopped", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene()
+        expect(await s.bake().done).toBe("failed")
+        s.spawn(s.mesh(SQUARE), { static: true })
+        let light = s.bake()
+        await started()
+        frame()
+        expect(await light.done).toBe("baked")
+        steps = [0.5]
+        light = s.bake()
+        const later = s.bake()
+        expect(await light.done).toBe("stopped")
+        dispose()
+        expect(await later.done).toBe("stopped")
+    })
+
+    it("fails a bake the bridge says failed, with its reason, where 1.4.0 read it as stopped", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.2, -2]
+        const light = s.bake()
+        await started()
+        frame()
+        frame()
+        expect(await light.done).toBe("failed")
+        expect(warn.mock.calls.map((c) => String(c[0]))).toEqual(["[oj] scene.bake: the bake's probes could not be read. The scene keeps its ambient light."])
+    })
+
+    it("still reads -1 from StepBake as a bake another took, with no line", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [-1]
+        const light = s.bake()
+        await started()
+        frame()
+        expect(await light.done).toBe("stopped")
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    it("clears the light with clearLight, stopping a bake under way", async () => {
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.5]
+        const light = s.bake()
+        await started()
+        frame()
+        s.clearLight()
+        expect(await light.done).toBe("stopped")
+        expect(of("ClearLight").length).toBe(1)
+        frame()
+        expect(of("StepBake").length).toBe(1)
+        s.clearLight()
+        expect(of("ClearLight").length).toBe(2)
     })
 
     it("tells a host without the baker once, and resolves", async () => {
@@ -798,6 +857,23 @@ describe("scene.bake with a name", () => {
     it("refuses an empty name", () => {
         expect(() => scene().bake("")).toThrow(/name the light file/)
     })
+
+    it("refuses at the call a name that is not a light file's, so Save can never write over a texture", () => {
+        const s = scene()
+        expect(() => s.bake("floor.png")).toThrow(/scene\.bake\("floor\.png"\): a light file's name ends in \.light\.png/)
+        expect(() => s.bake(".light.png")).toThrow(/ends in \.light\.png/)
+        expect(() => s.bake("./room.light.png")).toThrow(/name it from the cart's root as it is, "room\.light\.png"/)
+        expect(() => s.bake("assets/room.light.png")).toThrow(/as it is, "room\.light\.png"/)
+        for (const bad of ["/room.light.png", "C:/room.light.png", "levels\\room.light.png", "https://x.test/room.light.png"]) {
+            expect(() => s.bake(bad)).toThrow(/a path in the cart/)
+        }
+        for (const bad of ["../room.light.png", "levels//room.light.png", "levels/./room.light.png"]) {
+            expect(() => s.bake(bad)).toThrow(/no empty, \. or \.\. part/)
+        }
+        expect(of("BeginBake")).toEqual([])
+        expect(s.bake("levels/room.light.png").done).toBeInstanceOf(Promise)
+        expect(s.bake("room.light.png", { bounces: 1 }).done).toBeInstanceOf(Promise)
+    })
 })
 
 describe("scene.bake for a host that waits on it", () => {
@@ -838,13 +914,48 @@ describe("scene.bake for a host that waits on it", () => {
         const t = scene()
         t.spawn(t.mesh(SQUARE), { static: true })
         await t.bake(NAME).done
-        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} current`])
+        expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} loaded`])
         told = []
         light = t.bake()
         await vi.waitFor(() => expect(of("BeginBake").length).toBe(2))
         frame()
         await light.done
         expect(told).toEqual([])
+    })
+
+    it("tells a bake's progress at most every 250 ms of frames, and at each new page", async () => {
+        const progress: string[] = []
+        setLightHost({ baked: () => {}, progress: (name, f) => progress.push(`${name} ${f}`) })
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 0.98, 0.99, 0.991, 0.992, 0.993, 0.994, 0.995, 0.996, 0.997]
+        const light = s.bake(NAME)
+        await started()
+        // 18 frames of 1/60 s, the first with no interval before it: one call, at the 16th, 250 ms in.
+        for (let i = 0; i < 18; i++) frame()
+        expect(progress).toEqual([`${NAME} 0.993`])
+        page = 1
+        frame()
+        expect(progress).toEqual([`${NAME} 0.993`, `${NAME} 0.996`])
+        s.bake()
+        await light.done
+        // Nothing for a bake with no name.
+        for (let i = 0; i < 40; i++) frame()
+        expect(progress.length).toBe(2)
+    })
+
+    it("tells the host when the scene that offered Bake again goes, and not when the cart clears its light", async () => {
+        const withdrawn: string[] = []
+        setLightHost({ baked: () => {}, withdrawn: (name) => withdrawn.push(name) })
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        s.bake(NAME)
+        s.clearLight()
+        expect(withdrawn).toEqual([])
+        expect(bakeAgain(NAME)).toBe(true)
+        dispose()
+        expect(withdrawn).toEqual([NAME])
+        expect(bakeAgain(NAME)).toBe(false)
     })
 
     it("tells a failure with the console's reason, and a stop when a later bake or the scene's end cuts it short", async () => {

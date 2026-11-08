@@ -19,11 +19,13 @@ export interface BakedLight {
 }
 
 /**
- * How a named bake ended: its file was current and is showing, it baked here
- * (after `baked` had the file), it failed and the console said why, or it
- * stopped unfinished because a later bake replaced it or the scene went.
+ * How a named bake ended, in the words `done` resolves to: its file was
+ * current and is showing (`loaded`), it baked here (after `baked` had the
+ * file), it failed and the console said why, or it stopped unfinished
+ * because a later bake replaced it, `scene.clearLight` took it, or the scene
+ * went. Runtimes before 1.4.1 said `current` for `loaded`.
  */
-export type BakeEnd = { how: "current" } | { how: "baked" } | { how: "failed", why: string } | { how: "stopped" }
+export type BakeEnd = { how: "loaded" } | { how: "baked" } | { how: "failed", why: string } | { how: "stopped" }
 
 export interface LightHost {
     baked(light: BakedLight): void
@@ -33,7 +35,17 @@ export interface LightHost {
      */
     begun?(name: string): void
     ended?(name: string, end: BakeEnd): void
+    /**
+     * A named bake's progress, 0 to below 1, at most every
+     * `PROGRESS_EVERY_MS` and whenever its page changes. Its end is `ended`.
+     */
+    progress?(name: string, fraction: number): void
+    /** The scene that offered to bake `name` again went: `bakeAgain(name)` is false from now. */
+    withdrawn?(name: string): void
 }
+
+/** The least time between two `progress` calls for one bake, in ms. */
+export const PROGRESS_EVERY_MS = 250
 
 let host: LightHost | null = null
 
@@ -49,7 +61,9 @@ const offers = new Map<string, () => void>()
 export function offerAgain(name: string, again: () => void): () => void {
     offers.set(name, again)
     return () => {
-        if (offers.get(name) === again) offers.delete(name)
+        if (offers.get(name) !== again) return
+        offers.delete(name)
+        tell(() => host?.withdrawn?.(name), name)
     }
 }
 
@@ -68,6 +82,11 @@ export function bakeAgain(name: string): boolean {
 /** A named bake started. */
 export function lightBegun(name: string): void {
     tell(() => host?.begun?.(name), name)
+}
+
+/** A named bake's progress. */
+export function lightProgress(name: string, fraction: number): void {
+    tell(() => host?.progress?.(name, fraction), name)
 }
 
 /** A named bake ended. */

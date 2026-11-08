@@ -22,17 +22,15 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { assetFile, assetInfo, assetShipped, assetUrl, loadAssetBytes } from "./asset"
+import { assetFile, assetInfo, assetUrl, loadAssetBytes } from "./asset"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
 import { arrayModels, modelUrls } from "./physics3d/sources"
 import { fromQuat, toQuat } from "./physics3d/rotation"
-import { bakeOptions, beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./light/bake"
-import { MAX_PAGES } from "./light/atlas"
-import { tileBudget } from "./light/budget"
-import { lightBakedHere, lightBegun, lightEnded, offerAgain, type BakeEnd } from "./light/host"
-import { bakedHereLine, loweredWords, type BakedHere, type BakeOptionValues, type LightRecord, type Lowered } from "./light/record"
+import type { BakeItem } from "./light/bake"
+import type { BakeOptionValues } from "./light/record"
+import { sceneBaker } from "./light/scene-bake"
 import { sha256 } from "./light/sha256"
 
 // Type-level redeclaration only, so dynamic host globals typecheck.
@@ -171,16 +169,25 @@ export interface SpawnOptions {
  */
 export type BakeOptions = Partial<BakeOptionValues>
 
+/**
+ * How a bake ended: `"loaded"` its named file was current and is showing,
+ * `"baked"` it baked here, `"failed"` it could not, which the console says,
+ * `"stopped"` a later bake, `scene.clearLight` or the scene going ended it
+ * unfinished.
+ */
+export type BakeResult = "loaded" | "baked" | "failed" | "stopped"
+
 /** A bake under way, from `scene.bake`. */
 export interface Bake {
     /** From 0 to 1. */
     readonly progress: number
     /**
-     * Resolves once the light is finished, or once this bake stops: another
-     * bake replaced it, the scene went, or the scene could not be baked, which
-     * the console says.
+     * Resolves once the bake ends, to how it ended: once the light is
+     * finished or loaded, and also when it fails or stops.
+     *
+     *     if (await light.done === "baked") console.log("lit")
      */
-    readonly done: Promise<void>
+    readonly done: Promise<BakeResult>
 }
 
 export interface DissolveOptions {
@@ -350,6 +357,7 @@ export interface Scene {
      *
      *     scene.bake("room.light.png")
      *
+     * The name is a path from the cart's root ending in `.light.png`.
      * Named, it loads that light file from the cart when it was baked for
      * this scene, and bakes here when the file is missing or out of date,
      * saying so on the console, where the editor offers to save it. With no
@@ -357,7 +365,9 @@ export interface Scene {
      *
      * It bakes beside the game, a little each frame: moving things are lit
      * within a few frames, the static ones from a quick draft, then finished.
-     * Bake again after changing what is static, the sun or the ambient.
+     * Bake again after changing what is static, the sun or the ambient: the
+     * light showing stays until the new one is ready, unless what is static
+     * changed.
      *
      *     scene.bake("yard.light.png", { bounces: 3, occlusion: 0.5 })
      *
@@ -373,6 +383,8 @@ export interface Scene {
     bake(name?: string, options?: BakeOptions): Bake
     /** Bakes here every time, with these options. */
     bake(options: BakeOptions): Bake
+    /** Takes the baked light away, stopping a bake under way: the scene keeps its ambient light. */
+    clearLight(): void
     /** The actor under a point in window pixels (a pointer event's x and y), or null. */
     pick(x: number, y: number): Actor | null
     /** Moves the camera. Changes only what it names. */
@@ -542,8 +554,6 @@ function rootElement(): any {
 let saidNoSceneTexture = false
 /** Said once: a host without SetSky. */
 let saidNoSky = false
-/** Said once: a host without BeginBake. */
-let saidNoBake = false
 
 type SkyNow = { top: ColorInput, horizon: ColorInput, bottom?: ColorInput, sun: { size: number, glow: number } | false, stars: number }
 
@@ -688,8 +698,6 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const statics = new Set<number>()
     const scatters = new Map<number, { model: Model, data: Float32Array }>()
     const depthOnly = new WeakSet<Model>()
-    const charts = new ChartCache()
-    let baking: { stop: () => void } | null = null
 
     // Every colour is parsed before anything is built, so a typo fails without a half-made scene.
     let backgroundColor = options.background ?? d.background
@@ -876,7 +884,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
                 write(d, "mesh.set")
                 // Its unwrap was of the old triangles; OneJS drew it unbaked as it took the new ones.
-                charts.forget(model)
+                baker.forget(model)
             },
             destroy() {
                 if (generationOf.get(model) !== generation) return
@@ -1043,127 +1051,18 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         return { name, sha: await sha }
     }
 
-    // A named light file's bytes, or null when the cart does not have it.
-    const readNamed = async (name: string): Promise<SavedFile> => {
-        if (assetShipped(name) === false) return readSaved(null)
-        return readSaved(await loadAssetBytes(name).catch(() => null))
-    }
-
-    // Each name this scene baked, offered to the host's bakeAgain until the scene goes.
-    const offered = new Map<string, () => void>()
-
-    // `again`: the host's Bake again, which bakes past a saved file, current or not.
-    const bake = (name: string | undefined, given: BakeOptionValues, again = false): Bake => {
-        baking?.stop()
-        if (name !== undefined) offered.set(name, offerAgain(name, () => { if (!disposed) bake(name, given, true) }))
-        let progress = 0
-        let finish!: () => void
-        const done = new Promise<void>((resolve) => { finish = resolve })
-        const handle: Bake = Object.freeze({ get progress() { return progress }, done })
-        if (name !== undefined) lightBegun(name)
-        if (typeof b.BeginBake !== "function") {
-            if (!saidNoBake) console.warn("[oj] scene.bake needs a newer OneJS: this host's ModelBridge cannot bake light, so the scene keeps its ambient light.")
-            saidNoBake = true
-            progress = 1
-            if (name !== undefined) lightEnded(name, { how: "failed", why: "this host's ModelBridge cannot bake light" })
-            finish()
-            return handle
-        }
-        let stopped = false
-        let stopFrame: (() => void) | null = null
-        const me = {
-            // With no end, it was stopped from outside: a later bake, or the scene going.
-            stop(end: BakeEnd = { how: "stopped" }) {
-                if (stopped) return
-                stopped = true
-                stopFrame?.()
-                if (baking === me) baking = null
-                if (name !== undefined) lightEnded(name, end)
-                finish()
-            },
-        }
-        baking = me
-        const live = () => !stopped && !disposed
-        const give = (why: string) => {
-            // As the line says: a bake this one replaced, still on the bridge with its draft showing, or a
-            // model already given its new unwrap against the old light's rectangles, would say otherwise.
-            if (typeof b.ClearLight === "function") b.ClearLight()
-            console.warn(`[oj] scene.bake: ${why}. The scene keeps its ambient light.`)
-            progress = 1
-            me.stop({ how: "failed", why })
-        }
-        const run = async () => {
-            let items = bakeItems()
-            let record: LightRecord | null = null
-            let file: SavedFile = readSaved(null)
-            if (name !== undefined && items.length > 0) {
-                const sun = sunNow === null ? null : { direction: sunNow.direction, color: rgb(sunNow.color), intensity: sunNow.intensity }
-                const scaled = (c: ColorInput) => rgb(c).map((x) => x * ambientNow.intensity) as [number, number, number]
-                const [recorded, found] = await Promise.all([
-                    recordItems(items, identify, { sun, ambient: { sky: scaled(ambientNow.sky), ground: scaled(ambientNow.ground) }, options: given }),
-                    again ? readSaved(null) : readNamed(name),
-                ])
-                if (!live()) return
-                record = recorded.record
-                items = recorded.items
-                file = found
-            }
-            const plan = await planLight(b, items, charts, live, given.detail)
-            if (plan === null || !live()) return
-            if (typeof plan === "string") return give(plan)
-            const lowered: Lowered | undefined = plan.detail < given.detail ? { asked: given.detail, baked: plan.detail, pages: MAX_PAGES } : undefined
-            let here: BakedHere | null = null
-            if (name !== undefined) {
-                here = again ? { why: "again" } : whyBakeHere(file, record!, plan)
-                if (here === null && file.found === "saved") {
-                    const why = loadLight(b, plan, file.png)
-                    if (why === "") {
-                        progress = 1
-                        return me.stop({ how: "current" })
-                    }
-                    here = { why: "unreadable", detail: why }
-                }
-            }
-            const why = beginBake(b, plan, given)
-            if (why !== "") return give(why)
-            // A named bake says it on its own line, once the light is ready to save.
-            if (name === undefined && lowered !== undefined) console.log(`[oj] scene.bake: baked ${loweredWords(lowered)}.`)
-            let fileFrames = 0
-            const budget = tileBudget()
-            let phase = 0
-            let page = 0
-            stopFrame = everyFrame((intervalMs) => {
-                // Probes and the lightmap's tiles cost the GPU differently, and the frame between, the one the probes
-                // land in, or one finishing a page, is neither's. Asked before the interval is read, as a phase or a
-                // page can change inside a step.
-                const now = Number(b.BakePhase()), onPage = Number(b.BakePage())
-                if (now !== phase || onPage !== page) budget.newPhase()
-                phase = now
-                page = onPage
-                const p = Number(b.StepBake(budget.frame(intervalMs)))
-                // Below 0: the bridge's bake went, cleared by a later one or by the scene.
-                if (p < 0) return me.stop()
-                progress = p
-                if (p < 1) return
-                if (here === null) return me.stop({ how: "baked" })
-                const bytes = lightFile(b, { ...record!, layout: plan.layout })
-                // The lightmap's read can land a few frames after the bake finishes.
-                if (bytes === null && ++fileFrames < FILE_READ_FRAMES) return
-                if (bytes === null) {
-                    // Lit, so not give's line: the light is showing, only the file is missing.
-                    const why = "its light is showing, but could not be read back as a file to save"
-                    console.warn(`[oj] scene.bake: ${name} ${why}.`)
-                    return me.stop({ how: "failed", why })
-                }
-                lightBakedHere({ name: name!, line: bakedHereLine(name!, here, lowered), bytes })
-                me.stop({ how: "baked" })
-            })
-        }
-        run().catch((e: unknown) => {
-            if (live()) give(e instanceof Error ? e.message.replace(/^\[oj\] (scene\.bake: )?/, "") : String(e))
-        })
-        return handle
-    }
+    const baker = sceneBaker({
+        bridge: b,
+        items: bakeItems,
+        identify,
+        lights: () => ({
+            sun: sunNow === null ? null : { direction: sunNow.direction, color: rgb(sunNow.color), intensity: sunNow.intensity },
+            ambient: { sky: scaled(ambientNow.sky), ground: scaled(ambientNow.ground) },
+        }),
+        everyFrame,
+        disposed: () => disposed,
+    })
+    const scaled = (c: ColorInput) => rgb(c).map((x) => x * ambientNow.intensity) as [number, number, number]
 
     const scene: Scene = {
         spawn,
@@ -1171,18 +1070,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         scatter,
         texture,
         pointLight,
-        // Not the host's `again`: a cart that wants a fresh bake every time names no file.
-        bake: (first?: string | BakeOptions, options?: BakeOptions) => {
-            const unnamed = () => new Error("[oj] scene.bake: name the light file from the cart's root, like \"room.light.png\", or give no name to bake on the device every time")
-            // typeof "object" first: a "string" test keeps an options object, whose fields are all optional.
-            if (typeof first === "object") {
-                if (first === null) throw unnamed()
-                if (options !== undefined) throw new Error("[oj] scene.bake: its options come once, after the name when there is one")
-                return bake(undefined, bakeOptions(first))
-            }
-            if (first !== undefined && (typeof first !== "string" || first === "")) throw unnamed()
-            return bake(first, bakeOptions(options))
-        },
+        bake: baker.bake,
+        clearLight: baker.clearLight,
         pick(x, y) {
             const id = b.Pick(rootElement(), x, y)
             return actors.find((a) => a.id === id) ?? null
@@ -1234,10 +1123,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (disposed) return
         disposed = true
         stopFrame?.()
-        baking?.stop()
-        for (const withdraw of offered.values()) withdraw()
-        offered.clear()
-        charts.dispose()
+        baker.dispose()
         for (const f of fades.values()) f.done()
         fades.clear()
         actors.length = 0
