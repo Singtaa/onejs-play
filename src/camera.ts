@@ -48,12 +48,15 @@
  *
  * START VALUES AND LIVE ONES
  *
- * The options `yaw`, `pitch` and `distance` say where the camera starts and
- * are read once. The object a hook returns has the same three fields, which a
- * cart writes when it means them (a cutscene, a zoom key): written in a
- * useFrame, they take effect in that frame's late phase, held to `pitchRange`
- * and `distanceRange`. A live option would undo every wheel zoom on the
- * cart's next render.
+ * The options `pitch` and `distance`, and the orbit's `yaw`, say where the
+ * camera starts and are read once; a follow camera starts behind its target,
+ * the first one it is given when it had none at mount. The object a hook
+ * returns has `yaw`, `pitch` and `distance` fields, which a cart writes when it
+ * means them (a cutscene, a zoom key): written in a useFrame, they take effect
+ * in that frame's late phase, held to `pitchRange` and `distanceRange`. A
+ * write that is not a finite number is ignored, since NaN would pass every
+ * range and stay. A live option would undo every wheel zoom on the cart's next
+ * render.
  *
  * TURNING WITH THE TARGET
  *
@@ -115,6 +118,10 @@ export function wrapDegrees(degrees: number): number {
 }
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
+/** A value a cart gave, held to a range; one that is not a finite number keeps `current`, since NaN passes every comparison and would stay for good. */
+const hold = (v: number, lo: number, hi: number, current: number) => (Number.isFinite(v) ? clamp(v, lo, hi) : current)
+/** A start value a cart gave: its default when it is not a finite number. */
+const startOf = (v: number | undefined, fallback: number) => (v !== undefined && Number.isFinite(v) ? v : fallback)
 
 // The drag
 
@@ -296,6 +303,8 @@ export interface FollowState extends OrbitView {
     /** A cart wrote the distance: take it this frame rather than backing out to it. */
     snapReach: boolean
     started: boolean
+    /** The yaw was given (a target at construction, or a cart's write); until it is, the first target's own yaw is taken, so the camera starts behind it. */
+    aimed: boolean
 }
 
 /** Seconds for the pivot to close most of a step up or down. */
@@ -326,11 +335,11 @@ export interface FollowStepOptions {
     filter?: { only?: readonly string[], skip?: readonly unknown[] }
 }
 
-export function newFollowState(view: OrbitView): FollowState {
+export function newFollowState(view: OrbitView, aimed: boolean = true): FollowState {
     const pivot: Vec3 = [0, 0, 0]
     return {
         ...view, heading: view.yaw, forward: false, pivot, reach: view.distance, eye: orbitEye(pivot, view),
-        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], snapReach: false, started: false,
+        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], snapReach: false, started: false, aimed,
     }
 }
 
@@ -348,6 +357,10 @@ export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: Fo
     }
     if (!s.started) {
         s.started = true
+        if (!s.aimed) {
+            s.aimed = true
+            s.yaw = s.heading = wrapDegrees(target.yaw)
+        }
         s.pivot = [p[0], p[1] + o.height, p[2]]
         s.filter = o.filter
         s.lastYaw = target.yaw
@@ -517,18 +530,19 @@ export class OrbitController {
     readonly orbit: Orbit
 
     constructor(o: OrbitOptions = {}) {
-        const view = { yaw: wrapDegrees(o.yaw ?? 0), pitch: o.pitch ?? 20, distance: o.distance ?? 6 }
+        const range = this._range = { limits: limitsOf(o, ORBIT_LIMITS) }
+        const { pitchRange: pr, distanceRange: dr } = range.limits
+        const view = { yaw: wrapDegrees(startOf(o.yaw, 0)), pitch: clamp(startOf(o.pitch, 20), pr[0], pr[1]), distance: clamp(startOf(o.distance, 6), dr[0], dr[1]) }
         const target: Vec3 = o.target ? [o.target[0], o.target[1], o.target[2]] : [0, 0, 0]
         this._s = { ...view, target, eye: orbitEye(target, view), touched: false, written: false }
         const s = this._s
-        const range = this._range = { limits: limitsOf(o, ORBIT_LIMITS) }
         this.orbit = {
             get yaw() { return s.yaw },
-            set yaw(v) { s.yaw = wrapDegrees(v); s.written = true },
+            set yaw(v) { if (Number.isFinite(v)) s.yaw = wrapDegrees(v); s.written = true },
             get pitch() { return s.pitch },
-            set pitch(v) { s.pitch = clamp(v, range.limits.pitchRange[0], range.limits.pitchRange[1]); s.written = true },
+            set pitch(v) { s.pitch = hold(v, range.limits.pitchRange[0], range.limits.pitchRange[1], s.pitch); s.written = true },
             get distance() { return s.distance },
-            set distance(v) { s.distance = clamp(v, range.limits.distanceRange[0], range.limits.distanceRange[1]); s.written = true },
+            set distance(v) { s.distance = hold(v, range.limits.distanceRange[0], range.limits.distanceRange[1], s.distance); s.written = true },
             get eye() { return s.eye },
             get target() { return s.target },
             bind: this._rig.bind,
@@ -628,15 +642,19 @@ export class FollowController {
     readonly camera: FollowCamera
 
     constructor(target: FollowTarget | null | undefined, o: FollowOptions = {}) {
-        const s = this._state = newFollowState({ yaw: wrapDegrees(target?.yaw ?? 0), pitch: o.pitch ?? 15, distance: o.distance ?? 5 })
         const range = this._range = { limits: limitsOf(o, FOLLOW_LIMITS) }
+        const { pitchRange: pr, distanceRange: dr } = range.limits
+        // With no target yet (a model still loading), the first one given sets the yaw, as one here would.
+        const s = this._state = newFollowState({
+            yaw: wrapDegrees(startOf(target?.yaw, 0)), pitch: clamp(startOf(o.pitch, 15), pr[0], pr[1]), distance: clamp(startOf(o.distance, 5), dr[0], dr[1]),
+        }, target != null)
         this.camera = {
             get yaw() { return s.yaw },
-            set yaw(v) { s.yaw = wrapDegrees(v) },
+            set yaw(v) { if (Number.isFinite(v)) { s.yaw = wrapDegrees(v); s.aimed = true } },
             get pitch() { return s.pitch },
-            set pitch(v) { s.pitch = clamp(v, range.limits.pitchRange[0], range.limits.pitchRange[1]) },
+            set pitch(v) { s.pitch = hold(v, range.limits.pitchRange[0], range.limits.pitchRange[1], s.pitch) },
             get distance() { return s.distance },
-            set distance(v) { s.distance = clamp(v, range.limits.distanceRange[0], range.limits.distanceRange[1]); s.snapReach = true },
+            set distance(v) { s.distance = hold(v, range.limits.distanceRange[0], range.limits.distanceRange[1], s.distance); s.snapReach = true },
             get heading() { return s.heading },
             get forward() { return s.forward },
             get eye() { return s.eye },

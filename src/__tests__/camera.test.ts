@@ -428,6 +428,59 @@ describe("fields a cart writes", () => {
         expect(calls).toHaveLength(2)
         expect(Math.hypot(...c.orbit.eye)).toBeCloseTo(100, 9)
     })
+
+    // Review of 1.4.0 (PlaySite/docs/reviews/1.4.0-follow-camera.md, finding 1): NaN passed
+    // every range check, and one bad write left both cameras' eyes NaN for good.
+    it("keeps what it had when a write or a start value is not a number", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const c = new FollowController(me)
+        c.camera.distance = NaN
+        c.camera.pitch = Infinity
+        c.camera.yaw = NaN
+        c.frame(1 / 60, me, {}, frameOf(source()))
+        expect([c.camera.yaw, c.camera.pitch, c.camera.distance]).toEqual([0, 15, 5])
+        expect(c.camera.eye.every(Number.isFinite)).toBe(true)
+
+        const o = new OrbitController({ distance: NaN, pitch: 0 / 0 })
+        o.orbit.distance = NaN
+        o.frame(1 / 60, {}, frameOf(source()))
+        expect([o.orbit.pitch, o.orbit.distance]).toEqual([20, 6])
+        expect(o.orbit.eye.every(Number.isFinite)).toBe(true)
+    })
+
+    it("holds start values to the ranges before the first frame", () => {
+        const o = new OrbitController({ distance: 0, pitch: 90 })
+        expect([o.orbit.pitch, o.orbit.distance]).toEqual([80, 1])
+        expect(Math.hypot(...o.orbit.eye)).toBeCloseTo(1, 9)
+    })
+})
+
+describe("a follow camera given its target late", () => {
+    // Finding 2: useFollowCamera(player?.actor) has no target while the model loads, and the
+    // camera started at yaw 0 whichever way the target faced, so a target facing -z was
+    // looked at from in front, and with turnWith alone it stayed in front for good.
+    it("starts behind the first target it is given, as it does one given at mount", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 180 }
+        const late = new FollowController(null)
+        late.frame(1 / 60, null, { turnWith: true }, frameOf(source()))
+        late.frame(1 / 60, me, { turnWith: true }, frameOf(source()))
+        const now = new FollowController(me)
+        now.frame(1 / 60, me, { turnWith: true }, frameOf(source()))
+        expect(late.camera.yaw).toBe(180)
+        expect(late.camera.heading).toBe(180)
+        expect(late.camera.eye[2]).toBeCloseTo(now.camera.eye[2], 9)
+        expect(late.camera.eye[2]).toBeGreaterThan(0)
+    })
+
+    it("keeps a yaw the cart wrote before the target came, and turns from the camera's yaw for a second target", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 180 }
+        const c = new FollowController(null)
+        c.camera.yaw = 90
+        c.frame(1 / 60, me, {}, frameOf(source()))
+        expect(c.camera.yaw).toBe(90)
+        c.frame(1 / 60, { position: [0, 0, 0] as Vec3, yaw: -45 }, {}, frameOf(source()))
+        expect(c.camera.yaw).toBe(90)
+    })
 })
 
 describe("a follow camera in a world", () => {
