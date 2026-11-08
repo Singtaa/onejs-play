@@ -15,7 +15,7 @@ import type { Rotation, Vec3 } from "../models"
 import type { BodyCore, Drawn, Driver } from "../physics/core"
 import { fromQuat, rotate, type Quat } from "./rotation"
 
-/** What `world.car` takes. Every number has a default that drives like a small road car. */
+/** What `world.car` takes. Every number has a default: a small car at a game's pace rather than a road car's. */
 export interface CarOptionsOf<A> {
     /** Where the chassis's middle starts. */
     at?: Vec3
@@ -28,9 +28,9 @@ export interface CarOptionsOf<A> {
     wheelRadius?: number
     /** Metres a second at full throttle on the flat. 30 by default (108 km/h). */
     topSpeed?: number
-    /** Seconds from standing to near top speed on the flat. 8 by default. */
+    /** Seconds from standing to near top speed on the flat. 4 by default: 50 km/h in about 2 s. */
     acceleration?: number
-    /** The wheels' lock at a crawl, degrees; it narrows with speed. 32 by default. */
+    /** The wheels' lock at a crawl, degrees; it narrows with speed. 40 by default. */
     steering?: number
     /** Tyre grip: 1 is a road car, lower slides, higher corners harder. 1 by default. */
     grip?: number
@@ -118,8 +118,8 @@ export class CarCore<A> implements Driver {
         this.mass = o.mass ?? 1200
         this.radius = o.wheelRadius ?? 0.35
         this.topSpeed = o.topSpeed ?? 30
-        this.accel = (TO_95 * this.topSpeed) / Math.max(0.1, o.acceleration ?? 8)
-        this.lock = ((o.steering ?? 32) * Math.PI) / 180
+        this.accel = (TO_95 * this.topSpeed) / Math.max(0.1, o.acceleration ?? 4)
+        this.lock = ((o.steering ?? 40) * Math.PI) / 180
         this.grip = o.grip ?? 1
         const d = o.drivenWheels ?? "rear"
         this.driven = d === "front" ? [0, 1] : d === "rear" ? [2, 3] : [0, 1, 2, 3]
@@ -193,14 +193,15 @@ export class CarCore<A> implements Driver {
 
     /**
      * Wheel `i` on a chassis at `at` turned by `q`: its middle and its
-     * rotation, `ahead` seconds past the last step, rolled on by as much.
+     * rotation, `since` seconds past the last step, rolled on by as much
+     * (back, when it is drawn before the step).
      */
-    private wheelOn(i: number, at: Readonly<Vec3>, q: Quat, ahead: number): { at: Vec3, rotation: Quat } {
+    private wheelOn(i: number, at: Readonly<Vec3>, q: Quat, since: number): { at: Vec3, rotation: Quat } {
         const c = this.corners[i]!
         const len = this.controller.wheelSuspensionLength(i) ?? REST
         const p = rotate(q, [c[0], c[1] - len, c[2]])
         const steer = i < 2 ? this.steerNow : 0
-        const spin = this.spinFrom[i]! + (this.controller.wheelRotation(i) ?? 0) + this.spinRate[i]! * ahead
+        const spin = this.spinFrom[i]! + (this.controller.wheelRotation(i) ?? 0) + this.spinRate[i]! * since
         return { at: [p[0] + at[0], p[1] + at[1], p[2] + at[2]], rotation: mul(mul(q, axisAngle([0, 1, 0], steer)), axisAngle([1, 0, 0], spin)) }
     }
 
@@ -218,10 +219,10 @@ export class CarCore<A> implements Driver {
         })
     }
 
-    carried(at: readonly number[], rotation: Quat, ahead: number, out: Drawn<Vec3, A>[]): void {
+    carried(at: readonly number[], rotation: Quat, since: number, out: Drawn<Vec3, A>[]): void {
         if (this.wheelActors === null) return
         for (let i = 0; i < 4; i++) {
-            const w = this.wheelOn(i, at as unknown as Vec3, rotation, ahead)
+            const w = this.wheelOn(i, at as unknown as Vec3, rotation, since)
             out.push({ actor: this.wheelActors[i]!, at: w.at, rotation: w.rotation })
         }
     }

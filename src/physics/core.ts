@@ -219,19 +219,6 @@ interface Handlers {
 const MAX_STEPS_PER_FRAME = 4
 /** Actors are drawn between steps once frames are this much shorter than a step, smoothed: a 90 Hz screen and up, at 60 steps a second. */
 const BLEND_BELOW = 0.8
-/** Sweeps a drawing ahead makes: one per surface it already touches, then the move. */
-const AHEAD_SWEEPS = 3
-/**
- * A millimetre: a drawing this little ahead of its step is not swept, and a
- * sweep that meets something this soon has found what it already touches.
- */
-const AHEAD_NEAR = 1e-3
-
-/** `move` less its part into a surface whose normal `out` faces toward the mover. */
-function slideOff(move: EVec, out: EVec): EVec {
-    const into = -dot(move, out)
-    return into > 0 ? add(move, scale(out, into)) : move
-}
 
 /**
  * The gap a character's controller keeps from everything it touches, in
@@ -306,9 +293,10 @@ export interface Driver {
     restored(alive: boolean, state: number[] | undefined): void
     /**
      * The models it carries (a car's wheels), placed on its chassis where the
-     * chassis is drawn, `ahead` seconds past the last step, onto `out`.
+     * chassis is drawn, `since` seconds past the last step (negative between
+     * steps, which are drawn before it), onto `out`.
      */
-    carried?(at: readonly number[], rotation: any, ahead: number, out: Drawn<any, any>[]): void
+    carried?(at: readonly number[], rotation: any, since: number, out: Drawn<any, any>[]): void
 }
 
 export class WorldCore<V extends readonly number[], R, A> {
@@ -493,7 +481,7 @@ export class WorldCore<V extends readonly number[], R, A> {
     markFresh(colliderHandle: number): void {
         this.fresh.add(colliderHandle)
         const w = this.byCollider.get(colliderHandle)
-        if (w !== undefined) this.snapped.add(w)
+        if (w !== undefined) this.snapped.set(w, w.placement())
         this.stillEpoch++
         this.raw.propagateModifiedBodyPositionsToColliders()
     }
@@ -904,15 +892,19 @@ export class WorldCore<V extends readonly number[], R, A> {
     /** The frame's length, smoothed, seconds: whether frames come faster than steps. */
     private frameSeconds = 0
     /**
-     * Whether actors are drawn on frames between steps, ahead of the last
-     * one. Only when frames come faster than steps (a 120 Hz screen): at
-     * 60 Hz each frame steps once and draws the step it took, as without this.
+     * Whether actors are drawn on frames between steps, between where the
+     * last two steps left them. Only when frames come faster than steps (a
+     * 120 Hz screen): at 60 Hz each frame steps once and draws the step it
+     * took, as without this.
      */
     private blending = false
     /** Each placed thing's placement after the step before last and after the last one. */
     private poses = new Map<Thing<V, R, A>, { from: Placement<V, A>, to: Placement<V, A> }>()
-    /** Things put somewhere by hand since the last step: drawn there, not slid there. */
-    private snapped = new Set<Thing<V, R, A>>()
+    /**
+     * Things put somewhere by hand since the last step, and where: drawn
+     * there, not slid there, and the next step draws them on from there.
+     */
+    private snapped = new Map<Thing<V, R, A>, Placement<V, A> | null>()
 
     /**
      * A frame: advances by its time, then puts every actor where it is to be
@@ -945,7 +937,7 @@ export class WorldCore<V extends readonly number[], R, A> {
                 p.from = now
                 p.to = now
             }
-            this.drawn(w, this.ahead(w, p, t), t * this.stepSeconds, list)
+            this.drawn(w, this.between(p, t), (t - 1) * this.stepSeconds, list)
         }
         if (list.length > 0) this.dim.place(list)
     }
@@ -953,97 +945,25 @@ export class WorldCore<V extends readonly number[], R, A> {
     /**
      * What drawing `w` at `p` puts on screen, onto `out`: its own actor, and
      * the models a car carries, on the chassis as drawn, so a wheel never
-     * lags its car. `ahead` is how far past the last step `p` is, seconds.
+     * lags its car. `since` is how far past the last step `p` is, seconds:
+     * between steps it is drawn before it, so it is negative.
      */
-    drawn(w: Thing<V, R, A>, p: Placement<V, A>, ahead: number, out: Drawn<V, A>[]): void {
+    drawn(w: Thing<V, R, A>, p: Placement<V, A>, since: number, out: Drawn<V, A>[]): void {
         if (p.actor !== null) out.push(p as Drawn<V, A>)
-        this.carriers.get(w)?.carried?.(p.at, p.rotation, ahead, out)
+        this.carriers.get(w)?.carried?.(p.at, p.rotation, since, out)
     }
 
     /**
-     * Where a thing is drawn `t` of a step past its last one: on along how it
-     * moves now (a character's walk as asked this frame), so a key shows on
-     * the frame it is pressed, slid along what it touches and stopped at what
-     * it would reach, so no frame draws it deeper into anything than the
-     * engine put it. The next step can still disagree by up to `t` of a
-     * step's travel: a key let go on a frame that steps, after a frame drawn
-     * half a step on, settles it back by that half step (5 cm at 6 m/s and
-     * 120 Hz). Drawing between the last two steps instead, which never
-     * disagrees but shows everything a step late, is `between` in its place.
-     */
-    private ahead(w: Thing<V, R, A>, p: { from: Placement<V, A>, to: Placement<V, A> }, t: number): Placement<V, A> {
-        const d = this.dim
-        const rotation = p.to.rotation === null || p.from.rotation === null ? p.to.rotation : d.blend(p.from.rotation, p.to.rotation, 1 + t)
-        let move = scale(w instanceof CharacterCore ? w.leading() : toE(d, w.velocity), t * this.stepSeconds)
-        // Under a millimetre ahead (a box settling in a stack) nothing it could
-        // be drawn into shows, and the sweep is most of a frame's drawing cost.
-        if (dot(move, move) > AHEAD_NEAR * AHEAD_NEAR) {
-            // The same sweep a character's controller makes: what it already
-            // touches (a floor it slides on) it slides along, and what it
-            // would reach (a wall) it stops at, so no frame draws it inside.
-            const c = this.raw.getCollider(w.colliderHandle)
-            const from = c.translation(), turn = c.rotation()
-            const skip = this.aheadSkip
-            skip.clear()
-            skip.add(w.colliderHandle)
-            // What it touches comes from the engine's own contacts: sweeping a
-            // shape along a floor it rests on costs four times a sweep through air.
-            move = this.slideAlongContacts(w.colliderHandle, move, skip)
-            for (let i = 0; i < AHEAD_SWEEPS; i++) {
-                // Leaving out only itself needs no call back into JS per candidate.
-                const hit = this.raw.castShape(from, turn, d.e(move), c.shape, 0, 1, true,
-                    this.r.QueryFilterFlags.EXCLUDE_SENSORS, undefined, c, undefined, skip.size === 1 ? undefined : (other: any) => !skip.has(other.handle))
-                if (hit === null || hit === undefined) break
-                // Whether it already touches what the sweep met: a sweep from
-                // a touching start reports neither its normal nor its time
-                // well, and a contact query gets both right.
-                const contact = c.contactCollider(hit.collider, AHEAD_NEAR)
-                if (contact === null || contact === undefined) {
-                    move = scale(move, hit.time_of_impact)
-                    break
-                }
-                // Touching something the engine keeps no contact with yet: the
-                // step just brought them together. normal2 is the other's own,
-                // facing out of it toward this one.
-                move = slideOff(move, d.a(contact.normal2))
-                skip.add(hit.collider.handle)
-                if (i === AHEAD_SWEEPS - 1) move = zero(d)
-            }
-        }
-        const by = fromE(d, move)
-        const at = p.to.at.map((x, i) => x + by[i]!) as unknown as V
-        return { actor: p.to.actor, at, rotation }
-    }
-
-    /** Colliders a drawing ahead leaves out of its sweep, reused across frames. */
-    private readonly aheadSkip = new Set<number>()
-
-    /**
-     * `move` with what would take it into anything it is in contact with now
-     * taken out, each of those added to `skip`.
-     */
-    private slideAlongContacts(handle: number, move: EVec, skip: Set<number>): EVec {
-        const np = this.raw.narrowPhase
-        const near: number[] = []
-        np.contactPairsWith(handle, (other: number) => { near.push(other) })
-        for (const other of near) {
-            np.contactPair(handle, other, this.raw.bodies, (m: any, flipped: boolean) => {
-                if (m.numContacts() === 0) return
-                // The normal points from the pair's first collider to its
-                // second; facing out of the other toward this one, it is that
-                // when this one is second.
-                const n = this.dim.a(m.normal())
-                move = slideOff(move, flipped ? n : scale(n, -1))
-                skip.add(other)
-            })
-        }
-        return move
-    }
-
-    /**
-     * Where a thing is drawn `t` of a step past its last one, the other way:
-     * between where the last two steps left it. Never anywhere the engine has
-     * not put it, but a step behind, which a key shows a frame later.
+     * Where a thing is drawn `t` of a step past its last one: between where
+     * the last two steps left it, so a step behind the engine, which a key
+     * shows a frame later at 120 Hz. Every frame is somewhere the engine
+     * moved it through, so nothing is drawn inside what it never entered,
+     * and nothing is drawn where the next step then pulls it back from.
+     * Drawing ahead of the last step along how a thing moved (runtime 1.3.0
+     * and before) showed a key on its frame, but froze a car pushing a crate
+     * on every frame between steps, since its sweep met the crate it was
+     * pushing, and a 120 Hz screen saw the car and the camera on it doubled
+     * (Sai, Crate Yard, 6 Nov 2026).
      */
     private between(p: { from: Placement<V, A>, to: Placement<V, A> }, t: number): Placement<V, A> {
         const d = this.dim
@@ -1060,7 +980,9 @@ export class WorldCore<V extends readonly number[], R, A> {
             if (p === null) continue
             seen.add(w)
             const had = this.poses.get(w)
-            this.poses.set(w, { from: had === undefined || this.snapped.has(w) ? p : had.to, to: p })
+            // Put somewhere by hand, it goes on from where it was put; new, from where it is.
+            const put = this.snapped.get(w)
+            this.poses.set(w, { from: put ?? (had === undefined ? p : had.to), to: p })
         }
         for (const w of this.poses.keys()) if (!seen.has(w)) this.poses.delete(w)
         this.snapped.clear()
@@ -1454,8 +1376,6 @@ export class CharacterCore<V extends readonly number[], R, A> {
     private wish: EVec
     /** How it moved over the last step, in metres a second. */
     private moved: EVec
-    /** The walk the last step took, along the ground, metres a second. */
-    private walked: EVec
     /** A shove along the ground from `addVelocity`, metres a second: kept in the air, fading on the ground. */
     private shove: EVec
     private controller: any
@@ -1473,7 +1393,6 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.o = o
         this.wish = zero(d)
         this.moved = zero(d)
-        this.walked = zero(d)
         this.shove = zero(d)
         this.radius = o.radius ?? c.radius
         this.height = Math.max(o.height ?? c.height, this.radius * 2)
@@ -1559,16 +1478,6 @@ export class CharacterCore<V extends readonly number[], R, A> {
         return g === 0 ? this.wish : sub(this.wish, scale(this.d.up, dot(this.wish, this.d.up)))
     }
 
-    /**
-     * How it is moving for drawing ahead of its step, metres a second: the
-     * last step's motion with the walk swapped for the one asked for since,
-     * so a key pressed or let go shows on the frame it was, not a step later.
-     */
-    leading(): EVec {
-        const g = dot(this.d.a(this.world.raw.gravity), this.d.up)
-        return add(this.moved, sub(this.along(g), this.walked))
-    }
-
     walk(velocity: V): void {
         if (this.gone) throw new Error("[oj] this character was destroyed")
         this.wish = toE(this.d, velocity)
@@ -1621,7 +1530,6 @@ export class CharacterCore<V extends readonly number[], R, A> {
         // Walking is along the ground: up and down are a jump's and gravity's.
         // With no gravity there is no ground, and it walks every way.
         const along = this.along(g)
-        this.walked = along
         let wish = scale(add(add(along, this.shove), scale(d.up, this.fall)), dt)
         const at = d.a(rb.nextTranslation())
         // Riding: what it stands on carries it. What that is comes from here,
@@ -1744,7 +1652,6 @@ export class CharacterCore<V extends readonly number[], R, A> {
         this.world.markFresh(this.colliderHandle)
         this.fall = 0
         this.moved = zero(this.d)
-        this.walked = zero(this.d)
         this.shove = zero(this.d)
         this.isGrounded = this.groundUnder(centre) !== -1
         this.touching.clear()

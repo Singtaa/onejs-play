@@ -94,7 +94,7 @@ export type {
 export { useWorld } from "./physics3d/use-world"
 export { createWorld, shape, WORLD_DEFAULTS } from "./physics3d/world"
 export type {
-    World, WorldOptions, Body, Character, Shape, Hit, Filter, Layer, BodyContact,
+    World, WorldOptions, Body, Character, Car, CarOptions, CarWheel, Shape, Hit, Filter, Layer, BodyContact,
     BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, MeshOptions, MeshSource, Place, Places, Motions,
     BoxShapeOptions, SphereShapeOptions, CapsuleShapeOptions, ClearSpotOptions, SlideOptions, Slid, SightOptions, Sight,
 } from "./physics3d/world"

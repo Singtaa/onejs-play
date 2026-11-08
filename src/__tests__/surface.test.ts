@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import * as oj from "../index"
 import { Vector2 } from "../vec"
+import type { Car, CarOptions, CarWheel, World } from "../index"
 
 /**
  * Names onejs-react exports that the container must not expose, because their
@@ -148,5 +149,12 @@ describe("the shader language is reachable from oj", () => {
         expect(c.glsl).toContain("sin(")
         // No instruction buffer: OneJS draws every program compiled.
         expect(c.data).toBeUndefined()
+    })
+
+    it("names the car's types, so a game can annotate what world.car returns", () => {
+        // A type-only check: tsc fails here when oj stops exporting these names.
+        const make: (world: World, options: CarOptions) => Car = (world, options) => world.car(options)
+        const firstWheel: (car: Car) => CarWheel | undefined = (car) => car.wheels[0]
+        expect([typeof make, typeof firstWheel]).toEqual(["function", "function"])
     })
 })

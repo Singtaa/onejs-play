@@ -1,8 +1,8 @@
 /**
  * How a world's actors are drawn frame by frame: at the step they took when
- * frames come once a step, and ahead of it along how they move when frames
- * come faster, so a 120 Hz screen sees motion on every frame, never inside a
- * wall the engine has not put them in.
+ * frames come once a step, and between the last two steps when frames come
+ * faster, so a 120 Hz screen sees motion on every frame, never inside a wall
+ * the engine has not put them in and never pulled back by the next step.
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -55,7 +55,7 @@ const restorePlacer = () => setActorPlacer((list) => { for (const p of list) p.a
 /** How far the drawing moved each frame, skipping the warm-up while the frame length settles. */
 const moves = (xs: number[]) => xs.slice(60).map((x, i, a) => i === 0 ? NaN : x - a[i - 1]!).slice(1)
 
-describe("drawing ahead of the step", () => {
+describe("drawing between steps", () => {
     it("moves an actor on every frame at 120 Hz, the same distance each", async () => {
         const m = moves(await drawn(120, 240))
         expect(m.every((d) => Number.isFinite(d))).toBe(true)
@@ -84,24 +84,26 @@ describe("drawing ahead of the step", () => {
             if (i === 200) w.restore(saved!)
         })
         const m = moves(xs)
-        // The rewind jumps it 5 m back in one frame; anything shorter backwards is a slide.
-        expect(m.filter((d) => d < -0.01 && d > -4.9)).toEqual([])
+        // The rewind jumps it 5 m back in one frame, less the step the frame
+        // before was drawn behind; anything shorter backwards is a slide.
+        expect(m.filter((d) => d < -0.01 && d > -4.8)).toEqual([])
     })
 
-    it("draws it ahead of where the last step left it, not behind", async () => {
+    it("draws it between the last two steps: never past the last, never more than a step behind", async () => {
         const at: number[] = []
         const xs = await drawn(120, 240, (_w, b, i) => { if (i > 0) at.push(b.position[0]) })
-        let ahead = 0
+        let behind = 0
         for (let i = 60; i < 239; i++) {
-            // Drawn after frame i; the body as it stood before frame i + 1.
-            expect(xs[i]!).toBeGreaterThanOrEqual(at[i]! - 1e-9)
-            if (xs[i]! > at[i]! + 0.01) ahead++
+            // Drawn after frame i; the body as it stood before frame i + 1. A step is 10 cm at 6 m/s.
+            expect(xs[i]!).toBeLessThanOrEqual(at[i]! + 1e-5)
+            expect(xs[i]!).toBeGreaterThanOrEqual(at[i]! - 0.1 - 1e-5)
+            if (xs[i]! < at[i]! - 0.01) behind++
         }
-        expect(ahead).toBeGreaterThan(50)
+        expect(behind).toBeGreaterThan(50)
     })
 
-    it("never draws a ball deeper into a wall thinner than a frame's lead than the engine put it", async () => {
-        // 6 m/s at 120 Hz leads by 5 cm; the wall is 2 cm. Twenty distances,
+    it("never draws a ball deeper into a thin wall than either of the last two steps put it", async () => {
+        // 6 m/s at 120 Hz is 5 cm a frame; the wall is 2 cm. Twenty distances,
         // so the frames fall at every phase of the approach.
         const actor = {}
         const seen = tracking(actor)
@@ -113,11 +115,15 @@ describe("drawing ahead of the step", () => {
                 w.box({ at: [face + 0.01, 0, 0], size: [0.02, 4, 4] })
                 const b = w.sphere({ dynamic: true, actor, radius: 0.5 })
                 b.velocity = [6, 0, 0]
+                // How deep each of the last two steps left it.
+                const depths = [0, 0]
                 for (let i = 0; i < 90; i++) {
                     seen.last = NaN
+                    const was = b.position[0]
                     w.frame(1 / 120)
+                    if (b.position[0] !== was) depths.push(Math.max(0, b.position[0] + 0.5 - face))
                     if (!Number.isFinite(seen.last)) continue
-                    const body = Math.max(0, b.position[0] + 0.5 - face)
+                    const body = Math.max(...depths.slice(-2))
                     const drawnIn = seen.last + 0.5 - face
                     if (drawnIn > -0.05) near++
                     extra = Math.max(extra, drawnIn - body)
@@ -183,7 +189,8 @@ describe("drawing ahead of the step", () => {
                 const b = w.box({ dynamic: true, actor, at: [0, 0.5 + drop, 0], friction: 0 })
                 b.velocity = [6, 0, 0]
                 for (let i = 0; i < 60; i++) w.frame(1 / 120)
-                for (let i = 1; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeCloseTo(0.05, 3)
+                // From the third frame: until the first step, it is drawn where it began.
+                for (let i = 3; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeCloseTo(0.05, 3)
                 w.dispose()
             } finally {
                 restorePlacer()
@@ -216,7 +223,8 @@ describe("drawing ahead of the step", () => {
                 expect(pressed).toBeGreaterThan(60)
                 expect(deepest).toBeLessThan(1e-4)
                 // Along the wall it is drawn moving on every frame, the one after it meets it too.
-                for (let i = 1; i < zs.length; i++) expect(zs[i]! - zs[i - 1]!).toBeCloseTo(along / 120, 3)
+                // From the third frame: until the first step, it is drawn where it began.
+                for (let i = 3; i < zs.length; i++) expect(zs[i]! - zs[i - 1]!).toBeCloseTo(along / 120, 3)
                 w.dispose()
             } finally {
                 restorePlacer()
@@ -224,10 +232,9 @@ describe("drawing ahead of the step", () => {
         }
     })
 
-    it("shows a character's walk pressed or let go on that frame, not a step later", async () => {
+    it("shows a character's walk pressed or let go within two 120 Hz frames, and never pulls it back", async () => {
         const actor = {}
         const seen = tracking(actor)
-        const phases = new Set<boolean>()
         try {
             for (const press of [true, false]) for (const change of [200, 201]) {
                 const w = await createWorld() as any
@@ -241,26 +248,20 @@ describe("drawing ahead of the step", () => {
                     drawnAt.push(seen.last)
                     body.push(c.position[0])
                 }
-                const moved = drawnAt[change]! - drawnAt[change - 1]!
+                // The step after the change takes the new walk, and the frame
+                // after that step draws it: within two frames at 120 Hz.
+                const moves = drawnAt.slice(change).map((x, i, a) => i === 0 ? x - drawnAt[change - 1]! : x - a[i - 1]!)
                 if (press) {
-                    // Standing, then walking: it moves on the frame the key went
-                    // down, by a step's walk or, between steps, half of one.
-                    expect(moved).toBeGreaterThan(0.04)
+                    expect(Math.max(moves[0]!, moves[1]!, moves[2]!)).toBeGreaterThan(0.04)
+                    for (let i = 3; i < moves.length; i++) expect(moves[i]!).toBeCloseTo(0.05, 3)
                 } else {
-                    // At 120 Hz every other frame steps, so the frame of the
-                    // change steps when the one two before it did.
-                    const stepping = body[change - 2] !== body[change - 3]
-                    phases.add(stepping)
-                    // Between steps it stays where it was drawn. On a step the
-                    // frame before drew the half step it would have walked, and
-                    // it settles back by that, once.
-                    if (stepping) expect(moved).toBeCloseTo(-0.05, 3)
-                    else expect(moved).toBeCloseTo(0, 6)
+                    // Let go, it slows to a stop on its own path: no frame
+                    // draws it back toward where it was.
+                    for (const m of moves) expect(m).toBeGreaterThanOrEqual(-1e-9)
+                    for (let i = 3; i < moves.length; i++) expect(moves[i]!).toBeCloseTo(0, 6)
                 }
-                for (let i = change + 1; i < 210; i++) expect(drawnAt[i]! - drawnAt[i - 1]!).toBeGreaterThanOrEqual(press ? 0.04 : -1e-9)
                 w.dispose()
             }
-            expect(phases.size).toBe(2)
         } finally {
             restorePlacer()
         }

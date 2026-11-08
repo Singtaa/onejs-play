@@ -436,3 +436,56 @@ describe("input.pointerType through the page", () => {
         expect(b(createContainerInput()).GetPointerType()).toBe("mouse")
     })
 })
+
+// Tachi, 7 Nov (finding 23): Unity's WebGL player places UI Toolkit's press at the last
+// mousemove, so a press with none before it reached Unity's corner, (0, 539) on a 960 by 540
+// page, and a press away from the last move reached the element under that move. Measured
+// in ojplay test on runtime 1.3.2; the same page with this dispatch pressed where it was sent.
+describe("a press Unity has not seen the mouse move to", () => {
+    class FakeMouseEvent {
+        constructor(public type: string, public init: Record<string, unknown>) {}
+    }
+    function setup() {
+        const view = fakeView({ MouseEvent: FakeMouseEvent })
+        const sent: FakeMouseEvent[] = []
+        const target = { getBoundingClientRect: () => ({ left: 0, top: 0 }), dispatchEvent: (e: FakeMouseEvent) => { sent.push(e) } }
+        createDomInputAdapter(createContainerInput().sink, { view, target })
+        return { view, sent }
+    }
+    const mouse = (type: string, x: number, y: number) => ({ pointerType: type, pointerId: 1, clientX: x, clientY: y, screenX: x + 5, screenY: y + 7, button: 0, buttons: 1 })
+
+    it("moves Unity's mouse to the press first, on a fresh page and after a move elsewhere", () => {
+        const { view, sent } = setup()
+        view.fire("pointerdown", mouse("mouse", 300, 200))
+        expect(sent.map((e) => [e.type, e.init.clientX, e.init.clientY, e.init.screenX, e.init.bubbles])).toEqual([["mousemove", 300, 200, 305, true]])
+
+        view.fire("pointermove", { ...mouse("mouse", 600, 350), button: -1, buttons: 0 })
+        view.fire("pointerdown", mouse("pen", 100, 100))
+        expect(sent.map((e) => [e.init.clientX, e.init.clientY])).toEqual([[300, 200], [100, 100]])
+    })
+
+    it("sends nothing for a press where the mouse last moved, which is every real mouse after its first move", () => {
+        const { view, sent } = setup()
+        view.fire("pointermove", { ...mouse("mouse", 600, 350), button: -1, buttons: 0 })
+        view.fire("pointerdown", mouse("mouse", 600, 350))
+        view.fire("pointerup", mouse("mouse", 600, 350))
+        view.fire("pointerdown", mouse("mouse", 600, 350))
+        expect(sent).toEqual([])
+    })
+
+    it("leaves a touch to Unity's own touch path, which presses where the finger is", () => {
+        const { view, sent } = setup()
+        view.fire("pointerdown", mouse("touch", 50, 60))
+        expect(sent).toEqual([])
+        // And a finger's moves are not where the mouse is.
+        view.fire("pointermove", mouse("touch", 70, 80))
+        view.fire("pointerdown", mouse("mouse", 70, 80))
+        expect(sent.map((e) => [e.init.clientX, e.init.clientY])).toEqual([[70, 80]])
+    })
+
+    it("sends nothing without a target to tell, as on a page with no canvas", () => {
+        const view = fakeView({ MouseEvent: FakeMouseEvent })
+        createDomInputAdapter(createContainerInput().sink, { view })
+        expect(() => view.fire("pointerdown", mouse("mouse", 1, 2))).not.toThrow()
+    })
+})

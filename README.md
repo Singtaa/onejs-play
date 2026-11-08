@@ -55,7 +55,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `play.ts` | Container-side: where the site is, and the token proving a real session |
 | `sandbox.ts` | Container-side: keeps a game bundle off the runtime's globals |
 | `input.ts` | Container-side: the input backend onejs-unity reads through, with the pointer lock's state (asked in a press's frame, else on the next press) |
-| `adapter.ts` | Container-side: browser events into that backend, and the canvas's pointer lock (movement as delta while locked) |
+| `adapter.ts` | Container-side: browser events into that backend, the canvas's pointer lock (movement as delta while locked), and Unity's mouse moved to a press it saw no move to, since Unity presses UI Toolkit where the mouse last moved |
 | `standalone.ts` | Starting a runtime outside a container, which is what eject needs |
 | `hostinput.ts` | Outside a container: the real InputBridge with pointer reads converted to stage pixels; the lock is Unity's Cursor, through onejs-unity |
 
@@ -526,17 +526,15 @@ Things that are not obvious from the code:
 - **Actors follow in one crossing.** `syncActors` hands every moved body's
   placement to `ModelBridge.PlaceMany` as one `Float32Array`; an actor sits at
   its body's centre.
-- **Between steps, actors are drawn ahead.** When frames come faster than
-  steps (smoothed frame under 0.8 of a step), each frame draws every actor
-  `t` of a step past its last one along its velocity, a character along the
-  walk asked this frame (`leading`). It slides along what the engine says it
-  touches, then one sweep stops it short of what it would reach; a sweep that
-  meets something within a millimetre asks a contact query instead, since a
-  sweep from a touching start gets neither its time nor its normal right.
-  2.2 µs a moving body a frame on desktop Node, nothing under a millimetre
-  ahead. Without `fast` the engine itself puts a 6 m/s ball 8 cm into a wall
-  for a step; the drawing never goes deeper than it. `between` is the
-  interpolating alternative, one call away.
+- **Between steps, actors are drawn between the last two.** When frames come
+  faster than steps (smoothed frame under 0.8 of a step), each frame draws
+  every actor `t` of the way from where the step before last left it to where
+  the last one did: a step behind the engine, so a key shows one 120 Hz frame
+  later, and never anywhere the engine did not move it through. Until runtime
+  1.3.2 actors were drawn ahead of the last step along their velocity, swept
+  against what they would reach; a car pushing a crate met that crate on every
+  sweep and was held at its last step on every other frame, which a 120 Hz
+  screen saw doubled (`examples/crate-yard/drawing.test.ts`).
 - **A character rides what it stands on.** Only while something moves
   (`world.moving()`), a foot sphere swept down at the start of a step finds
   the body under it, before anything moves, and its motion over the step
@@ -549,9 +547,9 @@ Things that are not obvious from the code:
   along its length toward where it stopped (`parked`), re-anchored when
   pushed more than 2 cm. Its wheels are placed from the chassis after the step.
   Wheel models given as `wheels` are carried: wherever the world draws the
-  chassis (`WorldCore.drawn`), on a step or ahead of one, each wheel is put on
-  it there, rolled on by its last step's spin rate, so it never trails the
-  car. A chassis with wheel models and no model of its own is still drawn,
+  chassis (`WorldCore.drawn`), on a step or between two, each wheel is put on
+  it there, rolled back by its last step's spin rate for the time before the
+  step it is drawn at, so it never trails the car. A chassis with wheel models and no model of its own is still drawn,
   as a placement with a null actor that is never handed to the scene. They go
   with the car, destroyed or rewound away, as its chassis model does.
 - **Rotations are Unity's.** `rotation.ts` converts yaw, pitch and roll the way
