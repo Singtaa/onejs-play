@@ -136,6 +136,15 @@ export class TexImage {
     ready(): Promise<Texture> {
         return bake(this.node).ready
     }
+
+    /**
+     * The picture's bytes as Magerie stores them: RGBA, premultiplied, gamma
+     * encoded, row 0 at the top, `width * height * 4`. For a height read on
+     * the CPU (a terrain's vertices), or a test against Magerie's own.
+     */
+    pixels(): Promise<Uint8Array> {
+        return draw(plan(this.node, KERNELS, false), readBytes)
+    }
 }
 
 function isImage(v: unknown): v is TexImage {
@@ -205,6 +214,25 @@ function pixels(width: number, height: number, rgba: Uint8Array | readonly numbe
     return new TexImage(makeNode("pixels", "source", [], {}, width, height, options.tile === true, texture))
 }
 
+/** A half-float render texture's texels as 8-bit stored values, row 0 at the top. */
+async function readBytes(output: unknown): Promise<Uint8Array> {
+    const read = CS.OneJS.Lighting.TextureRead.Start(output)
+    for (let frames = 0; !read.Done; frames++) {
+        if (frames > 600) throw new Error("[oj] tex pixels: the GPU did not hand the texels back in 600 frames")
+        await new Promise<void>((resolve) => globalThis.requestAnimationFrame(() => resolve()))
+    }
+    if (read.Error) throw new Error(`[oj] tex pixels: ${read.Error}`)
+    const w: number = read.Width, h: number = read.Height
+    const texels = read.Texels
+    const out = new Uint8Array(w * h * 4)
+    for (let y = 0; y < h; y++) {
+        // Unity's row 0 is the bottom.
+        const from = (h - 1 - y) * w * 4, to = y * w * 4
+        for (let i = 0; i < w * 4; i++) out[to + i] = Math.min(255, Math.max(0, Math.floor(texels[from + i] * 255 + 0.5)))
+    }
+    return out
+}
+
 function bake(node: Node): Baked {
     const known = baked.get(node.id)
     if (known !== undefined) return known
@@ -214,7 +242,7 @@ function bake(node: Node): Baked {
     into.filterMode = T.FilterMode.Bilinear
     into.name = `tex ${node.op} ${node.id}`
     into.Create()
-    const ready = draw(plan(node, KERNELS), into).then(() => {
+    const ready = draw(plan(node, KERNELS), (output) => CS.UnityEngine.Graphics.Blit(output, into)).then(() => {
         // A mesh handed the texture before it was drawn copied it empty.
         CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
         return into as Texture

@@ -1,0 +1,8 @@
+{
+    "schema": 1,
+    "runtime": "1.7.0",
+    "name": "tex parity",
+    "author": "singtaa",
+    "description": "Draws Magerie's kernel-parity cases with tex and prints their bytes, for run.mjs to compare with the goldens.",
+    "entry": "index.tsx"
+}

@@ -140,13 +140,13 @@ function heaviestInline(node: Node, drawn: ReadonlySet<string>): Node | undefine
  * limits (8 textures, 64 uniforms, its node count) splits: its heaviest
  * inline input gets a pass of its own, and planning starts again.
  */
-export function plan(root: Node, kernels: Readonly<Record<string, Kernel>>): PassPlan[] {
+export function plan(root: Node, kernels: Readonly<Record<string, Kernel>>, delivered = true): PassPlan[] {
     const drawn = materialised(root)
     for (;;) {
         try {
             return topological(root)
                 .filter((n) => drawn.has(n.id) && n.kind !== "source")
-                .map((n) => recordPass(n, drawn, kernels, n.id === root.id))
+                .map((n) => recordPass(n, drawn, kernels, delivered && n.id === root.id))
         } catch (e) {
             if (!isLimit(e)) throw e
             let split: Node | undefined
@@ -171,10 +171,10 @@ const nextFrame = () => new Promise<void>((resolve) => globalThis.requestAnimati
 const COMPILE_FRAMES = 600
 
 /**
- * Draws the passes, the last into `into`, and frees the rest. Resolves once
- * `into` holds the picture.
+ * Draws the passes, hands the last one's output (a half-float render
+ * texture) to `finish`, and frees them all once it has done with it.
  */
-export async function draw(plans: readonly PassPlan[], into: unknown): Promise<void> {
+export async function draw<T>(plans: readonly PassPlan[], finish: (output: unknown) => T | Promise<T>): Promise<T> {
     const made = new Map<string, DrawnPass>()
     try {
         for (const p of plans) {
@@ -196,7 +196,7 @@ export async function draw(plans: readonly PassPlan[], into: unknown): Promise<v
             await nextFrame()
         }
         if (frames > 0) last.draw()
-        CS.UnityEngine.Graphics.Blit(last.texture, into)
+        return await finish(last.texture)
     } finally {
         for (const d of made.values()) d.dispose()
     }
