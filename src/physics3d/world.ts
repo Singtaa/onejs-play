@@ -243,7 +243,8 @@ export interface Car {
     /**
      * Held until the next call: throttle and steer from -1 to 1 (steer 1 is
      * right, throttle -1 brakes and then reverses), brake from 0 to 1.
-     * `drive(stick.y, stick.x)` once a frame from a stick; `drive(0, 0)` lets go.
+     * Once a frame from a stick, `drive(-stick.y, stick.x)`, since a stick's y
+     * is -1 at the top; from the keys, `drive(keys.y, keys.x)`. `drive(0, 0)` lets go.
      */
     drive(throttle: number, steer?: number, brake?: number): void
     /** Metres per second forward, negative in reverse. */
