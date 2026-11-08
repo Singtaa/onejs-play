@@ -5,8 +5,9 @@
  * early, for the files a game knows it will need before it can start (a
  * level's models, its music), so the first frame that uses them does not
  * wait. Pictures, models and fonts land in the same caches the loaders share, so a
- * later `useTexture` or `useModel` of the same name is instant; anything
- * else is fetched once so the browser holds it.
+ * later `useTexture` or `useModel` of the same name is instant; a light file's
+ * bytes are kept for `scene.bake`, which reads them rather than a texture;
+ * anything else is fetched once so the browser holds it.
  *
  *     await preload(["models/ship.glb", "music/"], (got, total) => setBar(got / total))
  *
@@ -17,9 +18,11 @@
  */
 
 import { loadTextAsync } from "onejs-unity/assets"
-import { assetInfo, assetNames, assetUrl, forgetFont, forgetTexture, loadFont, loadTexture } from "./asset"
+import { assetInfo, assetNames, assetUrl, forgetAssetBytes, forgetFont, forgetTexture, keepAssetBytes, loadFont, loadTexture } from "./asset"
 import { forgetModel, loadModel } from "./models"
 
+/** Read by scene.bake as bytes, never drawn: kept as they came rather than made a texture. */
+const LIGHT = /\.light\.png$/i
 const IMAGE = /\.(png|jpe?g|svg)$/i
 const MODEL = /\.glb$/i
 const FONT = /\.(ttf|otf)$/i
@@ -42,7 +45,8 @@ export async function preload(names: readonly string[], onProgress?: (got: numbe
     let got = 0
     onProgress?.(0, total)
     await Promise.all(files.map(async (name) => {
-        if (IMAGE.test(name)) await loadTexture(name)
+        if (LIGHT.test(name)) await keepAssetBytes(name)
+        else if (IMAGE.test(name)) await loadTexture(name)
         else if (MODEL.test(name)) await loadModel(name)
         else if (FONT.test(name)) await loadFont(name)
         else await loadTextAsync(assetUrl(name))
@@ -65,7 +69,8 @@ export async function preload(names: readonly string[], onProgress?: (got: numbe
  */
 export async function unload(names: readonly string[]): Promise<void> {
     await Promise.all(preloadNames(names).map(async (name) => {
-        if (IMAGE.test(name)) await forgetTexture(name)
+        if (LIGHT.test(name)) forgetAssetBytes(name)
+        else if (IMAGE.test(name)) await forgetTexture(name)
         else if (MODEL.test(name)) await forgetModel(name)
         else if (FONT.test(name)) await forgetFont(name)
     }))

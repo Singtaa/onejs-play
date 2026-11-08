@@ -553,6 +553,25 @@ export async function loadAssetBytes(name: string): Promise<Uint8Array> {
     return out
 }
 
+/** Light files preload fetched, as bytes, for `scene.bake` to read rather than fetch again; until unload lets them go. */
+const keptBytes = new Map<string, Promise<Uint8Array>>()
+
+/** Fetches `name`'s bytes and keeps them for keptAssetBytes. A failed fetch keeps nothing. */
+export function keepAssetBytes(name: string): Promise<Uint8Array> {
+    let bytes = keptBytes.get(name)
+    if (bytes === undefined) {
+        bytes = loadAssetBytes(name)
+        keptBytes.set(name, bytes)
+        bytes.catch(() => { if (keptBytes.get(name) === bytes) keptBytes.delete(name) })
+    }
+    return bytes
+}
+
+/** `name`'s bytes as preload kept them, or null when it did not. */
+export const keptAssetBytes = (name: string): Promise<Uint8Array> | null => keptBytes.get(name) ?? null
+
+export const forgetAssetBytes = (name: string) => { keptBytes.delete(name) }
+
 /**
  * Where one of this game's files is on disk, which only a Unity project has,
  * or null where it has an address to fetch instead. For a reader that can

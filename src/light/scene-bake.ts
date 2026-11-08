@@ -11,7 +11,7 @@
  */
 
 import type { Bake, BakeOptions, BakeResult, Model } from "../models"
-import { assetShipped, loadAssetBytes } from "../asset"
+import { assetShipped, keptAssetBytes, loadAssetBytes } from "../asset"
 import { AUTO_DETAIL, DETAIL_FLOOR, MAX_PAGES } from "./atlas"
 import { bakeOptions, beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./bake"
 import { tileBudget } from "./budget"
@@ -76,10 +76,10 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
     // Each name this scene baked, offered to the host's bakeAgain until the scene goes.
     const offered = new Map<string, () => void>()
 
-    // A named light file's bytes, or null when the cart does not have it.
+    // A named light file's bytes, as preload kept them or fetched now, or null when the cart does not have it.
     const readNamed = async (name: string): Promise<SavedFile> => {
         if (assetShipped(name) === false) return readSaved(null)
-        return readSaved(await loadAssetBytes(name).catch(() => null))
+        return readSaved(await (keptAssetBytes(name) ?? loadAssetBytes(name)).catch(() => null))
     }
 
     // `again`: the host's Bake again, which bakes past a saved file, current or not.

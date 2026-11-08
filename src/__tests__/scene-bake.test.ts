@@ -10,6 +10,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { createScene, type BakeOptions } from "../models"
+import { preload, unload } from "../preload"
 import { createRuntime } from "../runtime"
 import { setWasmModule } from "../wasm"
 import { RAPIER_VERSION } from "../physics3d/rapier.version"
@@ -576,6 +577,24 @@ describe("scene.bake with a name", () => {
         expect(saved.actors[0]![0]).toBe("scene.mesh")
         expect(saved.layout.atlas[0]).toBe(of("BeginBake")[0]![4])
         expect(of("LightFile").length).toBe(1)
+    })
+
+    // preload made a light file a texture, which scene.bake never reads, and the bake fetched it again (review P5).
+    it("reads a light file preload fetched, rather than fetching it again", async () => {
+        served.set(NAME, await bakeAndSave([0, 3]))
+        const s = again()
+        room(s, [0, 3])
+        fetched = []
+        await preload([NAME])
+        expect(fetched).toHaveLength(1)
+        await s.bake(NAME).done
+        expect(fetched).toHaveLength(1)
+        expect(of("LoadLight")).toHaveLength(1)
+        expect(of("LoadImage")).toEqual([])
+        // Let go, it is fetched again.
+        await unload([NAME])
+        await s.bake(NAME).done
+        expect(fetched).toHaveLength(2)
     })
 
     it("loads the file when it was baked for this scene, and bakes nothing", async () => {
