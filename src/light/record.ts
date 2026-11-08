@@ -212,29 +212,35 @@ export function matches(saved: LightRecord, now: LightRecord): boolean {
 }
 
 const place = (r: ActorRow) => `[${r[2]}, ${r[3]}, ${r[4]}]`
-const sameTransform = (a: ActorRow, b: ActorRow) => a[0] === b[0] && a.slice(2).every((x, i) => x === b[i + 2])
-const sameRow = (a: ActorRow, b: ActorRow) => compareRows(a, b) === 0
+/** A row as a key: the whole row, or its model and transform without the hash. */
+const rowKey = (r: ActorRow) => JSON.stringify(r)
+const transformKey = (r: ActorRow) => JSON.stringify([r[0], ...r.slice(2)])
 
 /**
  * The first way `now` differs from `saved`, in the words of the console line,
  * or null when they are the same scene. In order: the baker, the static actors
  * (a model whose file changed, one added, moved or gone), then the sun, the
- * ambient and the options.
+ * ambient and the options. Keyed rather than compared pairwise, since it runs
+ * on every load of a named file and a scatter makes thousands of rows.
  */
 export function difference(saved: LightRecord, now: LightRecord): string | null {
     if (saved.baker !== now.baker) return "the baker has changed since it was saved"
-    const left = saved.actors.filter((r) => !now.actors.some((n) => sameRow(n, r)))
-    const added = now.actors.filter((r) => !saved.actors.some((s) => sameRow(s, r)))
+    const savedRows = new Set(saved.actors.map(rowKey)), nowRows = new Set(now.actors.map(rowKey))
+    const left = saved.actors.filter((r) => !nowRows.has(rowKey(r)))
+    const added = now.actors.filter((r) => !savedRows.has(rowKey(r)))
+    const leftTransforms = new Set(left.map(transformKey))
     for (const r of added) {
         // Standing where a saved one stood, with other bytes: the model's file changed.
-        if (left.some((s) => sameTransform(s, r))) return `${r[0]} changed`
+        if (leftTransforms.has(transformKey(r))) return `${r[0]} changed`
     }
+    const addedTransforms = new Set(added.map(transformKey))
     for (const r of added) {
-        const was = left.find((s) => s[0] === r[0] && !added.some((a) => sameTransform(a, s)))
+        const was = left.find((s) => s[0] === r[0] && !addedTransforms.has(transformKey(s)))
         if (was !== undefined) return place(was) === place(r) ? `${r[0]} at ${place(r)} turned or was scaled` : `${r[0]} moved from ${place(was)} to ${place(r)}`
         return `${r[0]} at ${place(r)} is not in it`
     }
-    for (const r of left) if (!now.actors.some((n) => n[0] === r[0] && sameTransform(n, r))) return `${r[0]} at ${place(r)} is no longer there`
+    const nowTransforms = new Set(now.actors.map(transformKey))
+    for (const r of left) if (!nowTransforms.has(transformKey(r))) return `${r[0]} at ${place(r)} is no longer there`
     if (JSON.stringify(saved.sun) !== JSON.stringify(now.sun)) return now.sun === null ? "the sun is out" : saved.sun === null ? "the sun is up" : "the sun changed"
     if (JSON.stringify(saved.ambient) !== JSON.stringify(now.ambient)) return "the ambient light changed"
     for (const k of OPTION_NAMES) if (saved[k] !== now[k]) return `its ${k} changed from ${saved[k]} to ${now[k]}`

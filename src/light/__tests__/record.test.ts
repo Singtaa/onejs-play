@@ -47,6 +47,17 @@ describe("a light record", () => {
         expect(difference(saved, recordOf(scene([...yard, actor("crate.glb", 2)], { sun: null })))).toBe("crate.glb at [2, 0, 0] is not in it")
     })
 
+    it("compares a scatter's thousands of rows in linear time, since every load of a named file asks", () => {
+        // 20,000 copies: the pairwise comparison this replaced took 19 s here for the two, so the bound fails it by far.
+        const copies = Array.from({ length: 20000 }, (_, i) => actor("grass.glb", i % 200, { position: [i % 200, 0, Math.floor(i / 200)] }))
+        const saved = recordOf(scene(copies))
+        const moved = recordOf(scene([...copies.slice(1), actor("grass.glb", 0, { position: [0, 0, 999] })]))
+        const began = performance.now()
+        expect(difference(saved, recordOf(scene(copies)))).toBe(null)
+        expect(difference(saved, moved)).toBe("grass.glb moved from [0, 0, 0] to [0, 0, 999]")
+        expect(performance.now() - began).toBeLessThan(1000)
+    })
+
     it("fingerprints every input, so a file that differs only in the sun, the ambient or an option does not match", () => {
         const saved = recordOf(scene(yard))
         for (const over of [
