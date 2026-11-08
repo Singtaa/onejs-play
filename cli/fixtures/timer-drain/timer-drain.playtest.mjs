@@ -31,4 +31,7 @@ export default async function (game) {
     // The browser's order: an await resumes before the next due callback runs.
     const worst = Math.max(...cart.awaitBeside, ...cart.chainBeside)
     if (worst > 1) throw new Error(`an await beside an 8 ms callback took ${worst.toFixed(1)} ms; the browser's own timers give ${Math.max(...native.awaitBeside, ...native.chainBeside).toFixed(2)} ms`)
+    // The container's 4 ms budget a frame for timers: ten 2 ms jobs due at
+    // once spread over frames, two or three a frame, not ten in one.
+    if (cart.sliced.jobsInOneFrame > 3) throw new Error(`${cart.sliced.jobsInOneFrame} of ten 2 ms timers ran in one frame; the budget allows two or three`)
 }

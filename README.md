@@ -951,6 +951,12 @@ otherwise opens it unfocused and hides it at the first key, and a hidden page
 runs no frames. `cli/fixtures/keys` presses every named key straight after
 start and requires each to arrive alone and in order.
 
+**Timers keep a browser's order.** `cli/fixtures/timer-drain` sets an 8 ms
+timeout beside one that awaits, and requires the await to resume before the
+8 ms one runs, as it does on the page's own timers, which it reads beside them
+as the control. It names runtime 1.6, the first container that runs each due
+timer as a task of its own, so the sweep waits for that line.
+
 What the harnesses in `Tools/playtest` learned applies here unchanged, and
 their README's section on instruments that report clean answers while
 measuring nothing is the thing to read before writing a check: count letters
