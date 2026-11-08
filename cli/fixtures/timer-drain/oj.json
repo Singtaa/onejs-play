@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.5.0",
+    "name": "Timer Drain",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}
