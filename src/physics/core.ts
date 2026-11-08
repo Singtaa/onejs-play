@@ -993,7 +993,9 @@ export class WorldCore<V extends readonly number[], R, A> {
     /**
      * The engine's bytes, then what oj itself holds about each character (its
      * held walk and its speed up and down), then the engine part's length, so
-     * a rewind brings a jump back mid-air too.
+     * a rewind brings a jump back mid-air too. The colliders not yet in the
+     * engine's query tree go with it, so a world restored before it steps is
+     * queryable as it was.
      */
     snapshot(): Uint8Array {
         this.live()
@@ -1003,6 +1005,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         for (const b of this.gliding) own[b.colliderHandle] = b.saveState()
         for (const b of this.unrotating) own[b.colliderHandle] = b.saveState()
         for (const v of this.drivers) if (this.byCollider.has(v.colliderHandle)) own[`car${v.colliderHandle}`] = v.saveState()
+        own.fresh = [...this.fresh]
         const text = asciiBytes(JSON.stringify(own))
         const out = new Uint8Array(engine.length + text.length + 4)
         out.set(engine, 0)
@@ -1032,7 +1035,9 @@ export class WorldCore<V extends readonly number[], R, A> {
         this.sliders.clear()
         const old = this.raw
         this.raw = restored
+        // Its query tree is the snapshot's, which lacks what was fresh then.
         this.fresh.clear()
+        for (const h of own.fresh ?? []) this.fresh.add(h)
         // Rewound, everything is drawn where it now is, not slid back there.
         this.poses.clear()
         this.stillEpoch++

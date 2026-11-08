@@ -214,6 +214,18 @@ describe("2D events, rewind and elements", () => {
         expect(b.out).toEqual(a.out)
     })
 
+    it("is queryable the moment it is restored, from a snapshot taken before a step", async () => {
+        const w = await floored()
+        const wall = w.box({ at: [300, 500], size: [40, 200] })
+        const snap = w.snapshot()
+        wall.destroy()
+        run(w, 2)
+        w.restore(snap)
+        expect(w.raycast([0, 0], [0, 700])?.body).toBe(w.bodies[0])
+        expect(w.raycast([0, 500], [600, 500])?.body).toBe(wall)
+        w.dispose()
+    })
+
     it("moves each body's element, or the element a ref holds, centre on centre", async () => {
         const placed: ElementPlacement[][] = []
         setElementPlacer((list) => placed.push(list.map((p) => ({ ...p }))))

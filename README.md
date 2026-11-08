@@ -490,7 +490,10 @@ Things that are not obvious from the code:
   steering, wheel spin, where it is parked) and per body that does not turn,
   then the engine part's length, so a rewind brings a jump back mid-air. A car
   rebuilds its vehicle controller on the restored world. ASCII by hand, since QuickJS
-  has no `TextEncoder`.
+  has no `TextEncoder`. The JSON also lists the colliders made or moved by hand
+  since the last step (`fresh`): Rapier's query tree is only rebuilt in a step,
+  so without them a world snapshotted before it stepped answered no ray, sight
+  line, sweep or overlap until it stepped again.
 - **`slide` keeps a walker per shape.** A sensor capsule in no collision group
   on a fixed body, which no query or contact sees; `restore` drops them with
   the orphans and they are made again when next asked for.
