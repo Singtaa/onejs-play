@@ -102,8 +102,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           committed. The first push of a cart made with new makes its repo
                           on the site, after a login if there is none, and its first cart,
                           on main: Public, or Unlisted with --unlisted. --private makes the
-                          repo private and that cart Private, for an account with private
-                          repos. Both choose only on that first push
+                          repo private and that cart Private. Both choose only on that
+                          first push
   new <name>            start a cart in ./<name>: the starter, a git repository and init's
                           tooling, on this machine only, with no account or network
   clone <cart> [dir]    clone @handle/name, a sid or a clone URL; git pull and push then

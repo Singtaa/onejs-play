@@ -841,9 +841,8 @@ with one commit, and sets `init`'s tooling up beside it, ignored. No account
 and no network. The first `push` in a cart with no `origin` makes its repo on
 the site, empty and public, under oj.json's `name` (logging in first when
 there is no login), sets `origin` and pushes `main` with its upstream. With
-`--private` it asks for a private repo instead, whose first cart is Private,
-which the site makes only for an account with private repos and otherwise
-refuses, making and pushing nothing; on a later push to a public repo,
+`--private` it asks for a private repo instead, whose first cart is Private
+(a site that refuses one makes and pushes nothing); on a later push to a public repo,
 `--private` pushes nothing and says so. With `--unlisted` the first cart is
 Unlisted from the moment the repo is made, never in the site's list until its
 owner makes it Public; on a later push to a repo whose main cart is Public,
