@@ -1085,6 +1085,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         baking = me
         const live = () => !stopped && !disposed
         const give = (why: string) => {
+            // As the line says: a bake this one replaced, still on the bridge with its draft showing, or a
+            // model already given its new unwrap against the old light's rectangles, would say otherwise.
+            if (typeof b.ClearLight === "function") b.ClearLight()
             console.warn(`[oj] scene.bake: ${why}. The scene keeps its ambient light.`)
             progress = 1
             me.stop({ how: "failed", why })

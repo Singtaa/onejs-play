@@ -371,6 +371,24 @@ describe("scene.bake", () => {
         expect(of("StepBake").length).toBe(2)
     })
 
+    it("clears the bridge's light when a bake that replaced a running one fails, as its line says", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene()
+        const ground = s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.5]
+        const first = s.bake()
+        await started()
+        frame()
+        ground.destroy()
+        const second = s.bake()
+        await Promise.all([first.done, second.done])
+        expect(warn.mock.calls[0]![0]).toMatch(/nothing in the scene is static.*keeps its ambient light/)
+        // The first bake, never stepped again, is not left on the bridge holding its draft.
+        expect(calls.map((c) => c[0]).filter((n) => n === "BeginBake" || n === "ClearLight")).toEqual(["BeginBake", "ClearLight"])
+        frame()
+        expect(of("StepBake").length).toBe(1)
+    })
+
     it("resolves when the scene goes", async () => {
         const s = scene()
         s.spawn(s.mesh(SQUARE), { static: true })
