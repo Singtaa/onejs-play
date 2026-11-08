@@ -1,5 +1,5 @@
 import { BAKE_DEFAULTS } from "../bake"
-import { BAKER_VERSION, bakedHereLine, difference, layoutOf, matches, OLDER, parseSaved, recordOf, sameLayout, type BakeOptionValues, type LightInputs, type SavedLight, type StaticActor } from "../record"
+import { BAKER_VERSION, bakedHereLine, difference, layoutOf, matches, NEWER, OLDER, parseSaved, recordOf, sameLayout, type BakeOptionValues, type LightInputs, type SavedLight, type StaticActor } from "../record"
 
 const actor = (model: string, x: number, over: Partial<StaticActor> = {}): StaticActor => ({
     model, sha: `sha-${model}`, position: [x, 0, 0], rotation: { yaw: 0, pitch: 0, roll: 0 }, scale: 1, ...over,
@@ -42,7 +42,8 @@ describe("a light record", () => {
         expect(difference(saved, recordOf(scene(yard, {}, { samples: 64 })))).toBe("its samples changed from 256 to 64")
         expect(difference(saved, recordOf(scene(yard, {}, { occlusion: 0.5 })))).toBe("its occlusion changed from 0 to 0.5")
         expect(difference(saved, recordOf(scene(yard, {}, { detail: 12 })))).toBe("its detail changed from the scene's size to 12")
-        expect(difference({ ...saved, baker: BAKER_VERSION - 1 }, recordOf(scene(yard)))).toBe("the baker has changed since it was saved")
+        expect(difference({ ...saved, baker: BAKER_VERSION - 1 }, recordOf(scene(yard)))).toBe(OLDER)
+        expect(difference({ ...saved, baker: BAKER_VERSION + 1 }, recordOf(scene(yard)))).toBe(NEWER)
         // An actor's change is named before the sun's.
         expect(difference(saved, recordOf(scene([...yard, actor("crate.glb", 2)], { sun: null })))).toBe("crate.glb at [2, 0, 0] is not in it")
     })
@@ -82,6 +83,9 @@ describe("a light record", () => {
         expect(bakedHereLine("yard.light.png", { why: "unreadable", detail: "it holds no light record" })).toBe("[oj] yard.light.png is not a light file oj can read (it holds no light record): baked here instead.")
         expect(bakedHereLine("yard.light.png", { why: "stale", detail: "models/yard.glb changed" })).toBe("[oj] yard.light.png was baked for a different scene (models/yard.glb changed): baked here instead.")
         expect(bakedHereLine("yard.light.png", { why: "unreadable", detail: OLDER })).toBe("[oj] yard.light.png was saved by an older oj: baked here instead.")
+        // A 1.4.0 file reads as the older baker's, not as another scene's.
+        expect(bakedHereLine("yard.light.png", { why: "stale", detail: OLDER })).toBe("[oj] yard.light.png was saved by an older oj: baked here instead.")
+        expect(bakedHereLine("yard.light.png", { why: "stale", detail: NEWER })).toBe("[oj] yard.light.png was saved by a newer oj: baked here instead.")
     })
 
     it("says on the same line when the detail asked did not fit the pages", () => {

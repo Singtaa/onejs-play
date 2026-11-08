@@ -186,8 +186,10 @@ export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
 
 const isNumbers = (x: unknown, n: number) => Array.isArray(x) && x.length === n && x.every((v) => typeof v === "number")
 
-/** parseSaved's answer for a record an older oj wrote, which a bake reads as out of date rather than unreadable. */
+/** parseSaved's and difference's answer for a record an older oj wrote, which a bake reads as out of date rather than unreadable. */
 export const OLDER = "it was saved by an older oj"
+/** difference's answer for a record a newer oj's baker wrote. */
+export const NEWER = "it was saved by a newer oj"
 
 /** A light file's text read back: the record, or why it is not one this baker wrote. */
 export function parseSaved(text: string | null): SavedLight | string {
@@ -229,7 +231,8 @@ const transformKey = (r: ActorRow) => JSON.stringify([r[0], ...r.slice(2)])
  * on every load of a named file and a scatter makes thousands of rows.
  */
 export function difference(saved: LightRecord, now: LightRecord): string | null {
-    if (saved.baker !== now.baker) return "the baker has changed since it was saved"
+    // A file from another baker is the same scene: the line says which oj saved it, not that the scene changed.
+    if (saved.baker !== now.baker) return saved.baker < now.baker ? OLDER : NEWER
     const savedRows = new Set(saved.actors.map(rowKey)), nowRows = new Set(now.actors.map(rowKey))
     const left = saved.actors.filter((r) => !nowRows.has(rowKey(r)))
     const added = now.actors.filter((r) => !savedRows.has(rowKey(r)))
@@ -267,8 +270,10 @@ export function bakedHereLine(name: string, here: BakedHere, lowered?: Lowered):
     const line = (() => {
         switch (here.why) {
             case "missing": return `[oj] ${name} is not in the cart yet: baked here`
-            case "unreadable": return here.detail === OLDER ? `[oj] ${name} was saved by an older oj: baked here instead` : `[oj] ${name} is not a light file oj can read (${here.detail}): baked here instead`
-            case "stale": return `[oj] ${name} was baked for a different scene (${here.detail}): baked here instead`
+            case "unreadable":
+            case "stale":
+                if (here.detail === OLDER || here.detail === NEWER) return `[oj] ${name} was saved by ${here.detail === OLDER ? "an older" : "a newer"} oj: baked here instead`
+                return here.why === "unreadable" ? `[oj] ${name} is not a light file oj can read (${here.detail}): baked here instead` : `[oj] ${name} was baked for a different scene (${here.detail}): baked here instead`
             case "again": return `[oj] ${name} baked again here`
         }
     })()
