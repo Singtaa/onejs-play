@@ -1127,6 +1127,9 @@ export class WorldCore<V extends readonly number[], R, A> {
     }
 
     private bury(w: Thing<V, R, A>): void {
+        // What visibility read of its shape goes with it; a restore reads it from the engine again.
+        this.shapes.delete(w)
+        this.cuts.delete(w)
         this.buried.set(w.colliderHandle, w)
         if (this.buried.size > 4096) this.buried.delete(this.buried.keys().next().value!)
     }

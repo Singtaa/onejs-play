@@ -524,9 +524,6 @@ export const shape = Object.freeze({
 
 type Body3 = BodyCore<Vec3, Partial<Rotation> | undefined, Actor>
 
-/** A mesh body's own triangles, in its local frame: what `nav` reads back. */
-const meshTriangles = new WeakMap<Body3, Triangles>()
-
 class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
     private readonly forgetStill: () => void
     /** Tiled navs following this world, kept up after each frame. */
@@ -599,9 +596,8 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
         this.live()
         const k = o.scale ?? 1
         const vertices = k === 1 ? t.vertices : t.vertices.map((v) => v * k)
-        const body = this.makeBody("mesh", this.r.ColliderDesc.trimesh(vertices, t.indices), o)
-        meshTriangles.set(body, { vertices, indices: t.indices })
-        return body
+        // Its triangles are read back from the engine when nav asks, so a destroyed one holds none.
+        return this.makeBody("mesh", this.r.ColliderDesc.trimesh(vertices, t.indices), o)
     }
 
     heightfield(o: HeightfieldOptions): Body3 {
@@ -668,7 +664,8 @@ function appendTriangles(body: Body3, vertices: number[], indices: number[]): vo
         const p = rotate(q, v)
         vertices.push(p[0] + t.x, p[1] + t.y, p[2] + t.z)
     }
-    const mesh = meshTriangles.get(body) ?? (body.kind === "heightfield" ? heightfieldTriangles(c) : undefined)
+    const mesh = body.kind === "mesh" ? { vertices: c.vertices() as Float32Array, indices: c.indices() as Uint32Array }
+        : body.kind === "heightfield" ? heightfieldTriangles(c) : undefined
     if (mesh !== undefined) {
         const base = vertices.length / 3, mv = mesh.vertices
         for (let i = 0; i < mv.length; i += 3) put([mv[i]!, mv[i + 1]!, mv[i + 2]!])
@@ -688,7 +685,7 @@ function appendTriangles(body: Body3, vertices: number[], indices: number[]): vo
  * heightfield has no inside oj knows.
  */
 function solidOf(body: Body3): { poly: number[], ymin: number, ymax: number } | undefined {
-    if (meshTriangles.has(body) || body.kind === "heightfield") return undefined
+    if (body.kind === "mesh" || body.kind === "heightfield") return undefined
     const c = body.collider()
     const q = c.rotation(), t = c.translation()
     if (Math.abs(rotate(q, [0, 1, 0])[1] - 1) > 1e-6) return undefined

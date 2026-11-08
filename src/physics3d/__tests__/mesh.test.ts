@@ -1,7 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
+import v8 from "node:v8"
+import vm from "node:vm"
 import { setWasmModule } from "../../wasm"
 import { RAPIER_VERSION } from "../rapier.version"
+import { RECAST_VERSION } from "../../nav/recast.version"
 import { createWorld } from "../world"
 import { glbTriangles } from "../gltf"
 import { modelUrls, setFileLoader, loadFileBytes } from "../sources"
@@ -10,6 +13,7 @@ const WA = (globalThis as any).WebAssembly
 
 beforeAll(() => {
     setWasmModule("rapier3d", new WA.Module(fs.readFileSync(path.resolve(import.meta.dirname, `../../../assets/@ojplay/wasm/rapier3d-${RAPIER_VERSION}.wasm`))))
+    setWasmModule("recast", new WA.Module(fs.readFileSync(path.resolve(import.meta.dirname, `../../../assets/@ojplay/wasm/recast-${RECAST_VERSION}.wasm`))))
 })
 
 /**
@@ -125,4 +129,67 @@ describe("world.mesh", () => {
         await expect(w.mesh(floor, { dynamic: true })).rejects.toThrow(/static or kinematic/)
         w.dispose()
     })
+
+    it("lets a destroyed mesh's triangles go, seen by nav and visibility or not, and a restore brings the ground back", async () => {
+        const gc = collector()
+        const w = await createWorld()
+        // A 64 by 64 grid of quads, about 50 KB of vertices and 100 KB of indices a body.
+        const n = 65
+        const grid = () => {
+            const vertices = new Float32Array(n * n * 3), indices = new Uint32Array((n - 1) * (n - 1) * 6)
+            for (let i = 0; i < n * n; i++) vertices.set([(i % n) * 0.25, 0, Math.floor(i / n) * 0.25], i * 3)
+            let k = 0
+            for (let z = 0; z < n - 1; z++) for (let x = 0; x < n - 1; x++) {
+                const a = x + z * n
+                indices.set([a, a + n, a + 1, a + 1, a + n, a + n + 1], k)
+                k += 6
+            }
+            return { vertices, indices }
+        }
+        const lap = async () => {
+            for (let i = 0; i < 40; i++) {
+                const body = await w.mesh(grid())
+                // Each seen by visibility, which keeps what it read of a shape.
+                w.visibility([4, 1, 4], { within: 3 })
+                body.destroy()
+            }
+            return gc()
+        }
+        const warm = await lap()
+        const after = await lap()
+        // 12 MB stayed before: each body's own arrays, and visibility's copy of them.
+        expect(after - warm).toBeLessThan(1_000_000)
+
+        // A floor destroyed after a snapshot comes back to nav and to rays with its triangles.
+        const floor = await w.mesh(grid())
+        const before = w.snapshot()
+        floor.destroy()
+        await expect(w.nav()).rejects.toThrow(/no static bodies/)
+        w.restore(before)
+        expect(floor.alive).toBe(true)
+        const nav = await w.nav()
+        const p = nav.path([1, 0, 1], [15, 0, 15])
+        expect(Math.hypot(p.at(-1)![0] - 15, p.at(-1)![2] - 15)).toBeLessThan(0.5)
+        // Rays see a restored world after its next step, for every body (a separate finding).
+        w.step()
+        expect(w.raycast([8.1, 1, 8.1], [8.1, -1, 8.1])!.body).toBe(floor)
+        w.dispose()
+    })
 })
+
+/**
+ * Collects garbage, waits for finalizers, and says how many bytes of array
+ * buffers are still reachable, which the engine's own memory (grown once and
+ * kept) does not move between two equal laps.
+ */
+function collector(): () => Promise<number> {
+    v8.setFlagsFromString("--expose-gc")
+    const gc = vm.runInNewContext("gc") as () => void
+    return async () => {
+        for (let i = 0; i < 3; i++) {
+            gc()
+            await new Promise((r) => setImmediate(r))
+        }
+        return process.memoryUsage().arrayBuffers
+    }
+}
