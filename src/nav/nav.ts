@@ -32,6 +32,16 @@ export interface NavOptions {
     cell?: number
     /** Only bodies on these layers count. Every static, solid body by default. */
     only?: readonly string[]
+    /**
+     * Metres across a tile. Given, the nav is built in tiles and follows the
+     * world: a static body made, destroyed or moved rebuilds the tiles it
+     * touches, and `block` and `mark` change the floor without a collider.
+     * The cell gives a little so a whole number of them fit a tile. Without
+     * it, one navmesh, built once.
+     */
+    tile?: number
+    /** With `tile`: milliseconds a frame the world spends rebuilding stale tiles. 1 by default; 0 leaves it to `nav.update`. */
+    budget?: number
 }
 
 export interface Nav {

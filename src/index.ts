@@ -95,10 +95,11 @@ export { useWorld } from "./physics3d/use-world"
 export { createWorld, shape, WORLD_DEFAULTS } from "./physics3d/world"
 export type {
     World, WorldOptions, Body, Character, Car, CarOptions, CarWheel, Shape, Hit, Filter, Layer, BodyContact,
-    BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, MeshOptions, MeshSource, Place, Places, Motions,
+    BoxOptions, SphereOptions, CapsuleOptions, CharacterOptions, MeshOptions, MeshSource, HeightfieldOptions, Place, Places, Motions,
     BoxShapeOptions, SphereShapeOptions, CapsuleShapeOptions, ClearSpotOptions, SlideOptions, Slid, SightOptions, Sight,
 } from "./physics3d/world"
 export type { Nav, NavOptions } from "./nav/nav"
+export type { TiledNav, NavBox, NavMark, NavMarkOptions, PathOptions } from "./nav/tiled"
 
 // 3D models behind the cart's UI.
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"

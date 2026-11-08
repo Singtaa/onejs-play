@@ -15,6 +15,7 @@
  */
 
 import { counterclockwise, hull, sight, type Part } from "./sight"
+import { heightfieldTriangles } from "../physics3d/heightfield"
 
 // ---------- what a dimension supplies ----------
 
@@ -321,6 +322,17 @@ export class WorldCore<V extends readonly number[], R, A> {
     readonly drivers = new Set<Driver>()
     /** Drivers that carry models on their chassis, by the chassis: drawn wherever the chassis is drawn. */
     readonly carriers = new Map<Thing<V, R, A>, Driver>()
+    /**
+     * Told whenever scenery changes: a static body made, destroyed or put
+     * somewhere by hand (that body), or the world restored (null, since
+     * anything may have). What a tiled nav follows the world's colliders by.
+     */
+    readonly sceneryWatchers = new Set<(body: BodyCore<V, R, A> | null) => void>()
+    private sceneryChanged(w: Thing<V, R, A> | null | undefined): void {
+        if (this.sceneryWatchers.size === 0) return
+        if (w !== null && !(w instanceof BodyCore && !w.dynamic && !w.kinematic)) return
+        for (const f of this.sceneryWatchers) f(w ?? null)
+    }
     /** Dynamic and kinematic bodies alive: a world of only scenery has nothing to ride, so its characters do not look. */
     private movers = 0
     moving(): boolean { return this.movers > 0 }
@@ -424,6 +436,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         if (body.dynamic || body.kinematic) this.movers++
         this.byCollider.set(collider.handle, body)
         this.fresh.add(collider.handle)
+        this.sceneryChanged(body)
         return body
     }
 
@@ -484,6 +497,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         if (w !== undefined) this.snapped.set(w, w.placement())
         this.stillEpoch++
         this.raw.propagateModifiedBodyPositionsToColliders()
+        if (w !== undefined) this.sceneryChanged(w)
     }
 
     /** Whether a collider is one a query with this filter sees. */
@@ -617,6 +631,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         else if (type === T.TriMesh) shape = { kind: "mesh", verts: c.vertices(), idx: c.indices() }
         else if (type === T.Polyline) shape = { kind: "outline", verts: c.vertices(), idx: c.indices() }
         else if (type === T.ConvexPolygon) shape = { kind: "hull", verts: c.vertices() }
+        else if (type === T.HeightField) { const t = heightfieldTriangles(c); shape = { kind: "mesh", verts: t.vertices, idx: t.indices } }
         else throw new Error(`[oj] visibility cannot see a collider of Rapier shape type ${type}; oj makes none`)
         if (w !== undefined) this.shapes.set(w, shape)
         return shape
@@ -1075,6 +1090,7 @@ export class WorldCore<V extends readonly number[], R, A> {
         }
         if (this.blending) this.recordPoses()
         old.free()
+        this.sceneryChanged(null)
     }
 
     // ---------- bookkeeping ----------
@@ -1103,6 +1119,7 @@ export class WorldCore<V extends readonly number[], R, A> {
             if (w.dynamic || w.kinematic) this.movers--
         }
         this.bury(w)
+        this.sceneryChanged(w)
     }
 
     private bury(w: Thing<V, R, A>): void {

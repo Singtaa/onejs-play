@@ -29,6 +29,8 @@ import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim } from "../physic
 import { glbTriangles, type Triangles } from "./gltf"
 import { arrayModels, loadFileBytes, modelUrls } from "./sources"
 import { buildNav, type Nav, type NavOptions } from "../nav/nav"
+import { buildTiledNav, type NavSource, type TiledNav, type TiledNavInternal } from "../nav/tiled"
+import { heightGrid, heightfieldTriangles } from "./heightfield"
 import { CAR_SIZE, CarCore, type CarOptionsOf, type CarWheelState } from "./car"
 
 /** A collision layer, named by use. Up to 16 in one world. */
@@ -115,6 +117,21 @@ export interface CapsuleOptions extends BodyOptionsBase {
 export interface MeshOptions extends BodyOptionsBase {
     /** 1 is the model's own size, as `scene.spawn` takes it. */
     scale?: number
+}
+
+/**
+ * Ground as a grid of heights, cheaper than the same ground as `mesh`: to
+ * build, to cast a ray at, and to hand the engine. Static.
+ */
+export interface HeightfieldOptions extends Pick<BodyOptionsBase, "friction" | "bounce" | "layer" | "ignores" | "actor" | "tag"> {
+    /** The grid's corner, where `heights[0]` is: its least x and z, and the height heights are measured from. The origin by default. */
+    at?: Vec3
+    /** Metres along x and along z. */
+    size: readonly [number, number]
+    /** Metres above `at`, x fastest: the height at sample (ix, iz) is `heights[ix + iz * samples along x]`, as a mesh grid is laid out. */
+    heights: ArrayLike<number>
+    /** Samples along x and along z, each at least 2. A square grid by default. */
+    samples?: readonly [number, number]
 }
 
 /** What a mesh collider is made from: a model (loaded or made with `scene.mesh`), a .glb by name or URL, its bytes, or triangles. */
@@ -362,13 +379,26 @@ export interface World {
      * since a pile of triangles has no inside to fall with.
      */
     mesh(source: MeshSource, options?: MeshOptions): Promise<Body>
+    /**
+     * Ground from a grid of heights: a terrain chunk. Made at once, static,
+     * and to rays, characters and `nav` the same ground as the triangles
+     * `mesh` would make of it. A changed ground is a new one: destroy this.
+     */
+    heightfield(options: HeightfieldOptions): Body
     character(options?: CharacterOptions): Character
     /** A car that drives itself from what `drive` holds, each step. */
     car(options?: CarOptions): Car
     /**
+     * Paths over this world's floor, built in tiles `tile` metres across
+     * that follow the world: a static body made, destroyed or moved rebuilds
+     * the tiles it touches within the frame's `budget`, so a building and
+     * the way round it are one call.
+     */
+    nav(options: NavOptions & { tile: number }): Promise<TiledNav>
+    /**
      * Paths over this world's floor, built from every static, solid body:
      * walls, crates and mesh levels, as they are now. A level that changes
-     * builds a new one.
+     * builds a new one, or give `tile` and it follows the world.
      */
     nav(options?: NavOptions): Promise<Nav>
     /** The first thing on the line from `from` to `to`, or null. */
@@ -499,6 +529,9 @@ const meshTriangles = new WeakMap<Body3, Triangles>()
 
 class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
     private readonly forgetStill: () => void
+    /** Tiled navs following this world, kept up after each frame. */
+    private readonly navs = new Set<TiledNavInternal>()
+    private framing = false
 
     constructor(r: Rapier, options: WorldOptions) {
         super(r, DIM3, DEFAULTS, options)
@@ -507,7 +540,28 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
 
     override dispose(): void {
         this.forgetStill()
+        this.navs.clear()
         super.dispose()
+    }
+
+    /** Stepped on the frame clock: the frame's steps, then each tiled nav's budget once. */
+    override frame(seconds: number): void {
+        this.framing = true
+        try { super.frame(seconds) } finally { this.framing = false }
+        this.keepNavs()
+    }
+
+    /** Stepped by hand (createWorld): each step is a frame. */
+    override step(): void {
+        super.step()
+        if (!this.framing) this.keepNavs()
+    }
+
+    private keepNavs(): void {
+        for (const n of this.navs) {
+            if (n.disposed) this.navs.delete(n)
+            else if (n.budget > 0) n.update(n.budget)
+        }
     }
 
     /** The actors of its static bodies: what the scene bakes light into without being told. */
@@ -550,8 +604,27 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
         return body
     }
 
-    async nav(o: NavOptions = {}): Promise<Nav> {
+    heightfield(o: HeightfieldOptions): Body3 {
         this.live()
+        const [sx, sz] = o.size ?? []
+        if (!(sx! > 0 && sz! > 0 && Number.isFinite(sx) && Number.isFinite(sz))) throw new Error("[oj] world.heightfield needs size: [along x, along z], in metres")
+        const g = heightGrid(o.heights, o.samples)
+        const desc = this.r.ColliderDesc.heightfield(g.nz - 1, g.nx - 1, g.heights, { x: sx!, y: 1, z: sz! }, this.r.HeightFieldFlags.FIX_INTERNAL_EDGES)
+        // Rapier centres a heightfield on its collider; the body is at the corner a cart counts from.
+        desc.setTranslation(sx! / 2, 0, sz! / 2)
+        return this.makeBody("heightfield", desc, { at: o.at, friction: o.friction, bounce: o.bounce, layer: o.layer, ignores: o.ignores, actor: o.actor, tag: o.tag })
+    }
+
+    nav(o: NavOptions & { tile: number }): Promise<TiledNav>
+    nav(o?: NavOptions): Promise<Nav>
+    async nav(o: NavOptions = {}): Promise<Nav | TiledNav> {
+        this.live()
+        if (o.tile !== undefined) {
+            const nav = await buildTiledNav(this.navSource(o.only), o as NavOptions & { tile: number })
+            try { this.live() } catch (e) { nav.dispose(); throw e }
+            this.navs.add(nav)
+            return nav
+        }
         const vertices: number[] = [], indices: number[] = []
         for (const w of this.byCollider.values()) {
             if (!(w instanceof BodyCore) || w.dynamic || w.kinematic || w.trigger) continue
@@ -560,6 +633,26 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
         }
         if (indices.length === 0) throw new Error("[oj] world.nav: no static bodies to walk on" + (o.only ? ` in layers ${o.only.join(", ")}` : ""))
         return buildNav(new Float32Array(vertices), new Uint32Array(indices), o)
+    }
+
+    /** This world's static, solid bodies for a tiled nav: the same ones the solo nav reads. */
+    private navSource(only: readonly string[] | undefined): NavSource<Body3> {
+        const counts = (w: unknown): w is Body3 => w instanceof BodyCore && w.alive && !w.dynamic && !w.kinematic && !w.trigger
+            && (only === undefined || only.includes(w.layer))
+        return {
+            bodies: () => [...this.byCollider.values()].filter(counts),
+            triangles: (b) => {
+                if (!counts(b) || this.byCollider.get(b.colliderHandle) !== b) return null
+                const vertices: number[] = [], indices: number[] = []
+                appendTriangles(b, vertices, indices)
+                return { vertices: new Float32Array(vertices), indices: new Uint32Array(indices) }
+            },
+            watch: (changed) => {
+                const f = (b: Body3 | null) => changed(b)
+                this.sceneryWatchers.add(f)
+                return () => { this.sceneryWatchers.delete(f) }
+            },
+        }
     }
 }
 
@@ -575,7 +668,7 @@ function appendTriangles(body: Body3, vertices: number[], indices: number[]): vo
         const p = rotate(q, v)
         vertices.push(p[0] + t.x, p[1] + t.y, p[2] + t.z)
     }
-    const mesh = meshTriangles.get(body)
+    const mesh = meshTriangles.get(body) ?? (body.kind === "heightfield" ? heightfieldTriangles(c) : undefined)
     if (mesh !== undefined) {
         const base = vertices.length / 3, mv = mesh.vertices
         for (let i = 0; i < mv.length; i += 3) put([mv[i]!, mv[i + 1]!, mv[i + 2]!])
