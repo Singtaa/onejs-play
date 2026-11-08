@@ -52,6 +52,15 @@
  * `phaseSkip` intervals, which show that frame however deep the queue, and
  * ramps on from its count.
  *
+ * The probes' rays are the one work the interval never shows in time: the
+ * browser queues their passes without the frame waiting on them, and their
+ * cost lands all at once when their read does. Ramping on clean intervals, a
+ * 4-bounce court's probes queued more than the GPU could run, and the frames
+ * before their read took 50 and 100 ms (review L2, 7 Nov, headless Chrome on
+ * an M4 Pro). So the bake loop sends at most `probes` tiles a frame while it
+ * traces them, whatever the count: that bake's longest frame was 33 to 50 ms,
+ * for a bake a fifth longer at 4 bounces and 6% longer over four bakes.
+ *
  * The queue also shows one overflow for several frames, so it halves once an
  * overflow: after a halving it holds until a frame comes back inside the
  * shrink line, and halves again only when `recoverFrames` frames in a row stay
@@ -81,6 +90,8 @@ export const TILE_BUDGET = {
     lagFrames: 2,
     /** Intervals after a new phase the budget does not read: they show the switching frame. */
     phaseSkip: 3,
+    /** The most tiles the bake loop sends a frame while the bake traces probes, whose cost the interval does not show. */
+    probes: 8,
 }
 
 export type TileBudgetTuning = typeof TILE_BUDGET

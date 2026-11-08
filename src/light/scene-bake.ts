@@ -14,7 +14,7 @@ import type { Bake, BakeOptions, BakeResult, Model } from "../models"
 import { assetShipped, keptAssetBytes, loadAssetBytes } from "../asset"
 import { AUTO_DETAIL, DETAIL_FLOOR, MAX_PAGES } from "./atlas"
 import { bakeOptions, beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./bake"
-import { tileBudget } from "./budget"
+import { TILE_BUDGET, tileBudget } from "./budget"
 import { lightBakedHere, lightBegun, lightEnded, lightProgress, offerAgain, PROGRESS_EVERY_MS, type BakeEnd } from "./host"
 import { bakedHereLine, loweredWords, type BakedHere, type BakeOptionValues, type LightInputs, type LightRecord, type Lowered } from "./record"
 
@@ -47,6 +47,9 @@ export interface SceneBaker {
 
 /** The value BakeResult gives each end the host hears. */
 const RESULT: Record<BakeEnd["how"], BakeResult> = { loaded: "loaded", baked: "baked", failed: "failed", stopped: "stopped" }
+
+/** BakePhase's number while the bake traces the probes' rays. */
+const PHASE_PROBES = 1
 
 /** StepBake's answer when the bake failed on the bridge (BakeProblem says why); any other below 0 is a bake a later one or ClearLight took. */
 const STEP_FAILED = -2
@@ -173,7 +176,8 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
                 if (now !== phase || turned) budget.newPhase()
                 phase = now
                 page = onPage
-                const p = Number(b.StepBake(budget.frame(intervalMs)))
+                const tiles = budget.frame(intervalMs)
+                const p = Number(b.StepBake(now === PHASE_PROBES ? Math.min(tiles, TILE_BUDGET.probes) : tiles))
                 if (p === STEP_FAILED) return give(typeof b.BakeProblem === "function" ? String(b.BakeProblem()) : "the bake stopped on the GPU")
                 // Below 0 otherwise: the bridge's bake went, cleared by a later one or by the scene.
                 if (p < 0) return me.stop()

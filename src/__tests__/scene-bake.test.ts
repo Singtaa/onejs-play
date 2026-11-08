@@ -285,6 +285,22 @@ describe("scene.bake", () => {
         expect(asked().at(-1)).toBe(TILE_BUDGET.min)
     })
 
+    // The probes' passes queue unseen and land with their read: ramped on clean frames, a 4-bounce bake's read took a 100 ms frame (review L2).
+    it("sends at most TILE_BUDGET.probes tiles a frame while the bake traces probes, however clean its frames", async () => {
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.1]
+        s.bake()
+        await started()
+        for (let i = 0; i < TILE_BUDGET.warmup + 40; i++) runtime.beginFrame(1 / 60, 1 / 60)
+        const asked = () => of("StepBake").map((c) => c[1] as number)
+        expect(Math.max(...asked())).toBe(TILE_BUDGET.probes)
+        // The lightmap's tiles are the budget's again.
+        phase = 3
+        for (let i = 0; i < TILE_BUDGET.phaseSkip + 1; i++) runtime.beginFrame(1 / 60, 1 / 60)
+        expect(asked().at(-1)).toBeGreaterThan(TILE_BUDGET.probes)
+    })
+
     it("does not read the frames after the bake finishes a page either", async () => {
         const s = scene()
         s.spawn(s.mesh(SQUARE), { static: true })

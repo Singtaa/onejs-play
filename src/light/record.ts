@@ -17,7 +17,7 @@
  * Moves on whenever what the baker writes for the same scene changes, which
  * makes every saved file out of date. 2 (1.4.1): probes twice as far apart up,
  * the default detail chosen from the scene's size, and the file's probes a
- * byte a coefficient with its lightmap dithered.
+ * byte a coefficient.
  */
 export const BAKER_VERSION = 2
 
