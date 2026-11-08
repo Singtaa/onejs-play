@@ -957,6 +957,14 @@ timeout beside one that awaits, and requires the await to resume before the
 as the control. It names runtime 1.6, the first container that runs each due
 timer as a task of its own, so the sweep waits for that line.
 
+**Ground fogs as anything else does.** `cli/fixtures/ground-fog` draws the
+same grey plain, under a texture and as a splat, near and half into a red fog,
+and requires the three to match at each distance from the middle pixel of the
+page's screenshot, after fog has moved the plain one at least 40 levels. The
+first 1.6 containers stripped the splat's fog variants, so its far quad stood
+unfogged. It names runtime 1.6; `ground-fog.test.ts` feeds the check a passing
+set of pixels, an unfogged splat and no fog at all.
+
 What the harnesses in `Tools/playtest` learned applies here unchanged, and
 their README's section on instruments that report clean answers while
 measuring nothing is the thing to read before writing a check: count letters

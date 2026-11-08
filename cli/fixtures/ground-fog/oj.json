@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.6",
+    "name": "Ground Fog",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}
