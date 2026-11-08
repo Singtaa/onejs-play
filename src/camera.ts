@@ -35,7 +35,34 @@
  * camera's back, which one function builds for both cameras (`orbitEye`), so
  * a mirrored basis cannot come back in one of them alone. A drag right turns
  * the view as three.js's OrbitControls does, the content following the
- * pointer: a full stage height of drag is a whole turn.
+ * pointer.
+ *
+ * HOW FAR A DRAG TURNS
+ *
+ * `degreesPerPixel` a stage pixel, 0.3 by default, mouse and finger alike. A
+ * stage pixel is a CSS pixel, about the same size on every screen, so the
+ * same hand movement turns the same way in the editor's small stage as full
+ * screen. Before runtime 1.4 a stage height of drag was a whole turn, twice
+ * as fast in a 538 px stage as full screen (engine-findings.md, "useFollowCamera
+ * cannot be WoW's camera").
+ *
+ * START VALUES AND LIVE ONES
+ *
+ * The options `yaw`, `pitch` and `distance` say where the camera starts and
+ * are read once. The object a hook returns has the same three fields, which a
+ * cart writes when it means them (a cutscene, a zoom key): written in a
+ * useFrame, they take effect in that frame's late phase, held to `pitchRange`
+ * and `distanceRange`. A live option would undo every wheel zoom on the
+ * cart's next render.
+ *
+ * TURNING WITH THE TARGET
+ *
+ * `turnWith` turns a follow camera by exactly what its target turned since
+ * the last frame, WoW's A and D, while no drag is held: holding a drag and
+ * turning leaves the camera where the hand holds it. `behind` eases the
+ * camera behind the target with no drag held, always (`true`, a vehicle) or
+ * only while the target moves (`"moving"`, WoW's swing back once you walk
+ * after a look round). The two compose.
  */
 
 import { useEffect, useRef, useState } from "react"
@@ -215,9 +242,9 @@ export function readDrag(
  * One frame of an orbit: the drag turns it, a pinch or the wheel zooms it.
  * Returns whether the view changed.
  */
-export function orbitStep(view: OrbitView, drag: Readonly<Pick<DragFrame, "dx" | "dy" | "zoom">>, limits: OrbitLimits, degreesPerUnit: number): boolean {
-    const yaw = drag.dx === 0 ? view.yaw : wrapDegrees(view.yaw + drag.dx * degreesPerUnit)
-    const pitch = clamp(view.pitch + drag.dy * degreesPerUnit, limits.pitchRange[0], limits.pitchRange[1])
+export function orbitStep(view: OrbitView, drag: Readonly<Pick<DragFrame, "dx" | "dy" | "zoom">>, limits: OrbitLimits, degreesPerPixel: number): boolean {
+    const yaw = drag.dx === 0 ? view.yaw : wrapDegrees(view.yaw + drag.dx * degreesPerPixel)
+    const pitch = clamp(view.pitch + drag.dy * degreesPerPixel, limits.pitchRange[0], limits.pitchRange[1])
     const distance = clamp(view.distance * drag.zoom, limits.distanceRange[0], limits.distanceRange[1])
     const changed = yaw !== view.yaw || pitch !== view.pitch || distance !== view.distance
     view.yaw = yaw
@@ -263,6 +290,11 @@ export interface FollowState extends OrbitView {
     own: object | null
     /** The filter asked of the world, rebuilt when `own` is learned. */
     filter: { only?: readonly string[], skip?: readonly unknown[] } | undefined
+    /** The target's yaw and position last frame, for `turnWith` and `behind: "moving"`. */
+    lastYaw: number
+    lastAt: Vec3
+    /** A cart wrote the distance: take it this frame rather than backing out to it. */
+    snapReach: boolean
     started: boolean
 }
 
@@ -272,6 +304,8 @@ const PIVOT_SECONDS = 0.08
 const PIVOT_SNAP = 2
 /** Seconds for `behind` to bring the camera most of the way round. */
 const BEHIND_SECONDS = 0.35
+/** Metres a second across the ground, above which `behind: "moving"` counts the target as moving. */
+const MOVING_SPEED = 0.2
 /** Seconds to back out from a wall once it is no longer in the way. */
 const REACH_SECONDS = 0.3
 /** Metres kept between the camera and a wall. */
@@ -281,10 +315,12 @@ const MIN_REACH = 0.3
 
 export interface FollowStepOptions {
     limits: OrbitLimits
-    degreesPerUnit: number
+    degreesPerPixel: number
     /** Metres above the target's position that the camera looks at. */
     height: number
-    behind: boolean
+    behind: boolean | "moving"
+    /** Turn by what the target turned, while no drag is held. */
+    turnWith: boolean
     world: FollowWorld | null
     /** What a wall is: the world's filter, before the target's own body is skipped. */
     filter?: { only?: readonly string[], skip?: readonly unknown[] }
@@ -292,12 +328,15 @@ export interface FollowStepOptions {
 
 export function newFollowState(view: OrbitView): FollowState {
     const pivot: Vec3 = [0, 0, 0]
-    return { ...view, heading: view.yaw, forward: false, pivot, reach: view.distance, eye: orbitEye(pivot, view), of: null, own: null, filter: undefined, started: false }
+    return {
+        ...view, heading: view.yaw, forward: false, pivot, reach: view.distance, eye: orbitEye(pivot, view),
+        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], snapReach: false, started: false,
+    }
 }
 
 /**
- * One frame of a follow camera: the drag, `behind`, the pivot, and the wall.
- * Returns the eye, which it also keeps in `s.eye`.
+ * One frame of a follow camera: the drag, `turnWith`, `behind`, the pivot,
+ * and the wall. Returns the eye, which it also keeps in `s.eye`.
  */
 export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: FollowTarget, dt: number, o: FollowStepOptions): Vec3 {
     const p = target.position
@@ -311,13 +350,24 @@ export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: Fo
         s.started = true
         s.pivot = [p[0], p[1] + o.height, p[2]]
         s.filter = o.filter
+        s.lastYaw = target.yaw
+        s.lastAt = [p[0], p[1], p[2]]
     }
-    orbitStep(s, drag, o.limits, o.degreesPerUnit)
+    orbitStep(s, drag, o.limits, o.degreesPerPixel)
     // Right drag turns the camera and the character with it, WoW's way.
     if (drag.right) s.heading = s.yaw
     s.forward = drag.left && drag.right
-    if (o.behind && !drag.active) {
-        s.yaw = wrapDegrees(s.yaw + wrapDegrees(target.yaw - s.yaw) * (1 - Math.exp(-dt / BEHIND_SECONDS)))
+
+    const turned = wrapDegrees(target.yaw - s.lastYaw)
+    const moving = dt > 0 && Math.hypot(p[0] - s.lastAt[0], p[2] - s.lastAt[2]) > MOVING_SPEED * dt
+    s.lastYaw = target.yaw
+    s.lastAt = [p[0], p[1], p[2]]
+    // A drag held is the hand's: turning the target then leaves the camera where it is.
+    if (!drag.active) {
+        if (o.turnWith && turned !== 0) s.yaw = wrapDegrees(s.yaw + turned)
+        if (o.behind === true || (o.behind === "moving" && moving)) {
+            s.yaw = wrapDegrees(s.yaw + wrapDegrees(target.yaw - s.yaw) * (1 - Math.exp(-dt / BEHIND_SECONDS)))
+        }
     }
 
     // Across, the target exactly, so speed never changes how far behind the
@@ -338,8 +388,9 @@ export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: Fo
         }
         if (hit !== null) reach = Math.max(MIN_REACH, Math.min(s.distance, hit.distance - WALL_MARGIN))
     }
-    // In at once, so a wall never hides the target; back out gently.
-    s.reach = reach <= s.reach ? reach : s.reach + (reach - s.reach) * (1 - Math.exp(-dt / REACH_SECONDS))
+    // In at once, so a wall never hides the target; back out gently, unless the cart wrote the distance.
+    s.reach = reach <= s.reach || s.snapReach ? reach : s.reach + (reach - s.reach) * (1 - Math.exp(-dt / REACH_SECONDS))
+    s.snapReach = false
     s.reach = Math.min(s.reach, s.distance)
     s.eye = orbitEye(s.pivot, s, s.reach)
     return s.eye
@@ -354,16 +405,16 @@ export interface CameraBind {
     onWheel: (event: { deltaY: number }) => void
 }
 
-/** What a controller reads a frame from. The hooks pass `input`, the sticks' claims and the stage. */
+/** What a controller reads a frame from. The hooks pass `input` and the sticks' claims. */
 export interface CameraFrame {
     source: DragSource
     claimed: (fingerId: number) => boolean
-    /** Degrees a stage unit of drag turns: a whole turn a stage height. */
-    degreesPerUnit: number
 }
 
 /** Each wheel step multiplies the distance by this. */
 const WHEEL_STEP = 1.1
+/** Degrees a stage pixel of drag turns, unless a hook is told otherwise. */
+export const DEGREES_PER_PIXEL = 0.3
 
 const sameVec = (a: Readonly<Vec3> | null, b: Readonly<Vec3>) => a !== null && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
 
@@ -421,16 +472,18 @@ const limitsOf = (o: { pitchRange?: readonly [number, number], distanceRange?: r
 export interface OrbitOptions {
     /** The point it turns around. The origin by default. */
     target?: Readonly<Vec3>
-    /** Metres from the target to start at. 6 by default. */
+    /** Metres from the target to start at, read once: write `orbit.distance` to change it later. 6 by default. */
     distance?: number
-    /** Degrees to start at. 0, looking along +z, by default. */
+    /** Degrees to start at, read once: write `orbit.yaw` later. 0, looking along +z, by default. */
     yaw?: number
-    /** Degrees to start at. 20, a little above, by default. */
+    /** Degrees to start at, read once: write `orbit.pitch` later. 20, a little above, by default. */
     pitch?: number
     /** Degrees. [-80, 80] by default. */
     pitchRange?: readonly [number, number]
     /** Metres a pinch or the wheel keeps it within. [1, 100] by default. */
     distanceRange?: readonly [number, number]
+    /** Degrees a stage pixel of drag turns it, mouse and finger alike. 0.3 by default. */
+    degreesPerPixel?: number
     /** Degrees a second it turns by itself, until the first drag. 0 by default. */
     idleSpin?: number
     /** Where to put the camera: a scene from useScene. Moved once a change. */
@@ -439,7 +492,11 @@ export interface OrbitOptions {
     onMove?: (orbit: Orbit) => void
 }
 
-export interface Orbit extends Readonly<OrbitView> {
+/**
+ * `yaw`, `pitch` and `distance` are writable: written in a useFrame, they take
+ * effect in that frame's late phase, held to the ranges.
+ */
+export interface Orbit extends OrbitView {
     /** Where the camera stands. */
     readonly eye: Vec3
     /** What it looks at. */
@@ -453,18 +510,25 @@ export const ORBIT_LIMITS: OrbitLimits = { pitchRange: [-80, 80], distanceRange:
 /** useOrbit's frame, without React. Exported for tests. */
 export class OrbitController {
     private readonly _rig = new Rig()
-    /** The view, where it looks and where it stands; `touched` once a drag ends idleSpin for good. */
-    private readonly _s: OrbitView & { target: Vec3, eye: Vec3, touched: boolean }
+    /** The view, where it looks and where it stands; `touched` once a drag ends idleSpin for good; `written` by the cart since the last frame. */
+    private readonly _s: OrbitView & { target: Vec3, eye: Vec3, touched: boolean, written: boolean }
+    /** The ranges as of the last frame, which a written field is held to. */
+    private readonly _range: { limits: OrbitLimits }
     readonly orbit: Orbit
 
     constructor(o: OrbitOptions = {}) {
         const view = { yaw: wrapDegrees(o.yaw ?? 0), pitch: o.pitch ?? 20, distance: o.distance ?? 6 }
         const target: Vec3 = o.target ? [o.target[0], o.target[1], o.target[2]] : [0, 0, 0]
-        const s = this._s = { ...view, target, eye: orbitEye(target, view), touched: false }
+        this._s = { ...view, target, eye: orbitEye(target, view), touched: false, written: false }
+        const s = this._s
+        const range = this._range = { limits: limitsOf(o, ORBIT_LIMITS) }
         this.orbit = {
             get yaw() { return s.yaw },
+            set yaw(v) { s.yaw = wrapDegrees(v); s.written = true },
             get pitch() { return s.pitch },
+            set pitch(v) { s.pitch = clamp(v, range.limits.pitchRange[0], range.limits.pitchRange[1]); s.written = true },
             get distance() { return s.distance },
+            set distance(v) { s.distance = clamp(v, range.limits.distanceRange[0], range.limits.distanceRange[1]); s.written = true },
             get eye() { return s.eye },
             get target() { return s.target },
             bind: this._rig.bind,
@@ -476,7 +540,9 @@ export class OrbitController {
         const s = this._s
         const drag = this._rig.read(f)
         if (drag.active) s.touched = true
-        let moved = orbitStep(s, drag, limitsOf(o, ORBIT_LIMITS), f.degreesPerUnit)
+        this._range.limits = limitsOf(o, ORBIT_LIMITS)
+        let moved = orbitStep(s, drag, this._range.limits, o.degreesPerPixel ?? DEGREES_PER_PIXEL) || s.written
+        s.written = false
         const spin = o.idleSpin ?? 0
         if (!s.touched && spin !== 0 && dt > 0) {
             s.yaw = wrapDegrees(s.yaw + spin * dt)
@@ -496,11 +562,11 @@ export class OrbitController {
 }
 
 export interface FollowOptions {
-    /** Metres behind. 5 by default. */
+    /** Metres behind to start at, read once: write `cam.distance` to change it later. 5 by default. */
     distance?: number
     /** Metres above the target's position that the camera looks at. 1 by default. */
     height?: number
-    /** Degrees to start at. 15 by default. */
+    /** Degrees to start at, read once: write `cam.pitch` later. 15 by default. */
     pitch?: number
     /** Degrees. [-80, 80] by default. */
     pitchRange?: readonly [number, number]
@@ -516,13 +582,29 @@ export interface FollowOptions {
     /** What counts as a wall, as a world query filters. Everything solid by default. */
     filter?: { only?: readonly string[], skip?: readonly unknown[] }
     /**
-     * For a vehicle: with no drag held, the camera settles behind the target's
-     * own yaw, and a drag looks around until it is let go.
+     * With no drag held, the camera settles behind the target's own yaw, and
+     * a drag looks around until it is let go. `true` settles at all times,
+     * for a vehicle; `"moving"` only while the target moves across the
+     * ground, so a look round stays until the character walks.
      */
-    behind?: boolean
+    behind?: boolean | "moving"
+    /**
+     * While no drag is held, the camera turns by exactly what the target
+     * turned since the last frame, so A and D turn a character and its
+     * camera together. Off by default: a character that faces the way a
+     * stick points would swing the camera on every change of direction.
+     */
+    turnWith?: boolean
+    /** Degrees a stage pixel of drag turns it, mouse and finger alike. 0.3 by default. */
+    degreesPerPixel?: number
 }
 
-export interface FollowCamera extends Readonly<OrbitView> {
+/**
+ * `yaw`, `pitch` and `distance` are writable: written in a useFrame, they take
+ * effect in that frame's late phase, held to the ranges. `cam.yaw += 90`
+ * turns the camera a quarter.
+ */
+export interface FollowCamera extends OrbitView {
     /** Which way the character should face: the camera's yaw, set while a right drag is held. */
     readonly heading: number
     /** Both buttons are held: the cart walks forward. */
@@ -541,14 +623,20 @@ export const FOLLOW_LIMITS: OrbitLimits = { pitchRange: [-80, 80], distanceRange
 export class FollowController {
     private readonly _rig = new Rig()
     private readonly _state: FollowState
+    /** The ranges as of the last frame, which a written field is held to. */
+    private readonly _range: { limits: OrbitLimits }
     readonly camera: FollowCamera
 
     constructor(target: FollowTarget | null | undefined, o: FollowOptions = {}) {
         const s = this._state = newFollowState({ yaw: wrapDegrees(target?.yaw ?? 0), pitch: o.pitch ?? 15, distance: o.distance ?? 5 })
+        const range = this._range = { limits: limitsOf(o, FOLLOW_LIMITS) }
         this.camera = {
             get yaw() { return s.yaw },
+            set yaw(v) { s.yaw = wrapDegrees(v) },
             get pitch() { return s.pitch },
+            set pitch(v) { s.pitch = clamp(v, range.limits.pitchRange[0], range.limits.pitchRange[1]) },
             get distance() { return s.distance },
+            set distance(v) { s.distance = clamp(v, range.limits.distanceRange[0], range.limits.distanceRange[1]); s.snapReach = true },
             get heading() { return s.heading },
             get forward() { return s.forward },
             get eye() { return s.eye },
@@ -565,11 +653,13 @@ export class FollowController {
             s.forward = false
             return
         }
+        this._range.limits = limitsOf(o, FOLLOW_LIMITS)
         followStep(s, drag, target, dt, {
-            limits: limitsOf(o, FOLLOW_LIMITS),
-            degreesPerUnit: f.degreesPerUnit,
+            limits: this._range.limits,
+            degreesPerPixel: o.degreesPerPixel ?? DEGREES_PER_PIXEL,
             height: o.height ?? 1,
-            behind: o.behind === true,
+            behind: o.behind ?? false,
+            turnWith: o.turnWith === true,
             world: o.world ?? null,
             filter: o.filter,
         })
@@ -577,22 +667,21 @@ export class FollowController {
     }
 }
 
-/** The late phase, or nothing (said once) where no runtime keeps a frame clock. */
+/** A camera hook's effect: the late phase of this runtime's frames, or nothing (said) without one. Exported for tests. */
+export function subscribeCamera(hook: string, run: (dt: number, f: CameraFrame) => void): (() => void) | undefined {
+    const runtime = getCurrentRuntime()
+    if (runtime === null) {
+        console.warn(`[oj] ${hook}: no frame clock here, so the camera will not move.`)
+        return undefined
+    }
+    const f: CameraFrame = { source: input, claimed: heldByControl }
+    return runtime.onLateFrame((dt) => run(dt, f))
+}
+
 function useLatePhase(hook: string, run: (dt: number, f: CameraFrame) => void): void {
     const latest = useRef(run)
     latest.current = run
-    useEffect(() => {
-        const runtime = getCurrentRuntime()
-        if (runtime === null) {
-            console.warn(`[oj] ${hook}: no frame clock here, so the camera will not move.`)
-            return
-        }
-        const f: CameraFrame = { source: input, claimed: heldByControl, degreesPerUnit: 1 }
-        return runtime.onLateFrame((dt) => {
-            f.degreesPerUnit = 360 / Math.max(1, runtime.stage.height)
-            latest.current(dt, f)
-        })
-    }, [hook])
+    useEffect(() => subscribeCamera(hook, (dt, f) => latest.current(dt, f)), [hook])
 }
 
 /**
@@ -613,7 +702,8 @@ export function useOrbit(options: OrbitOptions = {}): Orbit {
 /**
  * A camera behind an actor, WoW's way: right drag turns the camera and the
  * character's `heading` with it, left drag looks around without turning it,
- * both buttons held is `forward`, the wheel or two fingers zoom. Follows the
+ * both buttons held is `forward`, the wheel or two fingers zoom, and with
+ * `turnWith` the camera turns as the actor does. Follows the
  * actor (`car.body.actor`, `me.actor`), what is drawn, never a body. The
  * object is live and read in a frame: nothing re-renders as the target moves.
  * Null as the target holds the camera where it is.

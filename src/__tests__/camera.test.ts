@@ -8,9 +8,10 @@ import path from "node:path"
 import { describe, it, expect, beforeAll, vi } from "vitest"
 import {
     FollowController, OrbitController, followStep, newDragFrame, newDragTracker, newFollowState, orbitEye, orbitStep,
-    readDrag, wrapDegrees, ORBIT_LIMITS, FOLLOW_LIMITS,
+    readDrag, subscribeCamera, wrapDegrees, ORBIT_LIMITS, FOLLOW_LIMITS,
     type CameraFrame, type DragSource, type DragTouch, type FollowStepOptions,
 } from "../camera"
+import { createRuntime } from "../runtime"
 import { WORLD_CLASS } from "../over-ui"
 import { toQuat } from "../physics3d/rotation"
 import { setWasmModule } from "../wasm"
@@ -38,7 +39,7 @@ const touch = (fingerId: number, x: number, y: number, phase: DragTouch["phase"]
     ({ fingerId, position: { x, y }, delta, phase, overUI })
 const everywhere = () => true
 const nobody = () => false
-const frameOf = (src: DragSource, claimed: (f: number) => boolean = nobody): CameraFrame => ({ source: src, claimed, degreesPerUnit: 1 })
+const frameOf = (src: DragSource, claimed: (f: number) => boolean = nobody): CameraFrame => ({ source: src, claimed })
 
 /** Unity's `rotation * v` for a quaternion. */
 function rotate(q: { x: number, y: number, z: number, w: number }, v: Vec3): Vec3 {
@@ -176,7 +177,7 @@ describe("useOrbit's frame", () => {
     it("puts the camera once, then makes no call while nothing moves, and one a frame while dragged", () => {
         const s = scene()
         const c = new OrbitController({ distance: 6 })
-        const o = { camera: s }
+        const o = { camera: s, degreesPerPixel: 1 }
         c.frame(1 / 60, o, frameOf(source()))
         expect(s.calls).toHaveLength(1)
         expect(s.calls[0]!.position.map((n) => Math.round(n * 1e6) / 1e6)).toEqual(orbitEye([0, 0, 0], { yaw: 0, pitch: 20, distance: 6 }).map((n) => Math.round(n * 1e6) / 1e6))
@@ -234,7 +235,7 @@ describe("useOrbit's frame", () => {
 
 describe("a follow camera's step", () => {
     const step = (over: Partial<FollowStepOptions> = {}): FollowStepOptions =>
-        ({ limits: FOLLOW_LIMITS, degreesPerUnit: 1, height: 1, behind: false, world: null, ...over })
+        ({ limits: FOLLOW_LIMITS, degreesPerPixel: 1, height: 1, behind: false, turnWith: false, world: null, ...over })
     const held = (left: boolean, right: boolean, dx = 0) => ({ ...newDragFrame(), left, right, active: left || right, dx })
 
     it("turns the heading with a right drag, looks around with a left one, and walks with both", () => {
@@ -280,6 +281,152 @@ describe("a follow camera's step", () => {
         me.position = [40, 9, 0]
         followStep(s, newDragFrame(), me, 1 / 60, step())
         expect(s.pivot).toEqual([40, 10, 0])
+    })
+
+    // follow-camera.md: A and D turn a WoW character and its camera together.
+    it("with turnWith, turns by exactly what the target turned, and not while a drag is held", () => {
+        const s = newFollowState({ yaw: 0, pitch: 15, distance: 5 })
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        me.yaw = 90
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        expect(s.yaw).toBe(90)
+        // Holding a left drag and turning leaves the camera where the hand holds it.
+        me.yaw = 180
+        followStep(s, held(true, false), me, 1 / 60, step({ turnWith: true }))
+        expect(s.yaw).toBe(90)
+        // Let go, the turn already made stays made: the camera does not catch up on it.
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        expect(s.yaw).toBe(90)
+        // Through 180 the short way.
+        me.yaw = -170
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        expect(s.yaw).toBeCloseTo(100, 9)
+    })
+
+    // Lesson 1's case: D held 2 s at 180 degrees a second trailed 64 behind.
+    it("with turnWith, ends a steady 180 degree a second turn within half a degree of behind, where behind alone trails 63", () => {
+        const trail = (over: Partial<FollowStepOptions>) => {
+            const s = newFollowState({ yaw: 0, pitch: 15, distance: 5 })
+            const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+            for (let i = 0; i <= 120; i++) {
+                me.yaw = wrapDegrees(180 * i / 60)
+                followStep(s, newDragFrame(), me, 1 / 60, step(over))
+            }
+            return Math.abs(wrapDegrees(me.yaw - s.yaw))
+        }
+        expect(trail({ turnWith: true })).toBeLessThan(0.5)
+        expect(trail({ turnWith: true, behind: "moving" })).toBeLessThan(0.5)
+        const alone = trail({ behind: true })
+        expect(alone).toBeGreaterThan(60)
+        expect(alone).toBeLessThan(65)
+    })
+
+    it("with behind \"moving\", stays where a look round left it while the target stands, and settles as behind does once it walks", () => {
+        const s = newFollowState({ yaw: 40, pitch: 15, distance: 5 })
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        for (let i = 0; i < 120; i++) followStep(s, newDragFrame(), me, 1 / 60, step({ behind: "moving" }))
+        expect(s.yaw).toBe(40)
+        // Walking, frame for frame what behind: true does.
+        const always = newFollowState({ yaw: 40, pitch: 15, distance: 5 })
+        const twin = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        followStep(always, newDragFrame(), twin, 1 / 60, step({ behind: true }))
+        always.yaw = 40
+        for (let i = 1; i <= 120; i++) {
+            me.position = [0, 0, 3 * i / 60]
+            twin.position = me.position
+            followStep(s, newDragFrame(), me, 1 / 60, step({ behind: "moving" }))
+            followStep(always, newDragFrame(), twin, 1 / 60, step({ behind: true }))
+            expect(s.yaw, `frame ${i}`).toBe(always.yaw)
+        }
+        expect(Math.abs(s.yaw)).toBeLessThan(0.5)
+        // Falling or jumping in place is not walking.
+        const t = newFollowState({ yaw: 40, pitch: 15, distance: 5 })
+        const jumper = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        for (let i = 0; i < 60; i++) {
+            jumper.position = [0, Math.sin(i / 10), 0]
+            followStep(t, newDragFrame(), jumper, 1 / 60, step({ behind: "moving" }))
+        }
+        expect(t.yaw).toBe(40)
+    })
+})
+
+// follow-camera.md: a fixed rate a stage pixel, so the same hand movement turns the same way in any window.
+describe("how far a drag turns", () => {
+    function dragged(stageHeight: number, make: () => { frame: (f: CameraFrame) => void, yaw: () => number }) {
+        const runtime = createRuntime({ root: {}, version: "1.0.0", viewport: { width: stageHeight * 16 / 9, height: stageHeight } })
+        const cam = make()
+        let src = source()
+        const stop = subscribeCamera("test", (_dt, f) => cam.frame({ ...f, source: src }))
+        src = source({ wasLeftPressed: true, leftButton: true })
+        runtime.beginFrame(1 / 60)
+        for (let i = 0; i < 10; i++) {
+            src = source({ leftButton: true, delta: { x: 20, y: 0 } })
+            runtime.beginFrame(1 / 60)
+        }
+        stop!()
+        runtime.dispose()
+        return cam.yaw()
+    }
+    const follow = () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const c = new FollowController(me)
+        return { frame: (f: CameraFrame) => c.frame(1 / 60, me, {}, f), yaw: () => c.camera.yaw }
+    }
+    const orbit = (o = {}) => {
+        const c = new OrbitController(o)
+        return { frame: (f: CameraFrame) => { c.frame(1 / 60, o, f) }, yaw: () => c.orbit.yaw }
+    }
+
+    it("turns 60 degrees for a 200 pixel drag at 0.3 a pixel, in the site's 538 pixel stage and full screen", () => {
+        for (const height of [538, 1290]) {
+            expect(dragged(height, follow), `follow, ${height}`).toBeCloseTo(60, 9)
+            expect(dragged(height, () => orbit()), `orbit, ${height}`).toBeCloseTo(60, 9)
+        }
+    })
+
+    it("turns at the rate it is given", () => {
+        expect(dragged(538, () => orbit({ degreesPerPixel: 0.34 }))).toBeCloseTo(68, 9)
+    })
+})
+
+describe("fields a cart writes", () => {
+    it("takes a written distance in the same frame, held to distanceRange, and the eye goes that far", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const c = new FollowController(me)
+        c.frame(1 / 60, me, {}, frameOf(source()))
+        c.camera.distance = 50
+        expect(c.camera.distance).toBe(FOLLOW_LIMITS.distanceRange[1])
+        c.frame(1 / 60, me, {}, frameOf(source()))
+        const e = c.camera.eye, p = c.camera.target
+        expect(Math.hypot(e[0] - p[0], e[1] - p[1], e[2] - p[2])).toBeCloseTo(30, 9)
+        c.camera.distance = 0
+        expect(c.camera.distance).toBe(FOLLOW_LIMITS.distanceRange[0])
+    })
+
+    it("holds a written pitch to pitchRange, and turns by a written yaw", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const c = new FollowController(me, { pitchRange: [-10, 40] })
+        c.frame(1 / 60, me, { pitchRange: [-10, 40] }, frameOf(source()))
+        c.camera.pitch = 75
+        expect(c.camera.pitch).toBe(40)
+        c.camera.yaw += 270
+        expect(c.camera.yaw).toBe(-90)
+        c.frame(1 / 60, me, { pitchRange: [-10, 40] }, frameOf(source()))
+        expect(c.camera.eye[0]).toBeGreaterThan(0)
+    })
+
+    it("moves an orbit written while still, and writes the scene's camera then", () => {
+        const calls: unknown[] = []
+        const o = { camera: { camera: (x: unknown) => { calls.push(x) } } }
+        const c = new OrbitController(o)
+        c.frame(1 / 60, o, frameOf(source()))
+        expect(c.frame(1 / 60, o, frameOf(source()))).toBe(false)
+        c.orbit.distance = 500
+        expect(c.orbit.distance).toBe(100)
+        expect(c.frame(1 / 60, o, frameOf(source()))).toBe(true)
+        expect(calls).toHaveLength(2)
+        expect(Math.hypot(...c.orbit.eye)).toBeCloseTo(100, 9)
     })
 })
 
