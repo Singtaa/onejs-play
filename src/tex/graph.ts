@@ -1,0 +1,75 @@
+/**
+ * The graph a `tex` chain describes. Nothing here draws: a node is a value,
+ * and two calls with the same op, parameters and inputs have the same `id`,
+ * which the planner draws once, so a shared subgraph costs one pass however
+ * it was spelt.
+ */
+
+export type Edges = "auto" | "wrap" | "clamp"
+
+/** How a node reads its inputs, which decides what the planner may fuse. */
+export type NodeKind =
+    /** Makes a value at this texel from nothing: fuses into whatever reads it. */
+    | "generator"
+    /** Reads its inputs at this texel only: fuses, and its inputs fuse into it. */
+    | "pointwise"
+    /** Reads its inputs anywhere: each input is drawn into a texture first. */
+    | "area"
+    /** A texture handed in from outside the graph. */
+    | "source"
+
+export interface Node {
+    readonly op: string
+    readonly kind: NodeKind
+    readonly inputs: readonly Node[]
+    /** Parameters, resolved: every default filled, nothing a caller can still change. */
+    readonly params: Readonly<Record<string, unknown>>
+    readonly width: number
+    readonly height: number
+    /** Whether the picture repeats seamlessly (spec 1.4): what an `edges: "auto"` filter reads. */
+    readonly tiles: boolean
+    /** The node's identity: op, parameters and inputs. Equal ids draw equal pixels. */
+    readonly id: string
+    /** A source node's texture; undefined everywhere else. */
+    readonly texture?: unknown
+}
+
+/** FNV-1a over a string, as eight hex digits. */
+function hash32(text: string, seed = 0x811c9dc5): string {
+    let h = seed >>> 0
+    for (let i = 0; i < text.length; i++) {
+        h ^= text.charCodeAt(i)
+        h = Math.imul(h, 0x01000193) >>> 0
+    }
+    return h.toString(16).padStart(8, "0")
+}
+
+let sourceCount = 0
+
+export function makeNode(
+    op: string, kind: NodeKind, inputs: readonly Node[], params: Record<string, unknown>,
+    width: number, height: number, tiles: boolean, texture?: unknown,
+): Node {
+    // A source's identity is the texture it holds, which has no stable text,
+    // so each source is its own node.
+    const key = texture !== undefined
+        ? `source#${++sourceCount}`
+        : `${op}|${width}x${height}|${tiles ? 1 : 0}|${JSON.stringify(params)}|${inputs.map((n) => n.id).join(",")}`
+    // Two hashes of the key, 64 bits: the planner treats equal ids as one node.
+    const id = hash32(key) + hash32(key, 0x01000193)
+    return { op, kind, inputs, params, width, height, tiles, id, texture }
+}
+
+/** Every node a graph reaches, inputs before readers, each once. */
+export function topological(root: Node): Node[] {
+    const out: Node[] = []
+    const seen = new Set<string>()
+    const visit = (n: Node) => {
+        if (seen.has(n.id)) return
+        seen.add(n.id)
+        for (const i of n.inputs) visit(i)
+        out.push(n)
+    }
+    visit(root)
+    return out
+}

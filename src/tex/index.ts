@@ -1,0 +1,240 @@
+/**
+ * `tex`: Magerie's texture nodes as code.
+ *
+ *     import { tex } from "oj"
+ *
+ *     const { noise } = tex.canvas(512, { tile: true })
+ *     const height = noise("perlin", 23, { scale: 56, octaves: 2 }).warp(noise("perlin", 11), 18).blur(1)
+ *     const grass = height.gradientMap(["#1a3d24", "#62a832 70%", "#c9e267"]).alpha(height)
+ *     scene.mesh({ ...ground, splat: { layers: [grass.texture(), rock], weights } })
+ *
+ * A chain is a description. `.texture()` plans it into as few passes as it
+ * can, draws them on the GPU, and hands back one texture; asking again for
+ * the same graph hands back the same texture.
+ */
+import type { Texture } from "onejs-react"
+import { makeNode, type Node } from "./graph"
+import { draw, plan } from "./engine"
+import { KERNELS, SPECS, resolve, type Canvas, type SpecName } from "./nodes"
+import type { BlendMode, Fractal, InvertChannels, NoiseType, VoronoiMode } from "./kernels"
+
+declare const CS: any
+
+export type { BlendMode, Fractal, InvertChannels, NoiseType, VoronoiMode }
+export type Edges = "auto" | "wrap" | "clamp"
+
+export interface SizeOptions {
+    /** Pixels across. Default: the canvas's. */
+    width?: number
+    /** Pixels down. Default: the canvas's. */
+    height?: number
+}
+
+export interface NoiseOptions extends SizeOptions {
+    type?: NoiseType
+    scale?: number
+    scaleY?: number
+    scaleLock?: boolean
+    voronoiMode?: VoronoiMode
+    fractal?: Fractal
+    warp?: number
+    /** Repeats seamlessly. Default: the canvas's `tile`. */
+    tile?: boolean
+    seed?: number
+    offsetX?: number
+    offsetY?: number
+    octaves?: number
+    persistence?: number
+    lacunarity?: number
+    aspect?: "square" | "stretch"
+}
+
+export interface EdgesOptions {
+    /** How a neighbour past the edge is read. `"auto"` wraps an input that tiles. */
+    edges?: Edges
+}
+
+export interface LevelsOptions {
+    gamma?: number
+    inputBlack?: number
+    inputWhite?: number
+    outputBlack?: number
+    outputWhite?: number
+}
+
+/** A stop: `"#2f6e26"`, `"#2f6e26 35%"`, or Magerie's `{ position, color }`. */
+export type GradientStop = string | { position: number, color: string }
+
+export interface GradientMapOptions {
+    colors?: readonly GradientStop[]
+    alphaFromInput?: "off"
+}
+
+export interface TileOptions {
+    repeatX?: number
+    repeatY?: number
+    offsetX?: number
+    offsetY?: number
+    mirror?: boolean
+}
+
+/** Every node that takes images, written with its images first. */
+interface ImageNodes {
+    invert(img: TexImage, channels?: InvertChannels): TexImage
+    levels(img: TexImage, gamma?: number | LevelsOptions, opts?: LevelsOptions): TexImage
+    gradientMap(img: TexImage, colors?: readonly GradientStop[] | GradientMapOptions, opts?: GradientMapOptions): TexImage
+    blend(base: TexImage, top: TexImage, mode?: BlendMode, opacity?: number): TexImage
+    blur(img: TexImage, radius?: number | (EdgesOptions & { radius?: number }), opts?: EdgesOptions): TexImage
+    warp(src: TexImage, displacement: TexImage, strength?: number | (EdgesOptions & { strength?: number }), opts?: EdgesOptions): TexImage
+    tile(img: TexImage, repeatX?: number | TileOptions, opts?: TileOptions): TexImage
+    /** This picture's colour with `height`'s grey as alpha, straight: what a splat layer reads. */
+    alpha(color: TexImage, height: TexImage): TexImage
+}
+
+type Tail<F> = F extends (first: TexImage, ...rest: infer R) => TexImage ? (...rest: R) => TexImage : never
+type ImageMethods = { [K in keyof ImageNodes]: Tail<ImageNodes[K]> }
+
+/** The generators, which a canvas sizes. */
+interface Generators {
+    noise(type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions): TexImage
+}
+
+export type TexFunctions = ImageNodes & Generators
+
+interface Baked { texture: unknown, ready: Promise<Texture> }
+
+const baked = new Map<string, Baked>()
+
+/** A picture described by nodes. Every method returns a new one; nothing is drawn until `texture()`. */
+// The methods are installed on the prototype from the node table below, and
+// this merge is how their types reach the class: one table, two spellings.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export interface TexImage extends ImageMethods {}
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export class TexImage {
+    /** @internal */
+    readonly node: Node
+    /** @internal */
+    constructor(node: Node) { this.node = node }
+
+    get width(): number { return this.node.width }
+    get height(): number { return this.node.height }
+    /** Whether it repeats seamlessly. */
+    get tiles(): boolean { return this.node.tiles }
+
+    /**
+     * The picture as a texture, for `scene.mesh`, `<Image>` or particles. It
+     * is handed back at once and filled when the GPU has drawn it, a frame or
+     * a few later; a mesh given it before then shows it when it is. The same
+     * graph asked again is the same texture.
+     */
+    texture(): Texture {
+        return bake(this.node).texture as Texture
+    }
+
+    /** The texture, once it holds the picture: for a loading screen, or a test. */
+    ready(): Promise<Texture> {
+        return bake(this.node).ready
+    }
+}
+
+function isImage(v: unknown): v is TexImage {
+    return v instanceof TexImage
+}
+
+function call(name: SpecName, canvas: Canvas, args: readonly unknown[]): TexImage {
+    const { images, params } = resolve(name, args, isImage)
+    return new TexImage(SPECS[name].make(params, images, canvas))
+}
+
+const IMAGE_NODES = (Object.keys(SPECS) as SpecName[]).filter((n) => SPECS[n].images > 0)
+const GENERATORS = (Object.keys(SPECS) as SpecName[]).filter((n) => SPECS[n].images === 0)
+
+for (const name of IMAGE_NODES) {
+    // An image's size and tiling come from the image, so a method needs no canvas.
+    Object.defineProperty(TexImage.prototype, name, {
+        value(this: TexImage, ...args: unknown[]) { return call(name, DEFAULT_CANVAS, [this, ...args]) },
+        writable: true, configurable: true,
+    })
+}
+
+function functions(canvas: Canvas): TexFunctions {
+    const out: Record<string, unknown> = {}
+    for (const name of [...IMAGE_NODES, ...GENERATORS]) out[name] = (...args: unknown[]) => call(name, canvas, args)
+    return out as unknown as TexFunctions
+}
+
+/** Magerie's document default (nativePipelineHelpers.ts:22). */
+const DEFAULT_CANVAS: Canvas = { width: 1024, height: 1024, tile: false }
+
+export interface CanvasOptions {
+    /** Every generator from this canvas that can tile does, so every `edges: "auto"` filter wraps. */
+    tile?: boolean
+    /** Pixels down, when not square. */
+    height?: number
+}
+
+function canvas(width: number, options: CanvasOptions = {}): TexFunctions {
+    const c: Canvas = { width, height: options.height ?? width, tile: options.tile === true }
+    // Checked here, once, rather than at the first generator.
+    if (![c.width, c.height].every((v) => Number.isInteger(v) && v >= 1 && v <= 8192)) {
+        throw new Error(`[oj] tex.canvas is ${c.width} by ${c.height}, whole numbers of pixels from 1 to 8192`)
+    }
+    return functions(c)
+}
+
+/**
+ * A picture from bytes: `width * height * 4`, RGBA, premultiplied, as
+ * Magerie stores them. For tests, and for data a cart computes.
+ */
+function pixels(width: number, height: number, rgba: Uint8Array | readonly number[], options: { tile?: boolean } = {}): TexImage {
+    if (rgba.length !== width * height * 4) throw new Error(`[oj] tex.pixels: ${width} by ${height} is ${width * height * 4} bytes, and these are ${rgba.length}`)
+    const T = CS.UnityEngine
+    // Linear, so a byte reads as itself over 255 and not as sRGB decoded.
+    const texture = new T.Texture2D(width, height, T.TextureFormat.RGBA32, false, true)
+    texture.filterMode = T.FilterMode.Bilinear
+    texture.wrapMode = options.tile === true ? T.TextureWrapMode.Repeat : T.TextureWrapMode.Clamp
+    // Magerie's row 0 is the top, Unity's the bottom.
+    const flipped = new Uint8Array(rgba.length)
+    const row = width * 4
+    for (let y = 0; y < height; y++) {
+        for (let i = 0; i < row; i++) flipped[(height - 1 - y) * row + i] = rgba[y * row + i]!
+    }
+    texture.LoadRawTextureData(flipped)
+    texture.Apply(false, false)
+    return new TexImage(makeNode("pixels", "source", [], {}, width, height, options.tile === true, texture))
+}
+
+function bake(node: Node): Baked {
+    const known = baked.get(node.id)
+    if (known !== undefined) return known
+    const T = CS.UnityEngine
+    const into = new T.RenderTexture(node.width, node.height, 0, T.RenderTextureFormat.ARGB32, T.RenderTextureReadWrite.sRGB)
+    into.wrapMode = node.tiles ? T.TextureWrapMode.Repeat : T.TextureWrapMode.Clamp
+    into.filterMode = T.FilterMode.Bilinear
+    into.name = `tex ${node.op} ${node.id}`
+    into.Create()
+    const ready = draw(plan(node, KERNELS), into).then(() => {
+        // A mesh handed the texture before it was drawn copied it empty.
+        CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
+        return into as Texture
+    })
+    const entry: Baked = { texture: into, ready }
+    baked.set(node.id, entry)
+    // A failed bake is said, and forgotten, so asking again tries again.
+    ready.catch((e) => {
+        baked.delete(node.id)
+        console.error(e instanceof Error ? e.message : String(e))
+    })
+    return entry
+}
+
+const defaults = functions(DEFAULT_CANVAS)
+
+/** Magerie's nodes as code. Each node is a function here and a method on every image. */
+export const tex = {
+    ...defaults,
+    /** Generators sized `width` (by `height`), tiling if asked, with every other node beside them. */
+    canvas,
+    pixels,
+}

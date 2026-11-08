@@ -164,6 +164,18 @@ export type { UvRect, AssetEntry } from "./asset"
 export * as fx from "onejs-unity/fx"
 
 /**
+ * Magerie's texture nodes as code: `tex.canvas(512, { tile: true })`, then
+ * chains such as `noise("perlin", 7).warp(d, 18).blur(2)`, and `.texture()`
+ * for `scene.mesh`. A namespace, so its node names (`blend`, `tile`, `noise`)
+ * do not take loose names a game wants for itself.
+ */
+export { tex, TexImage } from "./tex"
+export type {
+    TexFunctions, NoiseOptions as TexNoiseOptions, LevelsOptions, GradientStop, GradientMapOptions, TileOptions,
+    EdgesOptions, CanvasOptions, BlendMode as TexBlendMode, NoiseType, Edges as TexEdges,
+} from "./tex"
+
+/**
  * Write your own per pixel program, in TypeScript.
  *
  *     import { sl, compile, ShaderProgram } from "oj"
