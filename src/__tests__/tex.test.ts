@@ -18,6 +18,15 @@ describe("tex graph", () => {
         expect(noise("voronoi", 5, { scale: 7 }).node.params).toMatchObject({ shape: { type: "voronoi" }, values: { seed: 5, scale: [7, 7] } })
         expect(noise({ type: "white" }).node.params).toMatchObject({ shape: { type: "white", single: true } })
         expect(() => noise("perlin", 1, { sclae: 3 } as never)).toThrow(/no option "sclae"/)
+        // The kind string is optional, as in Magerie's script API, and any parameter can be an option.
+        expect(noise(5).node.id).toBe(noise("simplex", 5).node.id)
+        expect(noise({ seed: 5 }).node.id).toBe(noise(5).node.id)
+        const h = noise("perlin", 2), s = noise("simplex", 3)
+        expect(h.slopeBlur(s, "min", 8).node.id).toBe(h.slopeBlur(s, 8, { mode: "min" }).node.id)
+        expect(h.curvature("convex").node.id).toBe(h.curvature({ mode: "convex" }).node.id)
+        expect(h.blend(s, 0.5).node.id).toBe(h.blend(s, "normal", 0.5).node.id)
+        expect(() => h.blur("6" as never)).toThrow(/blur radius is 6, a number/)
+        expect(() => (h.blur as (...a: unknown[]) => unknown)(6, "wrap")).toThrow(/takes radius after its image, then options; argument 3 is the string "wrap"/)
         expect(() => noise("perlin").blend(noise("white"), "overlya" as never)).toThrow(/blend mode is "overlya"/)
     })
 

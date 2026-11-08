@@ -23,7 +23,13 @@ export interface Canvas {
 export interface Spec {
     /** Leading image arguments. */
     readonly images: number
-    /** The parameters a call may give in order after the images. */
+    /**
+     * The parameter a leading string after the images names, as Magerie's
+     * script API takes a kind: `noise("voronoi", 5)`, `slopeBlur(a, s, "min")`.
+     * Optional, so `noise(5)` is a seed.
+     */
+    readonly kind?: string
+    /** The parameters a call may give in order after the images (and the kind). */
     readonly positional: readonly string[]
     /** Every option and its default. A key missing here is refused. */
     readonly defaults: Readonly<Record<string, unknown>>
@@ -146,7 +152,8 @@ export function parseStops(stops: unknown, what = "gradientMap"): Stop[] {
 export const SPECS = {
     noise: {
         images: 0,
-        positional: ["type", "seed"],
+        kind: "type",
+        positional: ["seed"],
         defaults: {
             type: "simplex", scale: 8, scaleY: null, scaleLock: true, voronoiMode: "f1", fractal: "standard",
             warp: 0, tile: null, seed: 0, offsetX: 0, offsetY: 0, octaves: 4, persistence: 0.5, lacunarity: 2,
@@ -182,7 +189,8 @@ export const SPECS = {
     },
     invert: {
         images: 1,
-        positional: ["channels"],
+        kind: "channels",
+        positional: [],
         defaults: { channels: "rgb" },
         make(p, [a]) { return pointwise("invert", { channels: oneOf(p.channels, CHANNELS, "invert channels") }, [a!]) },
     },
@@ -209,7 +217,8 @@ export const SPECS = {
     },
     blend: {
         images: 2,
-        positional: ["mode", "opacity"],
+        kind: "mode",
+        positional: ["opacity"],
         defaults: { mode: "normal", opacity: 1 },
         make(p, [a, b]) {
             return pointwise("blend", { mode: oneOf(p.mode, BLEND_MODES, "blend mode"), opacity: num(p.opacity, "blend opacity", 0, 1) }, [a!, b!])
@@ -238,6 +247,7 @@ export const SPECS = {
     },
     slopeBlur: {
         images: 2,
+        kind: "mode",
         positional: ["intensity"],
         defaults: { intensity: 20, samples: 16, mode: "blur", edges: "auto" },
         make(p, [src, slope]) {
@@ -258,7 +268,8 @@ export const SPECS = {
     },
     curvature: {
         images: 1,
-        positional: ["mode", "intensity"],
+        kind: "mode",
+        positional: ["intensity"],
         defaults: { intensity: 1, mode: "both", edges: "auto" },
         make(p, [a]) {
             const wrap = wraps(p.edges, a!, "curvature")
@@ -339,7 +350,11 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
         images.push(a.node)
     }
     const params: Record<string, unknown> = { ...spec.defaults }
-    const rest = args.slice(spec.images)
+    let rest = args.slice(spec.images)
+    if (spec.kind !== undefined && typeof rest[0] === "string") {
+        params[spec.kind] = rest[0]
+        rest = rest.slice(1)
+    }
     let options: Record<string, unknown> | undefined
     for (let i = 0; i < rest.length; i++) {
         const a = rest[i]
@@ -350,7 +365,10 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
             break
         }
         const key = spec.positional[i]
-        if (key === undefined) throw new Error(`[oj] tex ${name}: takes ${spec.positional.length === 0 ? "no" : spec.positional.join(", then ")} after its image${spec.images === 1 ? "" : "s"}, then options; argument ${spec.images + i + 1} is extra`)
+        if (key === undefined) {
+            const takes = [...(spec.kind === undefined ? [] : [`a ${spec.kind} string`]), ...spec.positional]
+            throw new Error(`[oj] tex ${name}: takes ${takes.length === 0 ? "nothing" : takes.join(", then ")} after its image${spec.images === 1 ? "" : "s"}, then options; argument ${args.length - rest.length + i + 1} is ${typeof a === "string" ? `the string ${JSON.stringify(a)}` : "extra"}`)
+        }
         if (a !== undefined) params[key] = a
     }
     for (const [key, value] of Object.entries(options ?? {})) {

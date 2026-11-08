@@ -93,6 +93,15 @@ export interface SlopeBlurOptions extends EdgesOptions {
     mode?: SlopeBlurMode
 }
 
+export interface InvertOptions {
+    channels?: InvertChannels
+}
+
+export interface BlendOptions {
+    mode?: BlendMode
+    opacity?: number
+}
+
 export interface HistogramScanOptions {
     position?: number
     contrast?: number
@@ -112,21 +121,21 @@ export interface AmbientOcclusionOptions extends EdgesOptions {
 
 /** Every node that takes images, written with its images first. */
 interface ImageNodes {
-    invert(img: TexImage, channels?: InvertChannels): TexImage
+    invert(img: TexImage, channels?: InvertChannels | InvertOptions, opts?: InvertOptions): TexImage
     levels(img: TexImage, gamma?: number | LevelsOptions, opts?: LevelsOptions): TexImage
     gradientMap(img: TexImage, colors?: readonly GradientStop[] | GradientMapOptions, opts?: GradientMapOptions): TexImage
-    blend(base: TexImage, top: TexImage, mode?: BlendMode, opacity?: number): TexImage
+    blend(base: TexImage, top: TexImage, ...rest: [mode?: BlendMode | BlendOptions, opacity?: number | BlendOptions, opts?: BlendOptions] | [opacity?: number | BlendOptions, opts?: BlendOptions]): TexImage
     blur(img: TexImage, radius?: number | (EdgesOptions & { radius?: number }), opts?: EdgesOptions): TexImage
     warp(src: TexImage, displacement: TexImage, strength?: number | (EdgesOptions & { strength?: number }), opts?: EdgesOptions): TexImage
     tile(img: TexImage, repeatX?: number | TileOptions, opts?: TileOptions): TexImage
     /** A tangent-space normal map from this picture's height (its Rec. 601 luma): OpenGL green up unless `flipY`. */
     normalMap(height: TexImage, strength?: number | NormalMapOptions, opts?: NormalMapOptions): TexImage
     /** Smears `src` uphill along `slope`'s red gradient, `intensity` pixels long. */
-    slopeBlur(src: TexImage, slope: TexImage, intensity?: number | SlopeBlurOptions, opts?: SlopeBlurOptions): TexImage
+    slopeBlur(src: TexImage, slope: TexImage, ...rest: [mode?: SlopeBlurMode | SlopeBlurOptions, intensity?: number | SlopeBlurOptions, opts?: SlopeBlurOptions] | [intensity?: number | SlopeBlurOptions, opts?: SlopeBlurOptions]): TexImage
     /** A grey band picked out of the height: white above `position`, black below, `contrast` 1 a hard step. */
     histogramScan(height: TexImage, position?: number | HistogramScanOptions, contrast?: number | HistogramScanOptions, opts?: HistogramScanOptions): TexImage
     /** Ridges and valleys of the height: grey 0.5 flat, lighter convex, darker concave (mode "both"). */
-    curvature(height: TexImage, mode?: CurvatureMode | CurvatureOptions, intensity?: number | CurvatureOptions, opts?: CurvatureOptions): TexImage
+    curvature(height: TexImage, ...rest: [mode?: CurvatureMode | CurvatureOptions, intensity?: number | CurvatureOptions, opts?: CurvatureOptions] | [intensity?: number | CurvatureOptions, opts?: CurvatureOptions]): TexImage
     /** Horizon-based ambient occlusion of the height, `radius` pixels out. */
     ambientOcclusion(height: TexImage, radius?: number | AmbientOcclusionOptions, opts?: AmbientOcclusionOptions): TexImage
     /** This picture's colour with `height`'s grey as alpha, straight: what a splat layer reads. */
@@ -138,7 +147,7 @@ type ImageMethods = { [K in keyof ImageNodes]: Tail<ImageNodes[K]> }
 
 /** The generators, which a canvas sizes. */
 interface Generators {
-    noise(type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions): TexImage
+    noise(...args: [type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions] | [seed?: number | NoiseOptions, opts?: NoiseOptions]): TexImage
 }
 
 export type TexFunctions = ImageNodes & Generators
