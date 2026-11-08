@@ -26,7 +26,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `frame.ts` | `useFrame`, the per-frame clock a game runs on |
 | `gesture.ts` | `useSwipe`, read off `input` once per frame |
 | `stick.tsx` | `useStick`, `usePad`, `<Stick>`, `<Pad>`: thumb controls for phones, read off `input.touches` |
-| `camera.ts` | `useOrbit` and `useFollowCamera`: a drag read off `input` inside a bound View at `degreesPerPixel` (0.3), written to the scene's camera in the late phase, once a change. The follow camera's `turnWith` turns it as its target turns, `behind: "moving"` settles it only while the target walks, and both hooks' `yaw`, `pitch` and `distance` are writable |
+| `camera.ts` | `useOrbit` and `useFollowCamera`: a drag read off `input` inside a bound View at `degreesPerPixel` (0.3), written to the scene's camera in the late phase, once a change. The follow camera's `turnWith` turns it as its target turns, `behind: "moving"` settles it only while the target walks, and both hooks' `yaw`, `pitch` and `distance` are writable. From 1.6 the follow camera has WoW's feel by default: a drag dead zone, an eased wheel notch, `clearance` swept the whole way back, a `ground` height function for streamed worlds, the ground on its own timing and a zoom debt (the file's header has the numbers) |
 | `stage.ts` | The stage (the window, in logical pixels) and Unity screen space into it |
 | `asset.ts` | `assetUrl`, `assetInfo`, `setAssetMap`, `loadTexture`, `useTexture`, `loadFont`, `useFont`, `useFlipbook`, `loadSheet`: a game's own files |
 | `preload.ts` | `preload`: a game's files loaded ahead of first use, with progress in bytes; `unload`: the pictures, models and fonts it no longer needs, freed |

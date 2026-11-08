@@ -120,7 +120,7 @@ export type { StickState, PadState, StickOptions } from "./stick"
 
 // Cameras a cart drags: around a point, and behind an actor.
 export { useOrbit, useFollowCamera } from "./camera"
-export type { Orbit, OrbitOptions, FollowCamera, FollowOptions, FollowTarget, CameraBind } from "./camera"
+export type { Orbit, OrbitOptions, FollowCamera, FollowOptions, FollowTarget, CameraBind, GroundHeight } from "./camera"
 
 // math
 
