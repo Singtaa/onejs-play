@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 import {
     FollowController, OrbitController, followStep, newDragFrame, newDragTracker, newFollowState, orbitEye, orbitStep,
     readDrag, subscribeCamera, wrapDegrees, ORBIT_LIMITS, FOLLOW_LIMITS,
-    type CameraFrame, type DragSource, type DragTouch, type FollowStepOptions,
+    type CameraFrame, type DragSource, type DragTouch, type FollowOptions, type FollowStepOptions,
 } from "../camera"
 import { createRuntime } from "../runtime"
 import { WORLD_CLASS } from "../over-ui"
@@ -238,15 +238,38 @@ describe("a follow camera's step", () => {
         ({ limits: FOLLOW_LIMITS, degreesPerPixel: 1, height: 1, behind: false, turnWith: false, world: null, ...over })
     const held = (left: boolean, right: boolean, dx = 0) => ({ ...newDragFrame(), left, right, active: left || right, dx })
 
-    it("turns the heading with a right drag, looks around with a left one, and walks with both", () => {
+    // The 1.4.0 review's P1: a heading kept from the last right drag flipped the character on the next press.
+    it("turns the heading with a right drag, reads the target's own yaw with none, and walks with both", () => {
         const s = newFollowState({ yaw: 0, pitch: 15, distance: 5 })
         const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
         followStep(s, held(false, true, 20), me, 1 / 60, step())
         expect([s.yaw, s.heading, s.forward]).toEqual([20, 20, false])
+        me.yaw = 20
         followStep(s, held(true, false, 15), me, 1 / 60, step())
         expect([s.yaw, s.heading, s.forward]).toEqual([35, 20, false])
+        me.yaw = -60
+        followStep(s, newDragFrame(), me, 1 / 60, step())
+        expect([s.yaw, s.heading]).toEqual([35, -60])
         followStep(s, held(true, true), me, 1 / 60, step())
         expect([s.heading, s.forward]).toEqual([35, true])
+    })
+
+    // Finding 28: lesson 1 steered its character from cam.yaw in useLateFrame, after the camera's own late frame.
+    it("with turnWith, does not follow the turn a cart made from the camera on the frame its drag ends", () => {
+        const s = newFollowState({ yaw: 0, pitch: 15, distance: 5 })
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        for (let i = 0; i < 10; i++) {
+            followStep(s, held(false, true, 4), me, 1 / 60, step({ turnWith: true }))
+            me.yaw = s.yaw                                                  // the cart steers, late
+        }
+        expect(s.yaw).toBe(40)
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        expect(s.yaw).toBe(40)
+        // The frame after, A and D turn the camera again.
+        me.yaw = 43
+        followStep(s, newDragFrame(), me, 1 / 60, step({ turnWith: true }))
+        expect(s.yaw).toBe(43)
     })
 
     it("with behind, comes round behind a target that turned, and not while a drag is held", () => {
@@ -352,6 +375,84 @@ describe("a follow camera's step", () => {
 })
 
 // follow-camera.md: a fixed rate a stage pixel, so the same hand movement turns the same way in any window.
+/**
+ * /docs/3d's WoW cart, frame by frame as the runtime runs it: the cart's
+ * useFrame steers from the camera, then the camera's late frame. The source
+ * is one live object, as `input` is, and the frame is counted.
+ */
+describe("a follow camera read in a useFrame", () => {
+    function cart(over: FollowOptions = {}) {
+        const src = source()
+        const f: CameraFrame & { frame: number } = { source: src, claimed: nobody, frame: 0 }
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { degreesPerPixel: 0.3, turnWith: true, ...over }
+        const c = new FollowController(me, o)
+        const cam = c.camera
+        return {
+            me, cam,
+            /** One frame: the mouse as given, the cart's frame callback, then the camera's late one. */
+            frame(mouse: Partial<DragSource["mouse"]>, turn = 0, then?: () => void) {
+                Object.assign(src.mouse, { delta: { x: 0, y: 0 }, wasLeftPressed: false, wasRightPressed: false }, mouse)
+                f.frame++
+                if (src.mouse.rightButton) me.yaw = cam.heading                // a right drag steers
+                me.yaw = wrapDegrees(me.yaw + turn)                            // A and D
+                then?.()
+                c.frame(1 / 60, me, o, f)
+            },
+        }
+    }
+
+    // The 1.4.0 review's P1.
+    it("does not flip the character on a right press after A or D", () => {
+        const t = cart()
+        t.frame({})
+        for (let i = 0; i < 30; i++) t.frame({}, 3)
+        expect(t.me.yaw).toBe(90)
+        t.frame({ rightButton: true, wasRightPressed: true })
+        expect(t.me.yaw).toBe(90)
+        expect(t.cam.yaw).toBe(90)
+    })
+
+    // Finding 27: the heading a useFrame read was last frame's, 3 degrees behind on this drag.
+    it("steers the character with this frame's right drag, and takes the drag once however often it is read", () => {
+        const t = cart()
+        t.frame({})
+        t.frame({ rightButton: true, wasRightPressed: true })
+        for (let i = 1; i <= 20; i++) {
+            t.frame({ rightButton: true, delta: { x: 10, y: 0 } }, 0, () => {
+                void t.cam.heading
+                void t.cam.yaw
+            })
+            expect(t.cam.yaw).toBeCloseTo(3 * i, 9)
+            expect(t.me.yaw).toBeCloseTo(t.cam.yaw, 9)
+        }
+        // Read again after the late frame, it is the same frame's drag.
+        expect(t.cam.heading).toBeCloseTo(60, 9)
+        expect(t.cam.yaw).toBeCloseTo(60, 9)
+    })
+
+    it("takes a yaw written in a useFrame exactly, over that frame's drag", () => {
+        const t = cart()
+        t.frame({})
+        t.frame({ leftButton: true, wasLeftPressed: true })
+        t.frame({ leftButton: true, delta: { x: 10, y: 0 } }, 0, () => { t.cam.yaw = -45 })
+        expect(t.cam.yaw).toBe(-45)
+        t.frame({ leftButton: true, delta: { x: 10, y: 0 } }, 0, () => { t.cam.yaw += 0 })
+        expect(t.cam.yaw).toBeCloseTo(-42, 9)
+    })
+
+    it("is told the runtime's frame, so a hook's camera can be read early", () => {
+        const runtime = createRuntime({ root: {}, version: "1.0.0", viewport: { width: 960, height: 540 } })
+        const seen: (number | undefined)[] = []
+        const stop = subscribeCamera("test", (_dt, f) => seen.push(f.frame))
+        runtime.beginFrame(1 / 60)
+        runtime.beginFrame(1 / 60)
+        stop!()
+        runtime.dispose()
+        expect(seen).toEqual([1, 2])
+    })
+})
+
 describe("how far a drag turns", () => {
     function dragged(stageHeight: number, make: () => { frame: (f: CameraFrame) => void, yaw: () => number }) {
         const runtime = createRuntime({ root: {}, version: "1.0.0", viewport: { width: stageHeight * 16 / 9, height: stageHeight } })

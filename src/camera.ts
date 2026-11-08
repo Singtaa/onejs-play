@@ -24,8 +24,11 @@
  *
  * In the frame's late phase (runtime.ts), after every world has stepped and
  * placed its actors, so the camera reads where the target is drawn this
- * frame and never a step behind. A cart reading `heading` or `forward` in its
- * own useFrame sees last frame's drag, one frame of latency on a hand.
+ * frame and never a step behind. The drag alone can be taken sooner: a cart
+ * that reads or writes a follow camera's `heading`, `forward`, `yaw`, `pitch`
+ * or `distance` in its useFrame turns it by this frame's drag first, once a
+ * frame, so a character steered from `heading` faces where the camera looks
+ * that frame rather than one frame's drag behind (learn Mac's finding 27).
  *
  * WHICH WAY IS WHICH
  *
@@ -62,7 +65,9 @@
  *
  * `turnWith` turns a follow camera by exactly what its target turned since
  * the last frame, WoW's A and D, while no drag is held: holding a drag and
- * turning leaves the camera where the hand holds it. `behind` eases the
+ * turning leaves the camera where the hand holds it. Nor on the frame a drag
+ * ends, since a cart that steered its target from the camera after the late
+ * phase made a turn the camera already has (finding 28). `behind` eases the
  * camera behind the target with no drag held, always (`true`, a vehicle) or
  * only while the target moves (`"moving"`, WoW's swing back once you walk
  * after a look round). The two compose.
@@ -279,7 +284,7 @@ export interface FollowWorld {
 
 /** A follow camera's state. Exported for tests; a cart uses useFollowCamera. */
 export interface FollowState extends OrbitView {
-    /** Which way the character should face: the camera's yaw, while a right drag is held. */
+    /** Which way the character should face: the camera's yaw while a right drag is held, the target's own yaw otherwise. */
     heading: number
     /** Both buttons are held: walk forward. */
     forward: boolean
@@ -298,6 +303,8 @@ export interface FollowState extends OrbitView {
     /** The target's yaw and position last frame, for `turnWith` and `behind: "moving"`. */
     lastYaw: number
     lastAt: Vec3
+    /** A drag was held last frame, so this frame's turn of the target is not turnWith's to follow if it has ended. */
+    dragging: boolean
     /** A cart wrote the distance: take it this frame rather than backing out to it. */
     snapReach: boolean
     started: boolean
@@ -337,15 +344,38 @@ export function newFollowState(view: OrbitView, aimed: boolean = true): FollowSt
     const pivot: Vec3 = [0, 0, 0]
     return {
         ...view, heading: view.yaw, forward: false, pivot, reach: view.distance, eye: orbitEye(pivot, view),
-        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], snapReach: false, started: false, aimed,
+        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], dragging: false, snapReach: false, started: false, aimed,
     }
 }
 
 /**
- * One frame of a follow camera: the drag, `turnWith`, `behind`, the pivot,
- * and the wall. Returns the eye, which it also keeps in `s.eye`.
+ * One frame of a follow camera: its look (the drag), then the rest of it
+ * (`followOn`). Returns the eye, which it also keeps in `s.eye`.
  */
 export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: FollowTarget, dt: number, o: FollowStepOptions): Vec3 {
+    followLook(s, drag, o)
+    return followOn(s, drag, target, dt, o)
+}
+
+/**
+ * What a frame's drag does to a follow camera: turn and zoom it, set
+ * `heading` and `forward`. The controller runs it once a frame, when a cart
+ * first reads the camera or else in the late phase, which is why it is apart
+ * from the rest of the step.
+ */
+export function followLook(s: FollowState, drag: Readonly<DragFrame>, o: Pick<FollowStepOptions, "limits" | "degreesPerPixel">): void {
+    orbitStep(s, drag, o.limits, o.degreesPerPixel)
+    // Right drag turns the camera and the character with it, WoW's way.
+    if (drag.right) s.heading = s.yaw
+    else if (s.of !== null) s.heading = wrapDegrees(s.of.yaw)
+    s.forward = drag.left && drag.right
+}
+
+/**
+ * The rest of a follow camera's frame, after its look: `turnWith`, `behind`,
+ * the pivot, and the wall. Returns the eye, which it also keeps in `s.eye`.
+ */
+export function followOn(s: FollowState, drag: Readonly<DragFrame>, target: FollowTarget, dt: number, o: FollowStepOptions): Vec3 {
     const p = target.position
     // A new target is learned afresh: where it stands, and which body is its own.
     if (s.of !== target) {
@@ -364,22 +394,23 @@ export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: Fo
         s.lastYaw = target.yaw
         s.lastAt = [p[0], p[1], p[2]]
     }
-    orbitStep(s, drag, o.limits, o.degreesPerPixel)
-    // Right drag turns the camera and the character with it, WoW's way.
-    if (drag.right) s.heading = s.yaw
-    s.forward = drag.left && drag.right
 
     const turned = wrapDegrees(target.yaw - s.lastYaw)
     const moving = dt > 0 && Math.hypot(p[0] - s.lastAt[0], p[2] - s.lastAt[2]) > MOVING_SPEED * dt
+    const released = s.dragging && !drag.active
     s.lastYaw = target.yaw
     s.lastAt = [p[0], p[1], p[2]]
+    s.dragging = drag.active
     // A drag held is the hand's: turning the target then leaves the camera where it is.
     if (!drag.active) {
-        if (o.turnWith && turned !== 0) s.yaw = wrapDegrees(s.yaw + turned)
+        // The frame a drag ends, the turn is the cart's last steer from the camera, which the camera already made.
+        if (o.turnWith && turned !== 0 && !released) s.yaw = wrapDegrees(s.yaw + turned)
         if (o.behind === true || (o.behind === "moving" && moving)) {
             s.yaw = wrapDegrees(s.yaw + wrapDegrees(target.yaw - s.yaw) * (1 - Math.exp(-dt / BEHIND_SECONDS)))
         }
     }
+    // The target's yaw as of now, which a right drag's frame does not move.
+    if (!drag.right) s.heading = wrapDegrees(target.yaw)
 
     // Across, the target exactly, so speed never changes how far behind the
     // camera is; up and down eased, so a step or a bump does not jolt it.
@@ -420,6 +451,12 @@ export interface CameraBind {
 export interface CameraFrame {
     source: DragSource
     claimed: (fingerId: number) => boolean
+    /**
+     * Which frame it is, counted by the runtime. With it, a follow camera read
+     * in a useFrame takes this frame's drag then, from this same source;
+     * without, only its late frame reads the drag.
+     */
+    readonly frame?: number
 }
 
 /** Each wheel step multiplies the distance by this. */
@@ -490,13 +527,19 @@ const limitsOf = (o: { pitchRange?: readonly [number, number], distanceRange?: r
  * `yaw`, `pitch` and `distance` on the object a hook returns, defined on
  * `rest` beside its own fields: a write is held to the ranges as of the last
  * frame, one that is not a finite number is ignored, and `wrote` is told
- * which field took one.
+ * which field took one. `touch` runs before each read and write.
  */
-function viewFields<T extends object>(s: OrbitView, range: { limits: OrbitLimits }, wrote: (field: keyof OrbitView) => void, rest: T): T & OrbitView {
+function viewFields<T extends object>(
+    s: OrbitView, range: { limits: OrbitLimits }, wrote: (field: keyof OrbitView) => void, rest: T, touch: () => void = () => {},
+): T & OrbitView {
     const field = (name: keyof OrbitView, held: (v: number) => number): PropertyDescriptor => ({
         enumerable: true,
-        get: () => s[name],
+        get: () => {
+            touch()
+            return s[name]
+        },
         set: (v: number) => {
+            touch()
             if (!Number.isFinite(v)) return
             s[name] = held(v)
             wrote(name)
@@ -637,10 +680,11 @@ export interface FollowOptions {
 /**
  * `yaw`, `pitch` and `distance` are writable: written in a useFrame, they take
  * effect in that frame's late phase, held to the ranges. `cam.yaw += 90`
- * turns the camera a quarter.
+ * turns the camera a quarter. Read or written in a useFrame, the camera has
+ * already turned by this frame's drag, so `heading` is never a frame behind.
  */
 export interface FollowCamera extends OrbitView {
-    /** Which way the character should face: the camera's yaw, set while a right drag is held. */
+    /** Which way the character should face: the camera's yaw while a right drag is held, the target's own yaw otherwise. */
     readonly heading: number
     /** Both buttons are held: the cart walks forward. */
     readonly forward: boolean
@@ -660,6 +704,13 @@ export class FollowController {
     private readonly _state: FollowState
     /** The ranges as of the last frame, which a written field is held to. */
     private readonly _range: { limits: OrbitLimits }
+    /** The source the last frame read, and its options, for a read early in the next one. */
+    private _f: CameraFrame | null = null
+    private _o: FollowOptions = {}
+    /** The frame whose drag has turned the view. */
+    private _looked = NaN
+    /** Last frame had a target: with none, the view holds and a drag turns nothing. */
+    private _following = false
     readonly camera: FollowCamera
 
     constructor(target: FollowTarget | null | undefined, o: FollowOptions = {}) {
@@ -669,29 +720,55 @@ export class FollowController {
         const s = this._state = newFollowState({
             yaw: wrapDegrees(startOf(target?.yaw, 0)), pitch: clamp(startOf(o.pitch, 15), pr[0], pr[1]), distance: clamp(startOf(o.distance, 5), dr[0], dr[1]),
         }, target != null)
+        // A read in the frame phase, of a camera that followed something last frame, takes this frame's drag now.
+        const early = () => {
+            const f = this._f
+            if (f !== null && f.frame !== undefined && this._following) this._look(f, this._o)
+        }
         this.camera = viewFields(s, range, (field) => {
             if (field === "yaw") s.aimed = true
             // Taken this frame rather than backed out to.
             if (field === "distance") s.snapReach = true
         }, {
-            get heading() { return s.heading },
-            get forward() { return s.forward },
+            get heading() {
+                early()
+                return s.heading
+            },
+            get forward() {
+                early()
+                return s.forward
+            },
             get eye() { return s.eye },
             get target() { return s.pivot },
             bind: this._rig.bind,
-        })
+        }, early)
+    }
+
+    /** This frame's drag, once: turns the view and sets heading and forward. */
+    private _look(f: CameraFrame, o: FollowOptions): DragFrame {
+        if (f.frame !== undefined && f.frame === this._looked) return this._rig.drag
+        this._looked = f.frame ?? NaN
+        const drag = this._rig.read(f)
+        followLook(this._state, drag, { limits: this._range.limits, degreesPerPixel: o.degreesPerPixel ?? DEGREES_PER_PIXEL })
+        return drag
     }
 
     /** One late frame. Null as the target holds the camera where it is. */
     frame(dt: number, target: FollowTarget | null | undefined, o: FollowOptions, f: CameraFrame): void {
         const s = this._state
-        const drag = this._rig.read(f)
+        this._f = f
+        this._o = o
+        this._following = target != null
         if (target == null) {
+            // The drag is spent, and the view held: nothing to look round.
+            if (f.frame === undefined || f.frame !== this._looked) this._rig.read(f)
+            this._looked = f.frame ?? NaN
             s.forward = false
             return
         }
         this._range.limits = limitsOf(o, FOLLOW_LIMITS)
-        followStep(s, drag, target, dt, {
+        const drag = this._look(f, o)
+        followOn(s, drag, target, dt, {
             limits: this._range.limits,
             degreesPerPixel: o.degreesPerPixel ?? DEGREES_PER_PIXEL,
             height: o.height ?? 1,
@@ -711,7 +788,7 @@ export function subscribeCamera(hook: string, run: (dt: number, f: CameraFrame) 
         console.warn(`[oj] ${hook}: no frame clock here, so the camera will not move.`)
         return undefined
     }
-    const f: CameraFrame = { source: input, claimed: heldByControl }
+    const f: CameraFrame = { source: input, claimed: heldByControl, get frame() { return runtime.time.frame } }
     return runtime.onLateFrame((dt) => run(dt, f))
 }
 
