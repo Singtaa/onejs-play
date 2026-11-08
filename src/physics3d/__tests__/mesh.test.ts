@@ -170,8 +170,6 @@ describe("world.mesh", () => {
         const nav = await w.nav()
         const p = nav.path([1, 0, 1], [15, 0, 15])
         expect(Math.hypot(p.at(-1)![0] - 15, p.at(-1)![2] - 15)).toBeLessThan(0.5)
-        // Rays see a restored world after its next step, for every body (a separate finding).
-        w.step()
         expect(w.raycast([8.1, 1, 8.1], [8.1, -1, 8.1])!.body).toBe(floor)
         w.dispose()
     })

@@ -654,6 +654,46 @@ describe("shapes outside any world, and rewind", () => {
         w.dispose()
     })
 
+    it("is queryable the moment it is restored, from a snapshot taken before a step: rays, sight, sweeps and overlaps", async () => {
+        // A level saved as soon as it is built: none of it is in the engine's query tree yet.
+        const w = await floored()
+        const wall = w.box({ at: [0, 1, 5], size: [4, 2, 0.5], layer: "wall" })
+        const crate = w.box({ at: [6, 0.5, 0], layer: "crate" })
+        crate.position = [3, 0.5, 0]
+        const snap = w.snapshot()
+        wall.destroy()
+        crate.position = [-3, 0.5, 0]
+        run(w, 2)
+        w.restore(snap)
+        // The floor, never touched; the wall, destroyed and back; the crate, moved and put back.
+        expect(w.raycast([0, 3, 0], [0, -3, 0])?.body).toBe(w.bodies[0])
+        expect(w.raycast([0, 1, 0], [0, 1, 10])?.body).toBe(wall)
+        expect(w.canSee([0, 1, 0], [0, 1, 10])).toBe(false)
+        expect(w.raycast([3, 3, 0], [3, 0.6, 0])?.body).toBe(crate)
+        expect(w.raycast([-3, 3, 0], [-3, 0.6, 0])).toBeNull()
+        expect(w.sweep(shape.sphere({ radius: 0.25 }), [0, 1, 0], [0, 1, 10])?.body).toBe(wall)
+        expect(w.overlap(shape.sphere({ radius: 0.3 }), [3, 0.5, 0], { only: ["crate"] })).toEqual([crate])
+        // And the same once it has stepped.
+        run(w, 1)
+        expect(w.raycast([0, 1, 0], [0, 1, 10])?.body).toBe(wall)
+        expect(w.raycast([3, 3, 0], [3, 0.6, 0])?.body).toBe(crate)
+        w.dispose()
+    })
+
+    it("is queryable the moment it is restored from a snapshot taken after a step, a body moved by hand since back where it was", async () => {
+        const w = await floored()
+        const crate = w.box({ at: [3, 0.5, 0], layer: "crate" })
+        run(w, 2)
+        const snap = w.snapshot()
+        crate.position = [-3, 0.5, 0]
+        run(w, 2)
+        w.restore(snap)
+        expect(w.raycast([3, 3, 0], [3, 0.6, 0])?.body).toBe(crate)
+        expect(w.raycast([-3, 3, 0], [-3, 0.6, 0])).toBeNull()
+        expect(w.raycast([0, 3, 0], [0, -3, 0])?.body).toBe(w.bodies[0])
+        w.dispose()
+    })
+
     it("rewinds a character mid-jump, held walk and all, and it lands where it did", async () => {
         const w = await floored()
         const me = w.character({ at: [0, 0, 0] })
