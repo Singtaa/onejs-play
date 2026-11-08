@@ -16,7 +16,7 @@ vi.mock("onejs-unity/assets", () => ({
     loadTextAsync: async () => "",
 }))
 
-const { loadTexture, setAssetBase } = await import("../asset")
+const { loadTexture, setAssetBase, setAssetMap, textureIdentity } = await import("../asset")
 
 describe("loadTexture", () => {
     beforeEach(() => { fetches = 0; fail = false; setAssetBase("https://abc123.onejsusercontent.com/assets") })
@@ -41,5 +41,17 @@ describe("loadTexture", () => {
         setAssetBase("https://abc123.onejsusercontent.com/assets")
         await loadTexture("glow.png")
         expect(fetches).toBe(2)
+    })
+})
+
+// A ground's light is baked with its pictures' colours, so its fingerprint names them (scene.mesh texture and splat).
+describe("textureIdentity", () => {
+    it("is the name a texture was loaded by, with its contents' hash where the build's map has one", async () => {
+        setAssetBase("https://abc123.onejsusercontent.com/assets")
+        expect(textureIdentity(await loadTexture("./grass.png"))).toBe("grass.png")
+        setAssetMap({ "grass.png": ["a".repeat(64), 100] })
+        expect(textureIdentity(await loadTexture("grass.png"))).toBe(`grass.png#${"a".repeat(64)}`)
+        expect(textureIdentity({} as any), "a texture from anywhere else").toBeNull()
+        setAssetMap(null)
     })
 })

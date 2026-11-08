@@ -71,7 +71,7 @@ function recorder(): any {
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn" || name === "Scatter") return ++next
-                if (name === "SetMesh" || name === "SetLightUnwrap") return ""
+                if (name === "SetMesh" || name === "SetLightUnwrap" || name === "SetMeshTexture") return ""
                 if (name === "SetDepthOnly") return true
                 if (name === "Height") return 1
                 if (name === "LightMesh") return refused.has(args[0] as number) ? "" : squareMesh()
@@ -866,6 +866,28 @@ describe("scene.bake with a name", () => {
         await started()
         frame()
         await light.done
+        expect(baked[0]!.line).toMatch(/scene\.mesh changed/)
+    })
+
+    // The bake bounces a textured ground's picture, so a light baked under one tiling or picture is stale under another.
+    it("hashes a textured scene.mesh model's texture and tiling, so the same mesh tiled again is stale", async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        const uvs = [0, 0, 1, 0, 1, 1, 0, 1]
+        const grass = {}
+        const first = scene()
+        first.spawn(first.mesh({ ...SQUARE, uvs, texture: grass, tiling: 8 }), { static: true })
+        const light = first.bake(NAME)
+        await started()
+        frame()
+        await light.done
+        served.set(NAME, baked[0]!.bytes)
+        baked = []
+        const s = again()
+        s.spawn(s.mesh({ ...SQUARE, uvs, texture: grass, tiling: 4 }), { static: true })
+        const relit = s.bake(NAME)
+        await started()
+        frame()
+        await relit.done
         expect(baked[0]!.line).toMatch(/scene\.mesh changed/)
     })
 
