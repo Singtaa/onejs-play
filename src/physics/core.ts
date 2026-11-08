@@ -330,8 +330,12 @@ export class WorldCore<V extends readonly number[], R, A> {
     readonly sceneryWatchers = new Set<(body: BodyCore<V, R, A> | null) => void>()
     private sceneryChanged(w: Thing<V, R, A> | null | undefined): void {
         if (this.sceneryWatchers.size === 0) return
-        if (w !== null && !(w instanceof BodyCore && !w.dynamic && !w.kinematic)) return
-        for (const f of this.sceneryWatchers) f(w ?? null)
+        let body: BodyCore<V, R, A> | null = null
+        if (w !== null) {
+            if (!(w instanceof BodyCore) || w.dynamic || w.kinematic) return
+            body = w
+        }
+        for (const f of this.sceneryWatchers) f(body)
     }
     /** Dynamic and kinematic bodies alive: a world of only scenery has nothing to ride, so its characters do not look. */
     private movers = 0
