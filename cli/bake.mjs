@@ -130,7 +130,7 @@ async function waitForBakes(game, timeoutMs) {
 async function settle(root, game, b, seconds) {
     const took = `${(b.ms / 1000).toFixed(1)} s`
     switch (b.state) {
-        // "current" is what runtimes before 1.4.1 said for "loaded".
+        // "current" is what runtimes before 1.5.0 said for "loaded".
         case "loaded":
         case "current": {
             const file = path.join(root, b.name)

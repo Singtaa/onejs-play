@@ -232,7 +232,7 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
             }
         }
     })
-    // A OneJS before 1.4.1 takes one spacing for every axis, as seven floats.
+    // A OneJS before 1.5.0 takes one spacing for every axis, as seven floats.
     const perAxis = typeof bridge.ProbeGridFloats === "function" && Number(bridge.ProbeGridFloats()) >= 9
     const g = probeGrid(min, max, perAxis ? PROBE_RISE : 1)
     const grid = perAxis ? gridFloats(g) : [...g.origin, g.spacing[0], ...g.counts]

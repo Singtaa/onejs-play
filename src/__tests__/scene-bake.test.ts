@@ -42,7 +42,7 @@ let loadAnswer: string
 let lightFileAnswer: string
 // Calls LightFile answers "" before lightFileAnswer: its read landing, as on WebGPU.
 let lightFileWaits: number
-/** What the recorder's ProbeGridFloats answers: 9 as OneJS 1.4.1 does, or undefined for one before it. */
+/** What the recorder's ProbeGridFloats answers: 9 as OneJS 1.5.0 does, or undefined for one before it. */
 let gridFloats: number | undefined
 // The cart's files by name, as its origin serves them.
 let served: Map<string, Uint8Array>
@@ -197,7 +197,7 @@ describe("scene.bake", () => {
         expect(grid[0]! + (grid[6]! - 1) * grid[3]!).toBeGreaterThanOrEqual(5)
     })
 
-    it("gives a OneJS before 1.4.1, which takes one probe spacing, seven floats a metre apart every way", async () => {
+    it("gives a OneJS before 1.5.0, which takes one probe spacing, seven floats a metre apart every way", async () => {
         gridFloats = undefined
         const s = scene()
         s.spawn(s.mesh(SQUARE), { static: true, scale: 3 })

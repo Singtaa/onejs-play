@@ -23,7 +23,7 @@ export interface BakedLight {
  * current and is showing (`loaded`), it baked here (after `baked` had the
  * file), it failed and the console said why, or it stopped unfinished
  * because a later bake replaced it, `scene.clearLight` took it, or the scene
- * went. Runtimes before 1.4.1 said `current` for `loaded`.
+ * went. Runtimes before 1.5.0 said `current` for `loaded`.
  */
 export type BakeEnd = { how: "loaded" } | { how: "baked" } | { how: "failed", why: string } | { how: "stopped" }
 

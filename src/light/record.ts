@@ -15,7 +15,7 @@
 
 /**
  * Moves on whenever what the baker writes for the same scene changes, which
- * makes every saved file out of date. 2 (1.4.1): probes twice as far apart up,
+ * makes every saved file out of date. 2 (1.5.0): probes twice as far apart up,
  * the default detail chosen from the scene's size, and the file's probes a
  * byte a coefficient.
  */
@@ -154,7 +154,7 @@ export interface SavedLayout {
      * pages, and such a file still matches.
      */
     pages?: number
-    /** The probe grid's origin, a spacing an axis and three counts; one spacing for all three in a file from before 1.4.1. */
+    /** The probe grid's origin, a spacing an axis and three counts; one spacing for all three in a file from before 1.5.0. */
     grid: number[]
     /** Every rectangle, in the record's order, hashed. */
     rects: string

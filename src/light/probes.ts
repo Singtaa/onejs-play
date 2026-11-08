@@ -33,7 +33,7 @@ const total = (c: readonly number[]) => c[0]! * c[1]! * c[2]!
 
 /**
  * The grid over the static actors' bounds, `min` to `max` in metres. `rise`
- * is 1 for a host whose OneJS takes one spacing for every axis (before 1.4.1).
+ * is 1 for a host whose OneJS takes one spacing for every axis (before 1.5.0).
  */
 export function probeGrid(min: readonly number[], max: readonly number[], rise = PROBE_RISE): ProbeGrid {
     const lo = min.map((x) => x - BOUNDS_MARGIN), hi = max.map((x, i) => Math.max(x, min[i]!) + BOUNDS_MARGIN)
