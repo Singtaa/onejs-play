@@ -202,4 +202,3 @@ export async function draw<T>(plans: readonly PassPlan[], finish: (output: unkno
     }
 }
 
-declare const CS: any
