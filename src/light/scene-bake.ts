@@ -12,7 +12,7 @@
 
 import type { Bake, BakeOptions, BakeResult, Model } from "../models"
 import { assetShipped, loadAssetBytes } from "../asset"
-import { MAX_PAGES } from "./atlas"
+import { AUTO_DETAIL, DETAIL_FLOOR, MAX_PAGES } from "./atlas"
 import { bakeOptions, beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./bake"
 import { tileBudget } from "./budget"
 import { lightBakedHere, lightBegun, lightEnded, lightProgress, offerAgain, PROGRESS_EVERY_MS, type BakeEnd } from "./host"
@@ -139,7 +139,9 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
             const plan = await planLight(b, items, charts, live, given.detail)
             if (plan === null || !live()) return
             if (typeof plan === "string") return give(plan)
-            const lowered: Lowered | undefined = plan.detail < given.detail ? { asked: given.detail, baked: plan.detail, pages: MAX_PAGES } : undefined
+            // A detail chosen from the scene's size is lowered only past its floor, which is then what was asked.
+            const asked = given.detail === AUTO_DETAIL ? DETAIL_FLOOR : given.detail
+            const lowered: Lowered | undefined = plan.detail < asked ? { asked, baked: plan.detail, pages: MAX_PAGES } : undefined
             let here: BakedHere | null = null
             if (name !== undefined) {
                 here = again ? { why: "again" } : whyBakeHere(file, record!, plan)

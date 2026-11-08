@@ -14,7 +14,7 @@ import { createRuntime } from "../runtime"
 import { setWasmModule } from "../wasm"
 import { RAPIER_VERSION } from "../physics3d/rapier.version"
 import { createWorld } from "../physics3d/world"
-import { sheetOf } from "../light/atlas"
+import { DETAIL_FLOOR, sheetOf } from "../light/atlas"
 import { XATLAS_VERSION } from "../light/xatlas.version"
 import { decodeLightMesh, FILE_READ_FRAMES } from "../light/bake"
 import { TILE_BUDGET } from "../light/budget"
@@ -41,6 +41,8 @@ let loadAnswer: string
 let lightFileAnswer: string
 // Calls LightFile answers "" before lightFileAnswer: its read landing, as on WebGPU.
 let lightFileWaits: number
+/** What the recorder's ProbeGridFloats answers: 9 as OneJS 1.4.1 does, or undefined for one before it. */
+let gridFloats: number | undefined
 // The cart's files by name, as its origin serves them.
 let served: Map<string, Uint8Array>
 let fetched: string[]
@@ -80,6 +82,7 @@ function recorder(): any {
                 if (name === "FileSha256") return "c".repeat(64)
                 if (name === "LoadLight") return loadAnswer
                 if (name === "BakeProblem") return "the bake's probes could not be read"
+                if (name === "ProbeGridFloats") return gridFloats
                 if (name === "Load") return ++next
                 if (name === "Clips") return ""
                 return undefined
@@ -109,6 +112,7 @@ beforeEach(() => {
     loadAnswer = ""
     lightFileAnswer = PIXEL
     lightFileWaits = 0
+    gridFloats = 9
     served = new Map()
     fetched = []
     baked = []
@@ -185,10 +189,22 @@ describe("scene.bake", () => {
         expect(pages).toBe(1)
         // With no options, the first version's bake.
         expect([detail, samples, bounces, occlusion]).toEqual([24, 256, 2, 0])
-        // The box round the copies and the static actor, a metre past it: x from -7 to 5.
-        expect(grid.length).toBe(7)
+        // The box round the copies and the static actor, a metre past it: x from -7 to 5, a metre apart across and two up.
+        expect(grid.length).toBe(9)
         expect(grid[0]).toBeCloseTo(-8, 3)
-        expect(grid[0]! + (grid[4]! - 1) * grid[3]!).toBeGreaterThanOrEqual(5)
+        expect(Array.from(grid.subarray(3, 6))).toEqual([1, 2, 1])
+        expect(grid[0]! + (grid[6]! - 1) * grid[3]!).toBeGreaterThanOrEqual(5)
+    })
+
+    it("gives a OneJS before 1.4.1, which takes one probe spacing, seven floats a metre apart every way", async () => {
+        gridFloats = undefined
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true, scale: 3 })
+        s.bake()
+        await started()
+        const grid = of("BeginBake")[0]![3] as Float32Array
+        expect(grid.length).toBe(7)
+        expect(grid[3]).toBe(1)
     })
 
     it("bakes into a static body's actor without being told, and not a dynamic one's", async () => {
@@ -282,13 +298,37 @@ describe("scene.bake", () => {
         expect(asked().slice(-TILE_BUDGET.phaseSkip)).toEqual(Array.from({ length: TILE_BUDGET.phaseSkip }, () => TILE_BUDGET.min + 1))
     })
 
+    // Given no detail, the light takes one page while that holds DETAIL_FLOOR, so a scene's file is not four pages it could do without (review L4).
+    it("chooses a default detail from the scene's size: one page while it holds the floor, else the floor on as few pages as hold it", async () => {
+        const detailFor = async (scale: number) => {
+            calls.length = 0
+            const s = scene()
+            const ground = s.mesh(SQUARE)
+            s.spawn(ground, { static: true, position: [0, 0, 0], scale })
+            s.bake()
+            await started()
+            const [, , , , , , pages, detail] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number]
+            dispose()
+            return { pages, detail }
+        }
+        // 6 m: one page at 24, as always.
+        expect(await detailFor(3)).toEqual({ pages: 1, detail: 24 })
+        // 30 m: 720 texels at 24, which took four pages; at about 16 it is one.
+        const court = await detailFor(15)
+        expect(court.pages).toBe(1)
+        expect(court.detail).toBeGreaterThanOrEqual(DETAIL_FLOOR)
+        expect(court.detail).toBeLessThan(24)
+        // 60 m: one page would be 8 texels a metre, so the floor, on the pages that takes.
+        expect(await detailFor(30)).toEqual({ pages: 4, detail: DETAIL_FLOOR })
+    })
+
     it("packs what does not fit one page into the sheet at the detail asked, its offsets in pages, a rectangle across the seam", async () => {
         const s = scene()
         const ground = s.mesh(SQUARE)
         // A small square, and one of 30 m: 720 texels at 24 texels a metre, bigger than a page.
         s.spawn(ground, { static: true, position: [0, 0, 40], scale: 15 })
         s.spawn(ground, { static: true, position: [40, 0, 0] })
-        s.bake()
+        s.bake({ detail: 24 })
         await started()
         const [, actors, , , width, height, pages, detail] = of("BeginBake")[0]! as [string, Float32Array, Float32Array, Float32Array, number, number, number, number]
         expect([pages, detail]).toEqual([4, 24])
@@ -550,7 +590,7 @@ describe("scene.bake with a name", () => {
         expect(Buffer.from(file, "base64")).toEqual(Buffer.from(served.get(NAME)!))
         expect(Array.from(actors).filter((_, i) => i % 5 === 0)).toEqual([a!.id, b!.id])
         expect(copies.length).toBe(0)
-        expect(grid.length).toBe(7)
+        expect(grid.length).toBe(9)
         expect(width).toBe(recordOf(served.get(NAME)!).layout.atlas[0])
         expect(height).toBe(recordOf(served.get(NAME)!).layout.atlas[1])
         expect(pages).toBe(1)
@@ -558,13 +598,13 @@ describe("scene.bake with a name", () => {
     })
 
     it("saves the pages a bake used in its record, and loads its file onto as many", async () => {
-        served.set(NAME, await bakeAndSave([0, 20, 40], 9))
+        served.set(NAME, await bakeAndSave([0, 20, 40], 9, { detail: 24 }))
         const saved = recordOf(served.get(NAME)!)
         expect(saved.layout.pages).toBe(4)
         expect(saved.layout.atlas[2]).toBe(24)
         const s = again()
         room(s, [0, 20, 40], 9)
-        await s.bake(NAME).done
+        await s.bake(NAME, { detail: 24 }).done
         expect(of("BeginBake")).toEqual([])
         const [, , actors, , , width, height, pages] = of("LoadLight")[0]! as [string, string, Float32Array, Float32Array, Float32Array, number, number, number]
         expect([width, height, pages]).toEqual([saved.layout.atlas[0], saved.layout.atlas[1], 4])
@@ -595,7 +635,7 @@ describe("scene.bake with a name", () => {
         frame()
         await light.done
         expect(of("LoadLight")).toEqual([])
-        expect(baked[0]!.line).toBe(`[oj] ${NAME} was baked for a different scene (its detail changed from 12 to 24): baked here instead.`)
+        expect(baked[0]!.line).toBe(`[oj] ${NAME} was baked for a different scene (its detail changed from 12 to the scene's size): baked here instead.`)
     })
 
     it("lays out at the detail asked, and says on its line when the pages could not hold it", async () => {

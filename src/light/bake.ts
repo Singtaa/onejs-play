@@ -20,9 +20,9 @@ import type { Model, Rotation, Vec3 } from "../models"
 import type { Triangles } from "../physics3d/gltf"
 import { rotate, toQuat } from "../physics3d/rotation"
 import { modelUrls } from "../physics3d/sources"
-import { DEFAULT_DETAIL, MAX_PAGES, MIN_DETAIL } from "./atlas"
+import { AUTO_DETAIL, MAX_PAGES, MIN_DETAIL } from "./atlas"
 import { readText, writeText } from "./png"
-import { probeGrid } from "./probes"
+import { gridFloats, probeGrid, PROBE_RISE } from "./probes"
 import { compareRows, difference, layoutOf, matches, OPTION_NAMES, parseSaved, recordOf, rowOf, sameLayout, type BakedHere, type BakeOptionValues, type LightInputs, type LightRecord, type SavedLayout, type SavedLight, type StaticActor } from "./record"
 import { chartModel, layoutLight, type Charts } from "./unwrap"
 
@@ -30,8 +30,8 @@ import { chartModel, layoutLight, type Charts } from "./unwrap"
 // eslint-disable-next-line no-shadow-restricted-names
 declare const globalThis: any
 
-/** `scene.bake`'s options when not given: the bake the first version had. */
-export const BAKE_DEFAULTS: Readonly<BakeOptionValues> = Object.freeze({ bounces: 2, samples: 256, occlusion: 0, detail: DEFAULT_DETAIL })
+/** `scene.bake`'s options when not given: the bake the first version had, its detail chosen from the scene's size (AUTO_DETAIL). */
+export const BAKE_DEFAULTS: Readonly<BakeOptionValues> = Object.freeze({ bounces: 2, samples: 256, occlusion: 0, detail: AUTO_DETAIL })
 
 /**
  * Each option's bounds. More bounces than 8 add nothing a player sees and
@@ -189,7 +189,7 @@ export async function recordItems(items: readonly BakeItem[], identify: (model: 
  * the console. Null when `live` turned false while the charts were cut, so a
  * bake replaced meanwhile changes nothing.
  */
-export async function planLight(bridge: any, items: readonly BakeItem[], cache: ChartCache, live: () => boolean, detail = DEFAULT_DETAIL): Promise<LightPlan | string | null> {
+export async function planLight(bridge: any, items: readonly BakeItem[], cache: ChartCache, live: () => boolean, detail = AUTO_DETAIL): Promise<LightPlan | string | null> {
     if (items.length === 0) return "nothing in the scene is static. Spawn what never moves with { static: true }, or give it a static body"
     const models: Model[] = []
     for (const item of items) if (!models.includes(item.model)) models.push(item.model)
@@ -232,8 +232,10 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
             }
         }
     })
-    const g = probeGrid(min, max)
-    const grid = [...g.origin, g.spacing, ...g.counts]
+    // A OneJS before 1.4.1 takes one spacing for every axis, as seven floats.
+    const perAxis = typeof bridge.ProbeGridFloats === "function" && Number(bridge.ProbeGridFloats()) >= 9
+    const g = probeGrid(min, max, perAxis ? PROBE_RISE : 1)
+    const grid = perAxis ? gridFloats(g) : [...g.origin, g.spacing[0], ...g.counts]
     return {
         actors: new Float32Array(actors), copies: new Float32Array(copies), grid: new Float32Array(grid),
         width: layout.width, height: layout.height, pages: layout.pages, detail: layout.detail,

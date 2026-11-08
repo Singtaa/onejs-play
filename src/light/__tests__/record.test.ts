@@ -41,7 +41,7 @@ describe("a light record", () => {
         expect(difference(saved, recordOf(scene(yard, {}, { bounces: 3 })))).toBe("its bounces changed from 2 to 3")
         expect(difference(saved, recordOf(scene(yard, {}, { samples: 64 })))).toBe("its samples changed from 256 to 64")
         expect(difference(saved, recordOf(scene(yard, {}, { occlusion: 0.5 })))).toBe("its occlusion changed from 0 to 0.5")
-        expect(difference(saved, recordOf(scene(yard, {}, { detail: 12 })))).toBe("its detail changed from 24 to 12")
+        expect(difference(saved, recordOf(scene(yard, {}, { detail: 12 })))).toBe("its detail changed from the scene's size to 12")
         expect(difference({ ...saved, baker: BAKER_VERSION - 1 }, recordOf(scene(yard)))).toBe("the baker has changed since it was saved")
         // An actor's change is named before the sun's.
         expect(difference(saved, recordOf(scene([...yard, actor("crate.glb", 2)], { sun: null })))).toBe("crate.glb at [2, 0, 0] is not in it")
@@ -68,7 +68,7 @@ describe("a light record", () => {
             expect(matches(saved, recordOf(scene(yard, {}, options))), JSON.stringify(options)).toBe(false)
         }
         // The record keeps them where the console and a reader of the file find them.
-        expect(recordOf(scene(yard, {}, { bounces: 3, occlusion: 0.5 }))).toMatchObject({ v: 2, bounces: 3, samples: 256, occlusion: 0.5, detail: 24 })
+        expect(recordOf(scene(yard, {}, { bounces: 3, occlusion: 0.5 }))).toMatchObject({ v: 2, baker: 2, bounces: 3, samples: 256, occlusion: 0.5, detail: 0 })
     })
 
     it("never calls two different scenes the same", () => {

@@ -13,8 +13,13 @@
  * QuickJS and in Node, and the tests need no engine.
  */
 
-/** Moves on whenever what the baker writes for the same scene changes, which makes every saved file out of date. */
-export const BAKER_VERSION = 1
+/**
+ * Moves on whenever what the baker writes for the same scene changes, which
+ * makes every saved file out of date. 2 (1.4.1): probes twice as far apart up,
+ * the default detail chosen from the scene's size, and the file's probes a
+ * byte a coefficient with its lightmap dithered.
+ */
+export const BAKER_VERSION = 2
 
 /** Positions are compared to a tenth of a millimetre, so float noise in a placement never makes a file stale. */
 const POSITION_STEP = 1e-4
@@ -52,7 +57,7 @@ export interface BakeOptionValues {
     samples: number
     /** Extra darkening in corners and where things touch, 0 to 1. */
     occlusion: number
-    /** Texels a metre asked for. */
+    /** Texels a metre asked for, or AUTO_DETAIL (0) when none was and the scene's size chooses (atlas.ts). */
     detail: number
 }
 
@@ -149,8 +154,8 @@ export interface SavedLayout {
      * pages, and such a file still matches.
      */
     pages?: number
-    /** The probe grid's origin, spacing and three counts. */
-    grid: [number, number, number, number, number, number, number]
+    /** The probe grid's origin, a spacing an axis and three counts; one spacing for all three in a file from before 1.4.1. */
+    grid: number[]
     /** Every rectangle, in the record's order, hashed. */
     rects: string
 }
@@ -168,7 +173,7 @@ export interface SavedLight extends LightRecord {
 export function layoutOf(width: number, height: number, detail: number, grid: readonly number[], rects: readonly (readonly number[])[], pages = 1): SavedLayout {
     const layout: SavedLayout = {
         atlas: [width, height, detail],
-        grid: [...grid] as SavedLayout["grid"],
+        grid: [...grid],
         rects: hash16(JSON.stringify(rects)),
     }
     if (pages > 1) layout.pages = pages
@@ -200,7 +205,7 @@ export function parseSaved(text: string | null): SavedLight | string {
     const ok = typeof r.baker === "number" && typeof r.fingerprint === "string" && Array.isArray(r.actors)
         && (r.sun === null || isNumbers(r.sun, 7)) && isNumbers(r.ambient, 6)
         && OPTION_NAMES.every((k) => typeof r[k] === "number")
-        && r.layout !== null && typeof r.layout === "object" && isNumbers(r.layout.atlas, 3) && isNumbers(r.layout.grid, 7) && typeof r.layout.rects === "string"
+        && r.layout !== null && typeof r.layout === "object" && isNumbers(r.layout.atlas, 3) && (isNumbers(r.layout.grid, 9) || isNumbers(r.layout.grid, 7)) && typeof r.layout.rects === "string"
         && (r.layout.pages === undefined || r.layout.pages === 2 || r.layout.pages === 4)
         && r.actors.every((a: unknown) => Array.isArray(a) && a.length === 9 && typeof a[0] === "string" && typeof a[1] === "string" && a.slice(2).every((v: unknown) => typeof v === "number"))
     return ok ? r as SavedLight : "its light record is missing a field"
@@ -243,7 +248,8 @@ export function difference(saved: LightRecord, now: LightRecord): string | null 
     for (const r of left) if (!nowTransforms.has(transformKey(r))) return `${r[0]} at ${place(r)} is no longer there`
     if (JSON.stringify(saved.sun) !== JSON.stringify(now.sun)) return now.sun === null ? "the sun is out" : saved.sun === null ? "the sun is up" : "the sun changed"
     if (JSON.stringify(saved.ambient) !== JSON.stringify(now.ambient)) return "the ambient light changed"
-    for (const k of OPTION_NAMES) if (saved[k] !== now[k]) return `its ${k} changed from ${saved[k]} to ${now[k]}`
+    const value = (k: typeof OPTION_NAMES[number], v: number) => k === "detail" && v === 0 ? "the scene's size" : String(v)
+    for (const k of OPTION_NAMES) if (saved[k] !== now[k]) return `its ${k} changed from ${value(k, saved[k])} to ${value(k, now[k])}`
     return null
 }
 

@@ -23,6 +23,16 @@ export const MAX_PAGES = 4
 /** Texels a page's second column or row shares with its first. */
 export const SEAM = 2
 export const DEFAULT_DETAIL = 24
+/**
+ * `scene.bake`'s detail when none is given: chosen from the scene's size. Its
+ * light takes one page at up to DEFAULT_DETAIL when it fits there at
+ * DETAIL_FLOOR or more, and otherwise DETAIL_FLOOR on as few pages as hold it,
+ * lowered past four as any detail is. So a small room keeps 24, and an 18 m
+ * court takes one page at about 13 rather than four at 24: bounce light is
+ * soft, and a page is a quarter of the download.
+ */
+export const AUTO_DETAIL = 0
+export const DETAIL_FLOOR = 12
 /** Texels between rectangles: the seams are dilated 4 texels past each chart, so neighbours never bleed. */
 export const GUTTER = 4
 /** Below this the bake is not worth having, and the caller says so. */
