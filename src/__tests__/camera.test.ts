@@ -7,7 +7,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, vi } from "vitest"
 import {
-    FollowController, OrbitController, followStep, marchGround, newDragFrame, newDragTracker, newFollowState, orbitEye, orbitStep,
+    FollowController, OrbitController, followStep, groundLimit, newDragFrame, newDragTracker, newFollowState, orbitEye, orbitStep,
     readDrag, subscribeCamera, wrapDegrees, ORBIT_LIMITS, FOLLOW_LIMITS,
     type CameraFrame, type DragSource, type DragTouch, type FollowOptions, type FollowStepOptions,
 } from "../camera"
@@ -832,14 +832,15 @@ describe("a follow camera's feel", () => {
         }
     })
 
-    it("marches the ground from the pivot: clear, blocked, and nothing to say from under it", () => {
+    it("marches the ground from the pivot as it rises: clear, blocked, and nothing to say from under it", () => {
         const flat = () => 0
-        expect(marchGround([0, 1, 0], { yaw: 0, pitch: 0, distance: 5 }, 5, flat, 0.4)).toBe(5)
-        // Looking up from 1 m, the camera goes down behind: it meets 0.4 over the ground 0.6 m down.
-        const down = marchGround([0, 1, 0], { yaw: 0, pitch: -30, distance: 5 }, 5, flat, 0.4)
-        expect(down).toBeGreaterThan(1.1)
-        expect(down).toBeLessThanOrEqual(1.2)
-        expect(marchGround([0, -1, 0], { yaw: 0, pitch: -30, distance: 5 }, 5, flat, 0.4)).toBe(5)
+        expect(groundLimit([0, 1, 0], { yaw: 0, pitch: 0, distance: 5 }, 5, flat, 0.4)).toBe(5)
+        // Looking up from 1 m, the camera goes down behind. The pivot rises to
+        // keep it 0.6 m up, at most 1.4 m, so it meets 0.4 over the ground at 4 m.
+        const down = groundLimit([0, 1, 0], { yaw: 0, pitch: -30, distance: 5 }, 5, flat, 0.4)
+        expect(down).toBeGreaterThan(3.98)
+        expect(down).toBeLessThanOrEqual(4 + 1e-9)
+        expect(groundLimit([0, -1, 0], { yaw: 0, pitch: -30, distance: 5 }, 5, flat, 0.4)).toBe(5)
     })
 
     // feel.md §5's cliff test, frame by frame on a ground with no colliders.
@@ -876,7 +877,7 @@ describe("a follow camera's feel", () => {
         for (let i = 0; i < 120; i++) c.frame(1 / 60, me, o, frameOf(source()))
         // Held in for 2 s: the player's distance is still 10, and the camera stands at the cliff.
         expect(c.camera.distance).toBe(10)
-        expect(eyeDistance(c)).toBeLessThan(4)
+        expect(eyeDistance(c)).toBeLessThanOrEqual(4)
         c.camera.bind.onWheel({ deltaY: 3 })
         c.frame(1 / 60, me, o, frameOf(source()))
         // A notch from where the zoom is now, not from 10: what the cliff took is forgotten.
@@ -937,6 +938,35 @@ describe("a follow camera's feel", () => {
         expect(may).toBeGreaterThan(6)
         // Within what the camera's halvings resolve between the march and the zoom, a sixteenth of at most 2.4 m.
         expect(eyeDistance(c)).toBeGreaterThan(may - 0.15)
+    })
+
+    // A ridge 1 m across and 1.4 m high, 6 m behind, narrower than the 1.25 m
+    // steps 1.6's first march took: a camera 10 m back read the ground 1.2 m
+    // apart along the line, each distance tested on its own steps, and the
+    // halvings between them took some that stepped over the ridge, so the
+    // camera stood behind it with the line to the player through it.
+    it("backed into a ridge narrower than a step, keeps the line to the player over it in every frame", () => {
+        const ridge = (x: number, z: number) => Math.max(0, 1.4 * (1 - Math.abs(z + 6) / 0.5))
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 10, pitch: 15, height: 1, ground: ridge }
+        const c = new FollowController(me, o)
+        let frames = 0
+        const go = () => {
+            c.frame(1 / 60, me, o, frameOf(source()))
+            frames++
+            const e = c.camera.eye, l = c.camera.target
+            for (let k = 1; k < 1000; k++) {
+                const t = k / 1000
+                expect(l[1] + (e[1] - l[1]) * t, `frame ${frames}, ${t} of the way`).toBeGreaterThan(ridge(0, l[2] + (e[2] - l[2]) * t))
+            }
+        }
+        for (let i = 0; i < 60; i++) go()
+        // Back to 1.2 m short of the ridge at 4.5 m/s, then stand 2 s.
+        while (me.position[2] > -4.8) {
+            me.position = [0, 0, Math.max(-4.8, me.position[2] - 4.5 / 60)]
+            go()
+        }
+        for (let i = 0; i < 120; i++) go()
     })
 
     it("lifts what it looks at when the camera comes close over the ground, and stays clear of it", () => {
