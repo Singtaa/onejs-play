@@ -4,7 +4,7 @@ import { setWasmModule } from "../../wasm"
 import { RAPIER_VERSION } from "../../physics3d/rapier.version"
 import { RECAST_VERSION } from "../recast.version"
 import { createWorld, type World } from "../../physics3d/world"
-import type { TiledNav } from "../tiled"
+import { navClock, type TiledNav } from "../tiled"
 import { loadRecast } from "../nav"
 import type { Vec3 } from "../../models"
 import { hill, hills } from "./hills"
@@ -71,20 +71,23 @@ describe("world.nav({ tile })", () => {
         // A 20 by 20 m hall across the straight line: one call, no nav call.
         const hall = w.box({ at: [0, 4, 0], size: [20, 8, 20] })
         expect(nav.pending).toBeGreaterThan(0)
-        let steps = 0
-        const slowest = stepUntilSettled(w, nav, () => steps++)
-        // The budget, plus the tile begun inside it: about 2.4 ms here, and up to 6.4 on CI's
-        // Windows runner (8 Nov), so the bound is loose; spreading over steps is the point.
-        expect(slowest).toBeLessThan(2 + 10)
+        // A clock on which every tile takes 0.7 ms, so the budget's verdict is the same on any
+        // machine: a 2 ms frame starts a tile at 0, 0.7 and 1.4 ms, and not at 2.1.
+        let clock = 0
+        const now = vi.spyOn(navClock, "now").mockImplementation(() => (clock += 0.7))
+        const perStep = stepUntilSettled(w, nav)
+        now.mockRestore()
+        expect(perStep.length).toBeGreaterThan(1)
+        for (const n of perStep.slice(0, -1)) expect(n).toBe(3)
+        expect(perStep.at(-1)).toBeLessThanOrEqual(3)
         const round = nav.path(from, to)
         expect(ends(round, to)).toBe(true)
         // Round a corner of the hall, 10.4 m out with the radius: 2 * hypot(10.4, 20) = 45 m at least.
         expect(len(from, round)).toBeGreaterThan(44)
         for (const q of round) expect(Math.abs(q[0]) > 10.3 || Math.abs(q[2]) > 10.3, `${q} inside the hall`).toBe(true)
         hall.destroy()
-        stepUntilSettled(w, nav)
+        expect(stepUntilSettled(w, nav).length).toBeGreaterThan(1)
         expect(len(from, nav.path(from, to))).toBeCloseTo(40, 0)
-        expect(steps).toBeGreaterThan(1)
         w.dispose()
     })
 
@@ -253,15 +256,14 @@ describe("world.nav({ tile })", () => {
     })
 })
 
-/** Steps until no tile is stale, and returns the slowest step, milliseconds. */
-function stepUntilSettled(w: World, nav: TiledNav, each?: () => void): number {
-    let slowest = 0
+/** Steps until no tile is stale, and returns how many tiles each step rebuilt. */
+function stepUntilSettled(w: World, nav: TiledNav): number[] {
+    const out: number[] = []
     for (let i = 0; i < 600 && nav.pending > 0; i++) {
-        const t = performance.now()
+        const before = nav.pending
         w.step()
-        slowest = Math.max(slowest, performance.now() - t)
-        each?.()
+        out.push(before - nav.pending)
     }
     expect(nav.pending).toBe(0)
-    return slowest
+    return out
 }

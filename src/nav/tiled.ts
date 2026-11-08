@@ -98,6 +98,9 @@ export interface NavGeometry {
     solid?: { poly: number[], ymin: number, ymax: number }
 }
 
+/** What the budget is timed by: its own, since Recast's build timers read performance.now too, and a test replaces this one alone. */
+export const navClock = { now: (): number => performance.now() }
+
 /** The default frame budget, milliseconds. */
 export const NAV_BUDGET = 1
 
@@ -288,13 +291,13 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
 
     update(ms: number = this.budget): number {
         this.live()
-        const start = performance.now()
+        const start = navClock.now()
         this.settle()
         if (!(ms > 0)) return this.stale.size
         let n = 0
         for (const k of this.stale) {
             // At least one a call, so a frame always gets somewhere, then while the time lasts.
-            if (n++ > 0 && performance.now() - start >= ms) break
+            if (n++ > 0 && navClock.now() - start >= ms) break
             this.stale.delete(k)
             this.buildTile(k)
         }
