@@ -53,13 +53,13 @@ function readerCounts(order: readonly Node[]): Map<string, number> {
     return counts
 }
 
-/** The nodes that get a texture of their own, before any limit splits a pass. */
-export function materialised(root: Node): Set<string> {
+/** The nodes that get a texture of their own, before any limit splits a pass. Unfused, every one does. */
+export function materialised(root: Node, fuse = true): Set<string> {
     const order = topological(root)
     const readers = readerCounts(order)
     const out = new Set<string>([root.id])
     for (const n of order) {
-        if (n.kind === "source") out.add(n.id)
+        if (n.kind === "source" || !fuse) out.add(n.id)
         for (const i of n.inputs) {
             if (n.kind === "area" || (readers.get(i.id) ?? 0) > 1 || i.width !== n.width || i.height !== n.height) out.add(i.id)
         }
@@ -135,33 +135,47 @@ function heaviestInline(node: Node, drawn: ReadonlySet<string>): Node | undefine
     return best
 }
 
+/** The first pass over a limit, and what the limit said. */
+function overLimit(root: Node, drawn: ReadonlySet<string>, kernels: Readonly<Record<string, Kernel>>): { node: Node, message: string } | undefined {
+    for (const n of topological(root)) {
+        if (!drawn.has(n.id) || n.kind === "source") continue
+        try { recordPass(n, drawn, kernels, false) } catch (inner) {
+            if (!isLimit(inner)) throw inner
+            return { node: n, message: (inner as Error).message }
+        }
+    }
+    return undefined
+}
+
 /**
  * The passes for a graph, inputs first. A pass over the shader language's
  * limits (8 textures, 64 uniforms, its node count) splits: its heaviest
  * inline input gets a pass of its own, and planning starts again.
  */
-export function plan(root: Node, kernels: Readonly<Record<string, Kernel>>, delivered = true): PassPlan[] {
-    const drawn = materialised(root)
+export interface PlanOptions {
+    /** Writes the root as a texture shows it (linear, straight alpha), not as Magerie stores it. Default true. */
+    delivered?: boolean
+    /** Records pointwise runs into one pass. Off, every node is a pass: the same pixels, slower. Default true. */
+    fuse?: boolean
+}
+
+export function plan(root: Node, kernels: Readonly<Record<string, Kernel>>, { delivered = true, fuse = true }: PlanOptions = {}): PassPlan[] {
+    const drawn = materialised(root, fuse)
     for (;;) {
+        let limit: unknown
         try {
             return topological(root)
                 .filter((n) => drawn.has(n.id) && n.kind !== "source")
                 .map((n) => recordPass(n, drawn, kernels, delivered && n.id === root.id))
         } catch (e) {
             if (!isLimit(e)) throw e
-            let split: Node | undefined
-            for (const n of topological(root)) {
-                if (!drawn.has(n.id) || n.kind === "source") continue
-                try { recordPass(n, drawn, kernels, false) } catch (inner) {
-                    if (!isLimit(inner)) throw inner
-                    split = heaviestInline(n, drawn)
-                    if (split === undefined) throw new Error(`[oj] tex: one ${n.op} node is past the shader language's limits on its own: ${(inner as Error).message}`, { cause: inner })
-                    break
-                }
-            }
-            if (split === undefined) throw e
-            drawn.add(split.id)
+            limit = e
         }
+        const over = overLimit(root, drawn, kernels)
+        if (over === undefined) throw limit
+        const split = heaviestInline(over.node, drawn)
+        if (split === undefined) throw new Error(`[oj] tex: one ${over.node.op} node is past the shader language's limits on its own: ${over.message}`)
+        drawn.add(split.id)
     }
 }
 

@@ -70,6 +70,20 @@ function area(op: string, p: Record<string, unknown>, inputs: readonly Node[], t
     return makeNode(op, "area" as NodeKind, inputs, p, a.width, a.height, tiles)
 }
 
+/** A separable Gaussian, x then y, the intermediate stored as the input is (spec 4.1). */
+function gaussian(a: Node, g: { sigma: number, taps: number }, wrap: boolean): Node {
+    const v = { sigma: g.sigma, taps: g.taps, wrap }
+    return area("blurY", v, [area("blurX", v, [a], wrap && a.tiles)], wrap && a.tiles)
+}
+
+const wrapOf = (n: Node): boolean => n.params.wrap as boolean
+
+function gaussianAxis(s: Parameters<Kernel>[0], n: Node, i: Parameters<Kernel>[2], axis: "x" | "y") {
+    return k.blurAxis(s, i.texture(0, wrapOf(n)), n.params.sigma as number, n.params.taps as number, axis, wrapOf(n))
+}
+
+const SLOPE_MODES: readonly k.SlopeBlurMode[] = ["blur", "max", "min"]
+const CURVATURE_MODES: readonly k.CurvatureMode[] = ["both", "convex", "concave"]
 const NOISE_TYPES: readonly NoiseType[] = ["perlin", "simplex", "voronoi", "white", "turbulence", "ridged"]
 const VORONOI_MODES: readonly VoronoiMode[] = ["f1", "f2", "f2-f1", "cell"]
 const FRACTALS: readonly Fractal[] = ["standard", "ridged", "billow"]
@@ -206,11 +220,61 @@ export const SPECS = {
         positional: ["radius"],
         defaults: { radius: 5, quality: "medium", edges: "auto" },
         make(p, [a]) {
-            const radius = num(p.radius, "blur radius", 0, 1000)
             const wrap = wraps(p.edges, a!, "blur")
-            // Separable, x then y, the intermediate stored as the input is (spec 4.1).
-            const across = area("blurX", { radius, wrap }, [a!], wrap && a!.tiles)
-            return area("blurY", { radius, wrap }, [across], wrap && a!.tiles)
+            return gaussian(a!, k.blurGaussian(num(p.radius, "blur radius", 0, 1000)), wrap)
+        },
+    },
+    normalMap: {
+        images: 1,
+        positional: ["strength"],
+        defaults: { strength: 1, flipY: false, smoothRadius: 4, edges: "auto" },
+        make(p, [a]) {
+            const wrap = wraps(p.edges, a!, "normalMap")
+            const radius = num(p.smoothRadius, "normalMap smoothRadius", 0, 10)
+            // Its own Gaussian, not Blur's (spec 4.2), and none under a radius of 1.
+            const height = radius < 1 ? a! : gaussian(a!, k.smoothGaussian(radius), wrap)
+            return area("normalMap", { strength: num(p.strength, "normalMap strength", 0.1), flipY: p.flipY === true, wrap }, [height], wrap && a!.tiles)
+        },
+    },
+    slopeBlur: {
+        images: 2,
+        positional: ["intensity"],
+        defaults: { intensity: 20, samples: 16, mode: "blur", edges: "auto" },
+        make(p, [src, slope]) {
+            const wrap = wraps(p.edges, src!, "slopeBlur")
+            return area("slopeBlur", {
+                intensity: num(p.intensity, "slopeBlur intensity", 0), samples: Math.min(Math.max(Math.round(num(p.samples, "slopeBlur samples")), 1), 64),
+                mode: oneOf(p.mode, SLOPE_MODES, "slopeBlur mode"), wrap,
+            }, [src!, slope!], wrap && src!.tiles)
+        },
+    },
+    histogramScan: {
+        images: 1,
+        positional: ["position", "contrast"],
+        defaults: { position: 0.5, contrast: 1 },
+        make(p, [a]) {
+            return pointwise("histogramScan", { position: num(p.position, "histogramScan position", 0, 1), contrast: num(p.contrast, "histogramScan contrast", 0, 1) }, [a!])
+        },
+    },
+    curvature: {
+        images: 1,
+        positional: ["mode", "intensity"],
+        defaults: { intensity: 1, mode: "both", edges: "auto" },
+        make(p, [a]) {
+            const wrap = wraps(p.edges, a!, "curvature")
+            return area("curvature", { intensity: num(p.intensity, "curvature intensity"), mode: oneOf(p.mode, CURVATURE_MODES, "curvature mode"), wrap }, [a!], wrap && a!.tiles)
+        },
+    },
+    ambientOcclusion: {
+        images: 1,
+        positional: ["radius"],
+        defaults: { radius: 16, intensity: 1, samples: 16, edges: "auto" },
+        make(p, [a]) {
+            const wrap = wraps(p.edges, a!, "ambientOcclusion")
+            return area("ambientOcclusion", {
+                radius: num(p.radius, "ambientOcclusion radius", 1, 64), intensity: num(p.intensity, "ambientOcclusion intensity"),
+                samples: Math.min(Math.max(Math.trunc(num(p.samples, "ambientOcclusion samples")), 1), 64), wrap,
+            }, [a!], wrap && a!.tiles)
         },
     },
     warp: {
@@ -251,8 +315,13 @@ export const KERNELS: Record<string, Kernel> = {
     levels: (s, n, i) => k.levels(s, i.value(0), n.params as unknown as k.LevelsValues),
     gradientMap: (s, n, i) => k.gradientMap(s, i.value(0), n.params.stops as Stop[]),
     blend: (s, n, i) => k.blend(s, i.value(0), i.value(1), n.params.mode as BlendMode, n.params.opacity as number),
-    blurX: (s, n, i) => k.blurAxis(s, i.texture(0, n.params.wrap as boolean), n.params.radius as number, "x", n.params.wrap as boolean),
-    blurY: (s, n, i) => k.blurAxis(s, i.texture(0, n.params.wrap as boolean), n.params.radius as number, "y", n.params.wrap as boolean),
+    blurX: (s, n, i) => gaussianAxis(s, n, i, "x"),
+    blurY: (s, n, i) => gaussianAxis(s, n, i, "y"),
+    normalMap: (s, n, i) => k.normalMap(s, i.texture(0, wrapOf(n)), n.params.strength as number, n.params.flipY as boolean, wrapOf(n)),
+    slopeBlur: (s, n, i) => k.slopeBlur(s, i.texture(0, wrapOf(n)), i.texture(1, wrapOf(n)), n.params.intensity as number, n.params.samples as number, n.params.mode as k.SlopeBlurMode),
+    histogramScan: (s, n, i) => k.histogramScan(s, i.value(0), n.params.position as number, n.params.contrast as number),
+    curvature: (s, n, i) => k.curvature(s, i.texture(0, wrapOf(n)), n.params.intensity as number, n.params.mode as k.CurvatureMode, wrapOf(n)),
+    ambientOcclusion: (s, n, i) => k.ambientOcclusion(s, i.texture(0, wrapOf(n)), n.params.radius as number, n.params.intensity as number, n.params.samples as number),
     warp: (s, n, i) => k.warp(s, i.texture(0, n.params.wrap as boolean), i.texture(1, n.params.wrap as boolean), n.params.strength as number),
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),

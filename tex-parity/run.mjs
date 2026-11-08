@@ -13,9 +13,19 @@
 //             passes only if that FAILS: the instrument's own check, so a
 //             harness that compares nothing cannot pass.
 //
-// A case passes when every byte is within 1 of the golden (Magerie's own
-// tolerance, kernel-parity.ts). Exits 0 when all pass, 1 when any fails or
-// errors, 3 when nothing was compared.
+// Every case is drawn twice, fused as a bake draws it and with every node a
+// pass of its own (`name@unfused`), and both are held to the one golden:
+// fusing may change what a graph costs, never its pixels.
+//
+// Two sets of cases: cart/cases.ts, ported by hand from Magerie's
+// kernel-parity test, and goldens/ojplay/manifest.json, which Magerie records
+// for tex and which this script turns into cart/ojplay.gen.ts before each
+// build, so the manifest stays the one place a case is written.
+//
+// A case passes when every byte is within its tolerance of the golden: 1,
+// Magerie's own (kernel-parity.ts), unless the manifest names another, and
+// when the manifest says whether the output tiles, when tex agrees. Exits 0
+// when all pass, 1 when any fails or errors, 3 when nothing was compared.
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -44,7 +54,31 @@ const root = path.join(here, "cart")
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "oj.json"), "utf8"))
 const version = arg("runtime", manifest.runtime)
 const CONTAINER = arg("container", null)
-const golden = (name) => fs.readFileSync(path.join(here, "goldens", `${name}.bin`))
+// A case drawn unfused (every node its own pass) is held to the same golden.
+const base = (name) => name.replace(/@unfused$/, "")
+const golden = (name) => fs.readFileSync(path.join(here, "goldens", `${base(name)}.bin`))
+
+/**
+ * The manifest's cases as the cart reads them: inputs inlined as hex, each
+ * output by its port. A one-output case may still say `output`; Magerie's
+ * multi-output nodes say `outputs`, one entry a port.
+ */
+function writeOjplay() {
+    const dir = path.join(here, "goldens", "ojplay")
+    const m = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"))
+    const cases = m.cases.map((c) => {
+        const outputs = c.outputs ?? [c.output]
+        const [w, h] = c.size
+        const inputs = Object.entries(c.inputs).map(([port, i]) => ({ port, tiles: i.tiles, w, h, hex: fs.readFileSync(path.join(dir, i.file)).toString("hex") }))
+        return {
+            node: c.node, params: c.params, inputs,
+            outputs: outputs.map((o) => ({ port: o.port, name: `ojplay/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, tolerance: c.tolerance ?? 1 })),
+        }
+    })
+    fs.writeFileSync(path.join(root, "ojplay.gen.ts"), `// Written by run.mjs from goldens/ojplay/manifest.json (magerie-one ${m.magerieCommit}). Do not edit.\nexport const OJPLAY = ${JSON.stringify(cases)}\n`)
+    return new Map(cases.flatMap((c) => c.outputs.map((o) => [o.name, o])))
+}
+const ojplay = writeOjplay()
 
 /**
  * A local build as the runtime folder serve() takes: its four files
@@ -86,8 +120,8 @@ async function draw() {
             const m = /^\[tex-parity\] (case|error) (\S+) (.*)$/.exec(text)
             if (m === null) continue
             if (m[1] === "error") { out.set(m[2], { error: m[3] }); continue }
-            const [size, hex] = m[3].split(" ")
-            out.set(m[2], { size, bytes: Buffer.from(hex, "hex") })
+            const [size, tiles, hex] = m[3].split(" ")
+            out.set(m[2], { size, tiles: tiles === "tiles", bytes: Buffer.from(hex, "hex") })
         }
         for (const e of game.errors) say(`console error: ${e}`)
         return out
@@ -96,13 +130,13 @@ async function draw() {
     }
 }
 
-function compare(bytes, expected) {
+function compare(bytes, expected, tolerance) {
     if (bytes.length !== expected.length) return { worst: Infinity, off: bytes.length, note: `${bytes.length} bytes against ${expected.length}` }
     let worst = 0, off = 0
     for (let i = 0; i < bytes.length; i++) {
         const d = Math.abs(bytes[i] - expected[i])
         if (d > worst) worst = d
-        if (d > 1) off++
+        if (d > tolerance) off++
     }
     return { worst, off }
 }
@@ -118,26 +152,30 @@ for (const [i, name] of names.entries()) {
     if (NEGATIVE) {
         // The next case whose golden is the same size, so only the pixels differ.
         const size = golden(name).length
-        against = [...names.slice(i + 1), ...names.slice(0, i)].find((n) => n !== name && golden(n).length === size && !golden(n).equals(golden(name)))
+        against = [...names.slice(i + 1), ...names.slice(0, i)].find((n) => base(n) !== base(name) && golden(n).length === size && !golden(n).equals(golden(name)))
         if (against === undefined) continue
     }
-    const r = compare(got.bytes, golden(against))
+    const expect = ojplay.get(base(name))
+    const tolerance = expect?.tolerance ?? 1
+    const r = compare(got.bytes, golden(against), tolerance)
+    // Whether it tiles is part of the answer: it decides how every reader's edges go.
+    const tilesWrong = !NEGATIVE && expect !== undefined && expect.tiles !== got.tiles
     compared++
-    const ok = r.worst <= 1
+    const ok = r.worst <= tolerance && !tilesWrong
     if (!ok) failed++
-    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${r.off ? `, ${r.off} bytes past 1` : ""}${r.note ? ` (${r.note})` : ""}`)
+    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}${r.note ? ` (${r.note})` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
 }
 for (const r of rows) console.log(r)
 
 if (compared === 0) {
-    say("nothing was compared")
-    process.exitCode = 3
+    say(failed ? `nothing was compared, ${failed} failed` : "nothing was compared")
+    process.exitCode = failed ? 1 : 3
 } else if (NEGATIVE) {
     // Every swapped comparison must fail for the instrument to be measuring anything.
     const passedWrongly = rows.filter((r) => r.startsWith("pass")).length
     say(`${compared} swapped comparisons, ${passedWrongly} wrongly passed`)
     process.exitCode = passedWrongly === 0 ? 0 : 1
 } else {
-    say(`${compared - failed} of ${compared} within 1${failed ? `, ${failed} failed` : ""}`)
+    say(`${compared - failed} of ${compared} within tolerance${failed ? `, ${failed} failed` : ""}`)
     process.exitCode = failed === 0 ? 0 : 1
 }

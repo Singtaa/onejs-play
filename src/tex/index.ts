@@ -16,11 +16,11 @@ import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
 import { KERNELS, SPECS, resolve, type Canvas, type SpecName } from "./nodes"
-import type { BlendMode, Fractal, InvertChannels, NoiseType, VoronoiMode } from "./kernels"
+import type { BlendMode, CurvatureMode, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
 
 declare const CS: any
 
-export type { BlendMode, Fractal, InvertChannels, NoiseType, VoronoiMode }
+export type { BlendMode, CurvatureMode, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode }
 export type Edges = "auto" | "wrap" | "clamp"
 
 export interface SizeOptions {
@@ -78,6 +78,38 @@ export interface TileOptions {
     mirror?: boolean
 }
 
+export interface NormalMapOptions extends EdgesOptions {
+    strength?: number
+    /** DirectX convention, green down. */
+    flipY?: boolean
+    /** Pixels of Gaussian smoothing on the height first, 0 to 10; under 1 is none. Default 4. */
+    smoothRadius?: number
+}
+
+export interface SlopeBlurOptions extends EdgesOptions {
+    intensity?: number
+    /** Steps along the walk, 1 to 64. */
+    samples?: number
+    mode?: SlopeBlurMode
+}
+
+export interface HistogramScanOptions {
+    position?: number
+    contrast?: number
+}
+
+export interface CurvatureOptions extends EdgesOptions {
+    intensity?: number
+    mode?: CurvatureMode
+}
+
+export interface AmbientOcclusionOptions extends EdgesOptions {
+    radius?: number
+    intensity?: number
+    /** Directions searched, 1 to 64. */
+    samples?: number
+}
+
 /** Every node that takes images, written with its images first. */
 interface ImageNodes {
     invert(img: TexImage, channels?: InvertChannels): TexImage
@@ -87,6 +119,16 @@ interface ImageNodes {
     blur(img: TexImage, radius?: number | (EdgesOptions & { radius?: number }), opts?: EdgesOptions): TexImage
     warp(src: TexImage, displacement: TexImage, strength?: number | (EdgesOptions & { strength?: number }), opts?: EdgesOptions): TexImage
     tile(img: TexImage, repeatX?: number | TileOptions, opts?: TileOptions): TexImage
+    /** A tangent-space normal map from this picture's height (its Rec. 601 luma): OpenGL green up unless `flipY`. */
+    normalMap(height: TexImage, strength?: number | NormalMapOptions, opts?: NormalMapOptions): TexImage
+    /** Smears `src` uphill along `slope`'s red gradient, `intensity` pixels long. */
+    slopeBlur(src: TexImage, slope: TexImage, intensity?: number | SlopeBlurOptions, opts?: SlopeBlurOptions): TexImage
+    /** A grey band picked out of the height: white above `position`, black below, `contrast` 1 a hard step. */
+    histogramScan(height: TexImage, position?: number | HistogramScanOptions, contrast?: number | HistogramScanOptions, opts?: HistogramScanOptions): TexImage
+    /** Ridges and valleys of the height: grey 0.5 flat, lighter convex, darker concave (mode "both"). */
+    curvature(height: TexImage, mode?: CurvatureMode | CurvatureOptions, intensity?: number | CurvatureOptions, opts?: CurvatureOptions): TexImage
+    /** Horizon-based ambient occlusion of the height, `radius` pixels out. */
+    ambientOcclusion(height: TexImage, radius?: number | AmbientOcclusionOptions, opts?: AmbientOcclusionOptions): TexImage
     /** This picture's colour with `height`'s grey as alpha, straight: what a splat layer reads. */
     alpha(color: TexImage, height: TexImage): TexImage
 }
@@ -100,6 +142,15 @@ interface Generators {
 }
 
 export type TexFunctions = ImageNodes & Generators
+
+export interface PixelsOptions {
+    /**
+     * `false` draws every node into a texture of its own instead of running
+     * pointwise nodes together in one pass. The bytes are the same, only
+     * slower: it is how a test shows fusion changes nothing.
+     */
+    fuse?: boolean
+}
 
 interface Baked { texture: unknown, ready: Promise<Texture> }
 
@@ -142,8 +193,8 @@ export class TexImage {
      * encoded, row 0 at the top, `width * height * 4`. For a height read on
      * the CPU (a terrain's vertices), or a test against Magerie's own.
      */
-    pixels(): Promise<Uint8Array> {
-        return draw(plan(this.node, KERNELS, false), readBytes)
+    pixels(options: PixelsOptions = {}): Promise<Uint8Array> {
+        return draw(plan(this.node, KERNELS, { delivered: false, fuse: options.fuse !== false }), readBytes)
     }
 }
 

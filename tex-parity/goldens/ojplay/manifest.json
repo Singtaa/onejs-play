@@ -1,0 +1,304 @@
+{
+  "magerieCommit": "dce81bcd4",
+  "cases": [
+    {
+      "name": "normalMap/waves-s4-r0-wrap",
+      "node": "normalMap",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "strength": 4,
+        "flipY": false,
+        "smoothRadius": 0,
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "normalMap/waves-s4-r0-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "normalMap/waves-s4-r4-wrap",
+      "node": "normalMap",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "strength": 4,
+        "flipY": false,
+        "smoothRadius": 4,
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "normalMap/waves-s4-r4-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 8
+    },
+    {
+      "name": "normalMap/disc-s2-flipy-clamp",
+      "node": "normalMap",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "strength": 2,
+        "flipY": true,
+        "smoothRadius": 0,
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "normalMap/disc-s2-flipy-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "slopeBlur/waves-by-disc-blur-wrap",
+      "node": "slopeBlur",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "intensity": 12,
+        "samples": 16,
+        "mode": "blur",
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        },
+        "in-slope": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "slopeBlur/waves-by-disc-blur-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "slopeBlur/disc-by-waves-min-clamp",
+      "node": "slopeBlur",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "intensity": 8,
+        "samples": 8,
+        "mode": "min",
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        },
+        "in-slope": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "slopeBlur/disc-by-waves-min-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 4
+    },
+    {
+      "name": "histogramScan/waves-p50-c20",
+      "node": "histogramScan",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "position": 0.5,
+        "contrast": 0.2
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "histogramScan/waves-p50-c20.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "histogramScan/waves-p30-c100",
+      "node": "histogramScan",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "position": 0.3,
+        "contrast": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "histogramScan/waves-p30-c100.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curvature/waves-both-wrap",
+      "node": "curvature",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "intensity": 1,
+        "mode": "both",
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curvature/waves-both-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curvature/disc-convex-clamp",
+      "node": "curvature",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "intensity": 2,
+        "mode": "convex",
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curvature/disc-convex-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "ambientOcclusion/waves-r6-wrap",
+      "node": "ambientOcclusion",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "radius": 6,
+        "intensity": 1,
+        "samples": 16,
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "ambientOcclusion/waves-r6-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "ambientOcclusion/disc-r8-clamp",
+      "node": "ambientOcclusion",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "radius": 8,
+        "intensity": 1.5,
+        "samples": 16,
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "ambientOcclusion/disc-r8-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    }
+  ]
+}

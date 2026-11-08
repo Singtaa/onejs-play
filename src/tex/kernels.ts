@@ -371,11 +371,19 @@ function edgeIndex(p: S, n: S, wrap: boolean): S {
     return p.sub(n.mul(p.div(n).floor()))
 }
 
-/** One pass of Magerie's separable Gaussian (spec 4.1): taps -k..k, sigma radius / 3. */
-export function blurAxis(s: Scope, src: TexRead, radius: number, axis: "x" | "y", wrap: boolean): Vec4 {
+/** Blur's Gaussian (spec 4.1): sigma radius / 3, taps -k..k with k = ceil(radius). */
+export function blurGaussian(radius: number): { sigma: number, taps: number } {
     const r = Math.min(Math.max(radius, 0), 1000)
-    const sigma = Math.max(r / 3, 0.1)
-    const k = Math.min(Math.max(Math.ceil(r), 1), 512)
+    return { sigma: Math.max(r / 3, 0.1), taps: Math.min(Math.max(Math.ceil(r), 1), 512) }
+}
+
+/** Normal Map's pre-smooth (spec 4.2): sigma radius / 2, k = int(radius + 0.5). Not Blur's. */
+export function smoothGaussian(radius: number): { sigma: number, taps: number } {
+    return { sigma: Math.max(radius / 2, 0.5), taps: Math.trunc(radius + 0.5) }
+}
+
+/** One pass of Magerie's separable Gaussian: weights exp(-i^2 / 2 sigma^2) over taps -k..k, normalised. */
+export function blurAxis(s: Scope, src: TexRead, sigma: number, k: number, axis: "x" | "y", wrap: boolean): Vec4 {
     const twoSigma2 = s.f(2 * sigma * sigma)
     const kk = s.f(k)
     const n: S = axis === "x" ? src.size.x : src.size.y
@@ -430,4 +438,132 @@ export function tile(s: Scope, src: TexRead, v: TileValues): Vec4 {
 export function deliver(c: Vec4, straight: boolean): Vec4 {
     const rgb = straight ? c.xyz : unpremultiply(c)
     return sl.vec4(sl.toLinear(rgb), c.w)
+}
+
+// height filters (spec 4.2, 4.3 and section 6). Each reads height as the
+// Rec. 601 luma of the stored values, premultiplied and gamma, as Magerie's do.
+
+const luma = (c: S): S => c.xyz.dot(sl.vec3(0.299, 0.587, 0.114))
+
+/** The 3 x 3 neighbourhood's heights around `pixel`, at texel centres, wrapped or clamped. */
+function heights3(src: TexRead, pixel: S, wrap: boolean, read: (c: S) => S = luma): S[][] {
+    const rows: S[][] = []
+    for (let dy = -1; dy <= 1; dy++) {
+        const row: S[] = []
+        for (let dx = -1; dx <= 1; dx++) {
+            const x = edgeIndex(pixel.x.add(dx), src.size.x, wrap)
+            const y = edgeIndex(pixel.y.add(dy), src.size.y, wrap)
+            row.push(read(src.fetch(sl.vec2(x, y))))
+        }
+        rows.push(row)
+    }
+    return rows
+}
+
+/** Sobel, y down: dx = right - left columns, dy = bottom - top rows. */
+function sobel(h: S[][]): [S, S] {
+    const [[tl, t, tr], [l, , r], [bl, b, br]] = h as [[S, S, S], [S, S, S], [S, S, S]]
+    const dx = tr.add(r.mul(2)).add(br).sub(tl.add(l.mul(2)).add(bl))
+    const dy = bl.add(b.mul(2)).add(br).sub(tl.add(t.mul(2)).add(tr))
+    return [dx, dy]
+}
+
+/** Magerie's Normal Map, after any pre-smooth (spec 4.2): OpenGL green up unless flipped. */
+export function normalMap(s: Scope, src: TexRead, strength: number, flipY: boolean, wrap: boolean): Vec4 {
+    const [dx, dy] = sobel(heights3(src, s.pixel, wrap))
+    const k = s.f(strength)
+    const n: S = sl.vec3(dx.mul(k).neg(), dy.mul(k).mul(flipY ? 1 : -1), 1).normalize()
+    return sl.vec4(n.mul(0.5).add(0.5), 1)
+}
+
+export type CurvatureMode = "both" | "convex" | "concave"
+
+/** Magerie's Curvature: a weighted Laplacian of the height. */
+export function curvature(s: Scope, src: TexRead, intensity: number, mode: CurvatureMode, wrap: boolean): Vec4 {
+    const [[tl, t, tr], [l, c, r], [bl, b, br]] = heights3(src, s.pixel, wrap) as [[S, S, S], [S, S, S], [S, S, S]]
+    const lap: S = tl.add(t.mul(2)).add(tr).add(l.mul(2)).sub(c.mul(12)).add(r.mul(2)).add(bl).add(b.mul(2)).add(br).mul(s.f(intensity))
+    const res: S = mode === "both" ? lap.neg().mul(0.5).add(0.5) : mode === "convex" ? max(0, lap.neg()) : max(0, lap)
+    const g = res.saturate()
+    return sl.vec4(g, g, g, 1)
+}
+
+/** Magerie's Histogram Scan: a smoothstep window over the height. */
+export function histogramScan(s: Scope, c: Vec4, position: number, contrast: number): Vec4 {
+    const v = luma(c)
+    const half: S = max(sl.float(1).sub(s.f(contrast)).mul(0.5), 1e-5)
+    const p = s.f(position)
+    const t: S = sl.smoothstep(p.sub(half), p.add(half), v)
+    return sl.vec4(t, t, t, 1)
+}
+
+export type SlopeBlurMode = "blur" | "max" | "min"
+
+/** Magerie's Slope Blur (spec 4.3): walks uphill on the slope's red, gathering the source. */
+export function slopeBlur(s: Scope, src: TexRead, slope: TexRead, intensity: number, samples: number, mode: SlopeBlurMode): Vec4 {
+    const n = Math.min(Math.max(Math.round(samples), 1), 64)
+    const texel: S = sl.vec2(1, 1).div(src.size)
+    const step: S = texel.mul(s.f(Math.max(0, intensity) / Math.max(n - 1, 1)))
+    const red = (o: S): S => slope.sample(o).x
+    const [acc] = sl.loop(
+        [mode === "min" ? sl.vec4(1, 1, 1, 1) : sl.vec4(0, 0, 0, 0), s.pixel.add(0.5).div(s.size), 0],
+        (st: S[]) => st[2].lt(s.f(n)),
+        (st: S[]) => {
+            const [a, p, i] = st as [S, S, S]
+            const c = src.sample(p)
+            const next = mode === "blur" ? a.add(c) : mode === "max" ? a.max(c) : a.min(c)
+            const h: S[][] = []
+            for (let dy = -1; dy <= 1; dy++) {
+                const row: S[] = []
+                for (let dx = -1; dx <= 1; dx++) row.push(red(p.add(sl.vec2(dx, dy).mul(texel))))
+                h.push(row)
+            }
+            const [gx, gy] = sobel(h)
+            const g: S = sl.vec2(gx, gy)
+            const len: S = g.length()
+            const moved = sl.select(len.gt(1e-6), p.add(g.div(max(len, 1e-6)).mul(step)), p)
+            return [next, moved, i.add(1)]
+        },
+        64,
+    ) as S[]
+    return mode === "blur" ? acc.div(n) : acc
+}
+
+/** Magerie's Ambient Occlusion: horizon angles in N directions, rotated per pixel by interleaved gradient noise. */
+export function ambientOcclusion(s: Scope, src: TexRead, radius: number, intensity: number, samples: number): Vec4 {
+    const PI = 3.14159265
+    const uv: S = s.pixel.add(0.5).div(s.size)
+    const texel: S = sl.vec2(1, 1).div(src.size)
+    const centre = luma(src.sample(uv))
+    const N = Math.trunc(samples)
+    const angleStep = (2 * PI) / N
+    const steps = Math.max(1, Math.trunc(radius))
+    const R = s.f(radius)
+    // Interleaved gradient noise on the integer pixel, no + 0.5.
+    const ign: S = s.pixel.x.mul(0.06711056).add(s.pixel.y.mul(0.00583715)).fract().mul(52.9829189).fract()
+    const rotation = ign.mul(angleStep)
+    const [occlusion] = sl.loop(
+        [0, 0],
+        (st: S[]) => st[1].lt(s.f(N)),
+        (st: S[]) => {
+            const [occ, d] = st as [S, S]
+            const angle: S = d.mul(s.f(angleStep)).add(rotation)
+            const dir: S = sl.vec2(sl.cos(angle), sl.sin(angle))
+            const dirLen: S = dir.mul(texel).length()
+            const [maxAngle] = sl.loop(
+                [0, 1],
+                (inner: S[]) => inner[1].le(s.f(steps)),
+                (inner: S[]) => {
+                    const [m, k] = inner as [S, S]
+                    const t: S = max(k.sub(1).add(ign).div(steps), 0.25 / steps)
+                    const h = luma(src.sample(uv.add(dir.mul(texel).mul(R).mul(t))))
+                    return [max(m, sl.atan2(h.sub(centre), R.mul(t).mul(dirLen))), k.add(1)]
+                },
+                64,
+            ) as S[]
+            return [occ.add(sl.sin(maxAngle.clamp(0, PI / 2))), d.add(1)]
+        },
+        64,
+    ) as S[]
+    const ao: S = sl.float(1).sub(occlusion.div(N).mul(s.f(intensity))).saturate()
+    return sl.vec4(ao, ao, ao, 1)
 }

@@ -90,6 +90,27 @@ describe("tex planning", () => {
         }
     })
 
+    it("emits the height filters for both web backends, and smooths a normal map with its own Gaussian", () => {
+        const { noise } = tex.canvas(64, { tile: true })
+        const h = noise("perlin", 4)
+        const imgs = [
+            h.normalMap(4), h.normalMap(2, { smoothRadius: 0, flipY: true, edges: "clamp" }),
+            h.slopeBlur(noise("simplex", 2), 12, { mode: "min" }), h.histogramScan(0.3, 0.2),
+            h.curvature("convex", 2), h.ambientOcclusion(6, { samples: 8 }),
+        ]
+        for (const img of imgs) {
+            for (const x of passes(img)) {
+                expect(x.program.glsl.length).toBeGreaterThan(0)
+                expect(x.program.wgsl.length).toBeGreaterThan(0)
+            }
+        }
+        expect(passes(h.normalMap(4)).map((x) => x.node.op)).toEqual(["noise", "blurX", "blurY", "normalMap"])
+        expect(passes(h.normalMap(4)).find((x) => x.node.op === "blurX")!.node.params).toMatchObject({ sigma: 2, taps: 4 })
+        expect(passes(h.blur(4)).find((x) => x.node.op === "blurX")!.node.params).toMatchObject({ sigma: 4 / 3, taps: 4 })
+        expect(passes(h.normalMap(4, { smoothRadius: 0.5 })).map((x) => x.node.op)).toEqual(["noise", "normalMap"])
+        expect(imgs.map((i) => i.tiles)).toEqual([true, false, true, true, true, true])
+    })
+
     it("keeps a parameter out of the program, so a new seed compiles nothing", () => {
         const { noise } = tex.canvas(64)
         const a = passes(noise("perlin", 1).levels(0.5))[0]!
