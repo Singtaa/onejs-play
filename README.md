@@ -43,7 +43,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
-| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`, `scene.bake`: `.glb` models, models made from arrays (with a tiled `texture`, or a `splat` of up to four textures by weights a vertex, each fingerprinted into a baked light by its pictures' names and hashes, `textureIdentity` in `asset.ts`) and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads. `scene.bake` bakes what is spawned `static`, every static body's actor (the world tells the scene, through `physics3d/actors.ts`) and every scattered copy, through `light/scene-bake.ts`; `scene.bake(name)` loads that light file when it was baked for the scene, and otherwise bakes, says why on the console and hands the host the file; `scene.bake(name, { bounces, samples, occlusion, detail })` and `scene.bake({ ... })` bake with options, each in the record |
+| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`, `scene.bake`: `.glb` models, models made from arrays (with a tiled `texture`, or a `splat` of up to four textures by weights a vertex, any of them given as `{ picture, triplanar }` to be projected from the sides every so many metres rather than read at the uvs, each fingerprinted into a baked light by its pictures' names and hashes, `textureIdentity` in `asset.ts`) and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads. `scene.bake` bakes what is spawned `static`, every static body's actor (the world tells the scene, through `physics3d/actors.ts`) and every scattered copy, through `light/scene-bake.ts`; `scene.bake(name)` loads that light file when it was baked for the scene, and otherwise bakes, says why on the console and hands the host the file; `scene.bake(name, { bounces, samples, occlusion, detail })` and `scene.bake({ ... })` bake with options, each in the record |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
@@ -961,12 +961,24 @@ as the control. It names runtime 1.6, the first container that runs each due
 timer as a task of its own, so the sweep waits for that line.
 
 **Ground fogs as anything else does.** `cli/fixtures/ground-fog` draws the
-same grey plain, under a texture and as a splat, near and half into a red fog,
-and requires the three to match at each distance from the middle pixel of the
+same grey plain, under a texture, as a splat and as a splat whose layer is
+triplanar, near and half into a red fog, and requires the four to match at each distance from the middle pixel of the
 page's screenshot, after fog has moved the plain one at least 40 levels. The
 first 1.6 containers stripped the splat's fog variants, so its far quad stood
 unfogged. It names runtime 1.6; `ground-fog.test.ts` feeds the check a passing
-set of pixels, an unfogged splat and no fog at all.
+set of pixels, an unfogged splat, an unfogged triplanar layer and no fog at all.
+
+**A triplanar layer keeps its size on a steep face.** `cli/fixtures/triplanar`
+draws two 70 degree faces 48 m high in red and green bands, one splat read at
+its uvs (laid flat, 4 m a repeat) and one whose layer is `triplanar: 4`, and
+counts the colour edges down a column of each in the page's screenshot. The
+triplanar face must repeat every 4 m within 5%, and the uv face must stretch
+past 8 m (it reads 12, since 48 m of height spans 16 m of plan). The 5% is the
+count's own grain: edges are counted whole, so a count is off by one at most,
+half a repeat in the twelve the face carries, 4.2%. Before the layer existed
+the cart was refused by the bridge, and drawn plain on both faces it read 12 m
+on each; `triplanar.test.ts` feeds the check a passing pair, a stretched
+triplanar face, two faces alike and no face at all.
 
 What the harnesses in `Tools/playtest` learned applies here unchanged, and
 their README's section on instruments that report clean answers while

@@ -106,7 +106,7 @@ export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./mo
 export type {
     Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
     Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions, SkyOptions,
-    MeshData, MeshModelOptions, MeshDrawOptions, MeshUpdate, MeshModel, MeshSplat, Tiling, Numbers, Scatter, ScatterCopy, SceneTexture,
+    MeshData, MeshModelOptions, MeshDrawOptions, MeshUpdate, MeshModel, MeshSplat, MeshSplatLayer, Tiling, Numbers, Scatter, ScatterCopy, SceneTexture,
     Bake, BakeOptions, BakeResult,
 } from "./models"
 

@@ -37,7 +37,7 @@ function recorder(): any {
                 if (name === "SetMesh") return answer
                 if (name === "Unload") return unloads
                 if (name === "SetDepthOnly") return depthAnswer
-                if (name === "SetMeshTexture" || name === "SetMeshSplat") return paintAnswer
+                if (name === "SetMeshTexture" || name === "SetMeshSplat" || name === "SetMeshSplatTriplanar") return paintAnswer
                 if (name === "Height") return 2.5
                 return undefined
             }
@@ -308,6 +308,31 @@ describe("scene.mesh texture and splat", () => {
         expect(of("SetMesh")[1]![7]).toBe(worn)
         model.set({ positions: SQUARE.positions })
         expect(of("SetMesh")[2]![7], "left out, they stay").toBeNull()
+    })
+
+    it("projects a layer given as { picture, triplanar } from the sides, after the splat and before the vertices", () => {
+        const s = scene()
+        const model = s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, { picture: rock, triplanar: 4 }], weights: new Float32Array(8) } })
+        expect(of("SetMeshSplat")[0]!.slice(2, 6), "the picture goes as a layer").toEqual([grass, rock, null, null])
+        expect(of("SetMeshSplatTriplanar")).toEqual([["SetMeshSplatTriplanar", model.id, 0, 4, 0, 0]])
+        const order = calls.map((c) => c[0]).filter((n) => n === "SetMeshSplat" || n === "SetMeshSplatTriplanar" || n === "SetMesh")
+        expect(order).toEqual(["SetMeshSplat", "SetMeshSplatTriplanar", "SetMesh"])
+        s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, dirt], weights: new Float32Array(8) } })
+        expect(of("SetMeshSplatTriplanar"), "a splat with none never asks").toHaveLength(1)
+        for (const bad of [0, -2, Infinity, Number.NaN, "4" as any, undefined as any]) {
+            expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [{ picture: rock, triplanar: bad }], weights: [1, 1, 1, 1] } })).toThrow(`scene.mesh splat layer 0: triplanar is ${bad}, the metres one repeat`)
+        }
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [{ picture: null as any, triplanar: 4 }], weights: [1, 1, 1, 1] } })).toThrow("scene.mesh splat layer 0 picture is a null")
+    })
+
+    it("needs a OneJS that can project a layer, and says so, while a splat without one still paints", () => {
+        const older = recorder()
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "SetMeshSplatTriplanar" ? undefined : older[name] }) } } }
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [{ picture: rock, triplanar: 4 }], weights: [1, 1, 1, 1] } })).toThrow("scene.mesh splat triplanar needs a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
+        s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [rock], weights: [1, 1, 1, 1] } })
+        expect(of("CreateMesh")).toHaveLength(1)
     })
 
     it("refuses what it cannot draw before asking the bridge, and says why", () => {

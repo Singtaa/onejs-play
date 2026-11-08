@@ -1,9 +1,10 @@
-// A plain mesh, a textured one and a splat, each the same grey, must look the
+// A plain mesh, a textured one and a splat (read at its uvs, and with its layer
+// triplanar), each the same grey, must look the
 // same near and move toward the fog colour by the same amount far off. Reads
 // the middle pixel of the page's own screenshot, decoded by the page. Throws,
 // so the run exits non-zero, when fog moved the plain quad too little to
 // measure, or when the textured or splat quad differs from it.
-const KINDS = ["plain", "texture", "splat"]
+const KINDS = ["plain", "texture", "splat", "triplanar"]
 const SAME = 4      // levels of 255 the three may differ by, for rounding
 const MOVED = 40    // levels the plain quad must move toward the red fog, or fog was not measured
 
@@ -37,7 +38,7 @@ export default async function (game) {
     const moved = (plainFar[0] - plainNear[0]) + (plainNear[1] - plainFar[1])
     if (!(moved >= MOVED)) throw new Error(`fog moved the plain quad ${moved} levels toward red, under the ${MOVED} this check needs: nothing was measured`)
     const wrong = []
-    for (const kind of ["texture", "splat"]) {
+    for (const kind of KINDS.slice(1)) {
         for (const at of ["near", "far"]) {
             const a = seen[`${kind} ${at}`], b = seen[`plain ${at}`]
             const off = Math.max(...a.map((v, i) => Math.abs(v - b[i])))

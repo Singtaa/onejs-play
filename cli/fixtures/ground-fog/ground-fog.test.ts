@@ -19,19 +19,24 @@ function fake(pixels: Record<string, number[]>) {
 }
 
 const near = [139, 137, 128], fogged = [207, 99, 92]
-const all = (far: number[], splatFar = far) => ({
+const all = (far: number[], splatFar = far, triplanarFar = far) => ({
     "plain near": near, "plain far": far,
     "texture near": near, "texture far": far,
     "splat near": near, "splat far": splatFar,
+    "triplanar near": near, "triplanar far": triplanarFar,
 })
 
 describe("the ground-fog playtest", () => {
-    it("passes when plain, texture and splat fog alike", async () => {
+    it("passes when plain, texture, splat and triplanar fog alike", async () => {
         await expect(check(fake(all(fogged)))).resolves.toBeUndefined()
     })
 
     it("fails when the splat stays unfogged, as runtime 1.6's first builds drew it", async () => {
         await expect(check(fake(all(fogged, near)))).rejects.toThrow(/splat far is 139, 137, 128 where plain is 207, 99, 92/)
+    })
+
+    it("fails when a triplanar layer alone stays unfogged", async () => {
+        await expect(check(fake(all(fogged, fogged, near)))).rejects.toThrow(/triplanar far is 139, 137, 128 where plain is 207, 99, 92/)
     })
 
     it("fails when fog moved nothing, rather than passing on three equal unfogged quads", async () => {
