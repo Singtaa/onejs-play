@@ -123,8 +123,7 @@ export interface MeshSplatLayer {
     /**
      * Metres one repeat of the picture spans, on every face whatever its
      * slope. The splat's `tiling` does not apply to it. A triplanar layer
-     * costs up to three reads of its picture where a layer at the uvs costs
-     * one; a face that leans squarely toward an axis takes one.
+     * costs three reads of its picture where a layer at the uvs costs one.
      */
     triplanar: number
 }
