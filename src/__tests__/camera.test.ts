@@ -883,6 +883,62 @@ describe("a follow camera's feel", () => {
         expect(c.camera.distance).toBeLessThan(10)
     })
 
+    // PrimoEden's feel test backing into a rise (feel.md 10b), offline. WoWee
+    // raises the pivot first and tests the way back from there; marched from
+    // the pivot below it, the rise blocked the line sooner and the camera came
+    // in to 2.7 m where it may stand at 6.
+    it("backed into a rise, tests the way back from the pivot as the ground lifts it, and then holds still", () => {
+        // Rising 0.5 in 1 from a metre back to a crest 4 m up, flat beyond.
+        const rise = (x: number, z: number) => (z < -1 ? Math.min(-1 - z, 8) * 0.5 : 0)
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 10, pitch: 15, height: 1, ground: rise }
+        const c = new FollowController(me, o)
+        const go = () => {
+            me.position = [0, rise(0, me.position[2]), me.position[2]]
+            c.frame(1 / 60, me, o, frameOf(source()))
+            const e = c.camera.eye, l = c.camera.target
+            expect(e[1]).toBeGreaterThanOrEqual(rise(e[0], e[2]) + 0.4 - 1e-9)
+            // The line from what it looks at to the camera never passes under the ground.
+            for (let k = 1; k < 100; k++) {
+                const t = k / 100
+                expect(l[1] + (e[1] - l[1]) * t).toBeGreaterThan(rise(0, l[2] + (e[2] - l[2]) * t))
+            }
+        }
+        for (let i = 0; i < 60; i++) go()
+        // Back 3.8 m at 4.5 m/s, then stand 5 s.
+        while (me.position[2] > -3.8) {
+            me.position = [0, 0, Math.max(-3.8, me.position[2] - 4.5 / 60)]
+            go()
+        }
+        for (let i = 0; i < 60; i++) go()
+        // Standing, it settles and stays: never in and out again.
+        let most = eyeDistance(c)
+        for (let i = 0; i < 240; i++) {
+            go()
+            expect(eyeDistance(c), `frame ${i}`).toBeGreaterThan(most - 0.05)
+            most = Math.max(most, eyeDistance(c))
+        }
+        // Where it may stand, found here densely rather than by the camera's
+        // march: the farthest distance whose line, from the pivot raised for a
+        // camera there (0.6 m over the ground under it, at most 1.4 m), keeps
+        // 0.4 m over the ground the whole way back. 6 m.
+        const pivot: Vec3 = [0, rise(0, -3.8) + 1, -3.8]
+        const clear = (d: number) => {
+            const e = orbitEye(pivot, c.camera, d)
+            const lift = Math.min(1.4, Math.max(0, rise(e[0], e[2]) + 0.6 - e[1]))
+            for (let k = 1; k <= 400; k++) {
+                const t = k / 400
+                if (pivot[1] + lift + (e[1] - pivot[1]) * t < rise(0, pivot[2] + (e[2] - pivot[2]) * t) + 0.4) return false
+            }
+            return true
+        }
+        let may = 0
+        while (may < 10 && clear(may + 0.01)) may += 0.01
+        expect(may).toBeGreaterThan(6)
+        // Within what the camera's halvings resolve between the march and the zoom, a sixteenth of at most 2.4 m.
+        expect(eyeDistance(c)).toBeGreaterThan(may - 0.15)
+    })
+
     it("lifts what it looks at when the camera comes close over the ground, and stays clear of it", () => {
         const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
         const flat = () => 0

@@ -94,8 +94,9 @@
  * after nothing is in the way, so a slope does not push the camera in and out
  * with every step; a wheel notch, a pinch or a written `distance` forgets it.
  * `distance` is always what the player asked for. With `ground`, what the
- * camera looks at rises where the camera comes close over the ground, and the
- * camera never stands lower than `clearance` above it. WoWee brings a wall in
+ * camera looks at rises where the camera comes close over the ground, the way
+ * back is tested from where it rose to, as WoWee does, and the camera never
+ * stands lower than `clearance` above the ground. WoWee brings a wall in
  * over 0.06 s; at once here is the one place this differs from it.
  */
 
@@ -600,18 +601,24 @@ export function followOn(s: FollowState, drag: Readonly<DragFrame>, target: Foll
         s.zoom = Math.abs(want - s.zoom) < 1e-6 ? want : s.zoom + (want - s.zoom) * (1 - Math.exp(-dt * ZOOM_RATE))
     }
 
+    // Close over the ground, the pivot rises, and the way back is tested from
+    // where it rose to, as WoWee does: marched from below, a crest behind blocks
+    // the line sooner and brings the camera in about twice as far.
+    const ground = o.ground ?? null
+    const pre = ground === null ? 0 : liftOver(s.pivot, orbitEye(s.pivot, s, s.zoom), ground, clearance)
+    const from: Vec3 = pre > 0 ? [s.pivot[0], s.pivot[1] + pre, s.pivot[2]] : s.pivot
+
     // What is in the way, as two limits: a wall, and the ground. Infinity is nothing.
     let wall = Infinity, groundRaw = Infinity
     if (o.world !== null) {
-        const hit = wallHit(s, target, o, clearance)
+        const hit = wallHit(s, from, target, o, clearance)
         if (hit !== null) {
             if (hit.up) groundRaw = hit.reach
             else wall = hit.reach
         }
     }
-    const ground = o.ground ?? null
     if (ground !== null) {
-        const marched = marchGround(s.pivot, s, s.zoom, ground, clearance)
+        const marched = groundLimit(s.pivot, pre, s, s.zoom, ground, clearance)
         if (marched < s.zoom) groundRaw = Math.min(groundRaw, marched)
     }
     // The ground's limit, on its own timing: from the zoom when it first comes in the way.
@@ -627,8 +634,8 @@ export function followOn(s: FollowState, drag: Readonly<DragFrame>, target: Foll
     const want = Math.min(raw, s.zoom)
     if (want < at) at = s.snapReach || wall <= want || turning ? want : at + (want - at) * ease(GROUND_IN_SECONDS)
     else at = s.snapReach ? want : at + (want - at) * ease(REACH_OUT_SECONDS)
-    // Easing in may graze a slope, never stand in it: under the ground itself, the camera comes to its limit at once.
-    if (ground !== null && at > want && underGround(s.pivot, s, at, ground)) {
+    // Easing in may graze a slope, never pass through it: where the line to the camera dips under the ground itself, the camera comes to its limit at once.
+    if (ground !== null && at > want && marchGround(liftedFor(s.pivot, pre, s, at, ground, clearance), s, at, ground, 0) < at) {
         if (groundRaw < s.zoom) s.groundReach = Math.min(s.groundReach, groundRaw)
         at = Math.min(want, groundRaw)
     }
@@ -647,16 +654,11 @@ export function followOn(s: FollowState, drag: Readonly<DragFrame>, target: Foll
         else if (s.debt <= 0.001) s.debt = 0
     }
 
-    s.look = s.pivot
-    s.eye = orbitEye(s.pivot, s, s.reach)
+    s.look = ground === null ? s.pivot : liftedFor(s.pivot, pre, s, s.reach, ground, clearance)
+    s.eye = orbitEye(s.look, s, s.reach)
     if (ground !== null) {
-        // Close over the ground, the pivot rises and the camera with it; and the camera never stands lower than clearance over it.
+        // The camera never stands lower than clearance over the ground.
         const under = ground(s.eye[0], s.eye[2])
-        const lift = clamp(under + LIFT_NEAR * clearance - s.eye[1], 0, LIFT_MAX * clearance)
-        if (lift > 0) {
-            s.look = [s.pivot[0], s.pivot[1] + lift, s.pivot[2]]
-            s.eye = [s.eye[0], s.eye[1] + lift, s.eye[2]]
-        }
         if (s.eye[1] < under + clearance) s.eye = [s.eye[0], under + clearance, s.eye[2]]
     }
     return s.eye
@@ -677,11 +679,11 @@ const sphereOf = (radius: number): Shape => {
  * stopped `clearance` short. The target's own body is learned from the first
  * hit on it and skipped from then on.
  */
-function wallHit(s: FollowState, target: FollowTarget, o: FollowStepOptions, clearance: number): { reach: number, up: boolean } | null {
+function wallHit(s: FollowState, from: Vec3, target: FollowTarget, o: FollowStepOptions, clearance: number): { reach: number, up: boolean } | null {
     const world = o.world!
-    const eye = orbitEye(s.pivot, s, s.zoom)
+    const eye = orbitEye(from, s, s.zoom)
     const sweep = world.sweep !== undefined && clearance > 0
-    const ask = () => sweep ? world.sweep!(sphereOf(clearance), s.pivot, eye, s.filter) : world.raycast(s.pivot, eye, s.filter)
+    const ask = () => sweep ? world.sweep!(sphereOf(clearance), from, eye, s.filter) : world.raycast(from, eye, s.filter)
     let hit = ask()
     // The pivot is inside the target's own body: learn it, and look past it from now on.
     if (hit !== null && hit.body !== null && hit.body.actor === target && hit.body !== s.own) {
@@ -693,10 +695,49 @@ function wallHit(s: FollowState, target: FollowTarget, o: FollowStepOptions, cle
     return { reach: sweep ? hit.distance : hit.distance - clearance, up: hit.normal !== undefined && hit.normal[1] >= GROUND_NORMAL_Y }
 }
 
-/** Whether a camera `distance` back from `pivot` would stand under the ground. */
-function underGround(pivot: Readonly<Vec3>, view: Readonly<OrbitView>, distance: number, ground: GroundHeight): boolean {
-    const e = orbitEye(pivot, view, distance)
-    return e[1] < ground(e[0], e[2])
+/**
+ * How far the pivot rises for a camera at `eye`: enough to bring the camera
+ * LIFT_NEAR clearances over the ground under it, and at most LIFT_MAX
+ * clearances. Nothing while the pivot is under the ground (a cave), where the
+ * ground says nothing, as for the march.
+ */
+function liftOver(pivot: Readonly<Vec3>, eye: Readonly<Vec3>, ground: GroundHeight, clearance: number): number {
+    if (pivot[1] < ground(pivot[0], pivot[2])) return 0
+    return clamp(ground(eye[0], eye[2]) + LIFT_NEAR * clearance - eye[1], 0, LIFT_MAX * clearance)
+}
+
+/**
+ * What a camera `distance` back looks at: the pivot raised by the lift the
+ * way back was tested from (`pre`, for the zoom), or by more where the camera
+ * stands lower over the ground. Raising the line only clears it of a ground,
+ * so a line marched clear stays clear.
+ */
+function liftedFor(pivot: Vec3, pre: number, view: Readonly<OrbitView>, distance: number, ground: GroundHeight, clearance: number): Vec3 {
+    const lift = Math.max(pre, liftOver(pivot, orbitEye(pivot, view, distance), ground, clearance))
+    return lift > 0 ? [pivot[0], pivot[1] + lift, pivot[2]] : pivot
+}
+
+/**
+ * How far back the ground lets the camera stand, each distance tested from
+ * what a camera there would look at. All of `distance` when that is clear.
+ * Else the march from the pivot lifted for `distance` gives a distance that
+ * is clear, and halvings between it and `distance` find how much further
+ * back the camera may go. A camera further back stands higher over the
+ * ground beyond a crest, so the pivot rises less; marched only from the
+ * pivot lifted for the zoom, the camera would come in short of where it may
+ * stand and go out again once clear, in and out while the target stands.
+ */
+function groundLimit(pivot: Vec3, pre: number, view: Readonly<OrbitView>, distance: number, ground: GroundHeight, clearance: number): number {
+    const marchFor = (d: number) => marchGround(liftedFor(pivot, pre, view, d, ground, clearance), view, d, ground, clearance)
+    let lo = marchFor(distance)
+    if (lo >= distance) return distance
+    let hi = distance
+    for (let h = 0; h < GROUND_HALVINGS; h++) {
+        const mid = (lo + hi) / 2
+        if (marchFor(mid) >= mid) lo = mid
+        else hi = mid
+    }
+    return lo
 }
 
 /**
