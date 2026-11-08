@@ -71,6 +71,32 @@
  * camera behind the target with no drag held, always (`true`, a vehicle) or
  * only while the target moves (`"moving"`, WoW's swing back once you walk
  * after a look round). The two compose.
+ *
+ * WOW'S FEEL, BY DEFAULT (runtime 1.6; feel.md on primoeden-three, after WoWee)
+ *
+ * A follow camera's press turns nothing until it has moved 5 stage pixels,
+ * or 0.8% of the bound View's short side if that is more, so a click does not
+ * turn the view by its jitter; the turn starts from that point, and a right
+ * press sets `heading` at once all the same. A wheel notch moves the distance
+ * by 15% of it and at least 0.3 m, and what is shown eases there, 95% in
+ * 0.20 s. A pinch is taken at once. An orbit has neither.
+ *
+ * WHAT IS IN THE WAY
+ *
+ * `clearance` (0.4 m) is kept between the camera and anything, the whole way
+ * back from the pivot: a sphere that size is swept through the `world`, and
+ * marched along the `ground`, a height function for a world whose colliders
+ * are only near the player. A hit facing up is ground, any steeper a wall. A
+ * wall brings the camera in at once, so it never hides the target. The ground
+ * comes in on a slower timing of its own, and at once when the view turns or
+ * the camera would stand in it. Both go out over 0.4 s. Held short for a
+ * while, the zoom itself comes in behind the camera and is given back a second
+ * after nothing is in the way, so a slope does not push the camera in and out
+ * with every step; a wheel notch, a pinch or a written `distance` forgets it.
+ * `distance` is always what the player asked for. With `ground`, what the
+ * camera looks at rises where the camera comes close over the ground, and the
+ * camera never stands lower than `clearance` above it. WoWee brings a wall in
+ * over 0.06 s; at once here is the one place this differs from it.
  */
 
 import { useEffect, useRef, useState } from "react"
@@ -79,6 +105,7 @@ import type { VisualElement } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { WORLD_CLASS } from "./over-ui"
 import { heldByControl } from "./stick"
+import { shape, type Shape } from "./physics3d/world"
 import type { CameraOptions, Vec3 } from "./models"
 
 const RAD = Math.PI / 180
@@ -144,6 +171,11 @@ export interface DragTracker {
     fingers: number[]
     /** Stage units between two fingers last frame, or 0 when not pinching. */
     pinch: number
+    /** How far the press has moved, in a straight line from where it began, while it is still inside the dead zone. */
+    travelX: number
+    travelY: number
+    /** The press has left its dead zone, so it turns. */
+    armed: boolean
 }
 
 /** One frame of a drag. */
@@ -151,8 +183,10 @@ export interface DragFrame {
     /** Stage units the drag moved this frame: right and down are positive. */
     dx: number
     dy: number
-    /** What the distance is multiplied by: a pinch, or the wheel. 1 with neither. */
+    /** What the distance is multiplied by: a pinch, or for an orbit the wheel too. 1 with neither. */
     zoom: number
+    /** A follow camera's wheel notches this frame: positive is away from the target. 0 for an orbit, whose wheel is in `zoom`. */
+    notches: number
     /** A left drag or one finger is held. */
     left: boolean
     /** A right drag is held. */
@@ -162,14 +196,43 @@ export interface DragFrame {
 }
 
 export function newDragTracker(): DragTracker {
-    return { source: null, fingers: [], pinch: 0 }
+    return { source: null, fingers: [], pinch: 0, travelX: 0, travelY: 0, armed: true }
 }
 
 export function newDragFrame(): DragFrame {
-    return { dx: 0, dy: 0, zoom: 1, left: false, right: false, active: false }
+    return { dx: 0, dy: 0, zoom: 1, notches: 0, left: false, right: false, active: false }
 }
 
 const ended = (t: DragTouch) => t.phase === "ended" || t.phase === "canceled"
+
+/** A new press: nothing travelled yet, and armed at once when there is no dead zone. */
+const pressed = (t: DragTracker, deadZone: number) => {
+    t.travelX = 0
+    t.travelY = 0
+    t.armed = !(deadZone > 0)
+}
+
+/**
+ * This frame's move of one pointer through the dead zone: nothing until the
+ * press has gone `deadZone` stage units from where it began, as a straight
+ * line, and from then only what lies past that point, so the view never jumps
+ * by the zone's worth.
+ */
+function pastDeadZone(t: DragTracker, deadZone: number, out: DragFrame): void {
+    if (t.armed) return
+    t.travelX += out.dx
+    t.travelY += out.dy
+    const far = Math.hypot(t.travelX, t.travelY)
+    if (far < deadZone) {
+        out.dx = 0
+        out.dy = 0
+        return
+    }
+    t.armed = true
+    const past = (far - deadZone) / far
+    out.dx = t.travelX * past
+    out.dy = t.travelY * past
+}
 
 /**
  * One frame of a drag, written into `out`. `inside` says whether a press at a
@@ -177,14 +240,20 @@ const ended = (t: DragTouch) => t.phase === "ended" || t.phase === "canceled"
  * finger. Touches come first, and the mouse starts nothing while a finger is
  * down: the container reports a touch as the mouse too, so a thumb on a stick
  * would otherwise turn the camera as a mouse drag.
+ *
+ * `deadZone`, in stage units, is how far a mouse press or one finger moves
+ * before it turns anything, so a click does not turn the view by its jitter.
+ * The press still counts as held from the start (`left`, `right`, `active`);
+ * only its `dx` and `dy` wait. A pinch is never held back. 0 by default.
  */
 export function readDrag(
     t: DragTracker, source: DragSource, inside: (x: number, y: number) => boolean,
-    claimed: (fingerId: number) => boolean, out: DragFrame,
+    claimed: (fingerId: number) => boolean, out: DragFrame, deadZone: number = 0,
 ): DragFrame {
     out.dx = 0
     out.dy = 0
     out.zoom = 1
+    out.notches = 0
     out.left = false
     out.right = false
 
@@ -204,12 +273,14 @@ export function readDrag(
             if (claimed(touch.fingerId) || !inside(touch.position.x, touch.position.y)) continue
             t.fingers.push(touch.fingerId)
             t.pinch = 0
+            if (t.fingers.length === 1) pressed(t, deadZone)
         }
         t.source = t.fingers.length > 0 ? "touch" : null
         if (t.fingers.length === 1) {
             const one = touches.find((x) => x.fingerId === t.fingers[0])!
             out.dx = one.delta.x
             out.dy = one.delta.y
+            pastDeadZone(t, deadZone, out)
             out.left = true
         } else if (t.fingers.length === 2) {
             const a = touches.find((x) => x.fingerId === t.fingers[0])!
@@ -228,8 +299,10 @@ export function readDrag(
 
     const m = source.mouse
     if (t.source === null) {
-        if ((m.wasLeftPressed || m.wasRightPressed) && !m.overUI && inside(m.position.x, m.position.y)) t.source = "mouse"
-        else {
+        if ((m.wasLeftPressed || m.wasRightPressed) && !m.overUI && inside(m.position.x, m.position.y)) {
+            t.source = "mouse"
+            pressed(t, deadZone)
+        } else {
             out.active = false
             return out
         }
@@ -241,6 +314,7 @@ export function readDrag(
         // Not on the frame it began: the delta then is the move before the press.
         out.dx = m.delta.x
         out.dy = m.delta.y
+        pastDeadZone(t, deadZone, out)
     }
     out.left = m.leftButton
     out.right = m.rightButton
@@ -271,16 +345,29 @@ export interface FollowTarget {
     readonly yaw: number
 }
 
-/** A hit, as the 3D world's raycast answers. */
+/** A hit, as the 3D world's raycast and sweep answer. */
 interface RayHit {
     distance: number
+    /** Out of the surface: one facing up is ground, which comes in on the ground's timing. */
+    normal?: Readonly<Vec3>
     body: { actor?: unknown } | null
 }
 
-/** The slice of a 3D world the follow camera asks. */
+type WallFilter = { only?: readonly string[], skip?: readonly unknown[] }
+
+/**
+ * The slice of a 3D world the follow camera asks. With `sweep`, a sphere of
+ * `clearance` travels from the pivot to the camera, so nothing comes nearer
+ * the camera than that anywhere along the way; with only `raycast`, one ray,
+ * stopped `clearance` short of what it hits.
+ */
 export interface FollowWorld {
-    raycast(from: Vec3, to: Vec3, filter?: { only?: readonly string[], skip?: readonly unknown[] }): RayHit | null
+    raycast(from: Vec3, to: Vec3, filter?: WallFilter): RayHit | null
+    sweep?(shape: Shape, from: Vec3, to: Vec3, filter?: WallFilter): RayHit | null
 }
+
+/** The ground's height anywhere, for a world whose colliders are only near the player. */
+export type GroundHeight = (x: number, z: number) => number
 
 /** A follow camera's state. Exported for tests; a cart uses useFollowCamera. */
 export interface FollowState extends OrbitView {
@@ -290,8 +377,20 @@ export interface FollowState extends OrbitView {
     forward: boolean
     /** The point looked at, eased upward and downward so a step does not jolt. */
     pivot: Vec3
-    /** How far the camera is from the pivot now: the distance, or less in front of a wall. */
+    /** How far the camera is from the pivot now: the zoom, or less in front of a wall or the ground. */
     reach: number
+    /** The distance shown, easing to `distance` less `debt` after a wheel notch. */
+    zoom: number
+    /** Metres the zoom was brought in by what was in the way, given back once nothing has been for a while. */
+    debt: number
+    /** Seconds since nothing was in the way, for giving the debt back. */
+    clearFor: number
+    /** The ground's limit, eased on its own timing; Infinity while the ground is not in the way. */
+    groundReach: number
+    /** The camera's limit, eased; Infinity while nothing is in the way, so the camera is at the zoom. */
+    limit: number
+    /** What it looks at: the pivot, raised where the camera comes close to the ground. */
+    look: Vec3
     /** Where the camera stands. */
     eye: Vec3
     /** The target last followed: a new one is learned afresh. */
@@ -305,6 +404,9 @@ export interface FollowState extends OrbitView {
     lastAt: Vec3
     /** A drag was held last frame, so this frame's turn of the target is not turnWith's to follow if it has ended. */
     dragging: boolean
+    /** The camera's yaw and pitch as last frame left them, to tell a camera that is turning. */
+    lastViewYaw: number
+    lastViewPitch: number
     /** A cart wrote the distance: take it this frame rather than backing out to it. */
     snapReach: boolean
     started: boolean
@@ -320,11 +422,57 @@ const PIVOT_SNAP = 2
 const BEHIND_SECONDS = 0.35
 /** Metres a second across the ground, above which `behind: "moving"` counts the target as moving. */
 const MOVING_SPEED = 0.2
-/** Seconds to back out from a wall once it is no longer in the way. */
-const REACH_SECONDS = 0.3
-/** Metres kept between the camera and a wall. */
-const WALL_MARGIN = 0.2
-/** The nearest the camera comes, however close the wall. */
+/**
+ * How the camera meets what is in its way, in two layers (feel.md §5, after
+ * WoWee). The ground's limit is eased first, in more slowly than it goes out,
+ * so a slope reads as a slope rather than a nudge a step. Then the camera's
+ * limit: in on GROUND_IN_SECONDS, or at once while the view turns, and at
+ * once always for a wall, so a wall never hides the target; out on
+ * REACH_OUT_SECONDS for both. WoWee brings a wall in on 0.06 s too; at once
+ * here, since the clearance sweep and at once together are what keeps the
+ * camera from ever standing in a wall.
+ */
+const GROUND_LIMIT_IN_SECONDS = 0.18
+const GROUND_LIMIT_OUT_SECONDS = 0.45
+const GROUND_IN_SECONDS = 0.06
+const REACH_OUT_SECONDS = 0.4
+/** A hit whose normal is at least this far up (about 53 degrees from it) is ground, and any steeper is a wall. */
+const GROUND_NORMAL_Y = 0.6
+/**
+ * The zoom debt: while the limit is more than DEBT_SLACK short of the zoom,
+ * the zoom itself comes in toward it over DEBT_IN_SECONDS, and what it took is
+ * owed. Once nothing has been in the way for DEBT_SETTLE_SECONDS it is given
+ * back over DEBT_OUT_SECONDS. A slope or a doorway then stops pushing the
+ * camera in and out with every step.
+ */
+const DEBT_SLACK = 0.1
+const DEBT_IN_SECONDS = 1
+const DEBT_SETTLE_SECONDS = 1
+const DEBT_OUT_SECONDS = 2.5
+/** The wheel: the shown distance closes 1 - e^(-ZOOM_RATE t) of the gap, 95% in 0.20 s. */
+const ZOOM_RATE = 15
+/** One wheel notch moves the distance by this share of it, and never less than WHEEL_NOTCH_MIN metres. */
+const WHEEL_NOTCH = 0.15
+const WHEEL_NOTCH_MIN = 0.3
+/**
+ * The march along the ground: steps of at most GROUND_STEP metres, between
+ * GROUND_STEPS_MIN and GROUND_STEPS_MAX of them, then GROUND_HALVINGS halvings
+ * between the last clear point and the first blocked one.
+ */
+const GROUND_STEP = 1.25
+const GROUND_STEPS_MIN = 4
+const GROUND_STEPS_MAX = 24
+const GROUND_HALVINGS = 4
+/**
+ * With `ground`, the pivot rises where the camera would come within
+ * LIFT_NEAR clearances of the ground under it, by up to LIFT_MAX clearances
+ * (0.6 m and 1.4 m at the default 0.4).
+ */
+const LIFT_NEAR = 1.5
+const LIFT_MAX = 3.5
+/** Metres kept between the camera and anything in its way, unless a hook is told otherwise. */
+export const CLEARANCE = 0.4
+/** The nearest the camera comes, however close what is in its way. */
 const MIN_REACH = 0.3
 
 export interface FollowStepOptions {
@@ -338,13 +486,19 @@ export interface FollowStepOptions {
     world: FollowWorld | null
     /** What a wall is: the world's filter, before the target's own body is skipped. */
     filter?: { only?: readonly string[], skip?: readonly unknown[] }
+    /** Metres kept between the camera and anything in its way. CLEARANCE by default. */
+    clearance?: number
+    /** The ground's height anywhere. */
+    ground?: GroundHeight | null
 }
 
 export function newFollowState(view: OrbitView, aimed: boolean = true): FollowState {
     const pivot: Vec3 = [0, 0, 0]
     return {
-        ...view, heading: view.yaw, forward: false, pivot, reach: view.distance, eye: orbitEye(pivot, view),
-        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], dragging: false, snapReach: false, started: false, aimed,
+        ...view, heading: view.yaw, forward: false, pivot, reach: view.distance, zoom: view.distance, debt: 0, clearFor: 0, groundReach: Infinity, limit: Infinity,
+        look: pivot, eye: orbitEye(pivot, view),
+        of: null, own: null, filter: undefined, lastYaw: 0, lastAt: [0, 0, 0], dragging: false, lastViewYaw: view.yaw, lastViewPitch: view.pitch,
+        snapReach: false, started: false, aimed,
     }
 }
 
@@ -364,7 +518,20 @@ export function followStep(s: FollowState, drag: Readonly<DragFrame>, target: Fo
  * from the rest of the step.
  */
 export function followLook(s: FollowState, drag: Readonly<DragFrame>, o: Pick<FollowStepOptions, "limits" | "degreesPerPixel">): void {
-    orbitStep(s, drag, o.limits, o.degreesPerPixel)
+    const [lo, hi] = o.limits.distanceRange
+    // A pinch is the hand's, taken at once; a wheel notch is where the player
+    // wants the camera, which the shown distance eases to. Either is the
+    // player choosing a distance, so neither keeps what the collision took.
+    if (drag.zoom !== 1) {
+        s.distance = s.zoom = clamp((s.distance - s.debt) * drag.zoom, lo, hi)
+        s.debt = 0
+    }
+    if (drag.notches !== 0) {
+        const from = s.distance - s.debt
+        s.distance = clamp(from + drag.notches * Math.max(WHEEL_NOTCH * from, WHEEL_NOTCH_MIN), lo, hi)
+        s.debt = 0
+    }
+    orbitStep(s, drag.zoom === 1 ? drag : { dx: drag.dx, dy: drag.dy, zoom: 1 }, o.limits, o.degreesPerPixel)
     // Right drag turns the camera and the character with it, WoW's way.
     if (drag.right) s.heading = s.yaw
     else if (s.of !== null) s.heading = wrapDegrees(s.of.yaw)
@@ -418,24 +585,151 @@ export function followOn(s: FollowState, drag: Readonly<DragFrame>, target: Foll
     const y = Math.abs(wantY - s.pivot[1]) > PIVOT_SNAP ? wantY : s.pivot[1] + (wantY - s.pivot[1]) * (1 - Math.exp(-dt / PIVOT_SECONDS))
     s.pivot = [p[0], y, p[2]]
 
-    let reach = s.distance
-    if (o.world !== null) {
-        const eye = orbitEye(s.pivot, s, s.distance)
-        let hit = o.world.raycast(s.pivot, eye, s.filter)
-        // The pivot is inside the target's own body: learn it, and look past it from now on.
-        if (hit !== null && hit.body !== null && hit.body.actor === target && hit.body !== s.own) {
-            s.own = hit.body
-            s.filter = { only: o.filter?.only, skip: [...(o.filter?.skip ?? []), hit.body] }
-            hit = o.world.raycast(s.pivot, eye, s.filter)
-        }
-        if (hit !== null) reach = Math.max(MIN_REACH, Math.min(s.distance, hit.distance - WALL_MARGIN))
+    const clearance = o.clearance !== undefined && Number.isFinite(o.clearance) && o.clearance >= 0 ? o.clearance : CLEARANCE
+    const ease = (tau: number) => 1 - Math.exp(-dt / tau)
+    const turning = drag.active || s.yaw !== s.lastViewYaw || s.pitch !== s.lastViewPitch
+    s.lastViewYaw = s.yaw
+    s.lastViewPitch = s.pitch
+
+    // The shown distance: where the player wants it, less what the collision took.
+    if (s.snapReach) {
+        s.debt = 0
+        s.zoom = s.distance
+    } else {
+        const want = s.distance - s.debt
+        s.zoom = Math.abs(want - s.zoom) < 1e-6 ? want : s.zoom + (want - s.zoom) * (1 - Math.exp(-dt * ZOOM_RATE))
     }
-    // In at once, so a wall never hides the target; back out gently, unless the cart wrote the distance.
-    s.reach = reach <= s.reach || s.snapReach ? reach : s.reach + (reach - s.reach) * (1 - Math.exp(-dt / REACH_SECONDS))
+
+    // What is in the way, as two limits: a wall, and the ground. Infinity is nothing.
+    let wall = Infinity, groundRaw = Infinity
+    if (o.world !== null) {
+        const hit = wallHit(s, target, o, clearance)
+        if (hit !== null) {
+            if (hit.up) groundRaw = hit.reach
+            else wall = hit.reach
+        }
+    }
+    const ground = o.ground ?? null
+    if (ground !== null) {
+        const marched = marchGround(s.pivot, s, s.zoom, ground, clearance)
+        if (marched < s.zoom) groundRaw = Math.min(groundRaw, marched)
+    }
+    // The ground's limit, on its own timing: from the zoom when it first comes in the way.
+    if (groundRaw >= s.zoom) s.groundReach = Infinity
+    else if (s.groundReach === Infinity || s.snapReach) s.groundReach = s.snapReach ? groundRaw : s.zoom
+    if (s.groundReach !== Infinity) {
+        s.groundReach += (groundRaw - s.groundReach) * ease(groundRaw < s.groundReach ? GROUND_LIMIT_IN_SECONDS : GROUND_LIMIT_OUT_SECONDS)
+    }
+    const raw = Math.min(wall, s.groundReach)
+
+    // The camera's limit: a wall at once, the ground quickly, or at once while turning; out gently, to the zoom.
+    let at = s.limit === Infinity ? s.zoom : s.limit
+    const want = Math.min(raw, s.zoom)
+    if (want < at) at = s.snapReach || wall <= want || turning ? want : at + (want - at) * ease(GROUND_IN_SECONDS)
+    else at = s.snapReach ? want : at + (want - at) * ease(REACH_OUT_SECONDS)
+    // Easing in may graze a slope, never stand in it: under the ground itself, the camera comes to its limit at once.
+    if (ground !== null && at > want && underGround(s.pivot, s, at, ground)) {
+        if (groundRaw < s.zoom) s.groundReach = Math.min(s.groundReach, groundRaw)
+        at = Math.min(want, groundRaw)
+    }
+    s.limit = raw >= s.zoom && at >= s.zoom - 1e-3 ? Infinity : at
+    s.reach = Math.max(Math.min(MIN_REACH, s.zoom), Math.min(s.zoom, at, wall))
     s.snapReach = false
-    s.reach = Math.min(s.reach, s.distance)
+
+    // The debt: while what is in the way is short of the zoom, the zoom comes in behind the camera; once clear a while, it is given back.
+    const bite = s.distance - s.debt - raw
+    if (bite > DEBT_SLACK && dt > 0) {
+        s.clearFor = 0
+        s.debt = Math.min(Math.max(0, s.distance - MIN_REACH), s.debt + bite * ease(DEBT_IN_SECONDS))
+    } else {
+        s.clearFor += dt
+        if (s.clearFor > DEBT_SETTLE_SECONDS && s.debt > 0.001) s.debt -= s.debt * ease(DEBT_OUT_SECONDS)
+        else if (s.debt <= 0.001) s.debt = 0
+    }
+
+    s.look = s.pivot
     s.eye = orbitEye(s.pivot, s, s.reach)
+    if (ground !== null) {
+        // Close over the ground, the pivot rises and the camera with it; and the camera never stands lower than clearance over it.
+        const under = ground(s.eye[0], s.eye[2])
+        const lift = clamp(under + LIFT_NEAR * clearance - s.eye[1], 0, LIFT_MAX * clearance)
+        if (lift > 0) {
+            s.look = [s.pivot[0], s.pivot[1] + lift, s.pivot[2]]
+            s.eye = [s.eye[0], s.eye[1] + lift, s.eye[2]]
+        }
+        if (s.eye[1] < under + clearance) s.eye = [s.eye[0], under + clearance, s.eye[2]]
+    }
     return s.eye
+}
+
+/** One sphere a clearance, shared by every follow camera with that clearance. */
+const spheres = new Map<number, Shape>()
+const sphereOf = (radius: number): Shape => {
+    let made = spheres.get(radius)
+    if (made === undefined) spheres.set(radius, made = shape.sphere({ radius }))
+    return made
+}
+
+/**
+ * The nearest thing between the pivot and the camera at the zoom: how far the
+ * camera may stand, and whether it is ground (a hit facing up) or a wall.
+ * A sweep of a sphere of `clearance` when the world has one, else a ray
+ * stopped `clearance` short. The target's own body is learned from the first
+ * hit on it and skipped from then on.
+ */
+function wallHit(s: FollowState, target: FollowTarget, o: FollowStepOptions, clearance: number): { reach: number, up: boolean } | null {
+    const world = o.world!
+    const eye = orbitEye(s.pivot, s, s.zoom)
+    const sweep = world.sweep !== undefined && clearance > 0
+    const ask = () => sweep ? world.sweep!(sphereOf(clearance), s.pivot, eye, s.filter) : world.raycast(s.pivot, eye, s.filter)
+    let hit = ask()
+    // The pivot is inside the target's own body: learn it, and look past it from now on.
+    if (hit !== null && hit.body !== null && hit.body.actor === target && hit.body !== s.own) {
+        s.own = hit.body
+        s.filter = { only: o.filter?.only, skip: [...(o.filter?.skip ?? []), hit.body] }
+        hit = ask()
+    }
+    if (hit === null) return null
+    return { reach: sweep ? hit.distance : hit.distance - clearance, up: hit.normal !== undefined && hit.normal[1] >= GROUND_NORMAL_Y }
+}
+
+/** Whether a camera `distance` back from `pivot` would stand under the ground. */
+function underGround(pivot: Readonly<Vec3>, view: Readonly<OrbitView>, distance: number, ground: GroundHeight): boolean {
+    const e = orbitEye(pivot, view, distance)
+    return e[1] < ground(e[0], e[2])
+}
+
+/**
+ * How far along the way back from `pivot` the camera may go before it comes
+ * within `clearance` of the ground: marched in steps, then halved between the
+ * last clear point and the first one that is not. All of `distance` when the
+ * pivot is under the ground (a cave), where the ground says nothing.
+ */
+export function marchGround(pivot: Readonly<Vec3>, view: Readonly<OrbitView>, distance: number, ground: GroundHeight, clearance: number): number {
+    if (!(distance > 0) || pivot[1] < ground(pivot[0], pivot[2])) return distance
+    const end = orbitEye(pivot, view, distance)
+    const dx = end[0] - pivot[0], dy = end[1] - pivot[1], dz = end[2] - pivot[2]
+    const blocked = (t: number) => {
+        const x = pivot[0] + dx * t, z = pivot[2] + dz * t
+        return pivot[1] + dy * t < ground(x, z) + clearance
+    }
+    const steps = clamp(Math.ceil(distance / GROUND_STEP), GROUND_STEPS_MIN, GROUND_STEPS_MAX)
+    let clear = 0
+    for (let i = 1; i <= steps; i++) {
+        const t = i / steps
+        if (!blocked(t)) {
+            clear = t
+            continue
+        }
+        let lo = clear, hi = t
+        for (let h = 0; h < GROUND_HALVINGS; h++) {
+            const mid = (lo + hi) / 2
+            if (blocked(mid)) hi = mid
+            else lo = mid
+        }
+        return lo * distance
+    }
+    return distance
 }
 
 // The controllers, and the hooks that wire them to a component
@@ -459,8 +753,17 @@ export interface CameraFrame {
     readonly frame?: number
 }
 
-/** Each wheel step multiplies the distance by this. */
+/** Each wheel step multiplies an orbit's distance by this. */
 const WHEEL_STEP = 1.1
+/** Wheel steps a notch: a host's wheel arrives as lines or as pixels, and a notch is at most three lines either way. */
+const STEPS_A_NOTCH = 3
+/**
+ * A follow camera's drag turns nothing until it has moved this many stage
+ * units, or this share of the bound View's short side if that is more
+ * (feel.md §2, WoWee's click and drag test).
+ */
+const DEAD_ZONE = 5
+const DEAD_ZONE_SHARE = 0.008
 /** Degrees a stage pixel of drag turns, unless a hook is told otherwise. */
 export const DEGREES_PER_PIXEL = 0.3
 
@@ -472,6 +775,8 @@ class Rig {
     readonly drag = newDragFrame()
     /** Wheel steps since the last frame: positive is away from the player, zooming out. */
     private _wheel = 0
+    /** The bound View's short side as of the last press, for the dead zone; 0 with no View bound. */
+    private _short = 0
     private _eye: Vec3 | null = null
     private _at: Vec3 | null = null
     private _to: CameraTarget | null = null
@@ -486,15 +791,24 @@ class Rig {
     /** Asked only when a press begins: the View's rect is one read then. With no View bound, the whole stage. */
     private readonly _inside = (x: number, y: number): boolean => {
         const el = this.bind.ref.current as any
+        this._short = 0
         if (el == null) return true
         const r = el.worldBound
-        return r == null || (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height)
+        if (r == null) return true
+        this._short = Math.min(r.width, r.height)
+        return x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
     }
 
-    read(f: CameraFrame): DragFrame {
-        const drag = readDrag(this.tracker, f.source, this._inside, f.claimed, this.drag)
+    /**
+     * This frame's drag. An orbit's wheel multiplies its distance at once; a
+     * follow camera's comes as notches, and its drag waits out a dead zone.
+     */
+    read(f: CameraFrame, follow: boolean = false): DragFrame {
+        const zone = follow ? Math.max(DEAD_ZONE, DEAD_ZONE_SHARE * this._short) : 0
+        const drag = readDrag(this.tracker, f.source, this._inside, f.claimed, this.drag, zone)
         if (this._wheel !== 0) {
-            drag.zoom *= Math.pow(WHEEL_STEP, this._wheel)
+            if (follow) drag.notches = this._wheel / STEPS_A_NOTCH
+            else drag.zoom *= Math.pow(WHEEL_STEP, this._wheel)
             this._wheel = 0
         }
         return drag
@@ -660,6 +974,20 @@ export interface FollowOptions {
     /** What counts as a wall, as a world query filters. Everything solid by default. */
     filter?: { only?: readonly string[], skip?: readonly unknown[] }
     /**
+     * Metres kept between the camera and anything in its way, the whole way
+     * back from what it looks at: a sphere this size is swept through the
+     * world, and the ground is kept this far below the camera. 0.4 by
+     * default; a smaller one lets the camera closer to walls and slopes.
+     */
+    clearance?: number
+    /**
+     * The ground's height at any x and z, for a world whose colliders are
+     * only near the player, as a streamed terrain's are. The camera keeps
+     * `clearance` above it all the way back, lifts what it looks at when it
+     * comes close over it, and never goes under it. None by default.
+     */
+    ground?: GroundHeight | null
+    /**
      * With no drag held, the camera settles behind the target's own yaw, and
      * a drag looks around until it is let go. `true` settles at all times,
      * for a vehicle; `"moving"` only while the target moves across the
@@ -690,7 +1018,7 @@ export interface FollowCamera extends OrbitView {
     readonly forward: boolean
     /** Where the camera stands, in front of any wall. */
     readonly eye: Vec3
-    /** What it looks at: `height` above the target. */
+    /** What it looks at: `height` above the target, raised where the camera comes close over the `ground`. */
     readonly target: Vec3
     /** Spread on the View it is dragged in. */
     readonly bind: CameraBind
@@ -739,7 +1067,7 @@ export class FollowController {
                 return s.forward
             },
             get eye() { return s.eye },
-            get target() { return s.pivot },
+            get target() { return s.look },
             bind: this._rig.bind,
         }, early)
     }
@@ -748,7 +1076,7 @@ export class FollowController {
     private _look(f: CameraFrame, o: FollowOptions): DragFrame {
         if (f.frame !== undefined && f.frame === this._looked) return this._rig.drag
         this._looked = f.frame ?? NaN
-        const drag = this._rig.read(f)
+        const drag = this._rig.read(f, true)
         followLook(this._state, drag, { limits: this._range.limits, degreesPerPixel: o.degreesPerPixel ?? DEGREES_PER_PIXEL })
         return drag
     }
@@ -761,7 +1089,7 @@ export class FollowController {
         this._following = target != null
         if (target == null) {
             // The drag is spent, and the view held: nothing to look round.
-            if (f.frame === undefined || f.frame !== this._looked) this._rig.read(f)
+            if (f.frame === undefined || f.frame !== this._looked) this._rig.read(f, true)
             this._looked = f.frame ?? NaN
             s.forward = false
             return
@@ -776,8 +1104,10 @@ export class FollowController {
             turnWith: o.turnWith === true,
             world: o.world ?? null,
             filter: o.filter,
+            clearance: o.clearance,
+            ground: o.ground ?? null,
         })
-        this._rig.write(o.camera, s.eye, s.pivot)
+        this._rig.write(o.camera, s.eye, s.look)
     }
 }
 

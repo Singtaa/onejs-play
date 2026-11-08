@@ -7,7 +7,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, vi } from "vitest"
 import {
-    FollowController, OrbitController, followStep, newDragFrame, newDragTracker, newFollowState, orbitEye, orbitStep,
+    FollowController, OrbitController, followStep, marchGround, newDragFrame, newDragTracker, newFollowState, orbitEye, orbitStep,
     readDrag, subscribeCamera, wrapDegrees, ORBIT_LIMITS, FOLLOW_LIMITS,
     type CameraFrame, type DragSource, type DragTouch, type FollowOptions, type FollowStepOptions,
 } from "../camera"
@@ -418,17 +418,18 @@ describe("a follow camera read in a useFrame", () => {
         const t = cart()
         t.frame({})
         t.frame({ rightButton: true, wasRightPressed: true })
+        // The first 5 pixels are the dead zone's.
         for (let i = 1; i <= 20; i++) {
             t.frame({ rightButton: true, delta: { x: 10, y: 0 } }, 0, () => {
                 void t.cam.heading
                 void t.cam.yaw
             })
-            expect(t.cam.yaw).toBeCloseTo(3 * i, 9)
+            expect(t.cam.yaw).toBeCloseTo(3 * i - 1.5, 9)
             expect(t.me.yaw).toBeCloseTo(t.cam.yaw, 9)
         }
         // Read again after the late frame, it is the same frame's drag.
-        expect(t.cam.heading).toBeCloseTo(60, 9)
-        expect(t.cam.yaw).toBeCloseTo(60, 9)
+        expect(t.cam.heading).toBeCloseTo(58.5, 9)
+        expect(t.cam.yaw).toBeCloseTo(58.5, 9)
     })
 
     it("takes a yaw written in a useFrame exactly, over that frame's drag", () => {
@@ -479,9 +480,9 @@ describe("how far a drag turns", () => {
         return { frame: (f: CameraFrame) => { c.frame(1 / 60, o, f) }, yaw: () => c.orbit.yaw }
     }
 
-    it("turns 60 degrees for a 200 pixel drag at 0.3 a pixel, in the site's 538 pixel stage and full screen", () => {
+    it("turns 60 degrees for a 200 pixel drag at 0.3 a pixel, in the site's 538 pixel stage and full screen, past a follow camera's dead zone", () => {
         for (const height of [538, 1290]) {
-            expect(dragged(height, follow), `follow, ${height}`).toBeCloseTo(60, 9)
+            expect(dragged(height, follow), `follow, ${height}`).toBeCloseTo((200 - 5) * 0.3, 9)
             expect(dragged(height, () => orbit()), `orbit, ${height}`).toBeCloseTo(60, 9)
         }
     })
@@ -652,11 +653,15 @@ describe("a follow camera in a world", () => {
         w.frame(1 / 60)
         c.frame(1 / 60, actor, o, frameOf(source()))
         expect(c.camera.eye[2]).toBeGreaterThan(-3)
-        for (let i = 0; i < 120; i++) {
+        // Out on its timing and the zoom debt's: only ever further back, and all the way in time.
+        let last = c.camera.eye[2]
+        for (let i = 0; i < 600; i++) {
             w.frame(1 / 60)
             c.frame(1 / 60, actor, o, frameOf(source()))
+            expect(c.camera.eye[2], `frame ${i}`).toBeLessThanOrEqual(last + 1e-9)
+            last = c.camera.eye[2]
         }
-        expect(c.camera.eye[2]).toBeCloseTo(-5, 2)
+        expect(c.camera.eye[2]).toBeCloseTo(-5, 1)
         w.dispose()
     })
 
@@ -686,5 +691,205 @@ describe("a follow camera in a world", () => {
         c.frame(1 / 60, null, { camera: cam }, frameOf(source({ wasLeftPressed: true, rightButton: true, leftButton: true })))
         expect(calls).toHaveLength(0)
         expect(c.camera.forward).toBe(false)
+    })
+})
+
+/**
+ * WoW's feel as the default (feel.md on primoeden-three, after WoWee): a
+ * click that turns nothing, a wheel that eases, a clearance the whole way
+ * back, the ground on its own timing, and a zoom that a slope does not push
+ * in and out with every step.
+ */
+describe("a follow camera's feel", () => {
+    const eyeDistance = (c: FollowController) => {
+        const e = c.camera.eye, p = c.camera.target
+        return Math.hypot(e[0] - p[0], e[1] - p[1], e[2] - p[2])
+    }
+
+    it("turns nothing for a click whose press jitters 3 pixels, and turns a drag from the edge of its dead zone", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { degreesPerPixel: 1 }
+        const c = new FollowController(me, o)
+        const go = (m: Partial<DragSource["mouse"]>) => c.frame(1 / 60, me, o, frameOf(source(m)))
+        go({})
+        go({ wasLeftPressed: true, leftButton: true })
+        go({ leftButton: true, delta: { x: 2, y: 1 } })
+        go({ leftButton: true, delta: { x: 1, y: -2 } })
+        go({})
+        expect([c.camera.yaw, c.camera.pitch]).toEqual([0, 15])
+        go({ wasLeftPressed: true, leftButton: true })
+        for (let i = 0; i < 5; i++) go({ leftButton: true, delta: { x: 4, y: 0 } })
+        expect(c.camera.yaw).toBeCloseTo(20 - 5, 9)
+    })
+
+    it("holds the dead zone at 0.8% of the bound View's short side when that is more than 5 pixels", () => {
+        const t = newDragTracker(), out = newDragFrame()
+        readDrag(t, source({ wasLeftPressed: true, leftButton: true }), everywhere, nobody, out, 8.6)
+        readDrag(t, source({ leftButton: true, delta: { x: 8, y: 0 } }), everywhere, nobody, out, 8.6)
+        expect([out.active, out.dx]).toEqual([true, 0])
+        readDrag(t, source({ leftButton: true, delta: { x: 4, y: 0 } }), everywhere, nobody, out, 8.6)
+        expect(out.dx).toBeCloseTo(12 - 8.6, 9)
+        const c = new FollowController({ position: [0, 0, 0], yaw: 0 }, { degreesPerPixel: 1 })
+        c.camera.bind.ref.current = { worldBound: { x: 0, y: 0, width: 1920, height: 1080 } } as any
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        c.frame(1 / 60, me, { degreesPerPixel: 1 }, frameOf(source({ wasLeftPressed: true, leftButton: true })))
+        c.frame(1 / 60, me, { degreesPerPixel: 1 }, frameOf(source({ leftButton: true, delta: { x: 20, y: 0 } })))
+        expect(c.camera.yaw).toBeCloseTo(20 - 0.008 * 1080, 9)
+    })
+
+    it("turns the character on a right press at once, inside the dead zone", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const c = new FollowController(me, {})
+        c.frame(1 / 60, me, {}, frameOf(source()))
+        c.camera.yaw = 40
+        c.frame(1 / 60, me, {}, frameOf(source({ wasRightPressed: true, rightButton: true })))
+        expect(c.camera.heading).toBe(40)
+        c.frame(1 / 60, me, {}, frameOf(source({ rightButton: true, leftButton: true, delta: { x: 1, y: 0 } })))
+        expect([c.camera.heading, c.camera.forward]).toEqual([40, true])
+    })
+
+    it("eases a wheel notch out over 0.20 s: 15% of the distance, under 11 m after one frame and 11.43 at 0.2 s", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 10 }
+        const c = new FollowController(me, o)
+        c.frame(1 / 60, me, o, frameOf(source()))
+        c.camera.bind.onWheel({ deltaY: 3 })
+        c.frame(1 / 60, me, o, frameOf(source()))
+        expect(c.camera.distance).toBeCloseTo(11.5, 9)
+        expect(eyeDistance(c)).toBeLessThan(11)
+        for (let i = 1; i < 12; i++) c.frame(1 / 60, me, o, frameOf(source()))
+        expect(eyeDistance(c)).toBeCloseTo(11.43, 1)
+        for (let i = 0; i < 60; i++) c.frame(1 / 60, me, o, frameOf(source()))
+        expect(eyeDistance(c)).toBeCloseTo(11.5, 6)
+    })
+
+    it("moves a notch at least 0.3 m, a pixel host's wheel at most one notch an event", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 1.6 }
+        const c = new FollowController(me, o)
+        c.camera.bind.onWheel({ deltaY: 120 })
+        c.frame(1 / 60, me, o, frameOf(source()))
+        expect(c.camera.distance).toBeCloseTo(1.9, 9)
+        c.camera.bind.onWheel({ deltaY: -3 })
+        c.frame(1 / 60, me, o, frameOf(source()))
+        expect(c.camera.distance).toBeCloseTo(1.6, 9)
+    })
+
+    it("comes in front of a post beside the way back, which one ray from the pivot misses", async () => {
+        const w = await createWorld({ gravity: [0, 0, 0] }) as any
+        const actor: any = { position: [0, 0, 0], yaw: 0 }
+        // Its near edge is 0.2 m off the line from the pivot to the camera: inside the 0.4 clearance.
+        w.box({ at: [0.3, 1, -2.5], size: [0.2, 6, 0.2] })
+        const o: FollowOptions = { distance: 5, pitch: 0, world: w }
+        const c = new FollowController(actor, o)
+        for (let i = 0; i < 10; i++) {
+            w.frame(1 / 60)
+            c.frame(1 / 60, actor, o, frameOf(source()))
+        }
+        expect(c.camera.eye[2]).toBeGreaterThan(-2.4)
+        // With a clearance of 0.1 the post is clear of it.
+        const narrow: FollowOptions = { ...o, clearance: 0.1 }
+        const d = new FollowController(actor, narrow)
+        for (let i = 0; i < 10; i++) {
+            w.frame(1 / 60)
+            d.frame(1 / 60, actor, narrow, frameOf(source()))
+        }
+        expect(d.camera.eye[2]).toBeCloseTo(-5, 6)
+        w.dispose()
+    })
+
+    it("takes a slope on the ground's timing and a wall at once", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const hitAt = (normal: Vec3) => ({ raycast: () => null, sweep: () => ({ distance: 2, normal, body: null }) })
+        const slope: FollowOptions = { distance: 5, pitch: 0, world: hitAt([0, 0.8, 0.6]) }
+        const wall: FollowOptions = { distance: 5, pitch: 0, world: hitAt([0, 0, 1]) }
+        const a = new FollowController(me, slope), b = new FollowController(me, wall)
+        a.frame(1 / 60, me, slope, frameOf(source()))
+        b.frame(1 / 60, me, wall, frameOf(source()))
+        // Each is the first frame, so both start at the limit; the next hit comes nearer.
+        const nearer = (n: Vec3) => ({ raycast: () => null, sweep: () => ({ distance: 1, normal: n, body: null }) })
+        const slope2 = { ...slope, world: nearer([0, 0.8, 0.6]) }, wall2 = { ...wall, world: nearer([0, 0, 1]) }
+        a.frame(1 / 60, me, slope2, frameOf(source()))
+        b.frame(1 / 60, me, wall2, frameOf(source()))
+        expect(eyeDistance(b)).toBeCloseTo(1, 9)
+        expect(eyeDistance(a)).toBeGreaterThan(1.5)
+        for (let i = 0; i < 90; i++) a.frame(1 / 60, me, slope2, frameOf(source()))
+        expect(eyeDistance(a)).toBeCloseTo(1, 2)
+    })
+
+    /** Ground that rises behind a target facing +z, so the camera at -z backs up the hill. */
+    const hill = (x: number, z: number) => (z < 0 ? -z * 0.6 : 0)
+
+    it("keeps the camera clearance above a ground that has no colliders, in every frame", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 10, pitch: 15, ground: hill }
+        const c = new FollowController(me, o)
+        for (let i = 0; i < 180; i++) {
+            if (i === 60) c.camera.pitch = -10
+            c.frame(1 / 60, me, o, frameOf(source()))
+            const e = c.camera.eye
+            expect(e[1], `frame ${i}`).toBeGreaterThanOrEqual(hill(e[0], e[2]) + 0.4 - 1e-9)
+        }
+    })
+
+    it("marches the ground from the pivot: clear, blocked, and nothing to say from under it", () => {
+        const flat = () => 0
+        expect(marchGround([0, 1, 0], { yaw: 0, pitch: 0, distance: 5 }, 5, flat, 0.4)).toBe(5)
+        // Looking up from 1 m, the camera goes down behind: it meets 0.4 over the ground 0.6 m down.
+        const down = marchGround([0, 1, 0], { yaw: 0, pitch: -30, distance: 5 }, 5, flat, 0.4)
+        expect(down).toBeGreaterThan(1.1)
+        expect(down).toBeLessThanOrEqual(1.2)
+        expect(marchGround([0, -1, 0], { yaw: 0, pitch: -30, distance: 5 }, 5, flat, 0.4)).toBe(5)
+    })
+
+    // feel.md §5's cliff test, frame by frame on a ground with no colliders.
+    it("backed into a cliff, comes in to its limit at once and stays above it; walked away, only ever goes back out", () => {
+        const cliff = (x: number, z: number) => (z < -4 ? 30 : 0)
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 10, pitch: 15, ground: cliff }
+        const c = new FollowController(me, o)
+        c.frame(1 / 60, me, o, frameOf(source()))
+        for (let i = 0; i < 15; i++) {
+            c.frame(1 / 60, me, o, frameOf(source()))
+            const e = c.camera.eye
+            expect(e[2], `frame ${i}`).toBeGreaterThan(-4)
+            expect(e[1], `frame ${i}`).toBeLessThan(10)
+        }
+        for (let i = 0; i < 15; i++) c.frame(1 / 60, me, o, frameOf(source()))
+        // Walk 15 m away at 7 m/s, then stand.
+        let last = eyeDistance(c)
+        for (let i = 0; i < 600; i++) {
+            if (me.position[2] < 15) me.position = [0, 0, Math.min(15, me.position[2] + 7 / 60)]
+            c.frame(1 / 60, me, o, frameOf(source()))
+            const d = eyeDistance(c)
+            expect(d, `frame ${i}`).toBeGreaterThanOrEqual(last - 1e-9)
+            last = d
+        }
+        expect(last).toBeGreaterThan(9.8)
+    })
+
+    it("brings the zoom in behind a camera held short, gives it back once clear, and forgets it on a wheel notch", () => {
+        const cliff = (x: number, z: number) => (z < -4 ? 30 : 0)
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const o: FollowOptions = { distance: 10, pitch: 0, height: 1, ground: cliff }
+        const c = new FollowController(me, o)
+        for (let i = 0; i < 120; i++) c.frame(1 / 60, me, o, frameOf(source()))
+        // Held in for 2 s: the player's distance is still 10, and the camera stands at the cliff.
+        expect(c.camera.distance).toBe(10)
+        expect(eyeDistance(c)).toBeLessThan(4)
+        c.camera.bind.onWheel({ deltaY: 3 })
+        c.frame(1 / 60, me, o, frameOf(source()))
+        // A notch from where the zoom is now, not from 10: what the cliff took is forgotten.
+        expect(c.camera.distance).toBeLessThan(10)
+    })
+
+    it("lifts what it looks at when the camera comes close over the ground, and stays clear of it", () => {
+        const me = { position: [0, 0, 0] as Vec3, yaw: 0 }
+        const flat = () => 0
+        const o: FollowOptions = { distance: 5, pitch: -5, height: 1, ground: flat }
+        const c = new FollowController(me, o)
+        for (let i = 0; i < 60; i++) c.frame(1 / 60, me, o, frameOf(source()))
+        expect(c.camera.target[1]).toBeGreaterThan(1)
+        expect(c.camera.eye[1]).toBeGreaterThanOrEqual(0.4 - 1e-9)
     })
 })
