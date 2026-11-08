@@ -273,14 +273,10 @@ async function readBytes(output: unknown): Promise<Uint8Array> {
         await new Promise<void>((resolve) => globalThis.requestAnimationFrame(() => resolve()))
     }
     if (read.Error) throw new Error(`[oj] tex pixels: ${read.Error}`)
-    const w: number = read.Width, h: number = read.Height
-    const texels = read.Texels
-    const out = new Uint8Array(w * h * 4)
-    for (let y = 0; y < h; y++) {
-        // Unity's row 0 is the bottom.
-        const from = (h - 1 - y) * w * 4, to = y * w * 4
-        for (let i = 0; i < w * 4; i++) out[to + i] = Math.min(255, Math.max(0, Math.floor(texels[from + i] * 255 + 0.5)))
-    }
+    // Rounded and flipped in C#, and handed over in one crossing.
+    const binary: string = (globalThis as any).atob(CS.OneJS.ShaderFX.KeptTexture.StoredBytes(read))
+    const out = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
     return out
 }
 
