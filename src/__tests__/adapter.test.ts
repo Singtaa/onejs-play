@@ -483,6 +483,28 @@ describe("a press Unity has not seen the mouse move to", () => {
         expect(sent.map((e) => [e.init.clientX, e.init.clientY])).toEqual([[70, 80]])
     })
 
+    // Review of 1.4.0 (PlaySite/docs/reviews/1.4.0-follow-camera.md, P3): the move copied the
+    // press's buttons, so it told Unity the button was held before it went down.
+    it("sends the buttons held before the press, never the one going down", () => {
+        const { view, sent } = setup()
+        view.fire("pointerdown", mouse("mouse", 300, 200))
+        view.fire("pointerdown", { ...mouse("mouse", 310, 210), button: 2, buttons: 3 })
+        view.fire("pointerdown", { ...mouse("pen", 320, 220), buttons: undefined })
+        expect(sent.map((e) => e.init.buttons)).toEqual([0, 1, 0])
+    })
+
+    // P4: Unity moves its mouse for a finger as well, so after a touch the mouse's place is
+    // unknown, and a mouse press where the mouse last moved has to be sent all the same.
+    it("sends a mouse press after a touch, even where the mouse last moved", () => {
+        const { view, sent } = setup()
+        view.fire("pointermove", { ...mouse("mouse", 600, 350), button: -1, buttons: 0 })
+        view.fire("pointerdown", mouse("touch", 50, 60))
+        view.fire("pointerup", mouse("touch", 50, 60))
+        view.fire("pointerdown", mouse("mouse", 600, 350))
+        view.fire("pointerdown", mouse("mouse", 600, 350))
+        expect(sent.map((e) => [e.init.clientX, e.init.clientY])).toEqual([[600, 350]])
+    })
+
     it("sends nothing without a target to tell, as on a page with no canvas", () => {
         const view = fakeView({ MouseEvent: FakeMouseEvent })
         createDomInputAdapter(createContainerInput().sink, { view })

@@ -41,6 +41,9 @@
  * corner on a fresh page. So a mouse or pen press away from the last move
  * sends Unity a mousemove to the press's point first: a pointerdown is
  * dispatched before its compatibility mousedown, which is what Unity reads.
+ * The move carries the buttons held before the press, as a real one would,
+ * and a touch leaves the mouse's place unknown, since Unity moves its mouse
+ * for a finger too, so the next mouse press is always sent.
  */
 
 import type { InputSink, PointerLockHost } from "./input"
@@ -156,16 +159,18 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     // Unity does the same: a touch moves the mouse and appears in Input.touches.
     const isTouch = (event: any) => event.pointerType === "touch"
 
-    // Where Unity last saw the mouse, in client pixels; null before any move.
+    // Where Unity last saw the mouse, in client pixels; null before any move and after a touch.
     let unityMouse: [number, number] | null = null
     const canTellUnity = typeof target?.dispatchEvent === "function" && typeof view.MouseEvent === "function"
     const placeUnityMouse = (event: any) => {
         if (unityMouse !== null && unityMouse[0] === event.clientX && unityMouse[1] === event.clientY) return
         unityMouse = [event.clientX, event.clientY]
         if (!canTellUnity || isLocked()) return
+        // The button going down is not held yet: a move before a press never says it is.
+        const pressing = BUTTON_BITS[event.button] ?? 0
         target.dispatchEvent(new view.MouseEvent("mousemove", {
             clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY,
-            buttons: event.buttons, bubbles: true, cancelable: true, view,
+            buttons: (typeof event.buttons === "number" ? event.buttons : 0) & ~pressing, bubbles: true, cancelable: true, view,
         }))
     }
 
@@ -187,6 +192,7 @@ export function createDomInputAdapter(sink: InputSink, options: DomInputOptions 
     const onPointerDown = (event: any) => {
         const [x, y] = at(event)
         if (!isTouch(event)) placeUnityMouse(event)
+        else unityMouse = null
         sink.pointerDown(event.button, x, y)
         // A tap's pointerdown says "touch"; the browser's compatibility mouse
         // events that follow it are not listened to, so it never reads as a click.
