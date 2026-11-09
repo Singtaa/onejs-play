@@ -12,7 +12,10 @@
  * **Storage.** Magerie stores every node at 8 bits (spec 1.1), so each node's
  * value is rounded as its texture would round it, fused or not: fusing
  * changes the cost and never the pixels. A pass's own target is 16 bits, and
- * a texture read is rounded back to the 8-bit value it holds.
+ * every read of an 8-bit node is rounded back to the value it holds, area
+ * reads included: a half-float target may truncate k/255 to just under it
+ * (Chrome's Metal backend does), which a Sobel at strength 2 turns into 4.
+ * A bilinear read is four rounded texels, mixed here.
  *
  * **Drawing.** A program is compiled where it runs, which on the web is
  * asynchronous: the passes are stepped each frame until every one has drawn
@@ -73,6 +76,28 @@ function stored(n: Node, v: Vec4): Vec4 {
     return n.params.half === true ? v : quantise8(v)
 }
 
+/** A texel row or column index past the edge, wrapped or clamped. */
+function edge(p: Vec4["x"], n: Vec4["x"], wrap: boolean) {
+    return wrap ? p.sub(n.mul(p.div(n).floor())) : p.clamp(0, n.sub(1))
+}
+
+/** An 8-bit node's texture read as Magerie's RGBA8 one would be: each texel rounded, bilinear mixed from four. */
+function heldAt8(t: TexRead, wrap: boolean): TexRead {
+    const at = (x: Vec4["x"], y: Vec4["x"]) => quantise8(t.fetch(sl.vec2(edge(x, t.size.x, wrap), edge(y, t.size.y, wrap))))
+    return {
+        size: t.size,
+        fetch: (pixel) => quantise8(t.fetch(pixel)),
+        sample(uv) {
+            const p = uv.mul(t.size).sub(0.5)
+            const i = p.floor()
+            const f = p.sub(i)
+            const top = sl.mix(at(i.x, i.y), at(i.x.add(1), i.y), f.x)
+            const bottom = sl.mix(at(i.x, i.y.add(1)), at(i.x.add(1), i.y.add(1)), f.x)
+            return sl.mix(top, bottom, f.y) as Vec4
+        },
+    }
+}
+
 /** Records one pass: `node`'s program, reading the materialised nodes it reaches. */
 function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Record<string, Kernel>>, final: boolean): PassPlan {
     let uniforms: Record<string, number | number[]> = {}
@@ -87,7 +112,9 @@ function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Re
             if (t === undefined) {
                 const name = `t${textures.size}`
                 reads[name] = n
-                t = declareTexture(name, wrap)
+                const raw = declareTexture(name, wrap)
+                // A source is uploaded at 8 bits and a half node is held as drawn: both read as they are.
+                t = n.kind === "source" || n.params.half === true ? raw : heldAt8(raw, wrap)
                 textures.set(key, t)
             }
             return t
