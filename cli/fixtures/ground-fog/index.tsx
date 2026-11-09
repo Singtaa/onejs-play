@@ -37,8 +37,10 @@ async function show(scene: Scene, kind: Kind, at: At) {
     const shape = at === "ground" ? quad(600, 0) : at ? quad(160, 0) : quad(40, CAMERA - 10)
     const look = kind === "plain" ? { color: "#808080" }
         : kind === "texture" ? { texture: grey }
-        : kind === "splat" ? { splat: { layers: [grey], weights: new Float32Array([1, 1, 1, 1]) } }
-        : { splat: { layers: [{ picture: grey, triplanar: 4 }], weights: new Float32Array([1, 1, 1, 1]) } }
+        // No variation, which would shade the splat's grey by where it lies (by 0.89 at the origin)
+        // where the plain quad stays the same grey everywhere.
+        : kind === "splat" ? { splat: { layers: [grey], weights: new Float32Array([1, 1, 1, 1]), variation: 0 } }
+        : { splat: { layers: [{ picture: grey, triplanar: 4 }], weights: new Float32Array([1, 1, 1, 1]), variation: 0 } }
     const model = scene.mesh({ ...shape, ...look })
     live = { model, actor: scene.spawn(model, { static: true }) }
 }

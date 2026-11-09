@@ -980,8 +980,17 @@ same grey plain, under a texture, as a splat and as a splat whose layer is
 triplanar, near and half into a red fog, and requires the four to match at each distance from the middle pixel of the
 page's screenshot, after fog has moved the plain one at least 40 levels. The
 first 1.6 containers stripped the splat's fog variants, so its far quad stood
-unfogged. It names runtime 1.6; `ground-fog.test.ts` feeds the check a passing
-set of pixels, an unfogged splat, an unfogged triplanar layer and no fog at all.
+unfogged. Its splats have no `variation`, which shades a splat by where it
+lies (0.89 at the origin) and would set it apart from the plain grey. Then
+every law (linear, exp, exp2, and exp and exp2 with height) on a plain ground
+(ModelLit) and a splat one (GroundLit), straight down and on a slant to a point
+120 m off: each middle pixel must be the same view unfogged, moved toward the
+red fog in linear light by the share a numeric integral of the density along
+the ray gives, within 3 levels. Measured on runtime 9.9.91 (9 Nov 2026), the
+worst law was 0.95 levels off on WebGPU and on WebGL 2 alike. It names runtime
+1.8, so the sweep waits for that line; `ground-fog.test.ts` feeds the check a
+passing set of pixels, an unfogged splat, an unfogged triplanar layer, no fog at
+all, an exp2 drawn as no fog, and a GroundLit height fog drawn at one density.
 
 **A triplanar layer keeps its size on a steep face.** `cli/fixtures/triplanar`
 draws two 70 degree faces 48 m high in red and green bands, one splat read at

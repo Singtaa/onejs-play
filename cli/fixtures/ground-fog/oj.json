@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "runtime": "1.6",
+    "runtime": "1.8",
     "name": "Ground Fog",
     "entry": "index.tsx",
     "controls": [
