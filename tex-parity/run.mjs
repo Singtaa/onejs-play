@@ -114,9 +114,14 @@ async function draw() {
     try {
         await browser.navigate(server.url)
         await game.ready()
-        const until = Date.now() + 180_000
+        // A budget per drawing, fused and unfused: SwiftShader compiles slowly, and the set grows.
+        const budget = 60 + 4 * 2 * ojplay.size
+        const until = Date.now() + budget * 1000
         while (!browser.console.some((l) => l.text === "[tex-parity] done")) {
-            if (Date.now() > until) throw new Error("the cart did not finish in 180 s")
+            if (Date.now() > until) {
+                const drawn = browser.console.filter((l) => /^\[tex-parity\] (case|error|pending) /.test(l.text)).length
+                throw new Error(`the cart did not finish in ${budget} s; ${drawn} drawings had come back`)
+            }
             await sleep(200)
         }
         const out = new Map()
