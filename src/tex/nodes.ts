@@ -101,11 +101,24 @@ export const BLEND_MODES: readonly BlendMode[] = [
 const CHANNELS: readonly InvertChannels[] = ["rgb", "r", "g", "b"]
 
 /** A colour as `#rgb` or `#rrggbb`, to gamma 0..1. */
+/**
+ * A hex colour as Magerie's parseHex reads one: 3, 4, 6 or 8 digits, the `#`
+ * optional. Its alpha, when it has one, is returned beside the colour for the
+ * nodes that use it; a Gradient Map does not (Magerie's flattenGradientStops
+ * keeps only r, g and b). Magerie reads a malformed colour as black, and tex
+ * refuses it instead.
+ */
+export function hexRGBA(text: string, what: string): [number, number, number, number] {
+    const m = /^#?([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(text.trim())
+    if (m === null) throw new Error(`[oj] tex ${what}: ${JSON.stringify(text)} is not a colour; write it as #rrggbb or #rrggbbaa`)
+    const short = m[1]!.length <= 4
+    const h = short ? m[1]!.replace(/./g, (c) => c + c) : m[1]!
+    return [0, 2, 4, 6].map((i) => (i < h.length ? parseInt(h.slice(i, i + 2), 16) : 255) / 255) as [number, number, number, number]
+}
+
 function hex(text: string, what: string): [number, number, number] {
-    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text.trim())
-    if (m === null) throw new Error(`[oj] tex ${what}: ${JSON.stringify(text)} is not a colour; write it as #rrggbb`)
-    const h = m[1]!.length === 3 ? m[1]!.replace(/./g, (c) => c + c) : m[1]!
-    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number]
+    const [r, g, b] = hexRGBA(text, what)
+    return [r, g, b]
 }
 
 /**

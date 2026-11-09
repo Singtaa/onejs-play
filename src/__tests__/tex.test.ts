@@ -57,6 +57,13 @@ describe("tex graph", () => {
         expect(parseStops(["#000", "#111", "#222", "#fff"]).map((s) => s.at)).toEqual([0, 1 / 3, 2 / 3, 1])
         expect(parseStops([{ position: 0.5, color: "#808080" }])[0]).toEqual({ at: 0.5, color: [128 / 255, 128 / 255, 128 / 255] })
         expect(() => parseStops(["green"])).toThrow(/not a colour/)
+        // Magerie's own spellings (parseHex): 3, 4, 6 or 8 digits. A Gradient Map uses the colour and drops the alpha.
+        expect(parseStops([{ position: 0, color: "#c8704cff" }])[0]!.color).toEqual([200 / 255, 112 / 255, 76 / 255])
+        expect(parseStops([{ position: 0, color: "#c8704c00" }])[0]!.color).toEqual([200 / 255, 112 / 255, 76 / 255])
+        expect(parseStops(["#f80", "#f80c 50%", "c8704c"]).map((s) => s.color)).toEqual([
+            [1, 136 / 255, 0], [1, 136 / 255, 0], [200 / 255, 112 / 255, 76 / 255],
+        ])
+        expect(() => parseStops(["#c8704cf"])).toThrow(/not a colour/)
     })
 })
 
