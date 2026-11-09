@@ -109,6 +109,19 @@ export interface MeshSplat {
      * the smaller, the crisper the edge. Up to 1.
      */
     heightBlend?: number
+    /**
+     * Metres from the camera past which the layers are read blurrier, until a
+     * repeat far off draws its picture's mean colour rather than its motif in a
+     * grid across a far slope: two mips coarser each time the distance doubles.
+     * 60 by default; 0 keeps every layer's detail however far. No extra reads.
+     */
+    fadeDistance?: number
+    /**
+     * How much the ground's brightness varies across the world, either way, in
+     * patches about 40 m and 160 m across, so a stretch of ground is not one even
+     * shade repeat after repeat. 0.15 by default, 0 for none, up to 1. No extra reads.
+     */
+    variation?: number
 }
 
 /**
@@ -702,7 +715,7 @@ function floats(list: Numbers | undefined, what: string, width: number): Float32
 interface MeshLook {
     texture: { texture: Texture, tiling: [number, number] } | null
     /** `triplanar` is each layer's metres a repeat, 0 for one read at the uvs. */
-    splat: { layers: readonly Texture[], triplanar: readonly number[], tiling: [number, number], heightBlend: number } | null
+    splat: { layers: readonly Texture[], triplanar: readonly number[], tiling: [number, number], heightBlend: number, far: { fadeDistance: number, variation: number } | null } | null
     /** Its pictures, tiling and blend in words, for its light's fingerprint; "" with neither. */
     fingerprint: string
 }
@@ -755,12 +768,26 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
     const heightBlend = s.heightBlend ?? 0
     if (typeof heightBlend !== "number" || !(heightBlend >= 0 && heightBlend <= 1)) throw new Error(`[oj] scene.mesh splat: heightBlend is ${heightBlend}, and runs from 0 (the weights alone) to 1`)
     const tiling = tilingOf(s.tiling, "scene.mesh splat tiling")
+    const fadeDistance = s.fadeDistance ?? FAR_DEFAULTS.fadeDistance
+    if (typeof fadeDistance !== "number" || !(fadeDistance >= 0) || !Number.isFinite(fadeDistance)) {
+        throw new Error(`[oj] scene.mesh splat: fadeDistance is ${fadeDistance}, the metres from the camera past which the layers blur, or 0 for none`)
+    }
+    const variation = s.variation ?? FAR_DEFAULTS.variation
+    if (typeof variation !== "number" || !(variation >= 0 && variation <= 1)) throw new Error(`[oj] scene.mesh splat: variation is ${variation}, and runs from 0 (an even shade) to 1`)
+    // A OneJS from before them draws the ground as it always has, unless the cart asked for them by name.
+    const canFar = typeof b.SetMeshSplatFar === "function"
+    if (!canFar && (s.fadeDistance !== undefined || s.variation !== undefined)) {
+        throw new Error("[oj] scene.mesh splat fadeDistance and variation need a newer OneJS: this host's ModelBridge cannot fade a splat (it came with runtime 1.7).")
+    }
     return {
         texture: null,
-        splat: { layers, triplanar, tiling, heightBlend },
+        splat: { layers, triplanar, tiling, heightBlend, far: canFar ? { fadeDistance, variation } : null },
         fingerprint: `splat ${layers.map(identityOf).join(" ")} ${tiling.join(" ")} ${heightBlend}` + (triplanar.some((m) => m > 0) ? ` triplanar ${triplanar.join(" ")}` : ""),
     }
 }
+
+/** What a splat's `fadeDistance` and `variation` are when a cart leaves them out. */
+const FAR_DEFAULTS = { fadeDistance: 60, variation: 0.15 }
 
 const SOFTNESS = ["hard", "low", "medium", "high"] as const
 const SUN_SHADOW_KEYS = new Set(["distance", "cascades", "softness", "resolution"])
@@ -1216,6 +1243,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 if (t.some((m) => m > 0)) {
                     const projected = String(b.SetMeshSplatTriplanar(id, t[0] ?? 0, t[1] ?? 0, t[2] ?? 0, t[3] ?? 0))
                     if (projected !== "") throw new Error(`[oj] scene.mesh splat triplanar: ${projected}`)
+                }
+                const far = look.splat.far
+                if (far !== null) {
+                    const faded = String(b.SetMeshSplatFar(id, far.fadeDistance, far.variation))
+                    if (faded !== "") throw new Error(`[oj] scene.mesh splat: ${faded}`)
                 }
             }
             if (look.texture !== null) {

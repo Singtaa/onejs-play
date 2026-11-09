@@ -37,7 +37,7 @@ function recorder(): any {
                 if (name === "SetMesh") return answer
                 if (name === "Unload") return unloads
                 if (name === "SetDepthOnly") return depthAnswer
-                if (name === "SetMeshTexture" || name === "SetMeshSplat" || name === "SetMeshSplatTriplanar") return paintAnswer
+                if (name === "SetMeshTexture" || name === "SetMeshSplat" || name === "SetMeshSplatTriplanar" || name === "SetMeshSplatFar") return paintAnswer
                 if (name === "Height") return 2.5
                 return undefined
             }
@@ -323,6 +323,37 @@ describe("scene.mesh texture and splat", () => {
             expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [{ picture: rock, triplanar: bad }], weights: [1, 1, 1, 1] } })).toThrow(`scene.mesh splat layer 0: triplanar is ${bad}, the metres one repeat`)
         }
         expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [{ picture: null as any, triplanar: 4 }], weights: [1, 1, 1, 1] } })).toThrow("scene.mesh splat layer 0 picture is a null")
+    })
+
+    it("fades a splat past 60 m and varies it by 0.15 unless the cart says otherwise, after the splat and before the vertices", () => {
+        const s = scene()
+        const model = s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, { picture: rock, triplanar: 8 }], weights: new Float32Array(8) } })
+        expect(of("SetMeshSplatFar")).toEqual([["SetMeshSplatFar", model.id, 60, 0.15]])
+        const order = calls.map((c) => c[0]).filter((n) => n === "SetMeshSplat" || n === "SetMeshSplatTriplanar" || n === "SetMeshSplatFar" || n === "SetMesh")
+        expect(order).toEqual(["SetMeshSplat", "SetMeshSplatTriplanar", "SetMeshSplatFar", "SetMesh"])
+        const other = s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], fadeDistance: 0, variation: 0 } })
+        expect(of("SetMeshSplatFar")[1]).toEqual(["SetMeshSplatFar", other.id, 0, 0])
+        for (const bad of [-1, Infinity, Number.NaN, "60" as any]) {
+            expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], fadeDistance: bad } })).toThrow(`scene.mesh splat: fadeDistance is ${bad}`)
+        }
+        for (const bad of [-0.1, 1.5, Number.NaN, "0.2" as any]) {
+            expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], variation: bad } })).toThrow(`scene.mesh splat: variation is ${bad}`)
+        }
+        expect(of("CreateMesh"), "a refusal makes nothing").toHaveLength(2)
+        paintAnswer = "variation is 2: from 0 to 1"
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1] } })).toThrow("[oj] scene.mesh splat: variation is 2: from 0 to 1")
+    })
+
+    it("draws a splat on a OneJS that cannot fade one as it always has, and refuses fadeDistance or variation asked for by name", () => {
+        const older = recorder()
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "SetMeshSplatFar" ? undefined : older[name] }) } } }
+        const s = scene()
+        s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1] } })
+        expect(of("CreateMesh")).toHaveLength(1)
+        expect(of("SetMeshSplatFar")).toHaveLength(0)
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], fadeDistance: 80 } })).toThrow("fadeDistance and variation need a newer OneJS")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], variation: 0 } })).toThrow("fadeDistance and variation need a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(1)
     })
 
     it("needs a OneJS that can project a layer, and says so, while a splat without one still paints", () => {
