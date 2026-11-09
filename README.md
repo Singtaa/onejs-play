@@ -43,7 +43,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
 | `vec.ts` | `Vector2`. No `Vector3`: a 3D position is a plain `[x, y, z]` |
-| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.texture`, `scene.sky`, `scene.bake`: `.glb` models, models made from arrays (with a tiled `texture`, or a `splat` of up to four textures by weights a vertex, any of them given as `{ picture, triplanar }` to be projected from the sides every so many metres rather than read at the uvs, each fingerprinted into a baked light by its pictures' names and hashes, `textureIdentity` in `asset.ts`) and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads. `scene.bake` bakes what is spawned `static`, every static body's actor (the world tells the scene, through `physics3d/actors.ts`) and every scattered copy, through `light/scene-bake.ts`; `scene.bake(name)` loads that light file when it was baked for the scene, and otherwise bakes, says why on the console and hands the host the file; `scene.bake(name, { bounces, samples, occlusion, detail })` and `scene.bake({ ... })` bake with options, each in the record |
+| `models.ts` | `useScene`, `useModel`, `scene.mesh`, `scene.scatter`, `scene.wind`, `scene.texture`, `scene.sky`, `scene.bake`: `.glb` models, models made from arrays (with a tiled `texture`, or a `splat` of up to four textures by weights a vertex, any of them given as `{ picture, triplanar }` to be projected from the sides every so many metres rather than read at the uvs, each fingerprinted into a baked light by its pictures' names and hashes, `textureIdentity` in `asset.ts`) and scattered copies behind the panel, with a sun, shadows, lights and a sky, and the scene as a texture a program reads. `scene.bake` bakes what is spawned `static`, every static body's actor (the world tells the scene, through `physics3d/actors.ts`) and every scattered copy, through `light/scene-bake.ts`; `scene.bake(name)` loads that light file when it was baked for the scene, and otherwise bakes, says why on the console and hands the host the file; `scene.bake(name, { bounces, samples, occlusion, detail })` and `scene.bake({ ... })` bake with options, each in the record |
 | `color.ts` | `Color`, parsing through onejs-react's `toRGBA` |
 | `transform.ts` | onejs-react's `Transform2D`, with `point()` returning oj's `Vector2` |
 | `random.ts` | `random`: a shared generator, and called with a seed, a seeded one; `rng.noise()`, a smooth field from onejs-unity's simplex seeded without drawing from the generator |
@@ -434,7 +434,20 @@ Three things that are not obvious from the code:
 - **A scatter has no actors.** `scene.scatter` sends every copy in one
   Float32Array, and the bridge draws them as instanced chunks with no
   GameObject, so copies cost a draw call a chunk rather than a GameObject
-  each, and have nothing an actor has (collider, pick, animation).
+  each, and have nothing an actor has (collider, pick, animation). Five
+  floats a copy go through `Scatter`, as every OneJS takes them; a list with
+  a tilted or tinted copy, a `{ stride: 10 }` array, or a `from`, `to` or
+  `fade` goes through `ScatterWith`, which an older host lacks and is told so.
+  `bakeItems` reads a copy's pitch and roll at its stride; its tint is drawn
+  over the bake, not into it.
+- **Foliage is the mesh's look and the scene's wind.** `cutout`, `twoSided`
+  and `sway` are each a bridge call between the splat or texture and the
+  first `SetMesh` (sway adds a stream), refused before anything is made on a
+  host without them. A mesh with sway sends `SetMesh` its eight-argument form.
+  `scene.wind` starts from `SCENE_DEFAULTS.wind` and is sent at the scene's
+  start only where the host has `SetWind`, warning only a cart that asked; the
+  wind's clock is the scene's own, sent each frame once a mesh sways and held
+  while `paused`.
 - **`scene.texture` is lent, not owned.** It is onejs-react's `LentTexture`:
   each program or pass that reads it acquires it once and releases it when
   it stops, and the scene counts its own readers, so a release after the

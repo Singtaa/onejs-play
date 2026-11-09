@@ -137,6 +137,27 @@ export interface MeshModelOptions extends MeshData {
     tiling?: Tiling
     /** Up to four pictures painted by weights a vertex, in place of `texture`. Needs `uvs`. */
     splat?: MeshSplat
+    /**
+     * Cuts away every pixel whose alpha (the texture's, the colour's and the
+     * vertex colours', multiplied) is below this, from 0 to 1: a leaf card is
+     * a quad cut to a leaf's outline. Its shadow is cut the same. It draws
+     * opaque, with no sorting, even where an alpha below 1 would draw it
+     * see-through. Not with a splat, which has no alpha.
+     */
+    cutout?: number
+    /**
+     * Draws the back of every triangle too, and lights it with the normal as
+     * given rather than turned round, so a foliage card whose normals bend out
+     * from its crown looks the same from either side. Its shadow is cast by both.
+     */
+    twoSided?: boolean
+    /**
+     * How far each vertex sways in the scene's wind, one a vertex, in the
+     * model's own units at a wind strength of 1: 0 at a trunk's foot, about
+     * 0.3 at a crown's rim. Moved on the GPU, so a wood of scattered copies
+     * sways for nothing on the CPU, each copy at its own phase. See `scene.wind`.
+     */
+    sway?: Numbers
 }
 
 /** How a mesh model draws, fixed when it is made. */
@@ -159,6 +180,8 @@ export interface MeshDrawOptions {
 export type MeshUpdate = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">> & {
     /** A splat's new weights, one a layer a vertex: a path worn into the grass. */
     weights?: Numbers
+    /** New sway, one a vertex, for a model made with `sway`. */
+    sway?: Numbers
 }
 
 /** A model made from arrays: spawned, scattered and made a collider like a loaded one. */
@@ -180,13 +203,56 @@ export interface MeshModel extends Model {
  */
 export type SceneTexture = LentTexture
 
-/** One copy in a scatter. y, yaw (degrees) and scale default to 0, 0 and 1. */
+/**
+ * One copy in a scatter. y, yaw, pitch and roll (degrees, as an actor's
+ * rotation is) and scale default to 0, 0, 0, 0 and 1.
+ */
 export interface ScatterCopy {
     x: number
     y?: number
     z: number
     yaw?: number
+    /** Tips its front down: a rock settled into a slope. */
+    pitch?: number
+    /** Tilts it about the way it faces. */
+    roll?: number
     scale?: number
+    /** Multiplied into its colour, as vertex colours are: one shape a little darker, greener or redder than the next. */
+    tint?: ColorInput
+}
+
+/** How a scatter's copies are given and drawn. */
+export interface ScatterOptions {
+    /**
+     * Numbers a copy in a Float32Array: 5 (x, y, z, yaw, scale), the default,
+     * or 10 (x, y, z, yaw, pitch, roll, scale, then r, g and b in sRGB from 0
+     * to 1, a tint multiplied into its colour).
+     */
+    stride?: 5 | 10
+    /** Metres from the camera to a copy's foot within which it is not drawn. 0 by default. */
+    from?: number
+    /** Metres from the camera past which a copy is not drawn. Infinity by default. */
+    to?: number
+    /**
+     * Metres across which a copy dithers in or out, centred on `from` and on
+     * `to`. A near mesh with `{ to: 140, fade: 12 }` and a far one with
+     * `{ from: 140, fade: 12 }` share every pixel between them, so they swap
+     * copy by copy with nothing drawn twice. 0 by default: a hard edge.
+     */
+    fade?: number
+}
+
+/**
+ * The scene's wind, which moves every mesh made with `sway`. Each part left
+ * out keeps what it was; a scene starts with a breeze along +x.
+ */
+export interface WindOptions {
+    /** The way it blows over the ground, as x and z. Any length but 0. */
+    direction?: readonly [x: number, z: number]
+    /** How far it pushes: 1 moves a vertex by its sway, 0 stills everything. */
+    strength?: number
+    /** How much a slow swell passing along the wind adds and takes away, from 0 to 1. */
+    gust?: number
 }
 
 /** Copies of a model that never move, from `scene.scatter`. */
@@ -367,6 +433,8 @@ export interface SceneOptions {
     sky?: SkyOptions | false
     /** Off unless asked for. */
     fog?: FogOptions | false
+    /** What moves a mesh made with `sway`: a breeze along +x unless given. */
+    wind?: WindOptions
 }
 
 export interface Scene {
@@ -385,13 +453,16 @@ export interface Scene {
     /**
      * Copies of a model that never move: a forest, rocks, grass. Far cheaper
      * than spawning each, and with nothing an actor has: no collider, no pick,
-     * no animation. `copies` is a list of `{ x, z }` (y, yaw and scale too, if
-     * wanted), or a Float32Array of x, y, z, yaw and scale a copy. A model with a
-     * skinned mesh is refused, since its copies could never move.
+     * no animation. `copies` is a list of `{ x, z }` (y, yaw, pitch, roll, scale
+     * and tint too, if wanted), or a Float32Array of x, y, z, yaw and scale a
+     * copy (ten numbers with `{ stride: 10 }`). A model with a skinned mesh is
+     * refused, since its copies could never move.
      *
      *     const forest = scene.scatter(pine, trees)
+     *     const near = scene.scatter(oak, oaks, { to: 140, fade: 12 })
+     *     const far = scene.scatter(oakFar, oaks, { from: 140, fade: 12 })
      */
-    scatter(model: Model, copies: readonly ScatterCopy[] | Float32Array): Scatter
+    scatter(model: Model, copies: readonly ScatterCopy[] | Float32Array, options?: ScatterOptions): Scatter
     /**
      * The scene drawn into a texture instead of the screen, for a program to
      * read: a colour grade, a blur, an outline over the whole world.
@@ -456,6 +527,13 @@ export interface Scene {
     /** Changes the fog, only what it names, or `false` to clear it. */
     fog(options: FogOptions | false): void
     /**
+     * Changes the wind, only what it names. A mesh made with `sway` moves in
+     * it, leaning downwind and swinging about the lean.
+     *
+     *     scene.wind({ direction: [1, 0.4], strength: 1.5, gust: 0.5 })
+     */
+    wind(options: WindOptions): void
+    /**
      * A sky behind the world, changing only what it names, or `false` for the
      * background colour again. `scene.sky()` is a clear day.
      *
@@ -484,6 +562,7 @@ export const SCENE_DEFAULTS = deepFreeze({
     ambient: { sky: "#b8c6d9", ground: "#4a443d", intensity: 0.9 },
     background: "#14181d",
     fog: { near: 10, far: 40 },
+    wind: { direction: [1, 0] as [number, number], strength: 1, gust: 0.3 },
     sky: { top: "#2f6fd6", horizon: "#cfe6f7", sun: { size: 2, glow: 12 }, stars: 0 },
     pointLight: { color: "#ffffff", intensity: 1, range: 10 },
 })
@@ -719,6 +798,27 @@ function rgb(c: ColorInput, what = "colour"): [number, number, number] {
     return [r, g, b]
 }
 
+type WindNow = { direction: readonly [number, number], strength: number, gust: number }
+
+/** The wind with `o`'s parts in place of `was`'s, refused before anything changes when it is no wind. */
+function nextWind(was: WindNow, o: WindOptions | undefined): WindNow {
+    const next = { ...was, ...o }
+    const [x, z] = next.direction ?? [NaN, NaN]
+    if (!Number.isFinite(x) || !Number.isFinite(z) || (x === 0 && z === 0)) throw new Error(`[oj] scene.wind: direction is [${next.direction}], and is the way it blows as [x, z], not both 0`)
+    if (!(next.strength >= 0) || !Number.isFinite(next.strength)) throw new Error(`[oj] scene.wind: strength is ${next.strength}, and is 0 or more`)
+    if (!(next.gust >= 0 && next.gust <= 1)) throw new Error(`[oj] scene.wind: gust is ${next.gust}, and runs from 0 to 1`)
+    return { direction: [x, z], strength: next.strength, gust: next.gust }
+}
+
+/** A scatter's range as the bridge takes it, or null for none, checked before anything is made. */
+function scatterRange(o: ScatterOptions): [from: number, to: number, fade: number] | null {
+    const from = o.from ?? 0, to = o.to ?? Infinity, fade = o.fade ?? 0
+    if (typeof from !== "number" || !(from >= 0) || !Number.isFinite(from)) throw new Error(`[oj] scene.scatter: from is ${from}, and is 0 or more metres`)
+    if (typeof to !== "number" || !(to > from)) throw new Error(`[oj] scene.scatter: to is ${to}, and is further than from (${from})`)
+    if (typeof fade !== "number" || !(fade >= 0) || !Number.isFinite(fade)) throw new Error(`[oj] scene.scatter: fade is ${fade}, and is 0 or more metres`)
+    return from === 0 && to === Infinity ? null : [from, to, fade]
+}
+
 // models
 
 /**
@@ -839,7 +939,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const fades = new Map<number, { from: number, to: number, t: number, seconds: number, at: (v: number) => void, done: () => void }>()
     // What scene.bake bakes into: actors spawned static, every live scatter, and not what is drawn as depth alone.
     const statics = new Set<number>()
-    const scatters = new Map<number, { model: Model, data: Float32Array }>()
+    const scatters = new Map<number, { model: Model, data: Float32Array, stride: 5 | 10 }>()
     const depthOnly = new WeakSet<Model>()
 
     // Every colour is parsed before anything is built, so a typo fails without a half-made scene.
@@ -848,6 +948,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     let ambientNow = { ...d.ambient, ...options.ambient }
     let fogNow = options.fog === undefined || options.fog === false ? null : { ...d.fog, ...options.fog }
     let skyNow = options.sky === undefined || options.sky === false ? null : nextSky(null, options.sky, d)
+    let windNow = nextWind(d.wind, options.wind)
+    // The wind's clock runs once the scene has a mesh that sways, and holds while it is paused.
+    let swaying = false
+    let windClock = 0
     rgb(backgroundColor, "background")
     if (sunNow !== null) rgb(sunNow.color, "sun color")
     rgb(ambientNow.sky, "ambient sky")
@@ -872,6 +976,15 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (fogNow === null) b.SetFog(false, 0, 0, 0, 0, 0)
         else b.SetFog(true, ...rgb(fogNow.color ?? skyNow?.horizon ?? backgroundColor), fogNow.near, fogNow.far)
     }
+    // An older host has no wind, and nothing that sways in it: only a cart that asked is told.
+    const applyWind = (asked: boolean) => {
+        if (typeof b.SetWind !== "function") {
+            if (asked) console.warn("[oj] scene.wind needs a newer OneJS: this host's ModelBridge has no wind (it came with runtime 1.7), so nothing sways.")
+            return
+        }
+        // nextWind refused all the bridge would, so what it answers is "".
+        b.SetWind(windNow.direction[0], windNow.direction[1], windNow.strength, windNow.gust)
+    }
     // Nothing is sent for a scene that never has a sky, so an older host hears nothing of it.
     let skySent = false
     const applySky = () => {
@@ -895,11 +1008,16 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     b.SetBackground(...rgb(backgroundColor))
     applyFog()
     applySky()
+    applyWind(options.wind !== undefined)
 
     // Animation updates itself in play mode; the edit-mode preview has to step it.
     const preview = globalThis.__isPlaying === false
     const stopFrame = runtime?.onFrame((dt: number) => {
         if (preview && actors.length > 0) b.Step(dt)
+        if (swaying) {
+            if (!paused) windClock += dt
+            b.SetWindClock(windClock)
+        }
         for (const [id, f] of fades) {
             f.t = Math.min(f.seconds, f.t + dt * rateOf(id))
             const k = f.seconds > 0 ? f.t / f.seconds : 1
@@ -989,19 +1107,30 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
         const look = meshLook(o, draw, b)
+        if (o.cutout !== undefined) {
+            if (typeof o.cutout !== "number" || !(o.cutout >= 0 && o.cutout <= 1)) throw new Error(`[oj] scene.mesh: cutout is ${o.cutout}, and runs from 0 to 1`)
+            if (look.splat !== null) throw new Error("[oj] scene.mesh: a splat has no alpha to cut out. Give cutout with a texture or vertex colours.")
+        }
+        if (o.twoSided !== undefined && typeof o.twoSided !== "boolean") throw new Error(`[oj] scene.mesh: twoSided is ${o.twoSided}, and is true or false`)
+        const sways = o.sway !== undefined
+        for (const [given, method, what] of [[o.cutout !== undefined, "SetMeshCutout", "cutout"], [o.twoSided === true, "SetMeshTwoSided", "twoSided"], [sways, "SetMeshSway", "sway"]] as const) {
+            if (given && typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.7).`)
+        }
         // The streams a model is made with are its streams for good.
         const normals = o.normals !== undefined, colors = o.colors !== undefined, uvs = o.uvs !== undefined
         let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array, colors: Float32Array | null, weights: Float32Array | null } | null = null
-        const write = (d: MeshUpdate, weights: Numbers | undefined, what: string) => {
+        const write = (d: MeshUpdate, weights: Numbers | undefined, sway: Numbers | undefined, what: string) => {
             const positions = floats(d.positions, "positions", 3)
             if (positions === null) throw new Error(`[oj] ${what}: positions are required`)
             const indices = indexList(d.indices)
             const vertexColors = floats(d.colors, "colors", 1)
             if (weights !== undefined && look.splat === null) throw new Error(`[oj] ${what}: weights paint a splat, and this mesh was made without one`)
             const splatWeights = look.splat === null ? null : floats(weights, "weights", look.splat.layers.length)
+            if (sway !== undefined && !sways) throw new Error(`[oj] ${what}: sway moves a mesh made with it, and this one was made without`)
+            const swayed = sways ? floats(sway, "sway", 1) : null
             const streams = [id, positions, indices, floats(d.normals, "normals", 3), vertexColors, floats(d.uvs, "uvs", 2)]
-            // Six arguments to a mesh without a splat, as every OneJS before splats takes.
-            const problem = String(look.splat === null ? b.SetMesh(...streams) : b.SetMesh(...streams, splatWeights))
+            // Six arguments to a mesh without a splat or sway, as every OneJS before them takes.
+            const problem = String(sways ? b.SetMesh(...streams, splatWeights, swayed) : look.splat === null ? b.SetMesh(...streams) : b.SetMesh(...streams, splatWeights))
             if (problem !== "") throw new Error(`[oj] ${what}: ${problem}`)
             latest = { positions, indices: indices ?? latest!.indices, colors: vertexColors ?? latest?.colors ?? null, weights: splatWeights ?? latest?.weights ?? null }
         }
@@ -1025,7 +1154,18 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 const problem = String(b.SetMeshTexture(id, look.texture.texture, ...look.texture.tiling))
                 if (problem !== "") throw new Error(`[oj] scene.mesh texture: ${problem}`)
             }
-            write(o, o.splat?.weights, "scene.mesh")
+            // After the splat, whose material they are set on, and before the vertices: sway adds a stream to them.
+            const looks: [boolean, () => unknown, string][] = [
+                [o.cutout !== undefined, () => b.SetMeshCutout(id, o.cutout), "cutout"],
+                [o.twoSided === true, () => b.SetMeshTwoSided(id), "twoSided"],
+                [sways, () => b.SetMeshSway(id), "sway"],
+            ]
+            for (const [given, apply, what] of looks) {
+                if (!given) continue
+                const problem = String(apply())
+                if (problem !== "") throw new Error(`[oj] scene.mesh ${what}: ${problem}`)
+            }
+            write(o, o.splat?.weights, o.sway, "scene.mesh")
         } catch (e) {
             b.Unload(id)
             throw e
@@ -1044,7 +1184,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set(d: MeshUpdate) {
                 if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
-                write(d, d.weights, "mesh.set")
+                write(d, d.weights, d.sway, "mesh.set")
                 // Its unwrap was of the old triangles; OneJS drew it unbaked as it took the new ones.
                 baker.forget(model)
             },
@@ -1071,42 +1211,66 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             return out
         })
         if (draw.depthOnly === true) depthOnly.add(model)
+        if (sways) swaying = true
         return model
     }
 
-    const scatter = (model: Model, copies: readonly ScatterCopy[] | Float32Array): Scatter => {
+    const scatter = (model: Model, copies: readonly ScatterCopy[] | Float32Array, options: ScatterOptions = {}): Scatter => {
         if (generationOf.get(model) !== generation) {
             throw new Error("[oj] scene.scatter: this model was made for a scene that is gone. Load it again once the scene is live.")
         }
         if (typeof b.Scatter !== "function") {
             throw new Error("[oj] scene.scatter needs a newer OneJS: this host's ModelBridge has no Scatter (it came after 3.9.18).")
         }
+        if (options.stride !== undefined && options.stride !== 5 && options.stride !== 10) throw new Error(`[oj] scene.scatter: stride is ${options.stride}, and is 5 (x, y, z, yaw, scale) or 10 (x, y, z, yaw, pitch, roll, scale, r, g, b)`)
+        const range = scatterRange(options)
         let data: Float32Array
+        let stride: 5 | 10
         if (copies instanceof Float32Array) {
-            if (copies.length % 5 !== 0) throw new Error(`[oj] scene.scatter: a Float32Array of copies is five numbers a copy (x, y, z, yaw, scale), and this one has ${copies.length}`)
+            stride = options.stride ?? 5
+            if (copies.length % stride !== 0) {
+                throw new Error(stride === 5
+                    ? `[oj] scene.scatter: a Float32Array of copies is five numbers a copy (x, y, z, yaw, scale), and this one has ${copies.length}. Ten a copy, with pitch, roll and a tint, take { stride: 10 }.`
+                    : `[oj] scene.scatter: with { stride: 10 } a copy is ten numbers (x, y, z, yaw, pitch, roll, scale, r, g, b), and this Float32Array has ${copies.length}`)
+            }
             data = copies
         } else if (Array.isArray(copies)) {
-            data = new Float32Array(copies.length * 5)
-            for (let i = 0, at = 0; i < copies.length; i++, at += 5) {
+            // Ten a copy when any copy is tilted or tinted, so a list of { x, z } crosses as it always did.
+            stride = options.stride ?? (copies.some((c) => c?.pitch !== undefined || c?.roll !== undefined || c?.tint !== undefined) ? 10 : 5)
+            data = new Float32Array(copies.length * stride)
+            for (let i = 0, at = 0; i < copies.length; i++, at += stride) {
                 const c = copies[i]!
                 if (typeof c?.x !== "number" || typeof c?.z !== "number") throw new Error(`[oj] scene.scatter: copy ${i} needs an x and a z`)
                 data[at] = c.x
                 data[at + 1] = c.y ?? 0
                 data[at + 2] = c.z
                 data[at + 3] = c.yaw ?? 0
-                data[at + 4] = c.scale ?? 1
+                if (stride === 5) {
+                    data[at + 4] = c.scale ?? 1
+                    continue
+                }
+                data[at + 4] = c.pitch ?? 0
+                data[at + 5] = c.roll ?? 0
+                data[at + 6] = c.scale ?? 1
+                const [r, g, bl] = c.tint === undefined ? [1, 1, 1] : rgb(c.tint, `scatter copy ${i} tint`)
+                data[at + 7] = r
+                data[at + 8] = g
+                data[at + 9] = bl
             }
         } else {
             throw new Error("[oj] scene.scatter: copies are a list of { x, z } or a Float32Array, five numbers a copy")
         }
-        const id: number = b.Scatter(model.id, data)
+        if ((stride === 10 || range !== null) && typeof b.ScatterWith !== "function") {
+            throw new Error(`[oj] scene.scatter ${stride === 10 ? "pitch, roll and tint" : "from, to and fade"} need a newer OneJS: this host's ModelBridge has no ScatterWith (it came with runtime 1.7).`)
+        }
+        const id: number = stride === 5 && range === null ? b.Scatter(model.id, data) : b.ScatterWith(model.id, data, stride, ...(range ?? [0, Infinity, 0]))
         if (id === 0) throw new Error("[oj] scene.scatter: this model has a skinned mesh, and scattered copies never move. Spawn it instead.")
         const born = generation
         let alive = true
         // Kept as given: the copies are baked from these numbers, so a cart reusing its array cannot move them.
-        scatters.set(id, { model, data: data.slice() })
+        scatters.set(id, { model, data: data.slice(), stride })
         return Object.freeze({
-            count: data.length / 5,
+            count: data.length / stride,
             destroy() {
                 if (!alive || born !== generation) return
                 alive = false
@@ -1188,9 +1352,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         for (const [id, s] of scatters) {
             if (depthOnly.has(s.model)) continue
-            for (let i = 0, at = 0; at < s.data.length; i++, at += 5) {
-                const d = s.data
-                items.push({ model: s.model, position: [d[at]!, d[at + 1]!, d[at + 2]!], rotation: { yaw: d[at + 3]!, pitch: 0, roll: 0 }, scale: d[at + 4]!, copy: [id, i] })
+            const d = s.data, tilted = s.stride === 10
+            for (let i = 0, at = 0; at < d.length; i++, at += s.stride) {
+                const rotation = { yaw: d[at + 3]!, pitch: tilted ? d[at + 4]! : 0, roll: tilted ? d[at + 5]! : 0 }
+                items.push({ model: s.model, position: [d[at]!, d[at + 1]!, d[at + 2]!], rotation, scale: d[at + (tilted ? 6 : 4)]!, copy: [id, i] })
             }
         }
         return items
@@ -1266,6 +1431,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (next?.color !== undefined) rgb(next.color, "fog color")
             fogNow = next
             applyFog()
+        },
+        wind(o) {
+            windNow = nextWind(windNow, o)
+            applyWind(true)
         },
         sky(o = {}) {
             skyNow = o === false ? null : nextSky(skyNow, o, d)
