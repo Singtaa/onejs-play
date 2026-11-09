@@ -37,7 +37,7 @@ function recorder(): any {
                 if (name === "SetMesh") return answer
                 if (name === "Unload") return unloads
                 if (name === "SetDepthOnly") return depthAnswer
-                if (name === "SetMeshTexture" || name === "SetMeshSplat" || name === "SetMeshSplatTriplanar") return paintAnswer
+                if (name === "SetMeshTexture" || name === "SetMeshSplat" || name === "SetMeshSplatTriplanar" || name === "SetMeshShade") return paintAnswer
                 if (name === "Height") return 2.5
                 return undefined
             }
@@ -373,5 +373,73 @@ describe("scene.mesh texture and splat", () => {
         expect(of("CreateMesh")).toHaveLength(0)
         s.mesh({ ...SQUARE, uvs: UVS })
         expect(of("CreateMesh"), "a mesh without either still draws on it").toHaveLength(1)
+    })
+})
+
+describe("scene.mesh shade", () => {
+    const UVS = [0, 0, 0, 1, 1, 1, 1, 0]
+
+    it("crosses as a byte a sample, 255 full shade, with the grid's size, after the look and before the vertices", () => {
+        const s = scene()
+        const model = s.mesh({ ...SQUARE, uvs: UVS, shade: { size: 2, values: [0, 0.5, 1, 0.25] } })
+        const [shade] = of("SetMeshShade")
+        expect(shade!.slice(0, 4)).toEqual(["SetMeshShade", model.id, 2, 2])
+        expect(shade![4]).toEqual(Uint8Array.from([0, 128, 255, 64]))
+        const order = calls.map((c) => c[0]).filter((n) => n === "SetMeshShade" || n === "SetMesh")
+        expect(order).toEqual(["SetMeshShade", "SetMesh"])
+    })
+
+    it("sends a Uint8Array as it is, and takes a size of u and v apart", () => {
+        const s = scene()
+        const values = new Uint8Array(6).fill(200)
+        s.mesh({ ...SQUARE, uvs: UVS, shade: { size: [3, 2], values } })
+        expect(of("SetMeshShade")[0]!.slice(2)).toEqual([3, 2, values])
+        expect(of("SetMeshShade")[0]![4]).toBe(values)
+    })
+
+    it("changes alone with a set that gives only the shade, and comes off with null", () => {
+        const s = scene()
+        const model = s.mesh({ ...SQUARE, uvs: UVS })
+        expect(of("SetMeshShade")).toEqual([])
+        const meshes = of("SetMesh").length
+        model.set({ shade: { size: 2, values: [1, 1, 1, 1] } })
+        expect(of("SetMeshShade").at(-1)!.slice(1, 4)).toEqual([model.id, 2, 2])
+        expect(of("SetMesh")).toHaveLength(meshes)
+        model.set({ shade: null })
+        expect(of("SetMeshShade").at(-1)).toEqual(["SetMeshShade", model.id, 0, 0, null])
+        model.set({ ...SQUARE, shade: { size: 2, values: [0, 0, 0, 0] } })
+        expect(of("SetMesh")).toHaveLength(meshes + 1)
+    })
+
+    it("refuses what it cannot draw, naming it, keeping nothing", () => {
+        const s = scene()
+        const bad: [object, RegExp][] = [
+            [{ ...SQUARE, shade: { size: 2, values: [0, 0, 0, 0] } }, /shade is read at the mesh's uvs, and it has none/],
+            [{ ...SQUARE, uvs: UVS, shade: { size: 1, values: [0] } }, /shade size is 1: 2 to 1024 samples a side/],
+            [{ ...SQUARE, uvs: UVS, shade: { size: [2, 2.5], values: [0, 0, 0, 0] } }, /shade size is \[2,2.5\]/],
+            [{ ...SQUARE, uvs: UVS, shade: { size: 2, values: [0, 0, 0] } }, /a 2 by 2 shade has 4 values, and this has 3/],
+            [{ ...SQUARE, uvs: UVS, shade: { size: 2, values: [0, 0, 1.5, 0] } }, /shade value 2 is 1.5: 0 \(full sun\) to 1 \(full shade\)/],
+            [{ ...SQUARE, uvs: UVS, shade: [0, 0, 0, 0] }, /shade is \{ size, values \}/],
+        ]
+        for (const [o, message] of bad) {
+            calls = []
+            expect(() => s.mesh(o as any)).toThrow(message)
+            expect(of("CreateMesh")).toEqual([])
+        }
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, shade: { size: 2, values: [0, 0, 0, 0] } }, { depthOnly: true })).toThrow(/depthOnly mesh draws no colour/)
+        paintAnswer = "the host refused"
+        calls = []
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, shade: { size: 2, values: [0, 0, 0, 0] } })).toThrow("scene.mesh shade: the host refused")
+        expect(of("Unload")).toHaveLength(1)
+    })
+
+    it("throws before making anything on a OneJS without SetMeshShade", () => {
+        const bridge = recorder()
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, {
+            get: (_t, name: string) => name === "SetMeshShade" ? undefined : bridge[name],
+        }) } } }
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, shade: { size: 2, values: [0, 0, 0, 0] } })).toThrow(/scene.mesh shade needs a newer OneJS.*runtime 1\.7/)
+        expect(of("CreateMesh")).toHaveLength(0)
     })
 })

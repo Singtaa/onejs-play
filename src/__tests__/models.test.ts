@@ -18,11 +18,14 @@ type Call = [string, ...unknown[]]
 let calls: Call[]
 let savedCS: unknown
 let nextId: number
+// Methods this recorder stands in for an older OneJS without.
+let missing: Set<string>
 
 function recorder(): any {
     return new Proxy({}, {
         get(_t, name: string) {
             if (name === "ActorCount") return 0
+            if (missing.has(name)) return undefined
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "Load") return Promise.resolve(7)
@@ -30,6 +33,7 @@ function recorder(): any {
                 if (name === "Height") return 1
                 if (name === "Spawn" || name === "AddPointLight") return ++nextId
                 if (name === "Pick") return 0
+                if (name === "SetSunShadows") return ""
                 if (name === "PanelPoint") return { x: 10, y: 20 }
                 return undefined
             }
@@ -52,6 +56,7 @@ const createScene = (options: SceneOptions = {}) => {
 
 beforeEach(async () => {
     calls = []
+    missing = new Set()
     nextId = 100
     savedCS = (globalThis as any).CS
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: recorder() } } }
@@ -91,6 +96,72 @@ describe("a scene with no options", () => {
         const scene = createScene({}).scene
         scene.spawn(MODEL, { position: [1, 2, 3] })
         expect(last("Spawn")).toEqual(["Spawn", 7, 1, 2, 3, 0, 1, true, true])
+    })
+})
+
+describe("sun shadows", () => {
+    // A scene a test is done with, so the next can be made.
+    const lived = (options: SceneOptions) => createSceneRaw(options).dispose()
+
+    it("are the project's own when a cart asks for nothing: every setting crosses as -1", () => {
+        lived({})
+        expect(last("SetSun")[9]).toBe(true)
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", -1, -1, -1, -1])
+        lived({ sun: { shadows: true } })
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", -1, -1, -1, -1])
+        lived({ sun: { shadows: {} } })
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", -1, -1, -1, -1])
+    })
+
+    it("cross as metres, cascades, softness from 0 (hard) to 3 (high), and resolution, after the sun", () => {
+        lived({ sun: { shadows: { distance: 150, cascades: 4, softness: "medium", resolution: 4096 } } })
+        expect(last("SetSun")[9]).toBe(true)
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", 150, 4, 2, 4096])
+        expect(calls.findIndex((c) => c[0] === "SetSunShadows")).toBeGreaterThan(calls.findIndex((c) => c[0] === "SetSun"))
+        lived({ sun: { shadows: { softness: "hard" } } })
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", -1, -1, 0, -1])
+        lived({ sun: { shadows: { softness: "low" } } })
+        expect(last("SetSunShadows")[3]).toBe(1)
+        lived({ sun: { shadows: { softness: "high" } } })
+        expect(last("SetSunShadows")[3]).toBe(3)
+    })
+
+    it("follow scene.sun, and go back to the project's own when a cart stops asking", () => {
+        const { scene } = createScene({ sun: { shadows: { distance: 300, cascades: 4 } } })
+        scene.sun({ direction: [0, -1, 1] })
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", 300, 4, -1, -1])
+        scene.sun({ shadows: true })
+        expect(last("SetSunShadows")).toEqual(["SetSunShadows", -1, -1, -1, -1])
+    })
+
+    it("are not asked for when the sun casts none", () => {
+        lived({ sun: { shadows: false } })
+        expect(last("SetSun")[9]).toBe(false)
+        expect(of("SetSunShadows")).toEqual([])
+    })
+
+    it("refuse what cannot be set, naming it, before anything is made", () => {
+        const bad: [unknown, RegExp][] = [
+            [{ distance: 0 }, /shadows distance is 0/],
+            [{ distance: Infinity }, /shadows distance is Infinity/],
+            [{ cascades: 5 }, /shadows cascades is 5: 1, 2, 3 or 4/],
+            [{ softness: "soft" }, /shadows softness is "soft": "hard", "low", "medium" or "high"/],
+            [{ resolution: 3000 }, /shadows resolution is 3000: 1024, 2048 or 4096/],
+            [{ distnace: 100 }, /sun shadows has no option "distnace"/],
+            ["yes", /sun shadows is "yes"/],
+        ]
+        for (const [shadows, message] of bad) {
+            calls = []
+            expect(() => createScene({ sun: { shadows: shadows as any } })).toThrow(message)
+            expect(of("CreateMesh").concat(of("SetSun"))).toEqual([])
+        }
+    })
+
+    it("on a OneJS without them, a cart that asks is told, and one that does not is not", () => {
+        missing.add("SetSunShadows")
+        lived({ sun: { shadows: true } })
+        expect(last("SetSun")[9]).toBe(true)
+        expect(() => createScene({ sun: { shadows: { distance: 200 } } })).toThrow(/need a newer OneJS.*runtime 1\.7/)
     })
 })
 

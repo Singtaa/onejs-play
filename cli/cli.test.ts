@@ -347,6 +347,14 @@ describe("the browser", () => {
         expect(chromeArgs({ headless: false, window: [960, 540], profile: "/tmp/p" })).not.toContain("--no-proxy-server")
     })
 
+    // A killed Chrome never gives back the Core Audio stream a real output
+    // opens: 71 were stuck on one Mac, coreaudiod at 200 to 600% CPU.
+    it("gives Chrome a fake audio output, headless and headed", () => {
+        for (const headless of [true, false]) {
+            expect(chromeArgs({ headless, window: [960, 540], profile: "/tmp/p" })).toContain("--disable-audio-output")
+        }
+    })
+
     // A 3D game's frame rate on SwiftShader says nothing about a player's:
     // --gpu is the one way to measure it headless.
     it("draws headless on the software rasteriser unless asked for the GPU", () => {
