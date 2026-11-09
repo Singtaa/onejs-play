@@ -25,6 +25,13 @@ const val = (v: S): S => (typeof v === "number" ? sl.float(v) : v)
 const max = (a: S, b: S): S => val(a).max(b)
 const min = (a: S, b: S): S => val(a).min(b)
 
+/**
+ * The kernels' version, part of every cached picture's key (cache.ts). Bump it
+ * in any change that moves a kernel's pixels, the change a golden in
+ * tex-parity would show, so a newer runtime never reads an older one's drawing.
+ */
+export const TEX_KERNELS = 1
+
 // storage
 
 /** Magerie's 8-bit store: the GPU's float to unorm, half up (spec 1.1, "Rounding"). */
