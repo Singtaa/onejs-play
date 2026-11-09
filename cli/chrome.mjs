@@ -89,7 +89,16 @@ export function chromeArgs({ headless, window, profile, gpu = false, log = null 
     return [
         ...(headless ? ["--headless=new"] : []),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`,
-        "--no-first-run", "--no-default-browser-check", "--mute-audio", "--disable-gpu-sandbox",
+        "--no-first-run", "--no-default-browser-check", "--disable-gpu-sandbox",
+        // A fake audio output: a cart's AudioContext runs at its own rate and
+        // nothing reaches the OS. --mute-audio alone still opened the real
+        // output, and on macOS a Chrome killed with a stream open never gives
+        // it back: 71 were stuck on one Mac (8 Nov 2026), and coreaudiod
+        // ran at 200 to 600% CPU until a reboot. A fake output opens none, so
+        // the kill that ends every run (close) leaves nothing behind. Quitting
+        // cleanly also gives a stream back, but a headless quit took 4.5 to
+        // 12 s on that Mac, on every close.
+        "--disable-audio-output",
         // Chrome fetches its cookie key from the OS at the first navigation. On
         // macOS that is the keychain: with none under HOME it is a modal dialog
         // on the person's screen and Page.navigate waits until somebody clicks,
