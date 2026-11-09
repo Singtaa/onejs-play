@@ -172,7 +172,7 @@ export * as fx from "onejs-unity/fx"
 export { tex, TexImage } from "./tex"
 export type {
     TexFunctions, NoiseOptions as TexNoiseOptions, LevelsOptions, GradientStop, GradientMapOptions, TileOptions,
-    EdgesOptions, CanvasOptions, BlendMode as TexBlendMode, NoiseType, Edges as TexEdges,
+    EdgesOptions, CanvasOptions, BlendMode as TexBlendMode, NoiseType, Edges as TexEdges, TextureOptions as TexTextureOptions,
 } from "./tex"
 
 /**

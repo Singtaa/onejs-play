@@ -16,6 +16,7 @@ import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
 import { uploadRGBA } from "./upload"
+import { TexCache, cacheKey, hostBackend } from "./cache"
 import { KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type Spec, type SpecName } from "./nodes"
 import type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
 
@@ -392,6 +393,15 @@ export interface PixelsOptions {
     fuse?: boolean
 }
 
+export interface TextureOptions {
+    /**
+     * `false` draws it on every load. By default a picture is kept across
+     * loads, keyed by its recipe, and the next load reads it back instead of
+     * drawing: worth skipping for a picture made from a new seed each run.
+     */
+    cache?: boolean
+}
+
 interface Baked { texture: unknown, ready: Promise<Texture> }
 
 const baked = new Map<string, Baked>()
@@ -417,15 +427,17 @@ export class TexImage {
      * The picture as a texture, for `scene.mesh`, `<Image>` or particles. It
      * is handed back at once and filled when the GPU has drawn it, a frame or
      * a few later; a mesh given it before then shows it when it is. The same
-     * graph asked again is the same texture.
+     * graph asked again is the same texture. A later load of the cart reads
+     * the picture back from storage rather than drawing it (`cache: false`
+     * skips that).
      */
-    texture(): Texture {
-        return bake(this.node).texture as Texture
+    texture(options?: TextureOptions): Texture {
+        return bake(this.node, options).texture as Texture
     }
 
     /** The texture, once it holds the picture: for a loading screen, or a test. */
-    ready(): Promise<Texture> {
-        return bake(this.node).ready
+    ready(options?: TextureOptions): Promise<Texture> {
+        return bake(this.node, options).ready
     }
 
     /**
@@ -535,17 +547,67 @@ const readFloats = async (output: unknown): Promise<Float32Array> => {
     return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
 }
 
-function bake(node: Node): Baked {
+let store: TexCache | null | undefined
+
+/** The cache across loads, or null on a host that cannot keep one (a OneJS before `KeptTexture.Upload`, or no storage). */
+function texCache(): TexCache | null {
+    if (store === undefined) {
+        const upload = typeof CS === "undefined" ? undefined : CS.OneJS?.ShaderFX?.KeptTexture?.Upload
+        const backend = typeof upload === "function" ? hostBackend() : undefined
+        store = backend === undefined ? null : new TexCache(backend)
+    }
+    return store
+}
+
+/** Reads a kept texture's bytes back and keeps them under `key`. Never throws: a picture not kept is drawn again next load. */
+async function keep(key: string, into: unknown): Promise<void> {
+    try {
+        const bytes = await keptBytes(into)
+        await texCache()?.put(key, bytes)
+    } catch (e) {
+        console.warn(`[oj] tex: a picture was not cached (${e instanceof Error ? e.message : String(e)})`)
+    }
+}
+
+/** A kept texture's 8-bit bytes, row 0 at the top, in base64, as KeptTexture.Upload takes them. */
+async function keptBytes(into: unknown): Promise<string> {
+    const read = CS.OneJS.Lighting.TextureRead.Start(into)
+    for (let frames = 0; !read.Done; frames++) {
+        if (frames > 600) throw new Error("the GPU did not hand the texels back in 600 frames")
+        await new Promise<void>((resolve) => globalThis.requestAnimationFrame(() => resolve()))
+    }
+    if (read.Error) throw new Error(read.Error)
+    return CS.OneJS.ShaderFX.KeptTexture.StoredBytes(read)
+}
+
+/** Whether a kept picture went into `into`: false for one the wrong size, or an upload that failed, which a draw then fills. */
+function uploaded(kept: any, bytes: string, into: unknown): boolean {
+    try {
+        return kept.Upload(bytes, into) === true
+    } catch {
+        return false
+    }
+}
+
+function bake(node: Node, options: TextureOptions = {}): Baked {
     const known = baked.get(node.id)
     if (known !== undefined) return known
     const kept = CS.OneJS?.ShaderFX?.KeptTexture
     if (kept === undefined || kept === null) throw new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7).")
     const into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
-    const ready = draw(plan(node, KERNELS), (output) => kept.Fill(output, into)).then(() => {
+    const cache = options.cache === false ? null : texCache()
+    const key = cache === null ? undefined : cacheKey(node)
+    const ready = (async () => {
+        const hit = key === undefined ? undefined : await cache!.get(key)
+        if (hit === undefined || !uploaded(kept, hit, into)) {
+            await draw(plan(node, KERNELS), (output) => kept.Fill(output, into))
+            // Kept after the picture is handed over: storing it costs the cart nothing it waits for.
+            if (key !== undefined) void keep(key, into)
+        }
         // A mesh handed the texture before it was drawn copied it empty.
         CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
         return into as Texture
-    })
+    })()
     const entry: Baked = { texture: into, ready }
     baked.set(node.id, entry)
     // A failed bake is said, and forgotten, so asking again tries again.
@@ -564,4 +626,11 @@ export const tex = {
     /** Generators sized `width` (by `height`), tiling if asked, with every other node beside them. */
     canvas,
     pixels,
+    /** The pictures kept across loads (64 MB, least recently used dropped first). */
+    cache: {
+        /** Drops every kept picture, for a settings screen's "clear cached textures". The next load draws each again. */
+        clear(): Promise<void> {
+            return texCache()?.clear() ?? Promise.resolve()
+        },
+    },
 }
