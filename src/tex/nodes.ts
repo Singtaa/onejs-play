@@ -33,8 +33,63 @@ export interface Spec {
     readonly positional: readonly string[]
     /** Every option and its default. A key missing here is refused. */
     readonly defaults: Readonly<Record<string, unknown>>
+    /** Takes a `material(...)` before anything else, as Material Light does. */
+    readonly material?: true
     /** The node (or nodes) a call makes, from its resolved parameters. */
-    make(p: Record<string, unknown>, images: readonly Node[], canvas: Canvas): Node
+    make(p: Record<string, unknown>, images: readonly Node[], canvas: Canvas, material?: Material): Node
+}
+
+/**
+ * Magerie's Material (spec 8.1): a bundle of maps, no pixels of its own. A
+ * channel is a picture, or a number standing in for the slider, as in
+ * Magerie's `material({ albedo, normal, roughness, ... })`.
+ */
+export interface Material {
+    readonly kind: "material"
+    readonly albedo: Node
+    readonly normal: Node | null
+    readonly roughness: Node | number
+    readonly metallic: Node | number
+    readonly ao: Node | number
+    readonly emissive: Node | null
+    readonly opacity: Node | number
+}
+
+const MATERIAL_DEFAULTS = { albedo: undefined, normal: null, roughness: 0.5, metallic: 0, height: null, ao: 1, emissive: null, opacity: 1 }
+
+export function isMaterial(v: unknown): v is Material {
+    return v !== null && typeof v === "object" && (v as { kind?: unknown }).kind === "material"
+}
+
+/** A Material from its options, each map a picture's node or, for the scalar channels, a number 0 to 1. */
+export function makeMaterial(options: unknown, nodeOf: (v: unknown) => Node | undefined): Material {
+    if (options === null || typeof options !== "object" || Array.isArray(options)) throw new Error("[oj] tex material: takes { albedo, normal, roughness, metallic, height, ao, emissive, opacity }")
+    const o = options as Record<string, unknown>
+    for (const key of Object.keys(o)) {
+        if (!(key in MATERIAL_DEFAULTS)) throw new Error(`[oj] tex material: no map "${key}"; it has ${Object.keys(MATERIAL_DEFAULTS).join(", ")}`)
+    }
+    const image = (key: string, required = false): Node | null => {
+        const v = o[key]
+        if (v === undefined || v === null) {
+            if (required) throw new Error(`[oj] tex material: ${key} is required, a picture from tex`)
+            return null
+        }
+        const n = nodeOf(v)
+        if (n === undefined) throw new Error(`[oj] tex material: ${key} is ${typeof v}, a picture from tex`)
+        return n
+    }
+    const scalar = (key: "roughness" | "metallic" | "ao" | "opacity"): Node | number => {
+        const v = o[key]
+        if (v === undefined) return MATERIAL_DEFAULTS[key]
+        return typeof v === "number" ? num(v, `material ${key}`, 0, 1) : image(key)!
+    }
+    // Height is part of Magerie's bundle, and Material Light does not read it.
+    if (o.height !== undefined && o.height !== null) image("height")
+    return Object.freeze({
+        kind: "material" as const, albedo: image("albedo", true)!, normal: image("normal"),
+        roughness: scalar("roughness"), metallic: scalar("metallic"), ao: scalar("ao"),
+        emissive: image("emissive"), opacity: scalar("opacity"),
+    })
 }
 
 const SIZE = { width: null, height: null }
@@ -99,6 +154,18 @@ export const BLEND_MODES: readonly BlendMode[] = [
     "exclusion", "subtract", "hue", "saturation", "color", "luminosity",
 ]
 const CHANNELS: readonly InvertChannels[] = ["rgb", "r", "g", "b"]
+const AUTO_LEVELS_MODES: readonly k.AutoLevelsMode[] = ["luminance", "perChannel"]
+
+/** Auto Levels' reduction: 4 by 4 blocks to one texel, keyed on the first step. */
+function rangeOf(a: Node, key: k.RangeKey): Node {
+    let n = a
+    let first = true
+    do {
+        n = makeNode("rangeStep", "area", [n], { key: first ? key : null }, Math.ceil(n.width / 4), Math.ceil(n.height / 4), false)
+        first = false
+    } while (n.width > 1 || n.height > 1)
+    return n
+}
 const CURVES_CHANNELS: readonly k.CurvesChannel[] = ["rgb", "red", "green", "blue"]
 
 /** Magerie's Curves presets (curves/definition.ts), whose points win over a custom curve's. */
@@ -267,6 +334,52 @@ export const SPECS = {
             return makeNode("curves", "pointwise", [a!, lut], { channel: oneOf(p.channel, CURVES_CHANNELS, "curves channel") }, a!.width, a!.height, a!.tiles)
         },
     },
+    autoLevels: {
+        images: 1,
+        kind: "mode",
+        positional: [],
+        defaults: { mode: "luminance" },
+        make(p, [a]) {
+            const mode = oneOf(p.mode, AUTO_LEVELS_MODES, "autoLevels mode")
+            const ranges = mode === "luminance" ? [rangeOf(a!, "luma")] : [rangeOf(a!, "low"), rangeOf(a!, "high")]
+            return makeNode("autoLevels", "pointwise", [a!, ...ranges], { mode }, a!.width, a!.height, a!.tiles)
+        },
+    },
+    directionalWarp: {
+        images: 2,
+        positional: ["angle", "intensity"],
+        defaults: { angle: 0, intensity: 20, bothWays: false, edges: "auto" },
+        make(p, [src, map]) {
+            const wrap = wraps(p.edges, src!, "directionalWarp")
+            return area("directionalWarp", {
+                angle: num(p.angle, "directionalWarp angle"), intensity: num(p.intensity, "directionalWarp intensity"),
+                bothWays: p.bothWays === true, wrap,
+            }, [src!, map!], wrap && src!.tiles)
+        },
+    },
+    materialLight: {
+        images: 0,
+        material: true,
+        positional: ["lightAngle"],
+        defaults: { lightAngle: 135, lightElevation: 45, lightStrength: 1, ambient: 0.15 },
+        make(p, _images, _canvas, m) {
+            const inputs: Node[] = [m!.albedo]
+            const slot = (c: Node | number | null): number | null => {
+                if (c === null || typeof c === "number") return null
+                inputs.push(c)
+                return inputs.length - 1
+            }
+            const slots = { normal: slot(m!.normal), roughness: slot(m!.roughness), metallic: slot(m!.metallic), ao: slot(m!.ao), emissive: slot(m!.emissive), opacity: slot(m!.opacity) }
+            const scalars = { roughness: m!.roughness, metallic: m!.metallic, ao: m!.ao, opacity: m!.opacity }
+            const light = {
+                angle: num(p.lightAngle, "materialLight lightAngle"), elevation: num(p.lightElevation, "materialLight lightElevation", 0, 90),
+                strength: num(p.lightStrength, "materialLight lightStrength", 0), ambient: num(p.ambient, "materialLight ambient", 0, 1),
+            }
+            const numbers = Object.fromEntries(Object.entries(scalars).filter(([, v]) => typeof v === "number"))
+            // A material tiles when every map in it does (materialTiles), and its reads wrap then.
+            return area("materialLight", { slots, numbers, light }, inputs, inputs.every((i) => i.tiles))
+        },
+    },
     blend: {
         images: 2,
         kind: "mode",
@@ -378,6 +491,18 @@ export const KERNELS: Record<string, Kernel> = {
     levels: (s, n, i) => k.levels(s, i.value(0), n.params as unknown as k.LevelsValues),
     gradientMap: (s, n, i) => k.gradientMap(s, i.value(0), n.params.stops as Stop[]),
     curves: (_s, n, i) => k.curves(i.value(0), i.texture(1, false), n.params.channel as k.CurvesChannel),
+    autoLevels: (_s, n, i) => k.autoLevels(i.value(0), i.texture(1, false), n.params.mode === "perChannel" ? i.texture(2, false) : null, n.params.mode as k.AutoLevelsMode),
+    rangeStep: (s, n, i) => k.rangeStep(s, i.texture(0, false), n.params.key as k.RangeKey | null),
+    directionalWarp: (s, n, i) => k.directionalWarp(s, i.texture(0, wrapOf(n)), i.texture(1, wrapOf(n)), n.params.angle as number, n.params.intensity as number, n.params.bothWays as boolean),
+    materialLight: (s, n, i) => {
+        const slots = n.params.slots as Record<string, number | null>
+        const numbers = n.params.numbers as Record<string, number>
+        const read = (key: string): k.Channel => (slots[key] === null ? numbers[key]! : i.texture(slots[key]!, n.tiles))
+        const map = (key: string) => (slots[key] === null ? null : i.texture(slots[key]!, n.tiles))
+        return k.materialLight(s, i.texture(0, n.tiles), map("normal"),
+            { roughness: read("roughness"), metallic: read("metallic"), ao: read("ao"), emissive: map("emissive"), opacity: read("opacity") },
+            n.params.light as k.LightValues)
+    },
     blend: (s, n, i) => k.blend(s, i.value(0), i.value(1), n.params.mode as BlendMode, n.params.opacity as number),
     blurX: (s, n, i) => gaussianAxis(s, n, i, "x"),
     blurY: (s, n, i) => gaussianAxis(s, n, i, "y"),
@@ -394,7 +519,7 @@ export const KERNELS: Record<string, Kernel> = {
 export type SpecName = keyof typeof SPECS
 
 /** Splits a call's arguments into its images and its resolved parameters. */
-export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: unknown) => v is { node: Node }): { images: Node[], params: Record<string, unknown> } {
+export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: unknown) => v is { node: Node }): { images: Node[], params: Record<string, unknown>, material?: Material } {
     const spec: Spec = SPECS[name]
     const images: Node[] = []
     for (let i = 0; i < spec.images; i++) {
@@ -404,6 +529,12 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
     }
     const params: Record<string, unknown> = { ...spec.defaults }
     let rest = args.slice(spec.images)
+    let material: Material | undefined
+    if (spec.material === true) {
+        if (!isMaterial(rest[0])) throw new Error(`[oj] tex ${name}: argument 1 is ${rest[0] === undefined ? "missing" : typeof rest[0]}, and is a material from tex.material({ albedo, ... })`)
+        material = rest[0]
+        rest = rest.slice(1)
+    }
     if (spec.kind !== undefined && typeof rest[0] === "string") {
         params[spec.kind] = rest[0]
         rest = rest.slice(1)
@@ -428,7 +559,7 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
         if (!(key in spec.defaults)) throw new Error(`[oj] tex ${name}: no option "${key}"; it has ${Object.keys(spec.defaults).join(", ") || "none"}`)
         if (value !== undefined) params[key] = value
     }
-    return { images, params }
+    return { images, params, material }
 }
 
 export type { Edges }

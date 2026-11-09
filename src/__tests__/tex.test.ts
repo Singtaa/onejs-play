@@ -106,6 +106,43 @@ describe("tex curves", () => {
     })
 })
 
+describe("tex material and auto levels", () => {
+    it("reduces a picture to one texel in quarter steps, one chain for luminance and two per channel", () => {
+        const { noise } = tex.canvas(300, { tile: true })
+        const a = noise("perlin", 3)
+        const lum = a.autoLevels()
+        expect(lum.node.inputs.map((i) => [i.width, i.height])).toEqual([[300, 300], [1, 1]])
+        expect(lum.tiles).toBe(true)
+        const sizes: number[] = []
+        for (let n = lum.node.inputs[1]!; n.op === "rangeStep"; n = n.inputs[0]!) sizes.push(n.width)
+        expect(sizes).toEqual([1, 2, 5, 19, 75])
+        expect(a.autoLevels("perChannel").node.inputs).toHaveLength(3)
+        expect(passes(lum).length).toBeGreaterThan(5)
+    })
+
+    it("takes Magerie's material({ albedo, ... }) and lights it, a number standing in for a map", () => {
+        const { noise, material, materialLight } = tex.canvas(64, { tile: true })
+        const albedo = noise("perlin", 1), height = noise("perlin", 2)
+        const m = material({ albedo, normal: height.normalMap(), roughness: 0.5, ao: height })
+        const lit = materialLight(m, 135, { lightElevation: 60 })
+        expect(lit.node.inputs).toHaveLength(3)
+        expect(lit.node.params).toMatchObject({ numbers: { roughness: 0.5, metallic: 0, opacity: 1 }, light: { angle: 135, elevation: 60 } })
+        expect(lit.tiles).toBe(true)
+        expect(passes(lit).length).toBeGreaterThan(0)
+        expect(() => material({ normal: height } as never)).toThrow(/albedo is required/)
+        expect(() => material({ albedo, shine: 1 } as never)).toThrow(/no map "shine"/)
+        expect(() => materialLight(albedo as never)).toThrow(/a material from tex.material/)
+    })
+
+    it("warps along an angle, wrapping when the source tiles", () => {
+        const { noise } = tex.canvas(64, { tile: true })
+        const a = noise("perlin", 1)
+        const w = a.directionalWarp(a, 30, 20)
+        expect(w.node.params).toMatchObject({ angle: 30, intensity: 20, wrap: true })
+        expect(passes(w).length).toBeGreaterThan(0)
+    })
+})
+
 describe("tex planning", () => {
     it("fuses generators and pointwise nodes into one pass", () => {
         const { noise } = tex.canvas(64)

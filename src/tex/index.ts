@@ -16,12 +16,12 @@ import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
 import { uploadRGBA } from "./upload"
-import { KERNELS, SPECS, resolve, type Canvas, type SpecName } from "./nodes"
-import type { BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
+import { KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type SpecName } from "./nodes"
+import type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
 
 declare const CS: any
 
-export type { BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode }
+export type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Material, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode }
 export type Edges = "auto" | "wrap" | "clamp"
 
 export interface SizeOptions {
@@ -82,6 +82,42 @@ export interface CurvesOptions {
     points?: CurvePoints
     /** Which channels the curve reshapes. Default `"rgb"`. */
     channel?: CurvesChannel
+}
+
+export interface AutoLevelsOptions {
+    /** `"luminance"` stretches every channel by the luma's range; `"perChannel"` each by its own. */
+    mode?: AutoLevelsMode
+}
+
+export interface DirectionalWarpOptions extends EdgesOptions {
+    /** Degrees, 0 right, 90 down. */
+    angle?: number
+    /** Pixels the source moves where the map is white. */
+    intensity?: number
+    /** The map's mid grey stays put: darker moves back, lighter forward. */
+    bothWays?: boolean
+}
+
+/** A Material's maps. A scalar channel takes a picture's red, or a number 0 to 1 for the whole surface. */
+export interface MaterialMaps {
+    albedo: TexImage
+    normal?: TexImage
+    roughness?: TexImage | number
+    metallic?: TexImage | number
+    /** In Magerie's bundle; Material Light does not read it. */
+    height?: TexImage
+    ao?: TexImage | number
+    emissive?: TexImage
+    opacity?: TexImage | number
+}
+
+export interface MaterialLightOptions {
+    /** Degrees, 0 right, 90 up. */
+    lightAngle?: number
+    /** Degrees above the surface, 90 overhead. */
+    lightElevation?: number
+    lightStrength?: number
+    ambient?: number
 }
 
 export interface TileOptions {
@@ -154,6 +190,10 @@ interface ImageNodes {
     curvature(height: TexImage, ...rest: [mode?: CurvatureMode | CurvatureOptions, intensity?: number | CurvatureOptions, opts?: CurvatureOptions] | [intensity?: number | CurvatureOptions, opts?: CurvatureOptions]): TexImage
     /** Horizon-based ambient occlusion of the height, `radius` pixels out. */
     ambientOcclusion(height: TexImage, radius?: number | AmbientOcclusionOptions, opts?: AmbientOcclusionOptions): TexImage
+    /** Stretches the tones to fill 0 to 1, from the darkest and lightest pixels it holds. */
+    autoLevels(img: TexImage, mode?: AutoLevelsMode | AutoLevelsOptions, opts?: AutoLevelsOptions): TexImage
+    /** Pushes `src` along `angle` by `map`'s red times `intensity` pixels. */
+    directionalWarp(src: TexImage, map: TexImage, angle?: number | DirectionalWarpOptions, intensity?: number | DirectionalWarpOptions, opts?: DirectionalWarpOptions): TexImage
     /** This picture's colour with `height`'s grey as alpha, straight: what a splat layer reads. */
     alpha(color: TexImage, height: TexImage): TexImage
 }
@@ -163,6 +203,10 @@ type ImageMethods = { [K in keyof ImageNodes]: Tail<ImageNodes[K]> }
 
 /** The generators, which a canvas sizes. */
 interface Generators {
+    /** A bundle of maps for `materialLight`, as Magerie's Material node. */
+    material(maps: MaterialMaps): Material
+    /** Lights a material from `lightAngle` and renders it to a picture the albedo's size. */
+    materialLight(material: Material, lightAngle?: number | MaterialLightOptions, opts?: MaterialLightOptions): TexImage
     noise(...args: [type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions] | [seed?: number | NoiseOptions, opts?: NoiseOptions]): TexImage
 }
 
@@ -228,8 +272,12 @@ function isImage(v: unknown): v is TexImage {
 }
 
 function call(name: SpecName, canvas: Canvas, args: readonly unknown[]): TexImage {
-    const { images, params } = resolve(name, args, isImage)
-    return new TexImage(SPECS[name].make(params, images, canvas))
+    const { images, params, material } = resolve(name, args, isImage)
+    return new TexImage(SPECS[name].make(params, images, canvas, material))
+}
+
+function material(maps: MaterialMaps): Material {
+    return makeMaterial(maps, (v) => (isImage(v) ? v.node : undefined))
 }
 
 const IMAGE_NODES = (Object.keys(SPECS) as SpecName[]).filter((n) => SPECS[n].images > 0)
@@ -246,6 +294,7 @@ for (const name of IMAGE_NODES) {
 function functions(canvas: Canvas): TexFunctions {
     const out: Record<string, unknown> = {}
     for (const name of [...IMAGE_NODES, ...GENERATORS]) out[name] = (...args: unknown[]) => call(name, canvas, args)
+    out.material = material
     return out as unknown as TexFunctions
 }
 

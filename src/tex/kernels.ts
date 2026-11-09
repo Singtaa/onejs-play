@@ -430,6 +430,154 @@ export function curves(c: Vec4, table: TexRead, channel: CurvesChannel): Vec4 {
     )
 }
 
+// auto levels (spec 6, autoLevels)
+
+export type AutoLevelsMode = "luminance" | "perChannel"
+
+/**
+ * What Auto Levels reduces, per pixel: the histogram bins it counts, packed
+ * so ONE running minimum finds both ends. A maximum is kept as the minimum of
+ * `1 - bin`. Luminance packs (min, 1 - max) once; per channel needs two
+ * reductions, `"low"` (rMin, gMin, bMin, 1 - rMax) and `"high"`
+ * (1 - gMax, 1 - bMax). A pixel Magerie skips (alpha under half a level)
+ * reads 1 everywhere, which a minimum ignores; an image of nothing else ends
+ * with min 1 and max 0, read as Magerie's empty histogram.
+ */
+export type RangeKey = "luma" | "low" | "high"
+
+function rangeKey(c: Vec4, key: RangeKey): Vec4 {
+    // Bins as Magerie counts them: Metal's round(straight * 255), half away from zero, clamped.
+    const bin = (v: S): S => v.mul(255).add(0.5).floor().clamp(0, 255).div(255)
+    const st: S = c.xyz.div(max(c.w, 1e-5))
+    const one = (v: S): S => sl.float(1).sub(v)
+    let k: S
+    if (key === "luma") { const l = bin(st.dot(sl.vec3(0.299, 0.587, 0.114))); k = sl.vec4(l, one(l), 1, 1) }
+    else if (key === "low") { const b = bin(st); k = sl.vec4(b.x, b.y, b.z, one(b.x)) }
+    else { const b = bin(st); k = sl.vec4(one(b.y), one(b.z), 1, 1) }
+    return sl.select(c.w.lt(0.5 / 255), sl.vec4(1, 1, 1, 1), k) as Vec4
+}
+
+/**
+ * A 4 by 4 block's minimum, one texel of an image a quarter the size: the
+ * step Auto Levels repeats down to one texel. The first step reads the
+ * picture and keys it; the rest read keys. A block past the edge repeats the
+ * edge texel, which a minimum does not notice.
+ */
+export function rangeStep(s: Scope, src: TexRead, key: RangeKey | null): Vec4 {
+    const last: S = src.size.sub(1)
+    let m: S
+    for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 4; x++) {
+            const p: S = s.pixel.mul(4).add(sl.vec2(x, y)).min(last)
+            const t: S = src.fetch(p)
+            const v = key === null ? t : rangeKey(t, key)
+            m = m === undefined ? v : m.min(v)
+        }
+    }
+    return m
+}
+
+/** Magerie's Auto Levels remap, on the PREMULTIPLIED colour (spec 6), from the reduced ranges. */
+export function autoLevels(c: Vec4, low: TexRead, high: TexRead | null, mode: AutoLevelsMode): Vec4 {
+    const origin = sl.vec2(0, 0)
+    const a: S = low.fetch(origin)
+    let lo: S, hi: S
+    if (mode === "luminance") { lo = a.x; hi = sl.float(1).sub(a.y) }
+    else { const b: S = high!.fetch(origin); lo = a.xyz; hi = sl.vec3(sl.float(1).sub(a.w), sl.float(1).sub(b.x), sl.float(1).sub(b.y)) }
+    // An empty histogram is [0, 0].
+    const empty: S = (mode === "luminance" ? lo : lo.x).gt(mode === "luminance" ? hi : hi.x)
+    lo = sl.select(empty, mode === "luminance" ? sl.float(0) : sl.vec3(0, 0, 0), lo)
+    hi = sl.select(empty, mode === "luminance" ? sl.float(0) : sl.vec3(0, 0, 0), hi)
+    if (mode === "luminance") {
+        const range: S = hi.sub(lo)
+        const rgb: S = sl.select(range.lt(1 / 1024), sl.vec3(0.5, 0.5, 0.5), c.xyz.sub(lo).div(max(range, 1 / 1024)).clamp(0, 1))
+        return sl.vec4(rgb, c.w)
+    }
+    const range: S = hi.sub(lo).max(1 / 255)
+    return sl.vec4(c.xyz.sub(lo).div(range).clamp(0, 1), c.w)
+}
+
+// directional warp (spec 6, directionalWarp)
+
+/** Magerie's Directional Warp: the source read `map.r * intensity` pixels along `angle` (0 right, 90 down), bilinear. */
+export function directionalWarp(s: Scope, src: TexRead, map: TexRead, angle: number, intensity: number, bothWays: boolean): Vec4 {
+    const uv: S = s.pixel.add(0.5).div(s.size)
+    const rad = s.f(angle).mul(3.14159265358979 / 180)
+    const dir = sl.vec2(sl.cos(rad), sl.sin(rad))
+    let m: S = map.sample(uv).x
+    if (bothWays) {
+        const half = 0.5 / 255
+        const d: S = m.sub(0.5)
+        m = sl.sign(d).mul(max(d.abs().sub(half), 0)).div(0.5 - half)
+    }
+    return src.sample(uv.add(dir.mul(m).mul(s.f(intensity)).div(s.size)))
+}
+
+// material light (spec 8.2; magerie-one js/src/nodes/material/litPreview.ts)
+
+/** A Material channel: a picture, or a scalar slider stored as one byte (spec 8.1: 0.5 is 128 / 255). */
+export type Channel = TexRead | number
+
+export interface LightValues { angle: number, elevation: number, strength: number, ambient: number }
+
+/** Magerie's Material Light: Blinn-Phong with Toksvig, in gamma 2.2 (not the sRGB curve). */
+export function materialLight(
+    s: Scope, albedo: TexRead, normal: TexRead | null,
+    ch: { roughness: Channel, metallic: Channel, ao: Channel, emissive: TexRead | null, opacity: Channel },
+    v: LightValues,
+): Vec4 {
+    const uv: S = s.pixel.add(0.5).div(s.size)
+    const at = (t: TexRead): S => t.sample(uv)
+    const data = (c: Channel): S => typeof c === "number" ? s.f(Math.round(Math.min(Math.max(c, 0), 1) * 255) / 255) : at(c).x
+    const deg = Math.PI / 180
+    const az = s.f(v.angle).mul(deg), el = s.f(v.elevation).mul(deg)
+    const L: S = sl.vec3(sl.cos(az).mul(sl.cos(el)), sl.sin(az).mul(sl.cos(el)), sl.sin(el))
+    const unpack = (n: S): S => sl.vec3(n.x.mul(2).sub(1), sl.float(1).sub(n.y).mul(2).sub(1), n.z.mul(2).sub(1)).normalize()
+    // An unwired normal is RGBA8 (128, 128, 255): a hair off flat, and the same in all nine taps.
+    const flat = sl.vec3(128 / 255, 128 / 255, 1)
+    const N: S = unpack(normal === null ? flat : at(normal))
+    let navg: S
+    if (normal === null) navg = unpack(flat).length()
+    else {
+        let sum: S
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const n = unpack(normal.sample(uv.add(sl.vec2(dx, dy).div(normal.size))))
+                sum = sum === undefined ? n : sum.add(n)
+            }
+        }
+        navg = sum.div(9).length()
+    }
+    const A: S = at(albedo)
+    const straight: S = sl.select(A.w.gt(0), A.xyz.div(max(A.w, 1e-6)), sl.vec3(0, 0, 0))
+    const alb: S = straight.max(0).pow(2.2)
+    const rough: S = data(ch.roughness).clamp(0.04, 1)
+    const metal: S = data(ch.metallic).clamp(0, 1)
+    const ao: S = data(ch.ao).clamp(0, 1)
+    const opacity: S = data(ch.opacity).clamp(0, 1)
+    const emissive: S = ch.emissive === null ? sl.vec3(0, 0, 0) : at(ch.emissive).xyz.max(0).pow(2.2)
+    const diffuseC: S = alb.mul(sl.float(1).sub(metal))
+    const specC: S = sl.mix(sl.vec3(0.04, 0.04, 0.04), alb, metal)
+    const H: S = L.add(sl.vec3(0, 0, 1)).normalize()
+    let shin: S = sl.float(2).pow(sl.float(1).sub(rough).mul(10).add(1)).min(512)
+    shin = shin.mul(navg).div(sl.float(1).add(shin.mul(sl.float(1).sub(navg))))
+    const spec: S = max(N.dot(H), 0).pow(shin).mul(shin.add(8)).div(8)
+    const NL: S = max(N.dot(L), 0)
+    const strength = s.f(v.strength), ambient = s.f(v.ambient)
+    let color: S = diffuseC.mul(NL.mul(strength).add(ambient.mul(ao)))
+        .add(specC.mul(spec).mul(NL).mul(strength))
+        .add(alb.mul(ambient.mul(ao).mul(metal)))
+        .add(emissive)
+    // A soft shoulder above 0.8, per channel.
+    const K = 0.8
+    const over: S = sl.float(K).add(sl.float(1 - K).mul(sl.float(1).sub(sl.exp(color.sub(K).div(1 - K).neg()))))
+    // Per channel without a vector bool: the step is 1 above K, and at K both sides are K.
+    color = sl.mix(color, over, sl.sign(color.sub(K)).max(0))
+    color = color.clamp(0, 1).pow(1 / 2.2)
+    const a: S = A.w.mul(opacity)
+    return sl.vec4(color.mul(a), a)
+}
+
 /** Lit colour in rgb, the height's first channel as alpha, straight: the Image Exporter's Alpha pack. */
 export function alphaPack(color: Vec4, height: Vec4): Vec4 {
     return sl.vec4(unpremultiply(color), height.x)

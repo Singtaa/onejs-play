@@ -26,6 +26,8 @@ function run(node: string, params: unknown, inputs: readonly Input[]): unknown {
         : tex.pixels(i.w!, i.h!, unhex(i.hex!), { tile: i.tiles }))
     const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[node]
     if (typeof fn !== "function") throw new Pending(node)
+    // Material takes its maps by name, as Magerie's script API does: material({ albedo, normal, ... }).
+    if (node === "material") return fn({ ...(params as object), ...Object.fromEntries(inputs.map((i, n) => [i.port.replace(/^in-/, ""), images[n]])) })
     return fn(...images, params)
 }
 
