@@ -450,11 +450,37 @@ export interface SkyOptions {
     stars?: number
 }
 
-/** Fog that thickens from `near` to `far`, in the sky's horizon colour or else the background's unless given one. */
+/**
+ * Fog over the world, in the sky's horizon colour or else the background's unless given one.
+ * It starts `near` metres from the camera in every mode.
+ */
 export interface FogOptions {
     color?: ColorInput
     near?: number
+    /** Where linear fog is whole. Exp and exp2 have no end, and keep it for a return to linear. */
     far?: number
+    /**
+     * `"linear"`, the default, ramps from `near` to `far`. `"exp"` and `"exp2"` thicken without
+     * end by `density` along each pixel's ray, exp2 holding the near ground clearer and closing
+     * in harder: the share of fog `d` metres past `near` is `1 - exp(-density * d)`, squared
+     * inside the exponent for exp2.
+     */
+    mode?: "linear" | "exp" | "exp2"
+    /** Exp and exp2, a metre. Unless given, what makes the fog 95% whole at `far`, as linear is whole there. */
+    density?: number
+    /**
+     * Exp and exp2 only: height fog, thick in valleys and thin on the ridges and in the sky
+     * above them, `false` for none. Its density is `density` at `base` metres up and falls by
+     * e every `thickness` metres above (rises below), and the sky takes the haze along each
+     * ray to infinity, so the land and the sky meet in one colour.
+     */
+    height?: FogHeight | false
+}
+
+/** Where height fog's density is `density` (`base`, metres up), and the metres it takes to fall by e. */
+export interface FogHeight {
+    base?: number
+    thickness?: number
 }
 
 export interface SceneOptions {
@@ -596,7 +622,7 @@ export const SCENE_DEFAULTS = deepFreeze({
     sun: { direction: [-0.32, -0.77, 0.56] as Vec3, color: "#fff4d6", intensity: 1.2, shadows: true },
     ambient: { sky: "#b8c6d9", ground: "#4a443d", intensity: 0.9 },
     background: "#14181d",
-    fog: { near: 10, far: 40 },
+    fog: { near: 10, far: 40, mode: "linear" as const },
     wind: { direction: [1, 0] as [number, number], strength: 1, gust: 0.3 },
     sky: { top: "#2f6fd6", horizon: "#cfe6f7", sun: { size: 2, glow: 12 }, stars: 0 },
     pointLight: { color: "#ffffff", intensity: 1, range: 10 },
@@ -777,7 +803,7 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
     // A OneJS from before them draws the ground as it always has, unless the cart asked for them by name.
     const canFar = typeof b.SetMeshSplatFar === "function"
     if (!canFar && (s.fadeDistance !== undefined || s.variation !== undefined)) {
-        throw new Error("[oj] scene.mesh splat fadeDistance and variation need a newer OneJS: this host's ModelBridge cannot fade a splat (it came with runtime 1.7).")
+        throw new Error("[oj] scene.mesh splat fadeDistance and variation need a newer OneJS: this host's ModelBridge cannot fade a splat (it came with runtime 1.8).")
     }
     return {
         texture: null,
@@ -880,6 +906,43 @@ function nextSky(was: SkyNow | null, o: SkyOptions, d: typeof SCENE_DEFAULTS): S
 function rgb(c: ColorInput, what = "colour"): [number, number, number] {
     const [r, g, b] = toRGBA(c, `[oj] scene ${what}`)
     return [r, g, b]
+}
+
+/** What a height fog's parts are when left out: the sea's level, and e every 50 m. */
+const FOG_HEIGHT = { base: 0, thickness: 50 }
+
+type FogNow = {
+    color?: ColorInput
+    near: number
+    far: number
+    mode: "linear" | "exp" | "exp2"
+    density?: number
+    height: { base: number, thickness: number } | null
+}
+
+/** The fog with `o`'s parts in place of `was`'s, refused before anything changes when it cannot be drawn. */
+function nextFog(was: FogNow | null, o: FogOptions, d: typeof SCENE_DEFAULTS): FogNow {
+    const base: FogNow = was ?? { near: d.fog.near, far: d.fog.far, mode: d.fog.mode, height: null }
+    const height = o.height === undefined ? base.height
+        : o.height === false ? null
+        : { ...(base.height ?? FOG_HEIGHT), ...o.height }
+    const next: FogNow = { ...base, ...o, height }
+    if (next.color !== undefined) rgb(next.color, "fog color")
+    if (next.mode !== "linear" && next.mode !== "exp" && next.mode !== "exp2") throw new Error(`[oj] scene.fog: mode is ${JSON.stringify(next.mode)}: "linear", "exp" or "exp2"`)
+    if (next.density !== undefined && (!(next.density >= 0) || !Number.isFinite(next.density))) throw new Error(`[oj] scene.fog: density is ${next.density}: a metre, 0 or more`)
+    if (height !== null) {
+        if (next.mode === "linear") throw new Error(`[oj] scene.fog: height needs mode "exp" or "exp2": a linear ramp has no density to thin with height`)
+        if (!Number.isFinite(height.base)) throw new Error(`[oj] scene.fog: height base is ${height.base}: metres up`)
+        if (!(height.thickness > 0) || !Number.isFinite(height.thickness)) throw new Error(`[oj] scene.fog: height thickness is ${height.thickness}: metres for the density to fall by e, above 0`)
+    }
+    return next
+}
+
+/** The fog's density, or the one that makes it 95% whole at `far`: e^-3 left, from `near`. */
+function fogDensity(f: FogNow): number {
+    if (f.density !== undefined) return f.density
+    const span = Math.max(f.far - f.near, 1e-3)
+    return (f.mode === "exp2" ? Math.sqrt(3) : 3) / span
 }
 
 type WindNow = { direction: readonly [number, number], strength: number, gust: number }
@@ -1030,7 +1093,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     let backgroundColor = options.background ?? d.background
     let sunNow = options.sun === false ? null : { ...d.sun, ...options.sun }
     let ambientNow = { ...d.ambient, ...options.ambient }
-    let fogNow = options.fog === undefined || options.fog === false ? null : { ...d.fog, ...options.fog }
+    let fogNow = options.fog === undefined || options.fog === false ? null : nextFog(null, options.fog, d)
     let skyNow = options.sky === undefined || options.sky === false ? null : nextSky(null, options.sky, d)
     let windNow = nextWind(d.wind, options.wind)
     // The wind's clock runs once the scene has a mesh that sways, and holds while it is paused.
@@ -1043,7 +1106,6 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     }
     rgb(ambientNow.sky, "ambient sky")
     rgb(ambientNow.ground, "ambient ground")
-    if (fogNow?.color !== undefined) rgb(fogNow.color, "fog color")
 
     let cam = { position: vec3(d.camera.position), lookAt: vec3(d.camera.lookAt), fov: d.camera.fov as number }
     const camera = (c: CameraOptions) => {
@@ -1067,9 +1129,24 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (problem !== "") throw new Error(`[oj] sun shadows: ${problem}`)
     }
     const applyAmbient = () => b.SetAmbient(...rgb(ambientNow.sky), ...rgb(ambientNow.ground), ambientNow.intensity)
+    // An older host draws linear fog alone: only a cart that asked for more is told, once.
+    let saidNoFogLaw = false
     const applyFog = () => {
-        if (fogNow === null) b.SetFog(false, 0, 0, 0, 0, 0)
-        else b.SetFog(true, ...rgb(fogNow.color ?? skyNow?.horizon ?? backgroundColor), fogNow.near, fogNow.far)
+        if (fogNow === null) {
+            b.SetFog(false, 0, 0, 0, 0, 0)
+            return
+        }
+        b.SetFog(true, ...rgb(fogNow.color ?? skyNow?.horizon ?? backgroundColor), fogNow.near, fogNow.far)
+        if (typeof b.SetFogLaw !== "function") {
+            if ((fogNow.mode !== "linear" || fogNow.height !== null) && !saidNoFogLaw) {
+                saidNoFogLaw = true
+                console.warn("[oj] scene.fog mode and height need a newer OneJS: this host's ModelBridge draws linear fog alone (they came with runtime 1.8), so the fog ramps from near to far.")
+            }
+            return
+        }
+        const h = fogNow.height
+        const problem = String(b.SetFogLaw(fogNow.mode, fogDensity(fogNow), h?.base ?? 0, h?.thickness ?? 0) ?? "")
+        if (problem !== "") throw new Error(`[oj] scene.fog: ${problem}`)
     }
     // An older host has no wind, and nothing that sways in it: only a cart that asked is told.
     const applyWind = (asked: boolean) => {
@@ -1530,9 +1607,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (fogNow !== null && fogNow.color === undefined) applyFog()
         },
         fog(o) {
-            const next = o === false ? null : { ...(fogNow ?? d.fog), ...o }
-            if (next?.color !== undefined) rgb(next.color, "fog color")
-            fogNow = next
+            fogNow = o === false ? null : nextFog(fogNow, o, d)
             applyFog()
         },
         wind(o) {

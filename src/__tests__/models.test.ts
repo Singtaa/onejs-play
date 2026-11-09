@@ -232,6 +232,65 @@ describe("fog", () => {
         const [, on, r, g, b] = last("SetFog")
         expect([on, r, g, b]).toEqual([true, 1, 1, 1])
     })
+
+    it("is linear unless given a mode, which the host is told after SetFog with no height", () => {
+        createScene({ fog: { near: 5, far: 30 } })
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "linear", 3 / 25, 0, 0])
+        const order = calls.map((c) => c[0]).filter((n) => n === "SetFog" || n === "SetFogLaw")
+        expect(order.slice(-2)).toEqual(["SetFog", "SetFogLaw"])
+    })
+
+    it("takes exp and exp2 with a density, or the one that is 95% whole at far", () => {
+        const scene = createScene({ fog: { mode: "exp", density: 0.0017, near: 0 } }).scene
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp", 0.0017, 0, 0])
+        scene.fog({ mode: "exp2", density: undefined, near: 100, far: 400 })
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp2", Math.sqrt(3) / 300, 0, 0])
+        // A partial update changes what it names and never the law.
+        scene.fog({ density: 0.0009 })
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp2", 0.0009, 0, 0])
+    })
+
+    it("takes height fog in metres, merging its parts, and false takes it away", () => {
+        const scene = createScene({ fog: { mode: "exp", density: 0.0017, near: 0, height: { base: 0, thickness: 45 } } }).scene
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp", 0.0017, 0, 45])
+        scene.fog({ height: { base: -20 } })
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp", 0.0017, -20, 45])
+        scene.fog({ height: false })
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp", 0.0017, 0, 0])
+        scene.fog({ mode: "exp2", height: {} })
+        expect(last("SetFogLaw")).toEqual(["SetFogLaw", "exp2", 0.0017, 0, 50])
+    })
+
+    it("refuses what it cannot draw, saying why, before changing anything", () => {
+        const scene = createScene({ fog: { near: 5, far: 30 } }).scene
+        const before = calls.length
+        expect(() => scene.fog({ height: { thickness: 45 } })).toThrow(/height needs mode "exp" or "exp2": a linear ramp has no density/)
+        expect(() => scene.fog({ mode: "exp3" as any })).toThrow(/mode is "exp3": "linear", "exp" or "exp2"/)
+        expect(() => scene.fog({ mode: "exp", density: -1 })).toThrow(/density is -1/)
+        expect(() => scene.fog({ mode: "exp", height: { thickness: 0 } })).toThrow(/height thickness is 0/)
+        expect(() => scene.fog({ mode: "exp", height: { base: NaN } })).toThrow(/height base is NaN/)
+        expect(calls.length).toBe(before)
+    })
+
+    it("refuses a scene whose fog cannot be drawn, before building it", () => {
+        expect(() => createScene({ fog: { height: {} } })).toThrow(/height needs mode/)
+    })
+
+    it("on an older host draws linear fog, telling a cart that asked for more once", () => {
+        missing.add("SetFogLaw")
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        try {
+            const scene = createScene({ fog: { near: 5, far: 30 } }).scene
+            expect(warn).not.toHaveBeenCalled()
+            scene.fog({ mode: "exp2", height: { thickness: 45 } })
+            scene.fog({ density: 0.01 })
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(String(warn.mock.calls[0][0])).toMatch(/mode and height need a newer OneJS/)
+            expect(last("SetFog")).toEqual(["SetFog", true, ...last("SetBackground").slice(1), 5, 30])
+        } finally {
+            warn.mockRestore()
+        }
+    })
 })
 
 describe("point lights", () => {
