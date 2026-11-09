@@ -23,6 +23,9 @@
 //             colour export ground.json pairs with a shipped picture, and
 //             compares with that picture, instead of the cases.
 // --save      a folder to write every drawing's bytes into, as <name>.bin
+// --ojplay    a folder holding a manifest.json in goldens/ojplay's format, to
+//             draw instead of goldens/ojplay: a set Magerie has not vendored
+//             yet, or one written from a Magerie node's JS twin.
 // --negative  compares each case with the next golden of the same size, and
 //             passes only if that FAILS: the instrument's own check, so a
 //             harness that compares nothing cannot pass.
@@ -72,10 +75,14 @@ const CONTAINER = arg("container", null)
 // A case drawn unfused (every node its own pass) is held to the same golden.
 const base = (name) => name.replace(/@unfused$/, "")
 const CHAIN_DIR = arg("chain", null)
+// Another manifest in goldens/ojplay's format: a set Magerie has not vendored yet, or one made from its JS twins.
+const OJPLAY_DIR = path.resolve(arg("ojplay", path.join(here, "goldens", "ojplay")))
 const golden = (name) => base(name).startsWith("ground/")
     ? groundOut.get(base(name)).bytes
     : base(name).startsWith("chain/")
     ? fs.readFileSync(path.join(CHAIN_DIR, chainOut.get(base(name)).file))
+    : base(name).startsWith("ojplay/")
+    ? fs.readFileSync(path.join(OJPLAY_DIR, `${base(name).slice("ojplay/".length)}.bin`))
     : fs.readFileSync(path.join(here, "goldens", `${base(name)}.bin`))
 
 /**
@@ -156,7 +163,7 @@ const groundOut = writeGround()
  * multi-output nodes say `outputs`, one entry a port.
  */
 function writeOjplay() {
-    const dir = path.join(here, "goldens", "ojplay")
+    const dir = OJPLAY_DIR
     const m = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"))
     const cases = m.cases.map((c) => {
         const outputs = c.outputs ?? [c.output]
@@ -171,7 +178,7 @@ function writeOjplay() {
             outputs: outputs.map((o) => ({ port: o.port, name: `ojplay/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, tolerance: c.tolerance ?? 1 })),
         }
     })
-    fs.writeFileSync(path.join(root, "ojplay.gen.ts"), `// Written by run.mjs from goldens/ojplay/manifest.json (magerie-one ${m.magerieCommit}). Do not edit.\nexport const OJPLAY = ${JSON.stringify(cases)}\n`)
+    fs.writeFileSync(path.join(root, "ojplay.gen.ts"), `// Written by run.mjs from ${path.relative(here, dir)}/manifest.json (magerie-one ${m.magerieCommit}). Do not edit.\nexport const OJPLAY = ${JSON.stringify(cases)}\n`)
     return new Map(cases.flatMap((c) => c.outputs.map((o) => [o.name, o])))
 }
 const ojplay = writeOjplay()

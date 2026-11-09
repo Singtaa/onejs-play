@@ -1104,3 +1104,90 @@ export function distanceRemap(s: Scope, src: TexRead, maxDistance: number, wrap:
     const v: S = sl.select(sd.x.ge(0), d.length().div(s.f(Math.max(maxDistance, 1))).saturate(), sl.float(1))
     return sl.vec4(v, v, v, 1)
 }
+
+/** Which of Tile Grid's three pictures a pass draws. */
+export type TileGridOutput = "height" | "random" | "uv"
+
+export interface TileGridValues {
+    columns: number
+    rows: number
+    rowOffset: number
+    offsetJitter: number
+    lengthJitter: number
+    sizeJitter: number
+    jointWidth: number
+    bevel: number
+    round: number
+    heightJitter: number
+    seed: number
+}
+
+/** lowbias32, Magerie's tgMix: the integer hash every Tile Grid random comes from. */
+function lowbias32(x: S): S {
+    let h: S = x.bxor(x.shr(16)).mul(0x7feb352d)
+    h = h.bxor(h.shr(15)).mul(0x846ca68b)
+    return h.bxor(h.shr(16))
+}
+
+/** Magerie's tgRand: 24 hash bits of (seed, salt, row, column) as [0, 1), so every backend picks the same value for a cell. */
+function cellRandom(seed: S, salt: number, row: S, col: S): Float {
+    let h: S = lowbias32(seed.mul(0x9e3779b9).bxor(salt))
+    h = lowbias32(h.bxor(row))
+    h = lowbias32(h.bxor(col.mul(0x85ebca6b)))
+    return sl.float(h.shr(8)).div(16777216)
+}
+
+/**
+ * Magerie's Tile Grid (generators/tileGrid/core.ts): a columns by rows grid
+ * of bevelled faces, row r slid along by fract(r * rowOffset) plus jitter,
+ * each cell's randoms hashed from its row and its column mod columns, so it
+ * tiles whatever the parameters. Row and column are held as floats, exact
+ * at these sizes, and turned to uints only for the hash.
+ */
+export function tileGrid(s: Scope, v: TileGridValues, output: TileGridOutput): Vec4 {
+    const cols = s.f(v.columns), rows = s.f(v.rows)
+    const seed: S = sl.uint(s.f(v.seed))
+    const lengthJitter = s.f(v.lengthJitter)
+    const cw: S = s.size.x.div(cols), ch: S = s.size.y.div(rows)
+    const px: S = s.pixel.x.add(0.5).div(cw), py: S = s.pixel.y.add(0.5).div(ch)
+    const row: S = min(py.floor(), rows.sub(1))
+    const ur: S = sl.uint(row)
+    const v01: S = py.sub(row)
+    // A column index wrapped into 0 to columns - 1: the half keeps the floor off an exact quotient.
+    const wrapCol = (j: S): S => sl.uint(j.sub(cols.mul(j.add(0.5).div(cols).floor())))
+    const bound = (j: S): S => j.add(lengthJitter.mul(0.45).mul(cellRandom(seed, 2, ur, wrapCol(j)).mul(2).sub(1)))
+
+    let shift: S = row.mul(s.f(v.rowOffset)).add(s.f(v.offsetJitter).mul(cellRandom(seed, 1, ur, sl.uint(0)).sub(0.5)))
+    shift = shift.sub(shift.floor())
+    const x: S = px.sub(shift)
+    const j0: S = x.floor()
+    const bL0: S = bound(j0), bR0: S = bound(j0.add(1))
+    // Jitter can move a boundary past x: the cell is then the one beside.
+    const left: S = x.lt(bL0), right: S = left.not().and(x.ge(bR0))
+    const j: S = sl.select(left, j0.sub(1), sl.select(right, j0.add(1), j0))
+    const bL: S = sl.select(left, bound(j0.sub(1)), sl.select(right, bR0, bL0))
+    const bR: S = sl.select(left, bL0, sl.select(right, bound(j0.add(2)), bR0))
+    const uc: S = wrapCol(j)
+
+    const m: S = min(cw, ch)
+    const sc: S = sl.float(1).sub(s.f(v.sizeJitter).mul(0.5).mul(cellRandom(seed, 3, ur, uc)))
+    const halfJoint: S = s.f(v.jointWidth).mul(m).mul(0.5)
+    const d: S = sl.vec2(x.sub(bL.add(bR).mul(0.5)).mul(cw), v01.sub(0.5).mul(ch))
+    const ex: S = max(bR.sub(bL).mul(cw).mul(0.5).mul(sc).sub(halfJoint), 0)
+    const ey: S = max(ch.mul(0.5).mul(sc).sub(halfJoint), 0)
+    if (output === "random") {
+        const r = cellRandom(seed, 5, ur, uc)
+        return sl.vec4(r, r, r, 1)
+    }
+    if (output === "uv") {
+        const uu: S = d.x.add(ex).div(max(ex.mul(2), 0.0001)).clamp(0, 1)
+        const vv: S = d.y.add(ey).div(max(ey.mul(2), 0.0001)).clamp(0, 1)
+        return sl.vec4(uu, vv, 0, 1)
+    }
+    const rad: S = s.f(v.round).mul(min(ex, ey))
+    const q: S = d.abs().sub(sl.vec2(ex.sub(rad), ey.sub(rad)))
+    const dist: S = max(q, sl.vec2(0, 0)).length().add(min(max(q.x, q.y), 0)).sub(rad)
+    const profile: S = sl.float(0.5).sub(dist).div(max(s.f(v.bevel).mul(m), 1)).clamp(0, 1)
+    const h: S = profile.mul(sl.float(1).sub(s.f(v.heightJitter).mul(cellRandom(seed, 4, ur, uc))))
+    return sl.vec4(h, h, h, 1)
+}

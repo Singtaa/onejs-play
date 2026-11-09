@@ -37,8 +37,12 @@ export interface Spec {
     readonly defaults: Readonly<Record<string, unknown>>
     /** Takes a `material(...)` before anything else, as Material Light does. */
     readonly material?: true
-    /** The node (or nodes) a call makes, from its resolved parameters. */
-    make(p: Record<string, unknown>, images: readonly Node[], canvas: Canvas, material?: Material): Node
+    /**
+     * The node a call makes, from its resolved parameters; or, for a node
+     * with several outputs, one per output, named as Magerie's script API
+     * names its ports without "out-" (Tile Grid's image, random and uv).
+     */
+    make(p: Record<string, unknown>, images: readonly Node[], canvas: Canvas, material?: Material): Node | Readonly<Record<string, Node>>
 }
 
 /**
@@ -162,6 +166,7 @@ const CHANNEL_MATH_CHANNELS: readonly k.ChannelMathChannels[] = ["rgb", "rgba", 
 const ALPHA_CHANNELS: readonly k.AlphaChannel[] = ["luma", "red", "alpha"]
 const SHAPES: readonly k.ShapeType[] = ["circle", "ellipse", "vesica"]
 const CHANNEL_SOURCES: readonly k.ChannelSource[] = ["r", "g", "b", "a", "0", "1"]
+const TILE_GRID_OUTPUTS = { image: "height", random: "random", uv: "uv" } as const satisfies Record<string, k.TileGridOutput>
 /** Every parameter of Magerie's Shape, so a board's call is taken whole; tex draws three of its shapes so far. */
 const SHAPE_DEFAULTS = {
     shape: "circle", size: 1.5, edgeBand: 0, rotation: 0, offsetX: 0, offsetY: 0, shapeWidth: 0.5, shapeHeight: 0.5,
@@ -596,6 +601,31 @@ export const SPECS = {
             return makeNode("sdfShape", "generator", [], v as unknown as Record<string, unknown>, w, h, false)
         },
     },
+    tileGrid: {
+        images: 0,
+        positional: ["columns"],
+        defaults: {
+            columns: 4, rows: 8, rowOffset: 0.5, offsetJitter: 0, lengthJitter: 0, sizeJitter: 0,
+            jointWidth: 0.06, bevel: 0.08, round: 0, heightJitter: 0, seed: 0, bitDepth: "8", ...SIZE,
+        },
+        make(p, _images, canvas) {
+            const [w, h] = sizeOf(p, canvas)
+            if (p.bitDepth !== "8") throw new Error(`[oj] tex tileGrid: bitDepth is ${JSON.stringify(p.bitDepth)}; tex draws "8" so far`)
+            // Magerie's resolveTileGridParams: counts whole, the shares clamped.
+            const share = (key: string, most = 1) => num(p[key], `tileGrid ${key}`, 0, most)
+            const values: k.TileGridValues = {
+                columns: Math.max(1, Math.round(num(p.columns, "tileGrid columns"))),
+                rows: Math.max(1, Math.round(num(p.rows, "tileGrid rows"))),
+                rowOffset: share("rowOffset"), offsetJitter: share("offsetJitter"), lengthJitter: share("lengthJitter"),
+                sizeJitter: share("sizeJitter"), jointWidth: share("jointWidth", 0.5), bevel: share("bevel", 0.5),
+                round: share("round"), heightJitter: share("heightJitter"),
+                seed: Math.max(0, Math.round(num(p.seed, "tileGrid seed"))),
+            }
+            // Every output tiles, whatever the canvas says: the grid repeats by construction.
+            return Object.fromEntries(Object.entries(TILE_GRID_OUTPUTS).map(([port, output]) =>
+                [port, makeNode("tileGrid", "generator", [], { values, output }, w, h, true)]))
+        },
+    },
     channelShuffle: {
         images: 1,
         kind: "swizzle",
@@ -699,6 +729,7 @@ export const KERNELS: Record<string, Kernel> = {
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),
     sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
+    tileGrid: (s, n) => k.tileGrid(s, n.params.values as k.TileGridValues, n.params.output as k.TileGridOutput),
     channelShuffle: (_s, n, i) => k.channelShuffle(i.value(0), n.params.out as k.ChannelSource[]),
     threshold: (s, n, i) => k.threshold(s, i.value(0), n.params.threshold as number, n.params.smoothness as number),
     over: (_s, _n, i) => k.over(i.value(0), i.value(1)),

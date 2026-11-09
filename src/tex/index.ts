@@ -16,7 +16,7 @@ import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
 import { uploadRGBA } from "./upload"
-import { KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type SpecName } from "./nodes"
+import { KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type Spec, type SpecName } from "./nodes"
 import type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
 
 declare const CS: any
@@ -142,6 +142,46 @@ export interface SdfShapeOptions extends SizeOptions {
     backgroundColor?: string
     /** The background's alpha 0, whatever its colour says. */
     transparentBackground?: boolean
+    // Magerie's parameters for the shapes tex does not draw yet, taken so a
+    // board's call compiles whole; the three shapes above ignore them.
+    capsuleLength?: number
+    capsuleThickness?: number
+    cornerRadius?: number
+    angle?: number
+    thickness?: number
+    eggHeight?: number
+    eggBottomRadius?: number
+    eggTopRadius?: number
+    eggBulge?: number
+    moonDistance?: number
+    moonOuterRadius?: number
+    moonInnerRadius?: number
+}
+
+export interface TileGridOptions extends SizeOptions {
+    /** Pieces across, 1 or more. Default 4. */
+    columns?: number
+    /** Rows down. Default 8. */
+    rows?: number
+    /** How far each row slides along from the one below, as a share of a piece: 0.5 is running bond. */
+    rowOffset?: number
+    /** The gap between pieces, as a share of a piece's short side, 0 to 0.5. Default 0.06. */
+    jointWidth?: number
+    /** How wide the edge slopes up to the face, as a share of a piece's short side, 0 to 0.5. Default 0.08. */
+    bevel?: number
+    /** Rounds the corners, 0 square to 1 fully round. */
+    round?: number
+    seed?: number
+    /** Slides each row by a random extra, up to half a piece either way at 1. */
+    offsetJitter?: number
+    /** Makes pieces in a row longer and shorter than each other. */
+    lengthJitter?: number
+    /** Shrinks some pieces inside their place, by up to half. */
+    sizeJitter?: number
+    /** Sinks some faces by up to this much. */
+    heightJitter?: number
+    /** "8" so far. */
+    bitDepth?: "8"
 }
 
 export interface ChannelShuffleOptions {
@@ -324,6 +364,19 @@ interface Generators {
     noise(...args: [type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions] | [seed?: number | NoiseOptions, opts?: NoiseOptions]): TexImage
     /** A circle, ellipse or vesica, antialiased, filled over a background: `sdfShape("ellipse", 0.8, { shapeHeight: 0.74 })`. */
     sdfShape(...args: [shape?: ShapeType | SdfShapeOptions, size?: number | SdfShapeOptions, opts?: SdfShapeOptions] | [size?: number | SdfShapeOptions, opts?: SdfShapeOptions]): TexImage
+    /**
+     * Bricks, tiles, slabs or planks, always seamless: `const { image, random, uv } = tileGrid(4, { rows: 8 })`.
+     * `image` is the height (0 in the joint, 1 on the face), `random` one grey
+     * per piece, `uv` each face's own 0 to 1 coordinates in red and green.
+     */
+    tileGrid(columns?: number | TileGridOptions, opts?: TileGridOptions): TileGrid
+}
+
+/** Tile Grid's three pictures. */
+export interface TileGrid {
+    readonly image: TexImage
+    readonly random: TexImage
+    readonly uv: TexImage
 }
 
 export type TexFunctions = ImageNodes & Generators
@@ -387,9 +440,11 @@ function isImage(v: unknown): v is TexImage {
     return v instanceof TexImage
 }
 
-function call(name: SpecName, canvas: Canvas, args: readonly unknown[]): TexImage {
+function call(name: SpecName, canvas: Canvas, args: readonly unknown[]): TexImage | Readonly<Record<string, TexImage>> {
     const { images, params, material } = resolve(name, args, isImage)
-    return new TexImage(SPECS[name].make(params, images, canvas, material))
+    const made = (SPECS[name] as Spec).make(params, images, canvas, material)
+    if ("op" in made) return new TexImage(made as Node)
+    return Object.freeze(Object.fromEntries(Object.entries(made).map(([port, n]) => [port, new TexImage(n)])))
 }
 
 function material(maps: MaterialMaps): Material {

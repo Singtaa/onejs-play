@@ -168,6 +168,30 @@ describe("tex generators and mixes", () => {
     })
 })
 
+describe("tex tile grid", () => {
+    it("returns Magerie's three pictures, which always tile, from one call", () => {
+        const { tileGrid } = tex.canvas(64)
+        const { image, random, uv } = tileGrid(4, { rows: 8, seed: 3, lengthJitter: 0.4 })
+        for (const out of [image, random, uv]) {
+            expect([out.width, out.height, out.tiles]).toEqual([64, 64, true])
+        }
+        expect(image.node.params.output).toBe("height")
+        expect(image.node.params.values).toEqual(random.node.params.values)
+        expect(image.node).not.toBe(random.node)
+        expect((image.node.params.values as { columns: number }).columns).toBe(4)
+        // Magerie's clamps: counts whole and at least 1, shares within their sliders.
+        expect(tileGrid({ columns: 2.6, rows: 0, jointWidth: 0.9 }).image.node.params.values).toMatchObject({ columns: 3, rows: 1, jointWidth: 0.5 })
+        expect(() => tileGrid({ bitDepth: "32" as "8" })).toThrow(/bitDepth is "32"/)
+    })
+
+    it("hashes each cell with unsigned integer maths on both web dialects", () => {
+        const { image } = tex.canvas(32).tileGrid()
+        const [p] = passes(image.gradientMap(["#000000", "#ffffff"]))
+        expect(p!.program.glsl).toMatch(/uint/)
+        expect(p!.program.wgsl).toMatch(/u32/)
+    })
+})
+
 describe("tex shapes and masks", () => {
     it("takes Magerie's Shape call whole, and draws its circle, ellipse and vesica", () => {
         const { sdfShape } = tex.canvas(32)
@@ -176,6 +200,7 @@ describe("tex shapes and masks", () => {
         expect(leaf.node.params.cos).toBeCloseTo(0)
         expect(leaf.tiles).toBe(false)
         expect(sdfShape("vesica", { vesicaWidth: 0.92, width: 96, height: 64 }).width).toBe(96)
+        // @ts-expect-error: a shape tex does not draw yet is refused by type and at run time.
         expect(() => sdfShape("heart")).toThrow(/circle, ellipse, vesica so far/)
     })
 
@@ -195,6 +220,7 @@ describe("tex shapes and masks", () => {
         // The 1 by 1 base is another size, so it is drawn first; the layers go over it in one pass.
         expect(passes(stack)).toHaveLength(2)
         expect(passes(base.composite(noise(2), noise(3)))).toHaveLength(1)
+        // @ts-expect-error: three layers at most.
         expect(() => base.composite(noise(2), noise(3), noise(4), noise(5))).toThrow(/takes nothing after its 1 to 4 images/)
     })
 
@@ -205,6 +231,7 @@ describe("tex shapes and masks", () => {
         expect(passes(d).map((p) => p.node.op).slice(1)).toEqual(["distanceSeed", ...Array(8).fill("distanceStep"), "distanceRemap"])
         expect(d.node.params).toEqual({ maxDistance: 140, wrap: false, half: true })
         expect(noise(1).distance({ edges: "wrap" }).tiles).toBe(true)
+        // @ts-expect-error: not a mode.
         expect(() => noise(1).distance("both")).toThrow(/"inside" or "outside"/)
     })
 })
