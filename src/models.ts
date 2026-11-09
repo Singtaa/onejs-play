@@ -137,8 +137,6 @@ export interface MeshModelOptions extends MeshData {
     tiling?: Tiling
     /** Up to four pictures painted by weights a vertex, in place of `texture`. Needs `uvs`. */
     splat?: MeshSplat
-    /** A grid of how much of the sun reaches the ground, for shadows past the sun's own (see MeshShade). Needs `uvs`. */
-    shade?: MeshShade
     /**
      * Cuts away every pixel whose alpha (the texture's, the colour's and the
      * vertex colours', multiplied) is below this, from 0 to 1: a leaf card is
@@ -179,41 +177,11 @@ export interface MeshDrawOptions {
  * every set that changes the number of vertices, if the model was made with
  * them; otherwise they may be left out and stay.
  */
-export type MeshUpdate = MeshVertices | {
-    /** A new shade alone, the vertices as they were: after the sun moves, or a chunk is rebaked. `null` takes it off. */
-    shade: MeshShade | null
-}
-
-/** New vertices for a mesh, and what goes with them. */
-type MeshVertices = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">> & {
+export type MeshUpdate = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">> & {
     /** A splat's new weights, one a layer a vertex: a path worn into the grass. */
     weights?: Numbers
     /** New sway, one a vertex, for a model made with `sway`. */
     sway?: Numbers
-    /** A new shade, or `null` to take it off. */
-    shade?: MeshShade | null
-}
-
-/**
- * A grid of shade across a mesh: how much of the sun each sample blocks, for
- * ground past where the sun's realtime shadows reach. It dims the sun alone,
- * as a realtime shadow does, and a spot in both darkens once.
- *
- *     scene.mesh({ positions, indices, uvs, shade: { size: 65, values } })
- *
- * It is read across the mesh's uvs, before any tiling, so uvs from 0 to 1
- * spread the grid over the mesh. The samples sit on the grid's corners, as
- * vertices do: a chunk whose edge row equals its neighbour's shows no seam.
- * A 65 by 65 grid over a 64 m chunk is one sample a metre and 4 KB.
- */
-export interface MeshShade {
-    /** Samples along each side, or u and v apart. 2 to 1024. */
-    size: number | readonly [u: number, v: number]
-    /**
-     * Row by row along u: 0 is full sun and 1 full shade, or 0 to 255 in a
-     * Uint8Array, which crosses as it is.
-     */
-    values: Uint8Array | Numbers
 }
 
 /** A model made from arrays: spawned, scattered and made a collider like a loaded one. */
@@ -434,9 +402,6 @@ export interface SunOptions {
 /**
  * How far and how sharp the sun's shadows are. Each one left out is what the
  * game's host ships: 50 m, 2 cascades, "high" and 2048 on play.onejs.com.
- *
- * Past `distance` the realtime shadows fade out; a mesh's `shade` carries
- * them on across the ground beyond.
  */
 export interface SunShadows {
     /** Metres from the camera that realtime shadows reach, fading out over the last stretch. */
@@ -832,25 +797,6 @@ function sunShadowsOf(shadows: boolean | SunShadows | undefined, b: any): [numbe
     return out
 }
 
-/** A mesh's shade as SetMeshShade takes it: u and v samples, and a byte a sample, 255 full shade. */
-function shadeOf(shade: MeshShade, what: string): [number, number, Uint8Array] {
-    if (shade === null || typeof shade !== "object" || Array.isArray(shade)) throw new Error(`[oj] ${what} is { size, values }: samples a side, and how much of the sun each blocks`)
-    const size = shade.size
-    const [u, v] = typeof size === "number" ? [size, size] : Array.isArray(size) && size.length === 2 ? [size[0], size[1]] : [NaN, NaN]
-    if (![u, v].every((n) => Number.isInteger(n) && n >= 2 && n <= 1024)) throw new Error(`[oj] ${what} size is ${JSON.stringify(size)}: 2 to 1024 samples a side, or [u, v]`)
-    const values = shade.values
-    const length = values?.length
-    if (length !== u * v) throw new Error(`[oj] ${what}: a ${u} by ${v} shade has ${u * v} values, and this has ${length}`)
-    if (values instanceof Uint8Array) return [u, v, values]
-    const bytes = new Uint8Array(length)
-    for (let i = 0; i < length; i++) {
-        const x = values[i]
-        if (!(x >= 0 && x <= 1)) throw new Error(`[oj] ${what} value ${i} is ${x}: 0 (full sun) to 1 (full shade)`)
-        bytes[i] = Math.round(x * 255)
-    }
-    return [u, v, bytes]
-}
-
 function picture(texture: unknown, what: string): void {
     if (texture === null || typeof texture !== "object") throw new Error(`[oj] ${what} is a ${texture === null ? "null" : typeof texture}; give a picture from loadTexture`)
 }
@@ -1234,12 +1180,6 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (look.splat !== null) throw new Error("[oj] scene.mesh: a splat has no alpha to cut out. Give cutout with a texture or vertex colours.")
         }
         if (o.twoSided !== undefined && typeof o.twoSided !== "boolean") throw new Error(`[oj] scene.mesh: twoSided is ${o.twoSided}, and is true or false`)
-        const shade = o.shade === undefined ? null : shadeOf(o.shade, "scene.mesh shade")
-        if (shade !== null) {
-            if (typeof b.SetMeshShade !== "function") throw new Error("[oj] scene.mesh shade needs a newer OneJS: this host's ModelBridge cannot shade a mesh (it came with runtime 1.7).")
-            if (o.uvs === undefined) throw new Error("[oj] scene.mesh shade: a shade is read at the mesh's uvs, and it has none. Give uvs, two numbers a vertex.")
-            if (draw.depthOnly === true) throw new Error("[oj] scene.mesh shade: a depthOnly mesh draws no colour, so it has nothing to show a shade on.")
-        }
         const sways = o.sway !== undefined
         for (const [given, method, what] of [[o.cutout !== undefined, "SetMeshCutout", "cutout"], [o.twoSided === true, "SetMeshTwoSided", "twoSided"], [sways, "SetMeshSway", "sway"]] as const) {
             if (given && typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.7).`)
@@ -1247,7 +1187,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         // The streams a model is made with are its streams for good.
         const normals = o.normals !== undefined, colors = o.colors !== undefined, uvs = o.uvs !== undefined
         let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array, colors: Float32Array | null, weights: Float32Array | null } | null = null
-        const write = (d: MeshVertices, weights: Numbers | undefined, sway: Numbers | undefined, what: string) => {
+        const write = (d: MeshUpdate, weights: Numbers | undefined, sway: Numbers | undefined, what: string) => {
             const positions = floats(d.positions, "positions", 3)
             if (positions === null) throw new Error(`[oj] ${what}: positions are required`)
             const indices = indexList(d.indices)
@@ -1293,21 +1233,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 const problem = String(apply())
                 if (problem !== "") throw new Error(`[oj] scene.mesh ${what}: ${problem}`)
             }
-            if (shade !== null) {
-                const problem = String(b.SetMeshShade(id, ...shade))
-                if (problem !== "") throw new Error(`[oj] scene.mesh shade: ${problem}`)
-            }
             write(o, o.splat?.weights, o.sway, "scene.mesh")
         } catch (e) {
             b.Unload(id)
             throw e
-        }
-        // A new shade from mesh.set, or none for null.
-        const setShade = (next: MeshShade | null) => {
-            if (typeof b.SetMeshShade !== "function") throw new Error("[oj] mesh.set shade needs a newer OneJS: this host's ModelBridge cannot shade a mesh (it came with runtime 1.7).")
-            if (next !== null && !uvs) throw new Error("[oj] mesh.set shade: a shade is read at the mesh's uvs, and this mesh was made without. Make it with uvs.")
-            const problem = String(next === null ? b.SetMeshShade(id, 0, 0, null) : b.SetMeshShade(id, ...shadeOf(next, "mesh.set shade")))
-            if (problem !== "") throw new Error(`[oj] mesh.set shade: ${problem}`)
         }
         const made = {
             collider: false,
@@ -1322,11 +1251,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             get height() { return Number(b.Height(id)) },
             set(d: MeshUpdate) {
                 if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
-                if (d.shade !== undefined) setShade(d.shade)
-                if (!("positions" in d) && d.shade !== undefined) return
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
-                const v = d as MeshVertices
-                write(v, v.weights, v.sway, "mesh.set")
+                write(d, d.weights, d.sway, "mesh.set")
                 // Its unwrap was of the old triangles; OneJS drew it unbaked as it took the new ones.
                 baker.forget(model)
             },
