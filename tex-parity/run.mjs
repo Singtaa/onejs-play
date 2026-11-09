@@ -69,7 +69,11 @@ function writeOjplay() {
     const cases = m.cases.map((c) => {
         const outputs = c.outputs ?? [c.output]
         const [w, h] = c.size
-        const inputs = Object.entries(c.inputs).map(([port, i]) => ({ port, tiles: i.tiles, w, h, hex: fs.readFileSync(path.join(dir, i.file)).toString("hex") }))
+        // An input is a file, or a node run on its own inputs first (Material under Material Light).
+        const input = ([port, i]) => i.node !== undefined
+            ? { port, node: i.node, params: i.params, inputs: Object.entries(i.inputs).map(input) }
+            : { port, tiles: i.tiles, w, h, hex: fs.readFileSync(path.join(dir, i.file)).toString("hex") }
+        const inputs = Object.entries(c.inputs).map(input)
         return {
             node: c.node, params: c.params, inputs,
             outputs: outputs.map((o) => ({ port: o.port, name: `ojplay/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, tolerance: c.tolerance ?? 1 })),
@@ -117,9 +121,10 @@ async function draw() {
         }
         const out = new Map()
         for (const { text } of browser.console) {
-            const m = /^\[tex-parity\] (case|error) (\S+) (.*)$/.exec(text)
+            const m = /^\[tex-parity\] (case|error|pending) (\S+) (.*)$/.exec(text)
             if (m === null) continue
             if (m[1] === "error") { out.set(m[2], { error: m[3] }); continue }
+            if (m[1] === "pending") { out.set(m[2], { pending: m[3] }); continue }
             const [size, tiles, hex] = m[3].split(" ")
             out.set(m[2], { size, tiles: tiles === "tiles", bytes: Buffer.from(hex, "hex") })
         }
@@ -145,9 +150,12 @@ const drawn = await draw()
 const names = [...drawn.keys()].filter((n) => n.startsWith(ONLY))
 let compared = 0, failed = 0
 const rows = []
+// Cases for nodes tex has not built yet: listed, never compared, never a pass.
+const pending = new Map()
 for (const [i, name] of names.entries()) {
     const got = drawn.get(name)
     if (got.error) { failed++; rows.push(`FAIL  ${name}: ${got.error}`); continue }
+    if (got.pending) { if (!name.endsWith("@unfused")) pending.set(got.pending, (pending.get(got.pending) ?? 0) + 1); continue }
     let against = name
     if (NEGATIVE) {
         // The next case whose golden is the same size, so only the pixels differ.
@@ -166,6 +174,7 @@ for (const [i, name] of names.entries()) {
     rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}${r.note ? ` (${r.note})` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
 }
 for (const r of rows) console.log(r)
+if (pending.size > 0) say(`not compared, nodes tex does not have yet: ${[...pending].map(([n, k]) => `${n} (${k})`).join(", ")}`)
 
 if (compared === 0) {
     say(failed ? `nothing was compared, ${failed} failed` : "nothing was compared")

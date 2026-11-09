@@ -1,5 +1,5 @@
 {
-  "magerieCommit": "dce81bcd4",
+  "magerieCommit": "ac7272c7e",
   "cases": [
     {
       "name": "normalMap/waves-s4-r0-wrap",
@@ -295,6 +295,1146 @@
       "output": {
         "port": "out-image",
         "file": "ambientOcclusion/disc-r8-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "autoLevels/disc-luminance",
+      "node": "autoLevels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "mode": "luminance"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "autoLevels/disc-luminance.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "autoLevels/waves-per-channel",
+      "node": "autoLevels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "mode": "perChannel"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "autoLevels/waves-per-channel.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelMath/waves-minus-disc-rgb",
+      "node": "channelMath",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "operation": "subtract",
+        "channels": "rgb"
+      },
+      "inputs": {
+        "in-a": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        },
+        "in-b": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelMath/waves-minus-disc-rgb.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelMath/waves-times-waves-rgb",
+      "node": "channelMath",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "operation": "multiply",
+        "channels": "rgb"
+      },
+      "inputs": {
+        "in-a": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        },
+        "in-b": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelMath/waves-times-waves-rgb.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "directionalWarp/waves-by-disc-a30-wrap",
+      "node": "directionalWarp",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "angle": 30,
+        "intensity": 6,
+        "bothWays": false,
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        },
+        "in-intensity": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "directionalWarp/waves-by-disc-a30-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "directionalWarp/disc-by-waves-both-clamp",
+      "node": "directionalWarp",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "angle": 120,
+        "intensity": 4,
+        "bothWays": true,
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        },
+        "in-intensity": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "directionalWarp/disc-by-waves-both-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "pixelate/waves-b4",
+      "node": "pixelate",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "blockSize": 4
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "pixelate/waves-b4.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curves/waves-sand-points",
+      "node": "curves",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "channel": "rgb",
+        "preset": "custom",
+        "points": [
+          [
+            0,
+            0.15
+          ],
+          [
+            0.2,
+            0.44
+          ],
+          [
+            0.5,
+            0.5
+          ],
+          [
+            0.8,
+            0.56
+          ],
+          [
+            1,
+            0.88
+          ]
+        ]
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curves/waves-sand-points.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curves/alpha-sand-points",
+      "node": "curves",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "channel": "rgb",
+        "preset": "custom",
+        "points": [
+          [
+            0,
+            0.15
+          ],
+          [
+            0.2,
+            0.44
+          ],
+          [
+            0.5,
+            0.5
+          ],
+          [
+            0.8,
+            0.56
+          ],
+          [
+            1,
+            0.88
+          ]
+        ]
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curves/alpha-sand-points.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curves/colour-s-curve",
+      "node": "curves",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "channel": "rgb",
+        "preset": "s-curve",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.25,
+            0.25
+          ],
+          [
+            0.5,
+            0.5
+          ],
+          [
+            0.75,
+            0.75
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curves/colour-s-curve.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curves/colour-red-sand-points",
+      "node": "curves",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "channel": "red",
+        "preset": "custom",
+        "points": [
+          [
+            0,
+            0.15
+          ],
+          [
+            0.2,
+            0.44
+          ],
+          [
+            0.5,
+            0.5
+          ],
+          [
+            0.8,
+            0.56
+          ],
+          [
+            1,
+            0.88
+          ]
+        ]
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curves/colour-red-sand-points.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curves/waves-sand-board-points",
+      "node": "curves",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "channel": "rgb",
+        "preset": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.5,
+            0.1
+          ],
+          [
+            0.8,
+            0.42
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curves/waves-sand-board-points.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "curves/colour-default",
+      "node": "curves",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "channel": "rgb",
+        "preset": "linear",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.25,
+            0.25
+          ],
+          [
+            0.5,
+            0.5
+          ],
+          [
+            0.75,
+            0.75
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "curves/colour-default.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "materialLight/board-a135-e60",
+      "node": "materialLight",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "lightAngle": 135,
+        "lightElevation": 60,
+        "lightStrength": 0.9,
+        "ambient": 0.38
+      },
+      "inputs": {
+        "in-material": {
+          "node": "material",
+          "params": {
+            "roughness": 0.5,
+            "metallic": 0,
+            "ao": 1,
+            "opacity": 1
+          },
+          "inputs": {
+            "in-albedo": {
+              "file": "inputs/colour-waves.bin",
+              "tiles": true
+            },
+            "in-normal": {
+              "file": "inputs/normal-waves.bin",
+              "tiles": true
+            },
+            "in-ao": {
+              "file": "inputs/height-disc.bin",
+              "tiles": false
+            },
+            "in-roughness": {
+              "file": "inputs/height-waves.bin",
+              "tiles": true
+            }
+          }
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "materialLight/board-a135-e60.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "materialLight/board-a270-e48",
+      "node": "materialLight",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "lightAngle": 270,
+        "lightElevation": 48,
+        "lightStrength": 0.95,
+        "ambient": 0.36
+      },
+      "inputs": {
+        "in-material": {
+          "node": "material",
+          "params": {
+            "roughness": 0.5,
+            "metallic": 0,
+            "ao": 1,
+            "opacity": 1
+          },
+          "inputs": {
+            "in-albedo": {
+              "file": "inputs/colour-waves.bin",
+              "tiles": true
+            },
+            "in-normal": {
+              "file": "inputs/normal-waves.bin",
+              "tiles": true
+            },
+            "in-ao": {
+              "file": "inputs/height-disc.bin",
+              "tiles": false
+            },
+            "in-roughness": {
+              "file": "inputs/height-waves.bin",
+              "tiles": true
+            }
+          }
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "materialLight/board-a270-e48.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "materialLight/board-default",
+      "node": "materialLight",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "lightAngle": 135,
+        "lightElevation": 45,
+        "lightStrength": 1,
+        "ambient": 0.15
+      },
+      "inputs": {
+        "in-material": {
+          "node": "material",
+          "params": {
+            "roughness": 0.5,
+            "metallic": 0,
+            "ao": 1,
+            "opacity": 1
+          },
+          "inputs": {
+            "in-albedo": {
+              "file": "inputs/colour-waves.bin",
+              "tiles": true
+            },
+            "in-normal": {
+              "file": "inputs/normal-waves.bin",
+              "tiles": true
+            },
+            "in-ao": {
+              "file": "inputs/height-disc.bin",
+              "tiles": false
+            },
+            "in-roughness": {
+              "file": "inputs/height-waves.bin",
+              "tiles": true
+            }
+          }
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "materialLight/board-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "autoLevels/colour-luminance-default",
+      "node": "autoLevels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "mode": "luminance"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "autoLevels/colour-luminance-default.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "hslAdjust/colour-sat10",
+      "node": "hslAdjust",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "hue": 0,
+        "saturation": 0.1,
+        "lightness": 0,
+        "targetHue": 0,
+        "targetRange": 180,
+        "targetFalloff": 0.5
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "hslAdjust/colour-sat10.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "hslAdjust/colour-sat25",
+      "node": "hslAdjust",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "hue": 0,
+        "saturation": 0.25,
+        "lightness": 0,
+        "targetHue": 0,
+        "targetRange": 180,
+        "targetFalloff": 0.5
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "hslAdjust/colour-sat25.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "hslAdjust/colour-sat0-default",
+      "node": "hslAdjust",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "hue": 0,
+        "saturation": 0,
+        "lightness": 0,
+        "targetHue": 0,
+        "targetRange": 180,
+        "targetFalloff": 0.5
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "hslAdjust/colour-sat0-default.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "gradient/radial-white-black",
+      "node": "gradient",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "type": "radial",
+        "colors": [
+          {
+            "position": 0,
+            "color": "#ffffff"
+          },
+          {
+            "position": 1,
+            "color": "#000000"
+          }
+        ],
+        "angle": 0,
+        "centerX": 0.5,
+        "centerY": 0.5,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "gradient/radial-white-black.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "gradient/linear-white-202020-a90",
+      "node": "gradient",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "type": "linear",
+        "colors": [
+          {
+            "position": 0,
+            "color": "#ffffff"
+          },
+          {
+            "position": 1,
+            "color": "#202020"
+          }
+        ],
+        "angle": 90,
+        "centerX": 0.5,
+        "centerY": 0.5,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "gradient/linear-white-202020-a90.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "gradient/linear-black-white-a0-default",
+      "node": "gradient",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "type": "linear",
+        "colors": [
+          {
+            "position": 0,
+            "color": "#000000"
+          },
+          {
+            "position": 1,
+            "color": "#ffffff"
+          }
+        ],
+        "angle": 0,
+        "centerX": 0.5,
+        "centerY": 0.5,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "gradient/linear-black-white-a0-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "gradient/linear-black-white-a90",
+      "node": "gradient",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "type": "linear",
+        "colors": [
+          {
+            "position": 0,
+            "color": "#000000"
+          },
+          {
+            "position": 1,
+            "color": "#ffffff"
+          }
+        ],
+        "angle": 90,
+        "centerX": 0.5,
+        "centerY": 0.5,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "gradient/linear-black-white-a90.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "gradient/radial-white-303030",
+      "node": "gradient",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "type": "radial",
+        "colors": [
+          {
+            "position": 0,
+            "color": "#ffffff"
+          },
+          {
+            "position": 1,
+            "color": "#303030"
+          }
+        ],
+        "angle": 0,
+        "centerX": 0.5,
+        "centerY": 0.5,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "gradient/radial-white-303030.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "mask/colour-by-disc-default",
+      "node": "mask",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "invert": false
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        },
+        "in-mask": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "mask/colour-by-disc-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelMath/colour-minus-waves-rgb",
+      "node": "channelMath",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "operation": "subtract",
+        "channels": "rgb"
+      },
+      "inputs": {
+        "in-a": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        },
+        "in-b": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelMath/colour-minus-waves-rgb.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelMath/colour-plus-disc-rgb-default",
+      "node": "channelMath",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "operation": "add",
+        "channels": "rgb"
+      },
+      "inputs": {
+        "in-a": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        },
+        "in-b": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelMath/colour-plus-disc-rgb-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "directionalWarp/waves-by-waves-a30-i20-wrap",
+      "node": "directionalWarp",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "angle": 30,
+        "intensity": 20,
+        "bothWays": false,
+        "edges": "wrap"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        },
+        "in-intensity": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "directionalWarp/waves-by-waves-a30-i20-wrap.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "directionalWarp/waves-by-waves-default",
+      "node": "directionalWarp",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "angle": 0,
+        "intensity": 20,
+        "bothWays": false,
+        "edges": "auto"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        },
+        "in-intensity": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "directionalWarp/waves-by-waves-default.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "solidColor/c8c8c8",
+      "node": "solidColor",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "color": "#c8c8c8ff",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "solidColor/c8c8c8.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "solidColor/1c200c",
+      "node": "solidColor",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "color": "#1c200cff",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "solidColor/1c200c.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "solidColor/default",
+      "node": "solidColor",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "color": "#808080",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "solidColor/default.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "alphaMerge/colour-by-disc-luma-default",
+      "node": "alphaMerge",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "alphaChannel": "luma"
+      },
+      "inputs": {
+        "in-rgb": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        },
+        "in-alpha": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "alphaMerge/colour-by-disc-luma-default.bin",
         "format": "rgba8",
         "tiles": false
       },

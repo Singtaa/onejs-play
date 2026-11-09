@@ -14,14 +14,26 @@ const unhex = (s: string) => Uint8Array.from(s.match(/../g)!, (b) => parseInt(b,
  * with its inputs in port order and every parameter, by Magerie's own name,
  * as an option. A multi-output node's record is read by port, less "out-".
  */
+/** A case for a node tex does not have yet: reported apart from a failure, so set C can land before its nodes. */
+class Pending extends Error {}
+
+type Input = { port: string, tiles?: boolean, w?: number, h?: number, hex?: string, node?: string, params?: unknown, inputs?: Input[] }
+
+/** One Magerie node on its inputs, each a file's bytes or a node run first. */
+function run(node: string, params: unknown, inputs: readonly Input[]): unknown {
+    const images = inputs.map((i) => i.node !== undefined
+        ? run(i.node, i.params, i.inputs ?? [])
+        : tex.pixels(i.w!, i.h!, unhex(i.hex!), { tile: i.tiles }))
+    const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[node]
+    if (typeof fn !== "function") throw new Pending(node)
+    return fn(...images, params)
+}
+
 function fromManifest(c: (typeof OJPLAY)[number]): Case[] {
     let result: unknown
     const made = () => {
         if (result === undefined) {
-            const images = c.inputs.map((i) => tex.pixels(i.w, i.h, unhex(i.hex), { tile: i.tiles }))
-            const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[c.node]
-            if (typeof fn !== "function") throw new Error(`tex has no ${c.node}`)
-            result = fn(...images, c.params)
+            result = run(c.node, c.params, c.inputs)
         }
         return result
     }
@@ -46,6 +58,7 @@ async function main() {
                 const bytes = await img.pixels({ fuse })
                 console.log(`[tex-parity] case ${name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${hex(bytes)}`)
             } catch (e) {
+                if (e instanceof Pending) { console.log(`[tex-parity] pending ${name} ${e.message}`); continue }
                 console.log(`[tex-parity] error ${name} ${e instanceof Error ? e.message : String(e)}`)
             }
         }
