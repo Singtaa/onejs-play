@@ -24,6 +24,7 @@ import type { Node } from "./graph"
 import { topological } from "./graph"
 import { ScopeRecorder, declareTexture, type Scope, type TexRead } from "./scope"
 import { quantise8, deliver } from "./kernels"
+import { uploadRGBA, destroyTexture } from "./upload"
 
 /** What a kernel is handed for its inputs. */
 export interface KernelInputs {
@@ -190,11 +191,22 @@ const COMPILE_FRAMES = 600
  */
 export async function draw<T>(plans: readonly PassPlan[], finish: (output: unknown) => T | Promise<T>): Promise<T> {
     const made = new Map<string, DrawnPass>()
+    // Tables are uploaded for this draw and destroyed with its passes.
+    const tables = new Map<string, unknown>()
+    const sourceTexture = (n: Node): unknown => {
+        if (n.texture !== undefined) return n.texture
+        let t = tables.get(n.id)
+        if (t === undefined) {
+            t = uploadRGBA(n.width, n.height, n.params.rgba as number[], n.tiles)
+            tables.set(n.id, t)
+        }
+        return t
+    }
     try {
         for (const p of plans) {
             const textures: Record<string, unknown> = {}
             for (const [name, n] of Object.entries(p.reads)) {
-                textures[name] = n.kind === "source" ? n.texture : made.get(n.id)!.pass
+                textures[name] = n.kind === "source" ? sourceTexture(n) : made.get(n.id)!.pass
             }
             made.set(p.node.id, createPass(p.program, {
                 uniforms: p.uniforms, textures, resolution: [p.node.width, p.node.height],
@@ -213,6 +225,7 @@ export async function draw<T>(plans: readonly PassPlan[], finish: (output: unkno
         return await finish(last.texture)
     } finally {
         for (const d of made.values()) d.dispose()
+        for (const t of tables.values()) destroyTexture(t)
     }
 }
 

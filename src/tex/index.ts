@@ -15,12 +15,13 @@
 import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
+import { uploadRGBA } from "./upload"
 import { KERNELS, SPECS, resolve, type Canvas, type SpecName } from "./nodes"
-import type { BlendMode, CurvatureMode, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
+import type { BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
 
 declare const CS: any
 
-export type { BlendMode, CurvatureMode, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode }
+export type { BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode }
 export type Edges = "auto" | "wrap" | "clamp"
 
 export interface SizeOptions {
@@ -68,6 +69,19 @@ export type GradientStop = string | { position: number, color: string }
 export interface GradientMapOptions {
     colors?: readonly GradientStop[]
     alphaFromInput?: "off"
+}
+
+/** Magerie's Curves presets; `"custom"` takes `points`. */
+export type CurvesPreset = "linear" | "increase-contrast" | "decrease-contrast" | "brighten" | "darken" | "s-curve" | "inverse" | "custom"
+
+/** A tone curve's control points, `[input, output]`, each 0 to 1. */
+export type CurvePoints = readonly (readonly [number, number])[]
+
+export interface CurvesOptions {
+    preset?: CurvesPreset
+    points?: CurvePoints
+    /** Which channels the curve reshapes. Default `"rgb"`. */
+    channel?: CurvesChannel
 }
 
 export interface TileOptions {
@@ -124,6 +138,8 @@ interface ImageNodes {
     invert(img: TexImage, channels?: InvertChannels | InvertOptions, opts?: InvertOptions): TexImage
     levels(img: TexImage, gamma?: number | LevelsOptions, opts?: LevelsOptions): TexImage
     gradientMap(img: TexImage, colors?: readonly GradientStop[] | GradientMapOptions, opts?: GradientMapOptions): TexImage
+    /** Reshapes the tones through a monotone curve through `points`, as Photoshop's Curves: `curves([[0, 0.15], [0.5, 0.5], [1, 0.88]])`, or a preset, `curves("s-curve")`. */
+    curves(img: TexImage, ...rest: [preset?: CurvesPreset | CurvesOptions, opts?: CurvesOptions] | [points?: CurvePoints | CurvesOptions, opts?: CurvesOptions]): TexImage
     blend(base: TexImage, top: TexImage, ...rest: [mode?: BlendMode | BlendOptions, opacity?: number | BlendOptions, opts?: BlendOptions] | [opacity?: number | BlendOptions, opts?: BlendOptions]): TexImage
     blur(img: TexImage, radius?: number | (EdgesOptions & { radius?: number }), opts?: EdgesOptions): TexImage
     warp(src: TexImage, displacement: TexImage, strength?: number | (EdgesOptions & { strength?: number }), opts?: EdgesOptions): TexImage
@@ -258,19 +274,7 @@ function canvas(width: number, options: CanvasOptions = {}): TexFunctions {
  */
 function pixels(width: number, height: number, rgba: Uint8Array | readonly number[], options: { tile?: boolean } = {}): TexImage {
     if (rgba.length !== width * height * 4) throw new Error(`[oj] tex.pixels: ${width} by ${height} is ${width * height * 4} bytes, and these are ${rgba.length}`)
-    const T = CS.UnityEngine
-    // Linear, so a byte reads as itself over 255 and not as sRGB decoded.
-    const texture = new T.Texture2D(width, height, T.TextureFormat.RGBA32, false, true)
-    texture.filterMode = T.FilterMode.Bilinear
-    texture.wrapMode = options.tile === true ? T.TextureWrapMode.Repeat : T.TextureWrapMode.Clamp
-    // Magerie's row 0 is the top, Unity's the bottom.
-    const flipped = new Uint8Array(rgba.length)
-    const row = width * 4
-    for (let y = 0; y < height; y++) {
-        for (let i = 0; i < row; i++) flipped[(height - 1 - y) * row + i] = rgba[y * row + i]!
-    }
-    texture.LoadRawTextureData(flipped)
-    texture.Apply(false, false)
+    const texture = uploadRGBA(width, height, rgba, options.tile === true)
     return new TexImage(makeNode("pixels", "source", [], {}, width, height, options.tile === true, texture))
 }
 

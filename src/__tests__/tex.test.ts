@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest"
 import { tex, TexImage } from "../tex"
 import { plan, materialised } from "../tex/engine"
 import { KERNELS, SPECS, parseStops } from "../tex/nodes"
+import { toneTable } from "../tex/kernels"
+import toneFixture from "./fixtures/tone-tables.json"
 
 /**
  * The parameter each Magerie op takes as its leading kind string, from its
@@ -72,6 +74,35 @@ describe("tex against Magerie's exporter", () => {
         for (const [name, spec] of Object.entries(SPECS) as [string, { kind?: string }][]) {
             expect([name, spec.kind]).toEqual([name, MAGERIE_KINDS[name]])
         }
+    })
+})
+
+describe("tex curves", () => {
+    it("builds Magerie's tone table to the byte", () => {
+        for (const [name, points] of Object.entries(toneFixture.points)) {
+            expect([name, Array.from(toneTable(points as [number, number][]))]).toEqual([name, toneFixture.tables[name as keyof typeof toneFixture.tables]])
+        }
+    })
+
+    it("takes points as a custom curve, a preset by name, and refuses a malformed curve", () => {
+        const { noise } = tex.canvas(64)
+        const a = noise("perlin", 3)
+        const sand = a.curves([[0, 0.15], [0.2, 0.44], [0.5, 0.5], [0.8, 0.56], [1, 0.88]])
+        expect(sand.node.inputs[1]!.params.rgba).toEqual(toneFixture.tables.sand.flatMap((v) => [v, v, v, 255]))
+        // Magerie's export spelling, a preset with its own points beside it, is the same node.
+        expect(a.curves("s-curve").node.id).toBe(a.curves("s-curve", { points: [[0, 0], [1, 1]] }).node.id)
+        expect(a.curves("custom", { points: toneFixture.points.s as [number, number][] }).node.id).toBe(a.curves("s-curve").node.id)
+        expect(a.curves({ channel: "red" }).node.params).toEqual({ channel: "red" })
+        expect(() => a.curves([[0, 0]])).toThrow(/two or more \[x, y\] pairs/)
+        expect(() => a.curves("sharpen" as never)).toThrow(/curves preset is "sharpen"/)
+    })
+
+    it("uploads one table for equal curves, and fuses the lookup with its input", () => {
+        const { noise, blend } = tex.canvas(64)
+        const a = noise("perlin", 3), b = noise("voronoi", 4)
+        const both = blend(a.curves("darken"), b.curves("darken"), "multiply")
+        expect(new Set([both.node.inputs[0]!.inputs[1]!.id, both.node.inputs[1]!.inputs[1]!.id]).size).toBe(1)
+        expect(passes(both)).toHaveLength(1)
     })
 })
 

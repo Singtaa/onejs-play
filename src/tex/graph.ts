@@ -15,7 +15,11 @@ export type NodeKind =
     | "pointwise"
     /** Reads its inputs anywhere: each input is drawn into a texture first. */
     | "area"
-    /** A texture handed in from outside the graph. */
+    /**
+     * Pixels the planner never draws: a texture handed in from outside the
+     * graph (`tex.pixels`), or a table a node computes on the CPU, such as
+     * Curves' lookup table, uploaded when the graph is drawn.
+     */
     | "source"
 
 export interface Node {
@@ -30,7 +34,7 @@ export interface Node {
     readonly tiles: boolean
     /** The node's identity: op, parameters and inputs. Equal ids draw equal pixels. */
     readonly id: string
-    /** A source node's texture; undefined everywhere else. */
+    /** A `tex.pixels` source's texture. A table has none: it is uploaded from `params.rgba` when drawn. */
     readonly texture?: unknown
 }
 

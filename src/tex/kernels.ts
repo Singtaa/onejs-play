@@ -358,6 +358,78 @@ export function gradientMap(s: Scope, c: Vec4, stops: readonly Stop[]): Vec4 {
     return sl.vec4(out.mul(c.w), c.w)
 }
 
+// curves (spec 5.3; magerie-one js/src/nodes/filters/curves/toneCurve.ts)
+
+/**
+ * Magerie's tone curve as its 256-entry table: a Fritsch-Carlson monotone
+ * cubic through `points`, sampled at i / 255 and rounded to bytes. Computed
+ * here in doubles exactly as Magerie computes it before uploading it, so the
+ * table is Magerie's to the byte and only the lookup runs on the GPU.
+ */
+export function toneTable(points: readonly (readonly [number, number])[]): Uint8Array {
+    const sorted = points.slice().sort((a, b) => a[0] - b[0])
+    const n = sorted.length
+    const x = sorted.map((p) => p[0]), y = sorted.map((p) => p[1])
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+    let sample: (t: number) => number
+    if (n === 0) sample = clamp01
+    else if (n === 1) sample = () => clamp01(y[0]!)
+    else {
+        const delta = new Float64Array(n - 1)
+        for (let i = 0; i < n - 1; i++) {
+            const dx = x[i + 1]! - x[i]!
+            delta[i] = dx > 1e-12 ? (y[i + 1]! - y[i]!) / dx : 0
+        }
+        // Tangents: the mean of the secants either side, the end secants at the ends.
+        const m = new Float64Array(n)
+        m[0] = delta[0]!
+        m[n - 1] = delta[n - 2]!
+        for (let i = 1; i < n - 1; i++) m[i] = (delta[i - 1]! + delta[i]!) / 2
+        // Fritsch-Carlson: a flat secant flattens both ends, and steep tangents are scaled back so no segment overshoots.
+        for (let i = 0; i < n - 1; i++) {
+            if (Math.abs(delta[i]!) < 1e-12) { m[i] = 0; m[i + 1] = 0; continue }
+            const a = m[i]! / delta[i]!, b = m[i + 1]! / delta[i]!
+            const sum = a * a + b * b
+            if (sum > 9) {
+                const tau = 3 / Math.sqrt(sum)
+                m[i] = tau * a * delta[i]!
+                m[i + 1] = tau * b * delta[i]!
+            }
+        }
+        sample = (t) => {
+            if (t <= x[0]!) return clamp01(y[0]!)
+            if (t >= x[n - 1]!) return clamp01(y[n - 1]!)
+            let j = 0
+            for (let i = 0; i < n - 1; i++) if (t >= x[i]! && t < x[i + 1]!) { j = i; break }
+            const h = x[j + 1]! - x[j]!
+            const s = h > 1e-12 ? (t - x[j]!) / h : 0
+            const s2 = s * s, s3 = s2 * s
+            return clamp01((2 * s3 - 3 * s2 + 1) * y[j]! + (s3 - 2 * s2 + s) * h * m[j]! + (-2 * s3 + 3 * s2) * y[j + 1]! + (s3 - s2) * h * m[j + 1]!)
+        }
+    }
+    const table = new Uint8Array(256)
+    for (let i = 0; i < 256; i++) table[i] = Math.max(0, Math.min(255, Math.round(sample(i / 255) * 255)))
+    return table
+}
+
+export type CurvesChannel = "rgb" | "red" | "green" | "blue"
+
+/**
+ * Magerie's Curves: each chosen channel's PREMULTIPLIED value looked up in
+ * the table, alpha untouched. Magerie truncates `v * 255`; a tex value is
+ * always a stored byte over 255, so rounding finds the same entry without
+ * trusting a GPU's `k / 255 * 255` to land on k.
+ */
+export function curves(c: Vec4, table: TexRead, channel: CurvesChannel): Vec4 {
+    const look = (v: Float): Float => table.fetch(sl.vec2(v.mul(255).add(0.5).floor().clamp(0, 255), 0)).x
+    return sl.vec4(
+        channel === "rgb" || channel === "red" ? look(c.x) : c.x,
+        channel === "rgb" || channel === "green" ? look(c.y) : c.y,
+        channel === "rgb" || channel === "blue" ? look(c.z) : c.z,
+        c.w,
+    )
+}
+
 /** Lit colour in rgb, the height's first channel as alpha, straight: the Image Exporter's Alpha pack. */
 export function alphaPack(color: Vec4, height: Vec4): Vec4 {
     return sl.vec4(unpremultiply(color), height.x)

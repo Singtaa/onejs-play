@@ -99,8 +99,32 @@ export const BLEND_MODES: readonly BlendMode[] = [
     "exclusion", "subtract", "hue", "saturation", "color", "luminosity",
 ]
 const CHANNELS: readonly InvertChannels[] = ["rgb", "r", "g", "b"]
+const CURVES_CHANNELS: readonly k.CurvesChannel[] = ["rgb", "red", "green", "blue"]
 
-/** A colour as `#rgb` or `#rrggbb`, to gamma 0..1. */
+/** Magerie's Curves presets (curves/definition.ts), whose points win over a custom curve's. */
+const CURVES_PRESETS: Readonly<Record<string, readonly (readonly [number, number])[]>> = {
+    "linear": [[0, 0], [1, 1]],
+    "increase-contrast": [[0, 0], [0.25, 0.15], [0.5, 0.5], [0.75, 0.85], [1, 1]],
+    "decrease-contrast": [[0, 0], [0.25, 0.35], [0.5, 0.5], [0.75, 0.65], [1, 1]],
+    "brighten": [[0, 0], [0.25, 0.35], [0.5, 0.6], [0.75, 0.8], [1, 1]],
+    "darken": [[0, 0], [0.25, 0.15], [0.5, 0.4], [0.75, 0.65], [1, 1]],
+    "s-curve": [[0, 0], [0.25, 0.1], [0.5, 0.5], [0.75, 0.9], [1, 1]],
+    "inverse": [[0, 1], [1, 0]],
+}
+
+/** A curve's points: `[x, y]` pairs, each 0 to 1. Magerie reads anything else as the identity; tex refuses it. */
+function tonePoints(points: unknown): (readonly [number, number])[] {
+    const ok = Array.isArray(points) && points.length >= 2
+        && points.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1))
+    if (!ok) throw new Error(`[oj] tex curves: points are ${JSON.stringify(points)}; write two or more [x, y] pairs from 0 to 1, such as [[0, 0.15], [0.5, 0.5], [1, 0.88]]`)
+    return points as [number, number][]
+}
+
+/** A table a node computes on the CPU, as a source the graph uploads when it draws. Equal tables are one node. */
+function table(rgba: readonly number[], width: number, height: number): Node {
+    return makeNode("table", "source", [], { rgba }, width, height, false)
+}
+
 /**
  * A hex colour as Magerie's parseHex reads one: 3, 4, 6 or 8 digits, the `#`
  * optional. Its alpha, when it has one, is returned beside the colour for the
@@ -228,6 +252,21 @@ export const SPECS = {
             return pointwise("gradientMap", { stops: parseStops(p.colors) }, [a!])
         },
     },
+    curves: {
+        images: 1,
+        kind: "preset",
+        positional: ["points"],
+        defaults: { preset: null, points: null, channel: "rgb" },
+        make(p, [a]) {
+            // Points alone are a custom curve. A named preset uses its own
+            // points whatever else is given, as Magerie's exports carry both.
+            const preset = p.preset === null ? (p.points === null ? "linear" : "custom") : oneOf(p.preset as string, [...Object.keys(CURVES_PRESETS), "custom"], "curves preset")
+            const points = preset === "custom" ? tonePoints(p.points) : CURVES_PRESETS[preset]!
+            const rgba = Array.from(k.toneTable(points), (v) => [v, v, v, 255]).flat()
+            const lut = table(rgba, 256, 1)
+            return makeNode("curves", "pointwise", [a!, lut], { channel: oneOf(p.channel, CURVES_CHANNELS, "curves channel") }, a!.width, a!.height, a!.tiles)
+        },
+    },
     blend: {
         images: 2,
         kind: "mode",
@@ -338,6 +377,7 @@ export const KERNELS: Record<string, Kernel> = {
     invert: (_s, n, i) => k.invert(i.value(0), n.params.channels as InvertChannels),
     levels: (s, n, i) => k.levels(s, i.value(0), n.params as unknown as k.LevelsValues),
     gradientMap: (s, n, i) => k.gradientMap(s, i.value(0), n.params.stops as Stop[]),
+    curves: (_s, n, i) => k.curves(i.value(0), i.texture(1, false), n.params.channel as k.CurvesChannel),
     blend: (s, n, i) => k.blend(s, i.value(0), i.value(1), n.params.mode as BlendMode, n.params.opacity as number),
     blurX: (s, n, i) => gaussianAxis(s, n, i, "x"),
     blurY: (s, n, i) => gaussianAxis(s, n, i, "y"),
