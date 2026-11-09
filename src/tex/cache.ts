@@ -43,8 +43,7 @@ export interface CacheBackend {
 /** The key a node's picture is kept under, or none when the graph reads `tex.pixels`. */
 export function cacheKey(node: Node, kernels: number = TEX_KERNELS): string | undefined {
     if (topological(node).some((n) => n.texture !== undefined)) return undefined
-    void kernels
-    return node.id
+    return `${kernels}:${node.id}`
 }
 
 const INDEX = "index"
