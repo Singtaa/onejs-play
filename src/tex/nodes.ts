@@ -628,6 +628,13 @@ export const SPECS = {
                 [port, makeNode("tileGrid", "generator", [], float ? { values, output, float } : { values, output }, w, h, true)]))
         },
     },
+    pixelate: {
+        images: 1,
+        positional: ["blockSize"],
+        defaults: { blockSize: 8 },
+        // Magerie's output does not say it tiles: a block can straddle the wrap.
+        make(p, [a]) { return area("pixelate", { blockSize: num(p.blockSize, "pixelate blockSize", 1, 4096) }, [a!], false) },
+    },
     channelShuffle: {
         images: 1,
         kind: "swizzle",
@@ -731,6 +738,7 @@ export const KERNELS: Record<string, Kernel> = {
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),
     sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
+    pixelate: (s, n, i) => k.pixelate(s, i.texture(0, false), n.params.blockSize as number),
     tileGrid: (s, n) => k.tileGrid(s, n.params.values as k.TileGridValues, n.params.output as k.TileGridOutput),
     channelShuffle: (_s, n, i) => k.channelShuffle(i.value(0), n.params.out as k.ChannelSource[]),
     threshold: (s, n, i) => k.threshold(s, i.value(0), n.params.threshold as number, n.params.smoothness as number),

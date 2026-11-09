@@ -338,6 +338,8 @@ interface ImageNodes {
     directionalWarp(src: TexImage, map: TexImage, angle?: number | DirectionalWarpOptions, intensity?: number | DirectionalWarpOptions, opts?: DirectionalWarpOptions): TexImage
     /** This picture's colour with `height`'s grey as alpha, straight: what a splat layer reads. */
     alpha(color: TexImage, height: TexImage): TexImage
+    /** Big square pixels, each block the input read once at its centre: `pixelate(img, 8)`. */
+    pixelate(img: TexImage, blockSize?: number | { blockSize?: number }): TexImage
     /** Rearranges the stored channels: `channelShuffle(leaf, "aaa1")` is its alpha as an opaque grey. */
     channelShuffle(img: TexImage, swizzle?: string | ChannelShuffleOptions, opts?: ChannelShuffleOptions): TexImage
     /** White where the luma reaches `threshold`, black below, the alpha kept. */

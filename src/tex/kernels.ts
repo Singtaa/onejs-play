@@ -1191,3 +1191,14 @@ export function tileGrid(s: Scope, v: TileGridValues, output: TileGridOutput): V
     const h: S = profile.mul(sl.float(1).sub(s.f(v.heightJitter).mul(cellRandom(seed, 4, ur, uc))))
     return sl.vec4(h, h, h, 1)
 }
+
+/**
+ * Magerie's Pixelate (filters/pixelate): each block reads the input once,
+ * bilinear and clamped, at the block's centre, held inside the picture.
+ */
+export function pixelate(s: Scope, t: TexRead, blockSize: number): Vec4 {
+    const b = s.f(blockSize)
+    const centre: S = s.pixel.div(b).floor().mul(b).add(b.mul(0.5))
+    const held: S = min(centre, s.size.sub(0.5))
+    return t.sample(held.div(s.size))
+}

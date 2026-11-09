@@ -168,6 +168,15 @@ describe("tex generators and mixes", () => {
     })
 })
 
+describe("tex pixelate", () => {
+    it("reads the input once a block, never says it tiles, and takes its block size first", () => {
+        const img = tex.canvas(32, { tile: true }).noise(3).pixelate(4)
+        expect(img.node.params).toEqual({ blockSize: 4 })
+        expect(img.tiles).toBe(false)
+        expect(passes(img)).toHaveLength(2)
+    })
+})
+
 describe("tex tile grid", () => {
     it("returns Magerie's three pictures, which always tile, from one call", () => {
         const { tileGrid } = tex.canvas(64)
