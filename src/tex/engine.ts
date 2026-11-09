@@ -68,6 +68,11 @@ export function materialised(root: Node, fuse = true): Set<string> {
     return out
 }
 
+/** A node's value as its texture holds it: 8 bits, or 16 for the few Magerie stores in half floats (Alpha Merge). */
+function stored(n: Node, v: Vec4): Vec4 {
+    return n.params.half === true ? v : quantise8(v)
+}
+
 /** Records one pass: `node`'s program, reading the materialised nodes it reaches. */
 function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Record<string, Kernel>>, final: boolean): PassPlan {
     let uniforms: Record<string, number | number[]> = {}
@@ -95,13 +100,13 @@ function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Re
                     ? t.fetch(s.pixel)
                     // Another size is stretched corner to corner, bilinear (spec 1.3).
                     : t.sample(s.pixel.add(0.5).div(s.size))
-                return quantise8(held)
+                return stored(n, held)
             }
             let v = values.get(n.id)
             if (v === undefined) {
                 const kernel = kernels[n.op]
                 if (kernel === undefined) throw new Error(`[oj] tex: no kernel for ${n.op}`)
-                v = quantise8(kernel(s, n, {
+                v = stored(n, kernel(s, n, {
                     value: (i) => valueOf(n.inputs[i]!, n),
                     texture: (i, wrap) => textureOf(n.inputs[i]!, wrap),
                 }))

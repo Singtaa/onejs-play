@@ -84,6 +84,52 @@ export interface CurvesOptions {
     channel?: CurvesChannel
 }
 
+export type { GradientType, ChannelMathOp, ChannelMathChannels, AlphaChannel } from "./kernels"
+import type { GradientType, ChannelMathOp, ChannelMathChannels, AlphaChannel } from "./kernels"
+
+export interface GradientOptions extends SizeOptions {
+    type?: GradientType
+    /** Up to 16 stops; a stop's alpha is used. */
+    colors?: readonly GradientStop[]
+    /** Degrees: linear 0 runs left to right, 90 top to bottom; angular turns its seam. */
+    angle?: number
+    /** Radial and angular centre, 0 to 1 with y down. */
+    centerX?: number
+    centerY?: number
+}
+
+export interface SolidColorOptions extends SizeOptions {
+    /** `#rrggbb` or `#rrggbbaa`. */
+    color?: string
+}
+
+export interface HslAdjustOptions {
+    /** Degrees, -180 to 180. */
+    hue?: number
+    /** Added, -1 to 1. */
+    saturation?: number
+    /** Added, -1 to 1. */
+    lightness?: number
+    /** The hue band the change is limited to, degrees: its centre, half width (180 is every hue) and soft edge. */
+    targetHue?: number
+    targetRange?: number
+    targetFalloff?: number
+}
+
+export interface MaskOptions {
+    invert?: boolean
+}
+
+export interface ChannelMathOptions {
+    operation?: ChannelMathOp
+    /** Which channels take the result; the rest keep the first picture's. */
+    channels?: ChannelMathChannels
+}
+
+export interface AlphaMergeOptions {
+    alphaChannel?: AlphaChannel
+}
+
 export interface AutoLevelsOptions {
     /** `"luminance"` stretches every channel by the luma's range; `"perChannel"` each by its own. */
     mode?: AutoLevelsMode
@@ -190,6 +236,14 @@ interface ImageNodes {
     curvature(height: TexImage, ...rest: [mode?: CurvatureMode | CurvatureOptions, intensity?: number | CurvatureOptions, opts?: CurvatureOptions] | [intensity?: number | CurvatureOptions, opts?: CurvatureOptions]): TexImage
     /** Horizon-based ambient occlusion of the height, `radius` pixels out. */
     ambientOcclusion(height: TexImage, radius?: number | AmbientOcclusionOptions, opts?: AmbientOcclusionOptions): TexImage
+    /** Turns the hue, and adds to saturation and lightness: `hslAdjust(0, 0.25)`. */
+    hslAdjust(img: TexImage, hue?: number | HslAdjustOptions, saturation?: number | HslAdjustOptions, lightness?: number | HslAdjustOptions, opts?: HslAdjustOptions): TexImage
+    /** This picture where `mask` is light: scaled by the mask's luma times its alpha. */
+    mask(img: TexImage, mask: TexImage, opts?: MaskOptions): TexImage
+    /** Adds, subtracts, multiplies (and more) two pictures channel by channel, clamped. */
+    channelMath(a: TexImage, b: TexImage, ...rest: [operation?: ChannelMathOp | ChannelMathOptions, opts?: ChannelMathOptions] | [opts?: ChannelMathOptions]): TexImage
+    /** This picture's colour with a new alpha: `alpha`'s luma, red or alpha. */
+    alphaMerge(rgb: TexImage, alpha: TexImage, ...rest: [alphaChannel?: AlphaChannel | AlphaMergeOptions, opts?: AlphaMergeOptions] | [opts?: AlphaMergeOptions]): TexImage
     /** Stretches the tones to fill 0 to 1, from the darkest and lightest pixels it holds. */
     autoLevels(img: TexImage, mode?: AutoLevelsMode | AutoLevelsOptions, opts?: AutoLevelsOptions): TexImage
     /** Pushes `src` along `angle` by `map`'s red times `intensity` pixels. */
@@ -203,6 +257,10 @@ type ImageMethods = { [K in keyof ImageNodes]: Tail<ImageNodes[K]> }
 
 /** The generators, which a canvas sizes. */
 interface Generators {
+    /** A linear, radial or angular ramp through `colors`, dithered as Magerie's. */
+    gradient(...args: [type?: GradientType | GradientOptions, colors?: readonly GradientStop[] | GradientOptions, opts?: GradientOptions] | [colors?: readonly GradientStop[] | GradientOptions, opts?: GradientOptions]): TexImage
+    /** One colour everywhere. */
+    solidColor(...args: [color?: string | SolidColorOptions, opts?: SolidColorOptions] | [opts?: SolidColorOptions]): TexImage
     /** A bundle of maps for `materialLight`, as Magerie's Material node. */
     material(maps: MaterialMaps): Material
     /** Lights a material from `lightAngle` and renders it to a picture the albedo's size. */

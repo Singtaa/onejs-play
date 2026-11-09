@@ -154,6 +154,22 @@ export const BLEND_MODES: readonly BlendMode[] = [
     "exclusion", "subtract", "hue", "saturation", "color", "luminosity",
 ]
 const CHANNELS: readonly InvertChannels[] = ["rgb", "r", "g", "b"]
+const GRADIENT_TYPES: readonly k.GradientType[] = ["linear", "radial", "angular"]
+const CHANNEL_MATH_OPS: readonly k.ChannelMathOp[] = ["add", "subtract", "multiply", "screen", "overlay", "difference", "divide"]
+const CHANNEL_MATH_CHANNELS: readonly k.ChannelMathChannels[] = ["rgb", "rgba", "r", "g", "b", "a"]
+const ALPHA_CHANNELS: readonly k.AlphaChannel[] = ["luma", "red", "alpha"]
+
+/**
+ * Two pictures mixed pixel by pixel at Magerie's mix size (spec 1.3): the
+ * first that is not 1 by 1 decides, the other is stretched to it; it tiles
+ * when every input larger than 1 by 1 does.
+ */
+function mixed(op: string, p: Record<string, unknown>, inputs: readonly Node[]): Node {
+    const size = inputs.find((i) => i.width > 1 || i.height > 1) ?? inputs[0]!
+    const big = inputs.filter((i) => i.width > 1 || i.height > 1)
+    return makeNode(op, "pointwise", inputs, p, size.width, size.height, big.length > 0 && big.every((i) => i.tiles))
+}
+
 const AUTO_LEVELS_MODES: readonly k.AutoLevelsMode[] = ["luminance", "perChannel"]
 
 /** Auto Levels' reduction: 4 by 4 blocks to one texel, keyed on the first step. */
@@ -207,31 +223,26 @@ export function hexRGBA(text: string, what: string): [number, number, number, nu
     return [0, 2, 4, 6].map((i) => (i < h.length ? parseInt(h.slice(i, i + 2), 16) : 255) / 255) as [number, number, number, number]
 }
 
-function hex(text: string, what: string): [number, number, number] {
-    const [r, g, b] = hexRGBA(text, what)
-    return [r, g, b]
-}
-
 /**
  * Gradient stops: CSS strings, `"#2f6e26 35%"`, where a stop without a
  * position takes one spaced evenly between its neighbours as CSS does; or
  * Magerie's `{ position, color }`.
  */
-export function parseStops(stops: unknown, what = "gradientMap"): Stop[] {
-    if (!Array.isArray(stops) || stops.length < 1 || stops.length > 32) {
-        throw new Error(`[oj] tex ${what}: colors are 1 to 32 stops, "#rrggbb" or "#rrggbb 40%"`)
+export function parseStops(stops: unknown, what = "gradientMap", most = 32): Stop[] {
+    if (!Array.isArray(stops) || stops.length < 1 || stops.length > most) {
+        throw new Error(`[oj] tex ${what}: colors are 1 to ${most} stops, "#rrggbb" or "#rrggbb 40%"`)
     }
-    const parsed = stops.map((s, i): { at: number | null, color: [number, number, number] } => {
+    const parsed = stops.map((s, i): { at: number | null, color: [number, number, number, number] } => {
         if (typeof s === "string") {
             const [c, pos, extra] = s.trim().split(/\s+/)
             if (extra !== undefined || c === undefined) throw new Error(`[oj] tex ${what}: stop ${i} is ${JSON.stringify(s)}; a stop is a colour and an optional position, "#2f6e26 35%"`)
-            if (pos === undefined) return { at: null, color: hex(c, what) }
+            if (pos === undefined) return { at: null, color: hexRGBA(c, what) }
             const m = /^(-?[0-9.]+)%$/.exec(pos)
             if (m === null) throw new Error(`[oj] tex ${what}: stop ${i}'s position is ${JSON.stringify(pos)}, a percentage such as 35%`)
-            return { at: Number(m[1]) / 100, color: hex(c, what) }
+            return { at: Number(m[1]) / 100, color: hexRGBA(c, what) }
         }
         if (s !== null && typeof s === "object" && typeof s.color === "string") {
-            return { at: num(s.position, `${what} stop ${i} position`, 0, 1), color: hex(s.color, what) }
+            return { at: num(s.position, `${what} stop ${i} position`, 0, 1), color: hexRGBA(s.color, what) }
         }
         throw new Error(`[oj] tex ${what}: stop ${i} is ${JSON.stringify(s)}, a string such as "#2f6e26 35%"`)
     })
@@ -250,7 +261,7 @@ export function parseStops(stops: unknown, what = "gradientMap"): Stop[] {
     return parsed
         .map((s, i) => ({ s, i }))
         .sort((a, b) => a.s.at! - b.s.at! || a.i - b.i)
-        .map(({ s }) => ({ at: s.at!, color: s.color }))
+        .map(({ s }) => ({ at: s.at!, color: [s.color[0], s.color[1], s.color[2]] as [number, number, number], alpha: s.color[3] }))
 }
 
 export const SPECS = {
@@ -332,6 +343,71 @@ export const SPECS = {
             const rgba = Array.from(k.toneTable(points), (v) => [v, v, v, 255]).flat()
             const lut = table(rgba, 256, 1)
             return makeNode("curves", "pointwise", [a!, lut], { channel: oneOf(p.channel, CURVES_CHANNELS, "curves channel") }, a!.width, a!.height, a!.tiles)
+        },
+    },
+    gradient: {
+        images: 0,
+        kind: "type",
+        positional: ["colors"],
+        defaults: { type: "linear", colors: ["#000000", "#ffffff"], angle: 0, centerX: 0.5, centerY: 0.5, ...SIZE },
+        make(p, _images, canvas) {
+            const [w, h] = sizeOf(p, canvas)
+            return makeNode("gradient", "generator", [], {
+                type: oneOf(p.type, GRADIENT_TYPES, "gradient type"), stops: parseStops(p.colors, "gradient", 16),
+                angle: num(p.angle, "gradient angle"), center: [num(p.centerX, "gradient centerX"), num(p.centerY, "gradient centerY")],
+            }, w, h, false)
+        },
+    },
+    solidColor: {
+        images: 0,
+        kind: "color",
+        positional: [],
+        defaults: { color: "#808080", ...SIZE },
+        make(p, _images, canvas) {
+            const [w, h] = sizeOf(p, canvas)
+            const [r, g, b, a] = hexRGBA(String(p.color), "solidColor")
+            // Two equal stops: flat, so never dithered, and it tiles.
+            return makeNode("gradient", "generator", [], {
+                type: "linear", stops: [0, 1].map((at) => ({ at, color: [r, g, b], alpha: a })), angle: 0, center: [0.5, 0.5],
+            }, w, h, true)
+        },
+    },
+    hslAdjust: {
+        images: 1,
+        positional: ["hue", "saturation", "lightness"],
+        defaults: { hue: 0, saturation: 0, lightness: 0, targetHue: 0, targetRange: 180, targetFalloff: 0.5 },
+        make(p, [a]) {
+            return pointwise("hslAdjust", {
+                hue: num(p.hue, "hslAdjust hue", -180, 180), saturation: num(p.saturation, "hslAdjust saturation", -1, 1),
+                lightness: num(p.lightness, "hslAdjust lightness", -1, 1), targetHue: num(p.targetHue, "hslAdjust targetHue", 0, 360),
+                targetRange: num(p.targetRange, "hslAdjust targetRange", 0, 180), targetFalloff: num(p.targetFalloff, "hslAdjust targetFalloff", 0, 1),
+            }, [a!])
+        },
+    },
+    mask: {
+        images: 2,
+        positional: [],
+        defaults: { invert: false },
+        make(p, [a, m]) { return mixed("mask", { invert: p.invert === true }, [a!, m!]) },
+    },
+    channelMath: {
+        images: 2,
+        kind: "operation",
+        positional: [],
+        defaults: { operation: "add", channels: "rgb" },
+        make(p, [a, b]) {
+            return mixed("channelMath", { operation: oneOf(p.operation, CHANNEL_MATH_OPS, "channelMath operation"), channels: oneOf(p.channels, CHANNEL_MATH_CHANNELS, "channelMath channels") }, [a!, b!])
+        },
+    },
+    alphaMerge: {
+        images: 2,
+        kind: "alphaChannel",
+        positional: [],
+        defaults: { alphaChannel: "luma" },
+        make(p, [rgb, alpha]) {
+            // Always the RGB's size, and stored at 16 bits: Magerie writes RGBA16F here.
+            const tiles = [rgb!, alpha!].filter((i) => i.width > 1 || i.height > 1).every((i) => i.tiles)
+            return makeNode("alphaMerge", "pointwise", [rgb!, alpha!], { alphaChannel: oneOf(p.alphaChannel, ALPHA_CHANNELS, "alphaMerge alphaChannel"), half: true }, rgb!.width, rgb!.height, tiles)
         },
     },
     autoLevels: {
@@ -491,6 +567,11 @@ export const KERNELS: Record<string, Kernel> = {
     levels: (s, n, i) => k.levels(s, i.value(0), n.params as unknown as k.LevelsValues),
     gradientMap: (s, n, i) => k.gradientMap(s, i.value(0), n.params.stops as Stop[]),
     curves: (_s, n, i) => k.curves(i.value(0), i.texture(1, false), n.params.channel as k.CurvesChannel),
+    gradient: (s, n) => k.gradient(s, n.params.type as k.GradientType, n.params.stops as Stop[], n.params.angle as number, n.params.center as [number, number]),
+    hslAdjust: (s, n, i) => k.hslAdjust(s, i.value(0), n.params as unknown as k.HslValues),
+    mask: (_s, n, i) => k.mask(i.value(0), i.value(1), n.params.invert as boolean),
+    channelMath: (_s, n, i) => k.channelMath(i.value(0), i.value(1), n.params.operation as k.ChannelMathOp, n.params.channels as k.ChannelMathChannels),
+    alphaMerge: (_s, n, i) => k.alphaMerge(i.value(0), i.value(1), n.params.alphaChannel as k.AlphaChannel),
     autoLevels: (_s, n, i) => k.autoLevels(i.value(0), i.texture(1, false), n.params.mode === "perChannel" ? i.texture(2, false) : null, n.params.mode as k.AutoLevelsMode),
     rangeStep: (s, n, i) => k.rangeStep(s, i.texture(0, false), n.params.key as k.RangeKey | null),
     directionalWarp: (s, n, i) => k.directionalWarp(s, i.texture(0, wrapOf(n)), i.texture(1, wrapOf(n)), n.params.angle as number, n.params.intensity as number, n.params.bothWays as boolean),

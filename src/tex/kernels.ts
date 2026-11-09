@@ -334,7 +334,7 @@ export function invert(c: Vec4, channels: InvertChannels): Vec4 {
 }
 
 /** Stops for a gradient map, sorted, as gamma colours 0..1. */
-export interface Stop { at: number, color: [number, number, number] }
+export interface Stop { at: number, color: [number, number, number], /** The colour's alpha: Gradient uses it, Gradient Map does not. */ alpha: number }
 
 /** Magerie's Gradient Map (spec 5.1): by Rec. 601 luma, interpolated in gamma RGB. */
 export function gradientMap(s: Scope, c: Vec4, stops: readonly Stop[]): Vec4 {
@@ -576,6 +576,160 @@ export function materialLight(
     color = color.clamp(0, 1).pow(1 / 2.2)
     const a: S = A.w.mul(opacity)
     return sl.vec4(color.mul(a), a)
+}
+
+// gradient and solid colour (magerie-one MetalRenderer+Gradient.mm:96-186)
+
+export type GradientType = "linear" | "radial" | "angular"
+
+/** Magerie's 4 by 4 Bayer dither (MetalRenderer.mm:1094-1104): a level's worth of ordered noise on rgb. */
+function dither8(s: Scope, rgb: S): S {
+    const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+    const x: S = s.pixel.x.sub(s.pixel.x.div(4).floor().mul(4))
+    const y: S = s.pixel.y.sub(s.pixel.y.div(4).floor().mul(4))
+    const idx: S = y.mul(4).add(x)
+    // A 16-entry table by index, as a chain of selects on whole numbers.
+    let b: S = sl.float(bayer[15]!)
+    for (let i = 14; i >= 0; i--) b = sl.select(idx.lt(i + 0.5), sl.float(bayer[i]!), b)
+    return rgb.add(b.div(16).sub(0.5).div(255)).saturate()
+}
+
+/** Magerie's Gradient generator: premultiplied stops, interpolated premultiplied, dithered unless every stop is one colour. */
+export function gradient(s: Scope, type: GradientType, stops: readonly Stop[], angle: number, center: [number, number]): Vec4 {
+    const uv: S = s.pixel.add(0.5).div(s.size)
+    let t: S
+    if (type === "linear") {
+        const p: S = uv.sub(0.5)
+        const a = s.f(angle * Math.PI / 180)
+        t = p.x.mul(sl.cos(a)).add(p.y.mul(sl.sin(a))).add(0.5)
+    } else {
+        const d: S = uv.sub(sl.vec2(s.f(center[0]), s.f(center[1])))
+        if (type === "radial") t = d.length().mul(2).clamp(0, 1)
+        else {
+            const tau = 2 * 3.14159265359
+            const at = atan2(d.y, d.x)
+            t = at.add(3.14159265359).div(tau).add(s.f(angle * Math.PI / 180).div(tau)).fract()
+        }
+    }
+    t = t.clamp(0, 1)
+    const at = stops.map((stop) => s.f(stop.at))
+    const col = stops.map((stop) => s.f4([stop.color[0] * stop.alpha, stop.color[1] * stop.alpha, stop.color[2] * stop.alpha, stop.alpha]))
+    const last = stops.length - 1
+    let out: S = col[last]
+    let found: S = t.ge(at[last])
+    out = sl.select(t.le(at[0]!), col[0], out)
+    found = found.or(t.le(at[0]!))
+    for (let i = 0; i < last; i++) {
+        const span = at[i + 1]!.sub(at[i]!)
+        const f: S = sl.select(span.gt(0), t.sub(at[i]!).div(max(span, 1e-9)), sl.float(0))
+        const here = found.not().and(t.ge(at[i]!)).and(t.le(at[i + 1]!))
+        out = sl.select(here, sl.mix(col[i], col[i + 1], f), out)
+        found = found.or(here)
+    }
+    const flat = stops.every((p) => p.color.every((c, i) => c === stops[0]!.color[i]) && p.alpha === stops[0]!.alpha)
+    const rgb: S = flat ? out.xyz : dither8(s, out.xyz).min(out.w)
+    return sl.vec4(rgb, out.w)
+}
+
+/** atan2 from atan's quadrants, which the shader language spells as asin and acos only. */
+function atan2(y: S, x: S): S {
+    const r: S = max(sl.vec2(x, y).length(), 1e-20)
+    // acos(x / r) is the angle from +x, 0 to pi; its sign comes from y.
+    const a: S = sl.acos(x.div(r).clamp(-1, 1))
+    return sl.select(y.lt(0), a.neg(), a)
+}
+
+// hsl adjust (MetalRenderer.mm:5339-5389, 2287-2334)
+
+export interface HslValues { hue: number, saturation: number, lightness: number, targetHue: number, targetRange: number, targetFalloff: number }
+
+function rgb2hsl(c: S): S {
+    const mx: S = max(max(c.x, c.y), c.z), mn: S = c.x.min(c.y).min(c.z)
+    const l: S = mx.add(mn).div(2)
+    const d: S = mx.sub(mn)
+    const dd: S = max(d, 1e-9)
+    const sat: S = sl.select(l.gt(0.5), d.div(max(sl.float(2).sub(mx).sub(mn), 1e-9)), d.div(max(mx.add(mn), 1e-9)))
+    const hr: S = c.y.sub(c.z).div(dd).add(sl.select(c.y.lt(c.z), sl.float(6), sl.float(0)))
+    const hg: S = c.z.sub(c.x).div(dd).add(2)
+    const hb: S = c.x.sub(c.y).div(dd).add(4)
+    const h: S = sl.select(mx.eq(c.x), hr, sl.select(mx.eq(c.y), hg, hb)).div(6)
+    const grey: S = mx.eq(mn)
+    return sl.vec3(sl.select(grey, sl.float(0), h), sl.select(grey, sl.float(0), sat), l)
+}
+
+function hue2rgb(p: S, q: S, t0: S): S {
+    let t: S = sl.select(t0.lt(0), t0.add(1), t0)
+    t = sl.select(t.gt(1), t.sub(1), t)
+    const a: S = p.add(q.sub(p).mul(6).mul(t))
+    const c: S = p.add(q.sub(p).mul(sl.float(2 / 3).sub(t)).mul(6))
+    return sl.select(t.lt(1 / 6), a, sl.select(t.lt(0.5), q, sl.select(t.lt(2 / 3), c, p)))
+}
+
+/** Magerie's HSL Adjust: hue turns, saturation and lightness ADD, weighted by the target band; on straight colour. */
+export function hslAdjust(s: Scope, c: Vec4, v: HslValues): Vec4 {
+    if (v.hue === 0 && v.saturation === 0 && v.lightness === 0) return c
+    const x: S = unpremultiply(c).clamp(0, 1)
+    const hsl: S = rgb2hsl(x)
+    let w: S = sl.float(1)
+    if (v.targetRange < 180) {
+        let dist: S = hsl.x.mul(360).sub(s.f(v.targetHue)).abs()
+        dist = sl.select(dist.gt(180), sl.float(360).sub(dist), dist)
+        const range = s.f(v.targetRange), fw = v.targetRange * v.targetFalloff
+        const soft: S = fw <= 0 ? sl.float(0)
+            : sl.select(dist.ge(range.add(fw)), sl.float(0), sl.cos(dist.sub(range).div(fw).mul(Math.PI)).add(1).mul(0.5))
+        w = sl.select(dist.le(range), sl.float(1), soft)
+    }
+    let h: S = hsl.x.add(s.f(v.hue / 360).mul(w))
+    h = sl.select(h.lt(0), h.add(1), sl.select(h.gt(1), h.sub(1), h))
+    const S2: S = hsl.y.add(s.f(v.saturation).mul(w)).clamp(0, 1)
+    const L: S = hsl.z.add(s.f(v.lightness).mul(w)).clamp(0, 1)
+    const q: S = sl.select(L.lt(0.5), L.mul(sl.float(1).add(S2)), L.add(S2).sub(L.mul(S2)))
+    const p: S = L.mul(2).sub(q)
+    const rgb: S = sl.select(S2.eq(0), sl.vec3(L, L, L),
+        sl.vec3(hue2rgb(p, q, h.add(1 / 3)), hue2rgb(p, q, h), hue2rgb(p, q, h.sub(1 / 3)))).clamp(0, 1)
+    return sl.vec4(rgb.mul(c.w), c.w)
+}
+
+// mask, channel math, alpha merge
+
+/** Magerie's Mask: every premultiplied channel scaled by the mask's straight luma times its alpha. */
+export function mask(c: Vec4, m: Vec4, invert: boolean): Vec4 {
+    let l: S = luma601(unpremultiply(m)).mul(m.w)
+    if (invert) l = sl.float(1).sub(l)
+    return c.mul(l)
+}
+
+export type ChannelMathOp = "add" | "subtract" | "multiply" | "screen" | "overlay" | "difference" | "divide"
+export type ChannelMathChannels = "rgb" | "rgba" | "r" | "g" | "b" | "a"
+
+/** Magerie's Channel Math, on the stored (premultiplied) values, clamped, where `channels` says; A elsewhere. */
+export function channelMath(a: Vec4, b: Vec4, op: ChannelMathOp, channels: ChannelMathChannels): Vec4 {
+    const one = sl.vec4(1, 1, 1, 1)
+    let r: S
+    switch (op) {
+        case "add": r = a.add(b); break
+        case "subtract": r = a.sub(b); break
+        case "multiply": r = a.mul(b); break
+        case "screen": r = one.sub(one.sub(a).mul(one.sub(b))); break
+        case "overlay": r = sl.mix(a.mul(b).mul(2), one.sub(one.sub(a).mul(one.sub(b)).mul(2)), sl.sign(a.sub(0.5)).add(1).min(1)); break
+        case "difference": r = a.sub(b).abs(); break
+        case "divide": {
+            const q: S = a.div(b.max(1 / 255)).min(1)
+            // b under half a level divides to 1, per channel without a vector bool.
+            r = sl.mix(q, one, sl.sign(sl.vec4(0.5 / 255, 0.5 / 255, 0.5 / 255, 0.5 / 255).sub(b)).max(0))
+            break
+        }
+    }
+    const m = { rgba: [1, 1, 1, 1], rgb: [1, 1, 1, 0], r: [1, 0, 0, 0], g: [0, 1, 0, 0], b: [0, 0, 1, 0], a: [0, 0, 0, 1] }[channels]
+    return sl.mix(a, r.clamp(0, 1), sl.vec4(m[0]!, m[1]!, m[2]!, m[3]!)) as Vec4
+}
+
+export type AlphaChannel = "luma" | "red" | "alpha"
+
+/** Magerie's Alpha Merge: the RGB as stored, times a new alpha from the second picture. Stored at 16 bits, not 8. */
+export function alphaMerge(rgb: Vec4, src: Vec4, channel: AlphaChannel): Vec4 {
+    const alpha: S = channel === "red" ? src.x : channel === "alpha" ? src.w : src.xyz.dot(sl.vec3(0.299, 0.587, 0.114))
+    return sl.vec4(rgb.xyz.mul(alpha), alpha)
 }
 
 /** Lit colour in rgb, the height's first channel as alpha, straight: the Image Exporter's Alpha pack. */

@@ -57,11 +57,11 @@ describe("tex graph", () => {
     it("reads gradient stops as CSS does", () => {
         expect(parseStops(["#000", "#ff0000 40%", "#fff"]).map((s) => s.at)).toEqual([0, 0.4, 1])
         expect(parseStops(["#000", "#111", "#222", "#fff"]).map((s) => s.at)).toEqual([0, 1 / 3, 2 / 3, 1])
-        expect(parseStops([{ position: 0.5, color: "#808080" }])[0]).toEqual({ at: 0.5, color: [128 / 255, 128 / 255, 128 / 255] })
+        expect(parseStops([{ position: 0.5, color: "#808080" }])[0]).toEqual({ at: 0.5, color: [128 / 255, 128 / 255, 128 / 255], alpha: 1 })
         expect(() => parseStops(["green"])).toThrow(/not a colour/)
         // Magerie's own spellings (parseHex): 3, 4, 6 or 8 digits. A Gradient Map uses the colour and drops the alpha.
         expect(parseStops([{ position: 0, color: "#c8704cff" }])[0]!.color).toEqual([200 / 255, 112 / 255, 76 / 255])
-        expect(parseStops([{ position: 0, color: "#c8704c00" }])[0]!.color).toEqual([200 / 255, 112 / 255, 76 / 255])
+        expect(parseStops([{ position: 0, color: "#c8704c00" }])[0]).toEqual({ at: 0, color: [200 / 255, 112 / 255, 76 / 255], alpha: 0 })
         expect(parseStops(["#f80", "#f80c 50%", "c8704c"]).map((s) => s.color)).toEqual([
             [1, 136 / 255, 0], [1, 136 / 255, 0], [200 / 255, 112 / 255, 76 / 255],
         ])
@@ -140,6 +140,28 @@ describe("tex material and auto levels", () => {
         const w = a.directionalWarp(a, 30, 20)
         expect(w.node.params).toMatchObject({ angle: 30, intensity: 20, wrap: true })
         expect(passes(w).length).toBeGreaterThan(0)
+    })
+})
+
+describe("tex generators and mixes", () => {
+    it("makes Magerie's Gradient and Solid Color at the canvas size, a solid colour tiling", () => {
+        const { gradient, solidColor, noise } = tex.canvas(48)
+        expect(gradient("radial", ["#ffffff", "#000000"]).node.params).toMatchObject({ type: "radial", center: [0.5, 0.5] })
+        expect(gradient({ angle: 90, width: 32 }).width).toBe(32)
+        expect(gradient().tiles).toBe(false)
+        expect(solidColor("#c8c8c8ff").tiles).toBe(true)
+        expect(solidColor("#1c200c80").node.params.stops).toEqual([0, 1].map((at) => ({ at, color: [28 / 255, 32 / 255, 12 / 255], alpha: 128 / 255 })))
+        expect(() => gradient(Array.from({ length: 17 }, () => "#000"))).toThrow(/1 to 16 stops/)
+        // Mixes take the first picture's size, and the other is stretched to it.
+        const small = noise("perlin", 1, { width: 16, height: 16 })
+        expect(noise("perlin", 2).mask(small).width).toBe(48)
+        expect(noise("perlin", 2).channelMath(small, "subtract").node.params).toEqual({ operation: "subtract", channels: "rgb" })
+    })
+
+    it("stores Alpha Merge at 16 bits, as Magerie does, and everything else at 8", () => {
+        const { noise } = tex.canvas(32)
+        expect(noise("perlin", 1).alphaMerge(noise("perlin", 2)).node.params).toEqual({ alphaChannel: "luma", half: true })
+        expect(passes(noise("perlin", 1).alphaMerge(noise("perlin", 2), "red")).length).toBe(1)
     })
 })
 
