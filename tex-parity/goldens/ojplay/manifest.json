@@ -2769,7 +2769,7 @@
         "format": "rgba32f",
         "tiles": true
       },
-      "tolerance": 0.004
+      "tolerance": 0.0001220703125
     },
     {
       "name": "tileGrid/old-bond-f32-random",
@@ -2801,7 +2801,7 @@
         "format": "rgba32f",
         "tiles": true
       },
-      "tolerance": 0.004
+      "tolerance": 0.0001220703125
     },
     {
       "name": "tileGrid/old-bond-f32-uv",
@@ -2833,7 +2833,7 @@
         "format": "rgba32f",
         "tiles": true
       },
-      "tolerance": 0.004
+      "tolerance": 0.0001220703125
     },
     {
       "name": "tileGrid/pavers-f32-64x48-height",
@@ -2865,7 +2865,7 @@
         "format": "rgba32f",
         "tiles": true
       },
-      "tolerance": 0.004
+      "tolerance": 0.0001220703125
     }
   ]
 }
