@@ -15,7 +15,10 @@
  * every read of an 8-bit node is rounded back to the value it holds, area
  * reads included: a half-float target may truncate k/255 to just under it
  * (Chrome's Metal backend does), which a Sobel at strength 2 turns into 4.
- * A bilinear read is four rounded texels, mixed here.
+ * A bilinear read is four rounded texels, mixed here. A 32-bit node (Tile
+ * Grid's `bitDepth: "32"`, and whatever reads it) is drawn into a float
+ * target and read unrounded, through the same four-texel mix: many WebGL2
+ * and WebGPU devices cannot filter a float texture, so it is never sampled.
  *
  * **Drawing.** A program is compiled where it runs, which on the web is
  * asynchronous: the passes are stepped each frame until every one has drawn
@@ -24,7 +27,7 @@
 import { sl, compile, SLError, type Vec4 } from "onejs-unity/sl"
 import { createPass, type DrawnPass } from "onejs-react"
 import type { Node } from "./graph"
-import { topological } from "./graph"
+import { isFloat, topological } from "./graph"
 import { ScopeRecorder, declareTexture, type Scope, type TexRead } from "./scope"
 import { quantise8, deliver } from "./kernels"
 import { uploadRGBA, destroyTexture } from "./upload"
@@ -46,6 +49,8 @@ export interface PassPlan {
     readonly uniforms: Record<string, number | number[]>
     /** The materialised nodes this pass reads, by texture name. */
     readonly reads: Record<string, Node>
+    /** Bits a channel its target holds: 32 for a float node, else 16. */
+    readonly bits: 16 | 32
 }
 
 /** How many nodes read each node, each reader once. */
@@ -71,9 +76,9 @@ export function materialised(root: Node, fuse = true): Set<string> {
     return out
 }
 
-/** A node's value as its texture holds it: 8 bits, or 16 for the few Magerie stores in half floats (Alpha Merge). */
+/** A node's value as its texture holds it: 8 bits, or as drawn for a half or float node. */
 function stored(n: Node, v: Vec4): Vec4 {
-    return n.params.half === true ? v : quantise8(v)
+    return n.params.half === true || isFloat(n) ? v : quantise8(v)
 }
 
 /** A texel row or column index past the edge, wrapped or clamped. */
@@ -81,12 +86,17 @@ function edge(p: Vec4["x"], n: Vec4["x"], wrap: boolean) {
     return wrap ? p.sub(n.mul(p.div(n).floor())) : p.clamp(0, n.sub(1))
 }
 
-/** An 8-bit node's texture read as Magerie's RGBA8 one would be: each texel rounded, bilinear mixed from four. */
-function heldAt8(t: TexRead, wrap: boolean): TexRead {
-    const at = (x: Vec4["x"], y: Vec4["x"]) => quantise8(t.fetch(sl.vec2(edge(x, t.size.x, wrap), edge(y, t.size.y, wrap))))
+/**
+ * A node's texture read through fetches only, bilinear mixed from four
+ * texels: rounded to 8 bits as Magerie's RGBA8 would hold it, or as drawn
+ * for a float one, which is never filtered.
+ */
+function fetched(t: TexRead, wrap: boolean, round: boolean): TexRead {
+    const held = (c: Vec4) => (round ? quantise8(c) : c)
+    const at = (x: Vec4["x"], y: Vec4["x"]) => held(t.fetch(sl.vec2(edge(x, t.size.x, wrap), edge(y, t.size.y, wrap))))
     return {
         size: t.size,
-        fetch: (pixel) => quantise8(t.fetch(pixel)),
+        fetch: (pixel) => held(t.fetch(pixel)),
         sample(uv) {
             const p = uv.mul(t.size).sub(0.5)
             const i = p.floor()
@@ -112,9 +122,10 @@ function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Re
             if (t === undefined) {
                 const name = `t${textures.size}`
                 reads[name] = n
-                const raw = declareTexture(name, wrap)
                 // A source is uploaded at 8 bits and a half node is held as drawn: both read as they are.
-                t = n.kind === "source" || n.params.half === true ? raw : heldAt8(raw, wrap)
+                t = n.kind === "source" || n.params.half === true ? declareTexture(name, wrap)
+                    : isFloat(n) ? fetched(declareTexture(name, wrap, "point"), wrap, false)
+                    : fetched(declareTexture(name, wrap), wrap, true)
                 textures.set(key, t)
             }
             return t
@@ -144,7 +155,7 @@ function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Re
         const v = valueOf(node, node)
         return final ? deliver(v, node.op === "alpha") : v
     })
-    return { node, program: compile(program), uniforms, reads }
+    return { node, program: compile(program), uniforms, reads, bits: isFloat(node) ? 32 : 16 }
 }
 
 /** Whether an error is one of the shader language's per-program limits, which a split can cure. */
@@ -241,7 +252,7 @@ export async function draw<T>(plans: readonly PassPlan[], finish: (output: unkno
                 textures[name] = n.kind === "source" ? sourceTexture(n) : made.get(n.id)!.pass
             }
             made.set(p.node.id, createPass(p.program, {
-                uniforms: p.uniforms, textures, resolution: [p.node.width, p.node.height],
+                uniforms: p.uniforms, textures, resolution: [p.node.width, p.node.height], bits: p.bits,
             }))
         }
         const last = made.get(plans[plans.length - 1]!.node.id)!

@@ -181,7 +181,29 @@ describe("tex tile grid", () => {
         expect((image.node.params.values as { columns: number }).columns).toBe(4)
         // Magerie's clamps: counts whole and at least 1, shares within their sliders.
         expect(tileGrid({ columns: 2.6, rows: 0, jointWidth: 0.9 }).image.node.params.values).toMatchObject({ columns: 3, rows: 1, jointWidth: 0.5 })
-        expect(() => tileGrid({ bitDepth: "32" as "8" })).toThrow(/bitDepth is "32"/)
+        expect(() => tileGrid({ bitDepth: "16" as "8" })).toThrow(/bitDepth is "16"/)
+    })
+
+    it("draws 32 bits from bitDepth or the canvas, and everything reading it is 32 bits too", () => {
+        const { image } = tex.canvas(64).tileGrid({ bitDepth: "32" })
+        const lit = image.blur(2).normalMap(4)
+        const plans = passes(lit)
+        expect(plans.every((p) => p.bits === 32)).toBe(true)
+        expect(lit.node.params.float).toBe(true)
+        // An 8-bit graph keeps 16-bit targets holding 8-bit values, and says nothing of floats.
+        const plain = tex.canvas(64).tileGrid().image.blur(2)
+        expect(passes(plain).map((p) => p.bits)).toEqual([16, 16, 16])
+        expect("float" in plain.node.params).toBe(false)
+        expect(tex.canvas(64, { bitDepth: "32" }).tileGrid().random.node.params.float).toBe(true)
+        expect(() => tex.canvas(64, { bitDepth: "16" as "8" })).toThrow(/"8" or "32"/)
+    })
+
+    it("reads a float picture by fetches only, unfiltered, since a float texture may not filter", () => {
+        const { image } = tex.canvas(64).tileGrid({ bitDepth: "32" })
+        const blurred = passes(image.blur(2))
+        const reader = blurred[1]!.program
+        expect(reader.wgsl).toMatch(/textureLoad/)
+        expect(reader.wgsl).not.toMatch(/textureSample/)
     })
 
     it("hashes each cell with unsigned integer maths on both web dialects", () => {

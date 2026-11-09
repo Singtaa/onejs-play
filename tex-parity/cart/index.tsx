@@ -20,18 +20,24 @@ const unhex = (s: string) => Uint8Array.from(s.match(/../g)!, (b) => parseInt(b,
 /** A case for a node tex does not have yet: reported apart from a failure, so set C can land before its nodes. */
 class Pending extends Error {}
 
-type Input = { port: string, tiles?: boolean, w?: number, h?: number, hex?: string, node?: string, params?: unknown, inputs?: Input[] }
+type Input = { port: string, tiles?: boolean, w?: number, h?: number, hex?: string, node?: string, params?: unknown, inputs?: Input[], output?: string }
 
 /** One Magerie node on its inputs, each a file's bytes or a node run first. */
 function run(node: string, params: unknown, inputs: readonly Input[]): unknown {
+    // A multi-output input node is read at the port `output` names, "out-image" when it names none.
     const images = inputs.map((i) => i.node !== undefined
-        ? run(i.node, i.params, i.inputs ?? [])
+        ? pick(run(i.node, i.params, i.inputs ?? []), i.output ?? "out-image")
         : tex.pixels(i.w!, i.h!, unhex(i.hex!), { tile: i.tiles }))
     const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[node]
     if (typeof fn !== "function") throw new Pending(node)
     // Material takes its maps by name, as Magerie's script API does: material({ albedo, normal, ... }).
     if (node === "material") return fn({ ...(params as object), ...Object.fromEntries(inputs.map((i, n) => [i.port.replace(/^in-/, ""), images[n]])) })
     return fn(...images, params)
+}
+
+function pick(r: unknown, port: string): unknown {
+    const whole = r instanceof TexImage || (r as { kind?: unknown }).kind === "material"
+    return whole ? r : (r as Record<string, unknown>)[port.replace(/^out-/, "")]
 }
 
 function fromManifest(c: (typeof OJPLAY)[number]): Case[] {
@@ -44,6 +50,7 @@ function fromManifest(c: (typeof OJPLAY)[number]): Case[] {
     }
     return c.outputs.map((o) => ({
         name: o.name,
+        float: o.float,
         make: () => {
             const r = made()
             const img = r instanceof TexImage ? r : (r as Record<string, TexImage>)[o.port.replace(/^out-/, "")]
@@ -113,8 +120,11 @@ async function main() {
             const name = fuse ? c.name : `${c.name}@unfused`
             try {
                 const img = c.make()
-                const bytes = await img.pixels({ fuse })
-                console.log(`[tex-parity] case ${name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${hex(bytes)}`)
+                // A float case's bytes are its float32s, marked so the harness reads them as floats.
+                const bytes = c.float === true
+                    ? `f:${hex(new Uint8Array((await img.pixels({ fuse, float: true })).buffer))}`
+                    : hex(await img.pixels({ fuse }))
+                console.log(`[tex-parity] case ${name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${bytes}`)
             } catch (e) {
                 if (e instanceof Pending) { console.log(`[tex-parity] pending ${name} ${e.message}`); continue }
                 console.log(`[tex-parity] error ${name} ${e instanceof Error ? e.message : String(e)}`)

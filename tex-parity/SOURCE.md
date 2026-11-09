@@ -10,3 +10,11 @@ was recorded from, ported from that commit's `js/tests/kernel-parity.test.tsx`.
 To refresh them, copy the same folders from a newer magerie-one, change the
 commit above, and run `node run.mjs`: a golden that moved is a Magerie change
 to look at, not a number to accept.
+
+`goldens/ojplay/` is the set Magerie records for tex (its
+`js/tests/fixtures/kernel-parity/ojplay/`), described by its own
+`manifest.json`, whose `magerieCommit` says where it came from. Sets C and D
+came from `test/ojplay-goldens-*` branches; set E (Tile Grid, cases 70 to 88)
+from `test/ojplay-goldens-sete-mac004` at `1d47e2bfc`. An output whose
+`format` is `rgba32f` is little-endian float32 RGBA, `width * height * 16`
+bytes, read back in float, and its tolerance is in stored value, not bytes.

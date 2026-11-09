@@ -18,6 +18,8 @@ export interface Canvas {
     readonly width: number
     readonly height: number
     readonly tile: boolean
+    /** What a generator that takes `bitDepth` draws at when its call does not say. */
+    readonly bitDepth: "8" | "32"
 }
 
 export interface Spec {
@@ -606,11 +608,11 @@ export const SPECS = {
         positional: ["columns"],
         defaults: {
             columns: 4, rows: 8, rowOffset: 0.5, offsetJitter: 0, lengthJitter: 0, sizeJitter: 0,
-            jointWidth: 0.06, bevel: 0.08, round: 0, heightJitter: 0, seed: 0, bitDepth: "8", ...SIZE,
+            jointWidth: 0.06, bevel: 0.08, round: 0, heightJitter: 0, seed: 0, bitDepth: null, ...SIZE,
         },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
-            if (p.bitDepth !== "8") throw new Error(`[oj] tex tileGrid: bitDepth is ${JSON.stringify(p.bitDepth)}; tex draws "8" so far`)
+            const float = oneOf(p.bitDepth ?? canvas.bitDepth, ["8", "32"], "tileGrid bitDepth") === "32"
             // Magerie's resolveTileGridParams: counts whole, the shares clamped.
             const share = (key: string, most = 1) => num(p[key], `tileGrid ${key}`, 0, most)
             const values: k.TileGridValues = {
@@ -623,7 +625,7 @@ export const SPECS = {
             }
             // Every output tiles, whatever the canvas says: the grid repeats by construction.
             return Object.fromEntries(Object.entries(TILE_GRID_OUTPUTS).map(([port, output]) =>
-                [port, makeNode("tileGrid", "generator", [], { values, output }, w, h, true)]))
+                [port, makeNode("tileGrid", "generator", [], float ? { values, output, float } : { values, output }, w, h, true)]))
         },
     },
     channelShuffle: {

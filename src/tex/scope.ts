@@ -69,8 +69,8 @@ export class ScopeRecorder implements Scope {
  * Declares a texture for the program and wraps it in Magerie's coordinates.
  * `wrap` decides the sampler for `sample`; `fetch` never filters or wraps.
  */
-export function declareTexture(name: string, wrap: boolean): TexRead {
-    const t = sl.texture(name, { wrap: wrap ? "repeat" : "clamp", filter: "linear" })
+export function declareTexture(name: string, wrap: boolean, filter: "linear" | "point" = "linear"): TexRead {
+    const t = sl.texture(name, { wrap: wrap ? "repeat" : "clamp", filter })
     const size = t.size()
     return {
         size,

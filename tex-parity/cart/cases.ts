@@ -66,6 +66,8 @@ export interface Case {
     /** The golden's path under goldens/, without .bin. */
     readonly name: string
     make(): TexImage
+    /** Compared as stored floats, for a 32-bit picture. */
+    readonly float?: boolean
 }
 
 const noise16 = tex.canvas(16)

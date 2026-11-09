@@ -1,5 +1,5 @@
 {
-  "magerieCommit": "1e3a377f7",
+  "magerieCommit": "5c1564a4a",
   "cases": [
     {
       "name": "normalMap/waves-s4-r0-wrap",
@@ -2258,6 +2258,614 @@
         "tiles": false
       },
       "tolerance": 1
+    },
+    {
+      "name": "tileGrid/bricks-default-height",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.08,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 0,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/bricks-default-height.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/bricks-default-random",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.08,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 0,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-random",
+        "file": "tileGrid/bricks-default-random.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/bricks-default-uv",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.08,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 0,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-uv",
+        "file": "tileGrid/bricks-default-uv.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/old-bond-height",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.2,
+        "lengthJitter": 0.5,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.12,
+        "round": 0,
+        "heightJitter": 0.3,
+        "seed": 7,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/old-bond-height.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/old-bond-random",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.2,
+        "lengthJitter": 0.5,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.12,
+        "round": 0,
+        "heightJitter": 0.3,
+        "seed": 7,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-random",
+        "file": "tileGrid/old-bond-random.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/old-bond-uv",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.2,
+        "lengthJitter": 0.5,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.12,
+        "round": 0,
+        "heightJitter": 0.3,
+        "seed": 7,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-uv",
+        "file": "tileGrid/old-bond-uv.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/squares-6x6-height",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 6,
+        "rows": 6,
+        "rowOffset": 0,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0,
+        "jointWidth": 0.04,
+        "bevel": 0.05,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 0,
+        "bitDepth": "8",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/squares-6x6-height.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/pavers-64x48-height",
+      "node": "tileGrid",
+      "size": [
+        64,
+        48
+      ],
+      "params": {
+        "columns": 5,
+        "rows": 5,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0.35,
+        "jointWidth": 0.1,
+        "bevel": 0.12,
+        "round": 0.7,
+        "heightJitter": 0.2,
+        "seed": 3,
+        "bitDepth": "8",
+        "width": 64,
+        "height": 48
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/pavers-64x48-height.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/pavers-64x48-random",
+      "node": "tileGrid",
+      "size": [
+        64,
+        48
+      ],
+      "params": {
+        "columns": 5,
+        "rows": 5,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0.35,
+        "jointWidth": 0.1,
+        "bevel": 0.12,
+        "round": 0.7,
+        "heightJitter": 0.2,
+        "seed": 3,
+        "bitDepth": "8",
+        "width": 64,
+        "height": 48
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-random",
+        "file": "tileGrid/pavers-64x48-random.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/pavers-64x48-uv",
+      "node": "tileGrid",
+      "size": [
+        64,
+        48
+      ],
+      "params": {
+        "columns": 5,
+        "rows": 5,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0.35,
+        "jointWidth": 0.1,
+        "bevel": 0.12,
+        "round": 0.7,
+        "heightJitter": 0.2,
+        "seed": 3,
+        "bitDepth": "8",
+        "width": 64,
+        "height": 48
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-uv",
+        "file": "tileGrid/pavers-64x48-uv.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/planks-96x64-height",
+      "node": "tileGrid",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "columns": 3,
+        "rows": 10,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 1,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 11,
+        "bitDepth": "8",
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/planks-96x64-height.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/planks-96x64-random",
+      "node": "tileGrid",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "columns": 3,
+        "rows": 10,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 1,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 11,
+        "bitDepth": "8",
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-random",
+        "file": "tileGrid/planks-96x64-random.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/planks-96x64-uv",
+      "node": "tileGrid",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "columns": 3,
+        "rows": 10,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 1,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0,
+        "round": 0,
+        "heightJitter": 0,
+        "seed": 11,
+        "bitDepth": "8",
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-uv",
+        "file": "tileGrid/planks-96x64-uv.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/cobbles-128x96-height",
+      "node": "tileGrid",
+      "size": [
+        128,
+        96
+      ],
+      "params": {
+        "columns": 6,
+        "rows": 5,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.5,
+        "lengthJitter": 0,
+        "sizeJitter": 0.6,
+        "jointWidth": 0.06,
+        "bevel": 0.08,
+        "round": 0.8,
+        "heightJitter": 0.25,
+        "seed": 5,
+        "bitDepth": "8",
+        "width": 128,
+        "height": 96
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/cobbles-128x96-height.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/cobbles-128x96-uv",
+      "node": "tileGrid",
+      "size": [
+        128,
+        96
+      ],
+      "params": {
+        "columns": 6,
+        "rows": 5,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.5,
+        "lengthJitter": 0,
+        "sizeJitter": 0.6,
+        "jointWidth": 0.06,
+        "bevel": 0.08,
+        "round": 0.8,
+        "heightJitter": 0.25,
+        "seed": 5,
+        "bitDepth": "8",
+        "width": 128,
+        "height": 96
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-uv",
+        "file": "tileGrid/cobbles-128x96-uv.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "tileGrid/old-bond-f32-height",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.2,
+        "lengthJitter": 0.5,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.12,
+        "round": 0,
+        "heightJitter": 0.3,
+        "seed": 7,
+        "bitDepth": "32",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/old-bond-f32-height.bin",
+        "format": "rgba32f",
+        "tiles": true
+      },
+      "tolerance": 0.004
+    },
+    {
+      "name": "tileGrid/old-bond-f32-random",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.2,
+        "lengthJitter": 0.5,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.12,
+        "round": 0,
+        "heightJitter": 0.3,
+        "seed": 7,
+        "bitDepth": "32",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-random",
+        "file": "tileGrid/old-bond-f32-random.bin",
+        "format": "rgba32f",
+        "tiles": true
+      },
+      "tolerance": 0.004
+    },
+    {
+      "name": "tileGrid/old-bond-f32-uv",
+      "node": "tileGrid",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "columns": 4,
+        "rows": 8,
+        "rowOffset": 0.5,
+        "offsetJitter": 0.2,
+        "lengthJitter": 0.5,
+        "sizeJitter": 0,
+        "jointWidth": 0.06,
+        "bevel": 0.12,
+        "round": 0,
+        "heightJitter": 0.3,
+        "seed": 7,
+        "bitDepth": "32",
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-uv",
+        "file": "tileGrid/old-bond-f32-uv.bin",
+        "format": "rgba32f",
+        "tiles": true
+      },
+      "tolerance": 0.004
+    },
+    {
+      "name": "tileGrid/pavers-f32-64x48-height",
+      "node": "tileGrid",
+      "size": [
+        64,
+        48
+      ],
+      "params": {
+        "columns": 5,
+        "rows": 5,
+        "rowOffset": 0.5,
+        "offsetJitter": 0,
+        "lengthJitter": 0,
+        "sizeJitter": 0.35,
+        "jointWidth": 0.1,
+        "bevel": 0.12,
+        "round": 0.7,
+        "heightJitter": 0.2,
+        "seed": 3,
+        "bitDepth": "32",
+        "width": 64,
+        "height": 48
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "tileGrid/pavers-f32-64x48-height.bin",
+        "format": "rgba32f",
+        "tiles": true
+      },
+      "tolerance": 0.004
     }
   ]
 }

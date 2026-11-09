@@ -180,8 +180,8 @@ export interface TileGridOptions extends SizeOptions {
     sizeJitter?: number
     /** Sinks some faces by up to this much. */
     heightJitter?: number
-    /** "8" so far. */
-    bitDepth?: "8"
+    /** "32" keeps the height in floats, so a bevel stays smooth when lit or stretched. Default: the canvas's. */
+    bitDepth?: "8" | "32"
 }
 
 export interface ChannelShuffleOptions {
@@ -431,8 +431,12 @@ export class TexImage {
      * encoded, row 0 at the top, `width * height * 4`. For a height read on
      * the CPU (a terrain's vertices), or a test against Magerie's own.
      */
-    pixels(options: PixelsOptions = {}): Promise<Uint8Array> {
-        return draw(plan(this.node, KERNELS, { delivered: false, fuse: options.fuse !== false }), readBytes)
+    pixels(options?: PixelsOptions & { float?: false }): Promise<Uint8Array>
+    /** The values as stored, unrounded, as floats: for a 32-bit picture, or a test against Magerie's float readback. */
+    pixels(options: PixelsOptions & { float: true }): Promise<Float32Array>
+    pixels(options: PixelsOptions & { float?: boolean } = {}): Promise<Uint8Array | Float32Array> {
+        const plans = plan(this.node, KERNELS, { delivered: false, fuse: options.fuse !== false })
+        return options.float === true ? draw(plans, readFloats) : draw(plans, readBytes)
     }
 }
 
@@ -470,17 +474,23 @@ function functions(canvas: Canvas): TexFunctions {
 }
 
 /** Magerie's document default (nativePipelineHelpers.ts:22). */
-const DEFAULT_CANVAS: Canvas = { width: 1024, height: 1024, tile: false }
+const DEFAULT_CANVAS: Canvas = { width: 1024, height: 1024, tile: false, bitDepth: "8" }
 
 export interface CanvasOptions {
     /** Every generator from this canvas that can tile does, so every `edges: "auto"` filter wraps. */
     tile?: boolean
     /** Pixels down, when not square. */
     height?: number
+    /**
+     * "32" draws every generator from this canvas that takes a bit depth in
+     * floats, and everything reading one, as Magerie's float wins. Default "8".
+     */
+    bitDepth?: "8" | "32"
 }
 
 function canvas(width: number, options: CanvasOptions = {}): TexFunctions {
-    const c: Canvas = { width, height: options.height ?? width, tile: options.tile === true }
+    const c: Canvas = { width, height: options.height ?? width, tile: options.tile === true, bitDepth: options.bitDepth ?? "8" }
+    if (c.bitDepth !== "8" && c.bitDepth !== "32") throw new Error(`[oj] tex.canvas: bitDepth is ${JSON.stringify(c.bitDepth)}, "8" or "32"`)
     // Checked here, once, rather than at the first generator.
     if (![c.width, c.height].every((v) => Number.isInteger(v) && v >= 1 && v <= 8192)) {
         throw new Error(`[oj] tex.canvas is ${c.width} by ${c.height}, whole numbers of pixels from 1 to 8192`)
@@ -498,19 +508,29 @@ function pixels(width: number, height: number, rgba: Uint8Array | readonly numbe
     return new TexImage(makeNode("pixels", "source", [], {}, width, height, options.tile === true, texture))
 }
 
-/** A half-float render texture's texels as 8-bit stored values, row 0 at the top. */
-async function readBytes(output: unknown): Promise<Uint8Array> {
+/** A pass's texels, read back from the GPU, as the bytes C#'s `encode` hands over in one crossing, row 0 at the top. */
+async function readBack(output: unknown, encode: "StoredBytes" | "StoredFloats"): Promise<Uint8Array> {
     const read = CS.OneJS.Lighting.TextureRead.Start(output)
     for (let frames = 0; !read.Done; frames++) {
         if (frames > 600) throw new Error("[oj] tex pixels: the GPU did not hand the texels back in 600 frames")
         await new Promise<void>((resolve) => globalThis.requestAnimationFrame(() => resolve()))
     }
     if (read.Error) throw new Error(`[oj] tex pixels: ${read.Error}`)
-    // Rounded and flipped in C#, and handed over in one crossing.
-    const binary: string = (globalThis as any).atob(CS.OneJS.ShaderFX.KeptTexture.StoredBytes(read))
+    const kept = CS.OneJS.ShaderFX.KeptTexture
+    if (typeof kept[encode] !== "function") throw new Error("[oj] tex pixels({ float: true }) needs a newer OneJS: this one hands back 8 bits only")
+    const binary: string = (globalThis as any).atob(kept[encode](read))
     const out = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
     return out
+}
+
+/** The texels as 8-bit stored values, rounded in C#. */
+const readBytes = (output: unknown): Promise<Uint8Array> => readBack(output, "StoredBytes")
+
+/** The texels as stored, float32. */
+const readFloats = async (output: unknown): Promise<Float32Array> => {
+    const bytes = await readBack(output, "StoredFloats")
+    return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
 }
 
 function bake(node: Node): Baked {

@@ -75,6 +75,10 @@ const CONTAINER = arg("container", null)
 // A case drawn unfused (every node its own pass) is held to the same golden.
 const base = (name) => name.replace(/@unfused$/, "")
 const CHAIN_DIR = arg("chain", null)
+// A 32-bit output's tolerance, in stored value: well under a half float's
+// step at 0.25 (1/4096), so a picture kept in halves fails, and above the
+// float maths a GPU and Magerie's JS twin differ by.
+const FLOAT_TOLERANCE = 1 / 8192
 // Another manifest in goldens/ojplay's format: a set Magerie has not vendored yet, or one made from its JS twins.
 const OJPLAY_DIR = path.resolve(arg("ojplay", path.join(here, "goldens", "ojplay")))
 const golden = (name) => base(name).startsWith("ground/")
@@ -166,16 +170,19 @@ function writeOjplay() {
     const dir = OJPLAY_DIR
     const m = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"))
     const cases = m.cases.map((c) => {
-        const outputs = c.outputs ?? [c.output]
+        const outputs = (c.outputs ?? [c.output]).map((o) => ({ ...o, float: o.float === true || o.format === "rgba32f" }))
         const [w, h] = c.size
         // An input is a file, or a node run on its own inputs first (Material under Material Light).
         const input = ([port, i]) => i.node !== undefined
-            ? { port, node: i.node, params: i.params, inputs: Object.entries(i.inputs).map(input) }
+            ? { port, node: i.node, params: i.params, inputs: Object.entries(i.inputs).map(input), output: i.output }
             : { port, tiles: i.tiles, w, h, hex: fs.readFileSync(path.join(dir, i.file)).toString("hex") }
         const inputs = Object.entries(c.inputs).map(input)
         return {
             node: c.node, params: c.params, inputs,
-            outputs: outputs.map((o) => ({ port: o.port, name: `ojplay/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, tolerance: c.tolerance ?? 1 })),
+            outputs: outputs.map((o) => ({
+                port: o.port, name: `ojplay/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, float: o.float,
+                tolerance: o.tolerance ?? c.tolerance ?? (o.float ? FLOAT_TOLERANCE : 1),
+            })),
         }
     })
     fs.writeFileSync(path.join(root, "ojplay.gen.ts"), `// Written by run.mjs from ${path.relative(here, dir)}/manifest.json (magerie-one ${m.magerieCommit}). Do not edit.\nexport const OJPLAY = ${JSON.stringify(cases)}\n`)
@@ -230,7 +237,8 @@ async function draw() {
             if (m[1] === "error") { out.set(m[2], { error: m[3] }); continue }
             if (m[1] === "pending") { out.set(m[2], { pending: m[3] }); continue }
             const [size, tiles, hex] = m[3].split(" ")
-            out.set(m[2], { size, tiles: tiles === "tiles", bytes: Buffer.from(hex, "hex") })
+            const float = hex.startsWith("f:")
+            out.set(m[2], { size, tiles: tiles === "tiles", float, bytes: Buffer.from(float ? hex.slice(2) : hex, "hex") })
         }
         for (const e of game.errors) say(`console error: ${e}`)
         return out
@@ -239,8 +247,13 @@ async function draw() {
     }
 }
 
-function compare(bytes, expected, tolerance) {
-    if (bytes.length !== expected.length) return { worst: Infinity, off: bytes.length, note: `${bytes.length} bytes against ${expected.length}` }
+/** Little-endian float32s, from a golden's or a drawing's bytes. */
+const floats = (b) => Array.from({ length: b.length / 4 }, (_, i) => b.readFloatLE(i * 4))
+
+function compare(got, expected, tolerance, float) {
+    const bytes = float ? floats(got) : got
+    if (float) expected = floats(expected)
+    if (bytes.length !== expected.length) return { worst: Infinity, off: bytes.length, note: `${bytes.length} values against ${expected.length}` }
     let worst = 0, off = 0
     for (let i = 0; i < bytes.length; i++) {
         const d = Math.abs(bytes[i] - expected[i])
@@ -278,7 +291,8 @@ for (const [i, name] of names.entries()) {
     }
     const expect = ojplay.get(base(name)) ?? chainOut.get(base(name)) ?? groundOut.get(base(name))
     const tolerance = expect?.tolerance ?? 1
-    const r = compare(got.bytes, golden(against), tolerance)
+    // A float golden is held as float, and a drawing that came back in bytes against one fails on its length.
+    const r = compare(got.bytes, golden(against), tolerance, expect?.float === true && got.float === true)
     // Whether it tiles is part of the answer: it decides how every reader's edges go.
     const tilesWrong = !NEGATIVE && expect !== undefined && expect.tiles !== got.tiles
     compared++

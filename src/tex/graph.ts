@@ -38,6 +38,15 @@ export interface Node {
     readonly texture?: unknown
 }
 
+/**
+ * Whether a node is held in 32-bit floats (`params.float`): a generator
+ * asked for `bitDepth: "32"`, and every node reading one, as Magerie's float
+ * wins. Otherwise 8 bits, or the half floats a few nodes keep (`params.half`).
+ */
+export function isFloat(n: Node): boolean {
+    return n.params.float === true
+}
+
 /** FNV-1a over a string, as eight hex digits. */
 function hash32(text: string, seed = 0x811c9dc5): string {
     let h = seed >>> 0
@@ -54,6 +63,8 @@ export function makeNode(
     op: string, kind: NodeKind, inputs: readonly Node[], params: Record<string, unknown>,
     width: number, height: number, tiles: boolean, texture?: unknown,
 ): Node {
+    // Float wins: a node reading a 32-bit picture is 32-bit.
+    if (params.float !== true && inputs.some(isFloat)) params = { ...params, float: true }
     // A source's identity is the texture it holds, which has no stable text,
     // so each source is its own node.
     const key = texture !== undefined
