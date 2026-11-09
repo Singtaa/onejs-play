@@ -84,8 +84,8 @@ export interface CurvesOptions {
     channel?: CurvesChannel
 }
 
-export type { GradientType, ChannelMathOp, ChannelMathChannels, AlphaChannel } from "./kernels"
-import type { GradientType, ChannelMathOp, ChannelMathChannels, AlphaChannel } from "./kernels"
+export type { GradientType, ChannelMathOp, ChannelMathChannels, AlphaChannel, ShapeType, ChannelSource } from "./kernels"
+import type { GradientType, ChannelMathOp, ChannelMathChannels, AlphaChannel, ShapeType, ChannelSource } from "./kernels"
 
 export interface GradientOptions extends SizeOptions {
     type?: GradientType
@@ -118,6 +118,54 @@ export interface HslAdjustOptions {
 
 export interface MaskOptions {
     invert?: boolean
+}
+
+export interface SdfShapeOptions extends SizeOptions {
+    shape?: ShapeType
+    /** The shape's size: 2 spans the picture. */
+    size?: number
+    /** Degrees. */
+    rotation?: number
+    /** From the centre, -1 to 1, y down: 0.5 is a quarter of the picture. */
+    offsetX?: number
+    offsetY?: number
+    /** An ellipse's width and height, 0.1 to 1, times size. */
+    shapeWidth?: number
+    shapeHeight?: number
+    /** A vesica's width and height, 0.1 to 2, times size. */
+    vesicaWidth?: number
+    vesicaHeight?: number
+    /** A band of `edgeColor` this far either side of the edge, 0 to 0.1. */
+    edgeBand?: number
+    fillColor?: string
+    edgeColor?: string
+    backgroundColor?: string
+    /** The background's alpha 0, whatever its colour says. */
+    transparentBackground?: boolean
+}
+
+export interface ChannelShuffleOptions {
+    /** Each output channel's source: a stored channel, or "0" or "1". */
+    outR?: ChannelSource
+    outG?: ChannelSource
+    outB?: ChannelSource
+    outA?: ChannelSource
+}
+
+export interface ThresholdOptions {
+    threshold?: number
+    /** A smoothstep `smoothness` either side, instead of a hard step. */
+    smooth?: boolean
+    smoothness?: number
+}
+
+export interface DistanceOptions extends EdgesOptions {
+    /** `"inside"` ramps up into the light part; `"outside"` away from it. */
+    mode?: "inside" | "outside"
+    /** Pixels at which the ramp reaches 1, 1 to 256. */
+    maxDistance?: number
+    /** The luma that splits light from dark. */
+    threshold?: number
 }
 
 export interface ChannelMathOptions {
@@ -250,6 +298,14 @@ interface ImageNodes {
     directionalWarp(src: TexImage, map: TexImage, angle?: number | DirectionalWarpOptions, intensity?: number | DirectionalWarpOptions, opts?: DirectionalWarpOptions): TexImage
     /** This picture's colour with `height`'s grey as alpha, straight: what a splat layer reads. */
     alpha(color: TexImage, height: TexImage): TexImage
+    /** Rearranges the stored channels: `channelShuffle(leaf, "aaa1")` is its alpha as an opaque grey. */
+    channelShuffle(img: TexImage, swizzle?: string | ChannelShuffleOptions, opts?: ChannelShuffleOptions): TexImage
+    /** White where the luma reaches `threshold`, black below, the alpha kept. */
+    threshold(img: TexImage, threshold?: number | ThresholdOptions, opts?: ThresholdOptions): TexImage
+    /** Each pixel's distance to the other side of `threshold`, over `maxDistance` pixels, as grey. */
+    distance(img: TexImage, ...rest: [mode?: "inside" | "outside" | DistanceOptions, maxDistance?: number | DistanceOptions, opts?: DistanceOptions] | [maxDistance?: number | DistanceOptions, opts?: DistanceOptions]): TexImage
+    /** Up to three layers over this picture, in order, by their alpha. */
+    composite(base: TexImage, ...layers: [] | [TexImage] | [TexImage, TexImage] | [TexImage, TexImage, TexImage]): TexImage
 }
 
 type Tail<F> = F extends (first: TexImage, ...rest: infer R) => TexImage ? (...rest: R) => TexImage : never
@@ -266,6 +322,8 @@ interface Generators {
     /** Lights a material from `lightAngle` and renders it to a picture the albedo's size. */
     materialLight(material: Material, lightAngle?: number | MaterialLightOptions, opts?: MaterialLightOptions): TexImage
     noise(...args: [type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions] | [seed?: number | NoiseOptions, opts?: NoiseOptions]): TexImage
+    /** A circle, ellipse or vesica, antialiased, filled over a background: `sdfShape("ellipse", 0.8, { shapeHeight: 0.74 })`. */
+    sdfShape(...args: [shape?: ShapeType | SdfShapeOptions, size?: number | SdfShapeOptions, opts?: SdfShapeOptions] | [size?: number | SdfShapeOptions, opts?: SdfShapeOptions]): TexImage
 }
 
 export type TexFunctions = ImageNodes & Generators

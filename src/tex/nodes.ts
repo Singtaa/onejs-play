@@ -23,6 +23,8 @@ export interface Canvas {
 export interface Spec {
     /** Leading image arguments. */
     readonly images: number
+    /** Up to this many more images may follow them, as Composite's layers do. */
+    readonly optionalImages?: number
     /**
      * The parameter a leading string after the images names, as Magerie's
      * script API takes a kind: `noise("voronoi", 5)`, `slopeBlur(a, s, "min")`.
@@ -158,6 +160,16 @@ const GRADIENT_TYPES: readonly k.GradientType[] = ["linear", "radial", "angular"
 const CHANNEL_MATH_OPS: readonly k.ChannelMathOp[] = ["add", "subtract", "multiply", "screen", "overlay", "difference", "divide"]
 const CHANNEL_MATH_CHANNELS: readonly k.ChannelMathChannels[] = ["rgb", "rgba", "r", "g", "b", "a"]
 const ALPHA_CHANNELS: readonly k.AlphaChannel[] = ["luma", "red", "alpha"]
+const SHAPES: readonly k.ShapeType[] = ["circle", "ellipse", "vesica"]
+const CHANNEL_SOURCES: readonly k.ChannelSource[] = ["r", "g", "b", "a", "0", "1"]
+/** Every parameter of Magerie's Shape, so a board's call is taken whole; tex draws three of its shapes so far. */
+const SHAPE_DEFAULTS = {
+    shape: "circle", size: 1.5, edgeBand: 0, rotation: 0, offsetX: 0, offsetY: 0, shapeWidth: 0.5, shapeHeight: 0.5,
+    capsuleLength: 0.6, capsuleThickness: 0.3, cornerRadius: 0.05, angle: 270, thickness: 0.05,
+    eggHeight: 0.45, eggBottomRadius: 0.3, eggTopRadius: 0.1, eggBulge: 0.75,
+    moonDistance: 0.2, moonOuterRadius: 0.45, moonInnerRadius: 0.32, vesicaWidth: 0.5, vesicaHeight: 0.8,
+    fillColor: "#ffffff", edgeColor: "#ff6b6b", backgroundColor: "#000000", transparentBackground: false,
+}
 
 /**
  * Two pictures mixed pixel by pixel at Magerie's mix size (spec 1.3): the
@@ -558,6 +570,97 @@ export const SPECS = {
         defaults: {},
         make(_p, [color, height]) { return pointwise("alpha", {}, [color!, height!]) },
     },
+    sdfShape: {
+        images: 0,
+        kind: "shape",
+        positional: ["size"],
+        defaults: { ...SHAPE_DEFAULTS, ...SIZE },
+        make(p, _images, canvas) {
+            const [w, h] = sizeOf(p, canvas)
+            const shape = p.shape as k.ShapeType
+            if (!SHAPES.includes(shape)) throw new Error(`[oj] tex sdfShape: shape is ${JSON.stringify(p.shape)}; tex draws ${SHAPES.join(", ")} so far`)
+            const size = num(p.size, "sdfShape size", 0.01, 2)
+            const rotation = num(p.rotation, "sdfShape rotation") * Math.PI / 180
+            const background = hexRGBA(String(p.backgroundColor), "sdfShape backgroundColor")
+            if (p.transparentBackground === true) background[3] = 0
+            // packShapeParams: every dimension scaled by size.
+            const [a, b] = shape === "circle" ? [size / 2, 0]
+                : shape === "ellipse" ? [num(p.shapeWidth, "sdfShape shapeWidth", 0.1, 1) * size / 2, num(p.shapeHeight, "sdfShape shapeHeight", 0.1, 1) * size / 2]
+                : [num(p.vesicaWidth, "sdfShape vesicaWidth", 0.1, 2) * size, num(p.vesicaHeight, "sdfShape vesicaHeight", 0.1, 2) * size]
+            const v: k.ShapeValues = {
+                shape, a, b, cos: Math.cos(rotation), sin: Math.sin(rotation),
+                offset: [num(p.offsetX, "sdfShape offsetX", -1, 1), num(p.offsetY, "sdfShape offsetY", -1, 1)],
+                edgeBand: num(p.edgeBand, "sdfShape edgeBand", 0, 0.1),
+                fill: hexRGBA(String(p.fillColor), "sdfShape fillColor"), edge: hexRGBA(String(p.edgeColor), "sdfShape edgeColor"), background,
+            }
+            return makeNode("sdfShape", "generator", [], v as unknown as Record<string, unknown>, w, h, false)
+        },
+    },
+    channelShuffle: {
+        images: 1,
+        kind: "swizzle",
+        positional: [],
+        defaults: { swizzle: null, outR: "r", outG: "g", outB: "b", outA: "a" },
+        make(p, [a]) {
+            let out = [p.outR, p.outG, p.outB, p.outA]
+            if (p.swizzle !== null) {
+                // "aaa1": each output channel's source, in order.
+                if (typeof p.swizzle !== "string" || !/^[rgba01]{4}$/.test(p.swizzle)) throw new Error(`[oj] tex channelShuffle: ${JSON.stringify(p.swizzle)} is four of r, g, b, a, 0 and 1, as "aaa1"`)
+                out = [...p.swizzle]
+            }
+            for (const c of out) if (!CHANNEL_SOURCES.includes(c as k.ChannelSource)) throw new Error(`[oj] tex channelShuffle: ${JSON.stringify(c)} is r, g, b, a, "0" or "1"`)
+            return pointwise("channelShuffle", { out }, [a!])
+        },
+    },
+    threshold: {
+        images: 1,
+        positional: ["threshold"],
+        defaults: { threshold: 0.5, smooth: false, smoothness: 0.02 },
+        make(p, [a]) {
+            // Magerie keeps a half-float input half (MageriePreserveFloatFormat).
+            return pointwise("threshold", {
+                threshold: num(p.threshold, "threshold", 0, 1),
+                smoothness: p.smooth === true ? num(p.smoothness, "threshold smoothness", 0, 0.5) : 0,
+                half: a!.params.half === true,
+            }, [a!])
+        },
+    },
+    distance: {
+        images: 1,
+        kind: "mode",
+        positional: ["maxDistance"],
+        defaults: { mode: "inside", maxDistance: 30, threshold: 0.5, edges: "auto" },
+        make(p, [a]) {
+            const wrap = wraps(p.edges, a!, "distance")
+            if (p.mode !== "inside" && p.mode !== "outside") throw new Error(`[oj] tex distance: mode is ${JSON.stringify(p.mode)}, and is "inside" or "outside"`)
+            if (Math.max(a!.width, a!.height) > 2048) throw new Error(`[oj] tex distance: ${a!.width} by ${a!.height} is past 2048, the most a seed's whole pixels hold exactly`)
+            // A jump flood (_jfaDistance.ts): seeds, steps from half the size down to 1, one more 1, then the distance.
+            let n = area("distanceSeed", { threshold: num(p.threshold, "distance threshold", 0, 1), inside: p.mode === "inside", wrap, half: true }, [a!], wrap)
+            let top = 1
+            while (top < Math.max(a!.width, a!.height)) top *= 2
+            const steps: number[] = []
+            for (let s = Math.max(1, top / 2); s >= 1; s = s >> 1) steps.push(s)
+            for (const step of [...steps, 1]) n = area("distanceStep", { step, wrap, half: true }, [n], wrap)
+            // Magerie writes it in half floats, so a lit chain does not band.
+            return area("distanceRemap", { maxDistance: Math.max(1, num(p.maxDistance, "distance maxDistance", 1, 256)), wrap, half: true }, [n], wrap)
+        },
+    },
+    composite: {
+        images: 1,
+        optionalImages: 3,
+        positional: [],
+        defaults: {},
+        make(_p, layers) {
+            // One layer is a copy; more go over it in order, at the first size that is not 1 by 1 (fitInputs).
+            const sized = layers.find((l) => l.width * l.height > 1) ?? layers[0]!
+            const half = layers[0]!.params.half === true
+            let out = layers[0]!
+            for (const layer of layers.slice(1)) {
+                out = makeNode("over", "pointwise", [out, layer], { half }, sized.width, sized.height, out.tiles && layer.tiles)
+            }
+            return out
+        },
+    },
 } satisfies Record<string, Spec>
 
 /** What each op draws. Blur is two ops, one an axis. */
@@ -595,6 +698,13 @@ export const KERNELS: Record<string, Kernel> = {
     warp: (s, n, i) => k.warp(s, i.texture(0, n.params.wrap as boolean), i.texture(1, n.params.wrap as boolean), n.params.strength as number),
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),
+    sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
+    channelShuffle: (_s, n, i) => k.channelShuffle(i.value(0), n.params.out as k.ChannelSource[]),
+    threshold: (s, n, i) => k.threshold(s, i.value(0), n.params.threshold as number, n.params.smoothness as number),
+    over: (_s, _n, i) => k.over(i.value(0), i.value(1)),
+    distanceSeed: (s, n, i) => k.distanceSeed(s, i.texture(0, wrapOf(n)), n.params.threshold as number, n.params.inside as boolean, wrapOf(n)),
+    distanceStep: (s, n, i) => k.distanceStep(s, i.texture(0, wrapOf(n)), n.params.step as number, wrapOf(n)),
+    distanceRemap: (s, n, i) => k.distanceRemap(s, i.texture(0, wrapOf(n)), n.params.maxDistance as number, wrapOf(n)),
 }
 
 export type SpecName = keyof typeof SPECS
@@ -608,8 +718,10 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
         if (!isImage(a)) throw new Error(`[oj] tex ${name}: argument ${i + 1} is ${a === undefined ? "missing" : typeof a}, and is an image from tex`)
         images.push(a.node)
     }
+    let taken = spec.images
+    while (taken < spec.images + (spec.optionalImages ?? 0) && isImage(args[taken])) images.push((args[taken++] as { node: Node }).node)
     const params: Record<string, unknown> = { ...spec.defaults }
-    let rest = args.slice(spec.images)
+    let rest = args.slice(taken)
     let material: Material | undefined
     if (spec.material === true) {
         if (!isMaterial(rest[0])) throw new Error(`[oj] tex ${name}: argument 1 is ${rest[0] === undefined ? "missing" : typeof rest[0]}, and is a material from tex.material({ albedo, ... })`)
@@ -632,7 +744,7 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
         const key = spec.positional[i]
         if (key === undefined) {
             const takes = [...(spec.kind === undefined ? [] : [`a ${spec.kind} string`]), ...spec.positional]
-            throw new Error(`[oj] tex ${name}: takes ${takes.length === 0 ? "nothing" : takes.join(", then ")} after its image${spec.images === 1 ? "" : "s"}, then options; argument ${args.length - rest.length + i + 1} is ${typeof a === "string" ? `the string ${JSON.stringify(a)}` : "extra"}`)
+            throw new Error(`[oj] tex ${name}: takes ${takes.length === 0 ? "nothing" : takes.join(", then ")} after its ${spec.optionalImages ? `${spec.images} to ${spec.images + spec.optionalImages} images` : `image${spec.images === 1 ? "" : "s"}`}, then options; argument ${args.length - rest.length + i + 1} is ${typeof a === "string" ? `the string ${JSON.stringify(a)}` : "extra"}`)
         }
         if (a !== undefined) params[key] = a
     }

@@ -941,3 +941,166 @@ export function ambientOcclusion(s: Scope, src: TexRead, radius: number, intensi
     const ao: S = sl.float(1).sub(occlusion.div(N).mul(s.f(intensity))).saturate()
     return sl.vec4(ao, ao, ao, 1)
 }
+
+// the SDF group (MetalRenderer.mm generateSDFShape, applyThreshold,
+// applyComposite; _jfaDistance.ts; channelShuffle's generated kernel)
+
+export type ShapeType = "circle" | "ellipse" | "vesica"
+
+/** Shape's parameters as its kernel takes them: packShapeParams' A and B, rotation as its cosine and sine. */
+export interface ShapeValues {
+    shape: ShapeType
+    a: number
+    b: number
+    cos: number
+    sin: number
+    offset: [number, number]
+    edgeBand: number
+    fill: number[]
+    edge: number[]
+    background: number[]
+}
+
+/** IQ's ellipse as Magerie's Metal has it, both branches drawn and one kept. */
+function sdEllipse(p: S, a: S, b: S): S {
+    const pa = p.abs()
+    const swap = pa.x.gt(pa.y)
+    const px: S = sl.select(swap, pa.y, pa.x), py: S = sl.select(swap, pa.x, pa.y)
+    const ax: S = sl.select(swap, b, a), ay: S = sl.select(swap, a, b)
+    const l: S = ay.mul(ay).sub(ax.mul(ax))
+    const m: S = ax.mul(px).div(l), m2: S = m.mul(m)
+    const n: S = ay.mul(py).div(l), n2: S = n.mul(n)
+    const c: S = m2.add(n2).sub(1).div(3), c3: S = c.mul(c).mul(c)
+    const q: S = c3.add(m2.mul(n2).mul(2))
+    const d: S = c3.add(m2.mul(n2))
+    const g: S = m.add(m.mul(n2))
+    const root3 = Math.sqrt(3)
+    // d < 0
+    const h1: S = sl.acos(q.div(c3)).div(3)
+    const s1: S = sl.cos(h1), t1: S = sl.sin(h1).mul(root3)
+    const rx1: S = sl.sqrt(c.neg().mul(s1.add(t1).add(2)).add(m2))
+    const ry1: S = sl.sqrt(c.neg().mul(s1.sub(t1).add(2)).add(m2))
+    const co1: S = ry1.add(sl.sign(l).mul(rx1)).add(g.abs().div(rx1.mul(ry1))).sub(m).div(2)
+    // d >= 0
+    const h2: S = m.mul(n).mul(2).mul(sl.sqrt(d))
+    const cube = (v: S): S => sl.sign(v).mul(v.abs().pow(1 / 3))
+    const s2: S = cube(q.add(h2)), u2: S = cube(q.sub(h2))
+    const rx2: S = s2.neg().sub(u2).sub(c.mul(4)).add(m2.mul(2))
+    const ry2: S = s2.sub(u2).mul(root3)
+    const rm: S = sl.sqrt(rx2.mul(rx2).add(ry2.mul(ry2)))
+    const co2: S = ry2.div(sl.sqrt(rm.sub(rx2))).add(g.mul(2).div(rm)).sub(m).div(2)
+    const co: S = sl.select(d.lt(0), co1, co2)
+    const r2: S = sl.vec2(ax.mul(co), ay.mul(sl.sqrt(sl.float(1).sub(co.mul(co)))))
+    const pp: S = sl.vec2(px, py)
+    return r2.sub(pp).length().mul(sl.sign(py.sub(r2.y)))
+}
+
+/** IQ's vesica as Magerie's Metal has it: w the half width, h the half height. */
+function sdVesica(p: S, w: number, h: number): S {
+    const d = 0.5 * (w * w - h * h) / h
+    const q: S = p.abs()
+    const tip: S = sl.vec2(q.x.sub(w), q.y).length()
+    const arc: S = sl.vec2(q.x, q.y.add(d)).length().sub(d + h)
+    return sl.select(q.y.mul(w).lt(q.x.sub(w).mul(d)), tip, arc)
+}
+
+/** Magerie's Shape (generateSDFShape): uv from the pixel's corner, both axes on [-1, 1], 1.5 px of antialiasing, premultiplied. */
+export function sdfShape(s: Scope, v: ShapeValues): Vec4 {
+    const uv: S = s.pixel.div(s.size).sub(0.5).mul(2).sub(sl.vec2(s.f(v.offset[0] * 2), s.f(v.offset[1] * 2)))
+    const c = s.f(v.cos), n = s.f(v.sin)
+    const p: S = sl.vec2(uv.x.mul(c).add(uv.y.mul(n)), uv.x.neg().mul(n).add(uv.y.mul(c)))
+    const A = s.f(v.a), B = s.f(v.b)
+    let d: S
+    if (v.shape === "circle") d = p.length().sub(A)
+    // Magerie's near-circle guard, decided where the sizes are known.
+    else if (v.shape === "ellipse") d = Math.abs(v.a - v.b) / Math.max(v.a, v.b, 1e-10) < 0.001 ? p.length().sub(s.f((v.a + v.b) / 2)) : sdEllipse(p, A, B)
+    else d = sdVesica(p, v.a, v.b)
+    const aa: S = sl.float(3).div(min(s.size.x, s.size.y))
+    const inside: S = sl.float(1).sub(sl.smoothstep(aa.neg(), aa, d))
+    let color: S = sl.mix(s.f4(v.background), s.f4(v.fill), inside)
+    if (v.edgeBand > 0) {
+        const eb = s.f(v.edgeBand)
+        const edge: S = sl.smoothstep(eb.neg().sub(aa), eb.neg(), d).mul(sl.float(1).sub(sl.smoothstep(eb, eb.add(aa), d)))
+        color = sl.mix(color, s.f4(v.edge), edge)
+    }
+    return sl.vec4(color.xyz.mul(color.w), color.w)
+}
+
+/** Where Channel Shuffle takes each output channel from: one of the stored channels, or a constant. */
+export type ChannelSource = "r" | "g" | "b" | "a" | "0" | "1"
+
+/** Magerie's Channel Shuffle: the stored (premultiplied) channels as they are, rearranged. */
+export function channelShuffle(c: Vec4, out: readonly ChannelSource[]): Vec4 {
+    const pick = (k: ChannelSource): S => (k === "0" ? 0 : k === "1" ? 1 : (c as S)[k === "r" ? "x" : k === "g" ? "y" : k === "b" ? "z" : "w"])
+    return sl.vec4(pick(out[0]!), pick(out[1]!), pick(out[2]!), pick(out[3]!))
+}
+
+/** Magerie's Threshold (applyThreshold): luma of the straight colour, hard or smoothstepped, alpha kept. */
+export function threshold(s: Scope, c: Vec4, at: number, smoothness: number): Vec4 {
+    const lum: S = unpremultiply(c).dot(sl.vec3(0.299, 0.587, 0.114))
+    const t = s.f(at)
+    const value: S = smoothness > 0.0001
+        ? sl.smoothstep(t.sub(s.f(smoothness)), t.add(s.f(smoothness)), lum)
+        : sl.select(lum.ge(t), sl.float(1), sl.float(0))
+    return sl.vec4(sl.vec3(value, value, value).mul(c.w), c.w)
+}
+
+/** Premultiplied Porter-Duff over: Magerie's Composite, one layer at a time. */
+export function over(base: Vec4, layer: Vec4): Vec4 {
+    const keep: S = sl.float(1).sub(layer.w)
+    return (layer as S).add((base as S).mul(keep)) as Vec4
+}
+
+/**
+ * A seed for Distance's jump flood: where the nearest pixel of the other
+ * class is, as whole pixels in x and y and their fractions in z and w, so a
+ * half-float target holds it as exactly as Magerie's 32-bit one does at any
+ * size up to 2048. x below 0 is no seed yet.
+ */
+const noSeed = (): S => sl.vec4(-1, 0, 0, 0)
+const seedAt = (pos: S): S => { const f: S = pos.floor(); return sl.vec4(f.x, f.y, pos.x.sub(f.x), pos.y.sub(f.y)) }
+const seedPos = (t: S): S => sl.vec2(t.x.add(t.z), t.y.add(t.w))
+/** The shortest way round a tiling picture (Metal's round, but for exact halves). */
+const nearestImage = (d: S, size: S, wrap: boolean): S => (wrap ? d.sub(d.div(size).add(0.5).floor().mul(size)) : d)
+
+/** Distance's seed pass (_jfaDistance.ts): every pixel of the other class, a boundary one moved to where luma crosses the threshold. */
+export function distanceSeed(s: Scope, src: TexRead, at: number, inside: boolean, wrap: boolean): Vec4 {
+    const t = s.f(at)
+    const lumAt = (dx: number, dy: number): S => luma(src.fetch(sl.vec2(edgeIndex(s.pixel.x.add(dx), src.size.x, wrap), edgeIndex(s.pixel.y.add(dy), src.size.y, wrap))))
+    const l: S = luma(src.fetch(s.pixel))
+    const fore: S = l.ge(t)
+    const lL = lumAt(-1, 0), lR = lumAt(1, 0), lU = lumAt(0, -1), lD = lumAt(0, 1)
+    const differs = (n: S): S => n.ge(t).ne(fore)
+    const boundary: S = l.gt(0).and(l.lt(1)).or(differs(lL)).or(differs(lR)).or(differs(lU)).or(differs(lD))
+    const grad: S = sl.vec2(lR.sub(lL).mul(0.5), lD.sub(lU).mul(0.5))
+    const gl2: S = grad.dot(grad)
+    const off: S = grad.mul(t.sub(l).div(max(gl2, 1e-8))).clamp(-0.5, 0.5)
+    const moved: S = sl.select(boundary.and(gl2.gt(1e-8)), sl.float(1), sl.float(0))
+    const seed = seedAt(s.pixel.add(off.mul(moved)))
+    return sl.select(inside ? fore.not() : fore, seed, noSeed()) as Vec4
+}
+
+/** One jump-flood step: the nearest of the seeds `step` away in the eight directions and here. */
+export function distanceStep(s: Scope, src: TexRead, step: number, wrap: boolean): Vec4 {
+    let best: S = noSeed()
+    let bestD2: S = sl.float(1e30)
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            const nb: S = src.fetch(sl.vec2(edgeIndex(s.pixel.x.add(dx * step), src.size.x, wrap), edgeIndex(s.pixel.y.add(dy * step), src.size.y, wrap)))
+            const d: S = nearestImage(seedPos(nb).sub(s.pixel), src.size, wrap)
+            const d2: S = d.dot(d)
+            const better: S = nb.x.ge(0).and(d2.lt(bestD2))
+            best = sl.select(better, nb, best)
+            bestD2 = sl.select(better, d2, bestD2)
+        }
+    }
+    return best
+}
+
+/** Distance's output: the distance to the nearest seed over maxDistance, clamped, 1 where no seed reached. */
+export function distanceRemap(s: Scope, src: TexRead, maxDistance: number, wrap: boolean): Vec4 {
+    const sd: S = src.fetch(s.pixel)
+    const d: S = nearestImage(seedPos(sd).sub(s.pixel), src.size, wrap)
+    const v: S = sl.select(sd.x.ge(0), d.length().div(s.f(Math.max(maxDistance, 1))).saturate(), sl.float(1))
+    return sl.vec4(v, v, v, 1)
+}

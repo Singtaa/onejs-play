@@ -18,6 +18,9 @@ const MAGERIE_KINDS: Record<string, string> = {
     curvature: "mode", autoLevels: "mode", curves: "preset", slopeBlur: "mode", alphaMerge: "alphaChannel",
 }
 
+/** Nodes Magerie's script API has no op for, whose kind tex chose: the exporter writes them as tex spells them. */
+const TEX_KINDS: Record<string, string> = { channelShuffle: "swizzle", distance: "mode" }
+
 const passes = (img: TexImage) => plan(img.node, KERNELS)
 
 describe("tex graph", () => {
@@ -72,7 +75,7 @@ describe("tex graph", () => {
 describe("tex against Magerie's exporter", () => {
     it("takes a leading kind string on exactly the nodes Magerie writes one for", () => {
         for (const [name, spec] of Object.entries(SPECS) as [string, { kind?: string }][]) {
-            expect([name, spec.kind]).toEqual([name, MAGERIE_KINDS[name]])
+            expect([name, spec.kind]).toEqual([name, MAGERIE_KINDS[name] ?? TEX_KINDS[name]])
         }
     })
 })
@@ -162,6 +165,47 @@ describe("tex generators and mixes", () => {
         const { noise } = tex.canvas(32)
         expect(noise("perlin", 1).alphaMerge(noise("perlin", 2)).node.params).toEqual({ alphaChannel: "luma", half: true })
         expect(passes(noise("perlin", 1).alphaMerge(noise("perlin", 2), "red")).length).toBe(1)
+    })
+})
+
+describe("tex shapes and masks", () => {
+    it("takes Magerie's Shape call whole, and draws its circle, ellipse and vesica", () => {
+        const { sdfShape } = tex.canvas(32)
+        const leaf = sdfShape("ellipse", 0.8, { shapeWidth: 1, shapeHeight: 0.74, rotation: 90, capsuleLength: 0.6, transparentBackground: true })
+        expect(leaf.node.params).toMatchObject({ shape: "ellipse", a: 0.4, b: 0.8 * 0.74 / 2, background: [0, 0, 0, 0] })
+        expect(leaf.node.params.cos).toBeCloseTo(0)
+        expect(leaf.tiles).toBe(false)
+        expect(sdfShape("vesica", { vesicaWidth: 0.92, width: 96, height: 64 }).width).toBe(96)
+        expect(() => sdfShape("heart")).toThrow(/circle, ellipse, vesica so far/)
+    })
+
+    it("shuffles channels by name or by a four-letter swizzle", () => {
+        const { noise } = tex.canvas(16)
+        expect(noise(1).channelShuffle("aaa1").node.params).toEqual({ out: ["a", "a", "a", "1"] })
+        expect(noise(1).channelShuffle({ outR: "g" }).node.params).toEqual({ out: ["g", "g", "b", "a"] })
+        expect(() => noise(1).channelShuffle("rgbx")).toThrow(/four of r, g, b, a, 0 and 1/)
+    })
+
+    it("composites up to three layers over a base, one pass, at the first size past 1 by 1", () => {
+        const { noise, solidColor } = tex.canvas(32)
+        const base = noise(1)
+        expect(base.composite().node).toBe(base.node)
+        const stack = solidColor({ width: 1, height: 1 }).composite(noise(2), noise(3), noise(4))
+        expect([stack.width, stack.height]).toEqual([32, 32])
+        // The 1 by 1 base is another size, so it is drawn first; the layers go over it in one pass.
+        expect(passes(stack)).toHaveLength(2)
+        expect(passes(base.composite(noise(2), noise(3)))).toHaveLength(1)
+        expect(() => base.composite(noise(2), noise(3), noise(4), noise(5))).toThrow(/takes nothing after its 1 to 4 images/)
+    })
+
+    it("floods distance in log2 steps plus one, held in half floats", () => {
+        const { noise } = tex.canvas(128)
+        const d = noise(1).distance("outside", 140)
+        // A seed pass, 64 down to 1 and one more 1, then the distance.
+        expect(passes(d).map((p) => p.node.op).slice(1)).toEqual(["distanceSeed", ...Array(8).fill("distanceStep"), "distanceRemap"])
+        expect(d.node.params).toEqual({ maxDistance: 140, wrap: false, half: true })
+        expect(noise(1).distance({ edges: "wrap" }).tiles).toBe(true)
+        expect(() => noise(1).distance("both")).toThrow(/"inside" or "outside"/)
     })
 })
 
