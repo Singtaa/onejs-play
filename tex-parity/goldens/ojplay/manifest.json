@@ -1,5 +1,5 @@
 {
-  "magerieCommit": "ac7272c7e",
+  "magerieCommit": "1e3a377f7",
   "cases": [
     {
       "name": "normalMap/waves-s4-r0-wrap",
@@ -1435,6 +1435,825 @@
       "output": {
         "port": "out-image",
         "file": "alphaMerge/colour-by-disc-luma-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/circle-broad-s084-off",
+      "node": "sdfShape",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "shape": "circle",
+        "size": 0.84,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": -0.25,
+        "offsetY": -0.25,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/circle-broad-s084-off.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/ellipse-broad-s08-h074-off",
+      "node": "sdfShape",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "shape": "ellipse",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": -0.25,
+        "offsetY": 0.23,
+        "shapeWidth": 1,
+        "shapeHeight": 0.74,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/ellipse-broad-s08-h074-off.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/ellipse-broad-rot30",
+      "node": "sdfShape",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "shape": "ellipse",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 30,
+        "offsetX": -0.25,
+        "offsetY": 0.23,
+        "shapeWidth": 1,
+        "shapeHeight": 0.74,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/ellipse-broad-rot30.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/vesica-broad-96x64",
+      "node": "sdfShape",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "shape": "vesica",
+        "size": 1,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.92,
+        "vesicaHeight": 0.52,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/vesica-broad-96x64.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/vesica-needle-72x14",
+      "node": "sdfShape",
+      "size": [
+        72,
+        14
+      ],
+      "params": {
+        "shape": "vesica",
+        "size": 1,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.95,
+        "vesicaHeight": 0.22,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 72,
+        "height": 14
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/vesica-needle-72x14.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/circle-needle-s009-128",
+      "node": "sdfShape",
+      "size": [
+        128,
+        128
+      ],
+      "params": {
+        "shape": "circle",
+        "size": 0.09,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": -0.465,
+        "offsetY": -0.25,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 128,
+        "height": 128
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/circle-needle-s009-128.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/ellipse-rock-w032-h09-clear",
+      "node": "sdfShape",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "shape": "ellipse",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.32,
+        "shapeHeight": 0.9,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#00000000",
+        "transparentBackground": true,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/ellipse-rock-w032-h09-clear.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/ellipse-rock-black-h02-clear",
+      "node": "sdfShape",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "shape": "ellipse",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 1,
+        "shapeHeight": 0.2,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#000000ff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#00000000",
+        "transparentBackground": true,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/ellipse-rock-black-h02-clear.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/default",
+      "node": "sdfShape",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "shape": "circle",
+        "size": 1.5,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 32,
+        "height": 32
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelShuffle/disc-alpha-aaa1",
+      "node": "channelShuffle",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "outR": "a",
+        "outG": "a",
+        "outB": "a",
+        "outA": "1"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelShuffle/disc-alpha-aaa1.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelShuffle/disc-alpha-gbra",
+      "node": "channelShuffle",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "outR": "g",
+        "outG": "b",
+        "outB": "r",
+        "outA": "a"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelShuffle/disc-alpha-gbra.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "channelShuffle/disc-alpha-default",
+      "node": "channelShuffle",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "outR": "r",
+        "outG": "g",
+        "outB": "b",
+        "outA": "a"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "channelShuffle/disc-alpha-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "distance/disc-t05-d140-inside-clamp",
+      "node": "distance",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.5,
+        "maxDistance": 140,
+        "mode": "inside",
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "distance/disc-t05-d140-inside-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "distance/disc128-t05-d140-inside-clamp",
+      "node": "distance",
+      "size": [
+        128,
+        128
+      ],
+      "params": {
+        "threshold": 0.5,
+        "maxDistance": 140,
+        "mode": "inside",
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc-128.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "distance/disc128-t05-d140-inside-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "distance/disc128-t05-d140-outside-clamp",
+      "node": "distance",
+      "size": [
+        128,
+        128
+      ],
+      "params": {
+        "threshold": 0.5,
+        "maxDistance": 140,
+        "mode": "outside",
+        "edges": "clamp"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc-128.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "distance/disc128-t05-d140-outside-clamp.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "distance/disc-default",
+      "node": "distance",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.5,
+        "maxDistance": 30,
+        "mode": "inside",
+        "edges": "auto"
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-disc.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "distance/disc-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/low-waves-t0085",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.085,
+        "smooth": false,
+        "smoothness": 0.02
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-low-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/low-waves-t0085.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/waves-t05",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.5,
+        "smooth": false,
+        "smoothness": 0.02
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/waves-t05.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/waves-t072",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.72,
+        "smooth": false,
+        "smoothness": 0.02
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/waves-t072.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/waves-t05-smooth002",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.5,
+        "smooth": true,
+        "smoothness": 0.02
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/waves-t05-smooth002.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/colour-disc-alpha-default",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.5,
+        "smooth": false,
+        "smoothness": 0.02
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/colour-disc-alpha-default.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "composite/board-base-3-layers",
+      "node": "composite",
+      "size": [
+        32,
+        32
+      ],
+      "params": {},
+      "inputs": {
+        "in-base": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        },
+        "in-layer1": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        },
+        "in-layer2": {
+          "file": "inputs/spots-alpha.bin",
+          "tiles": false
+        },
+        "in-layer3": {
+          "file": "inputs/stripes-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "composite/board-base-3-layers.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "composite/base-and-layer2",
+      "node": "composite",
+      "size": [
+        32,
+        32
+      ],
+      "params": {},
+      "inputs": {
+        "in-base": {
+          "file": "inputs/colour-waves.bin",
+          "tiles": true
+        },
+        "in-layer2": {
+          "file": "inputs/spots-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "composite/base-and-layer2.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "composite/layers-no-base",
+      "node": "composite",
+      "size": [
+        32,
+        32
+      ],
+      "params": {},
+      "inputs": {
+        "in-layer1": {
+          "file": "inputs/colour-disc-alpha.bin",
+          "tiles": false
+        },
+        "in-layer3": {
+          "file": "inputs/stripes-alpha.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "composite/layers-no-base.bin",
         "format": "rgba8",
         "tiles": false
       },

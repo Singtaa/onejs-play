@@ -1,0 +1,13 @@
+{
+    "about": "primoeden-three's ground textures (textures/*.png on its main), each the grain of one of Magerie's colour exports (primoeden set v2) by tools/grain-textures.mjs at spread 1. run.mjs --ground draws the same step with tex and compares.",
+    "spread": 1,
+    "pictures": [
+        { "shipped": "dirt.png", "colour": "dirt.png" },
+        { "shipped": "grass.png", "colour": "grass.png" },
+        { "shipped": "rock.png", "colour": "rock.png" },
+        { "shipped": "sand.png", "colour": "sand-base.png" },
+        { "shipped": "sand-ripples.png", "colour": "sand-ripples.png" },
+        { "shipped": "sand-wet.png", "colour": "sand-wet.png" },
+        { "shipped": "snow.png", "colour": "snow.png" }
+    ]
+}

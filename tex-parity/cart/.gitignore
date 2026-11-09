@@ -1,2 +1,4 @@
 # Written by run.mjs from goldens/ojplay/manifest.json.
 ojplay.gen.ts
+chain.gen.ts
+ground.gen.ts

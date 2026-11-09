@@ -4,6 +4,9 @@
 import { mount, View, Label, tex, TexImage } from "oj"
 import { CASES, type Case } from "./cases"
 import { OJPLAY } from "./ojplay.gen"
+import { CHAIN } from "./chain.gen"
+import { GROUND } from "./ground.gen"
+import { grain } from "./ground"
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
 
@@ -50,7 +53,60 @@ function fromManifest(c: (typeof OJPLAY)[number]): Case[] {
     }))
 }
 
+/**
+ * A whole board from Magerie's per-node dump, built in tex from its own
+ * outputs, every node's picture printed: drift shows at the node that
+ * starts it. Exporters draw nothing of their own and are skipped.
+ */
+async function chain() {
+    const made = new Map<string, unknown>()
+    // Inputs held to Magerie's bytes: a node checked in isolation never replaces one.
+    const dumped = new Set(CHAIN.filter((n) => n.type === "pixels").map((n) => n.id))
+    for (const n of CHAIN) {
+        if (n.type === "export") continue
+        // A dumped input, for a node checked in isolation: Magerie's bytes, not drawn here.
+        if (n.type === "pixels") { made.set(n.id, tex.pixels(n.w!, n.h!, unhex(n.hex!), { tile: n.tiles })); continue }
+        const name = `chain/${n.id}`
+        const inputs = n.inputs ?? []
+        try {
+            const missing = inputs.find((i) => !made.has(i.from))
+            if (missing !== undefined) throw new Pending(`${n.type}, after ${missing.from}`)
+            const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[n.type]
+            if (typeof fn !== "function") throw new Pending(n.type)
+            const values = inputs.map((i) => made.get(i.from))
+            const r = n.type === "material"
+                ? fn({ ...(n.params as object), ...Object.fromEntries(inputs.map((i, k) => [i.port.replace(/^in-/, ""), values[k]])) })
+                : fn(...values, n.params)
+            if (!dumped.has(n.id)) made.set(n.id, r)
+            if (r instanceof TexImage) {
+                console.log(`[tex-parity] case ${name} ${r.width}x${r.height} ${r.tiles ? "tiles" : "edges"} ${hex(await r.pixels())}`)
+            }
+        } catch (e) {
+            if (e instanceof Pending) { console.log(`[tex-parity] pending ${name} ${e.message}`); continue }
+            console.log(`[tex-parity] error ${name} ${e instanceof Error ? e.message : String(e)}`)
+        }
+    }
+    console.log("[tex-parity] done")
+}
+
+/** primoeden-three's ground pictures, each the grain of a colour export, drawn here by tex. */
+async function ground() {
+    for (const g of GROUND) {
+        try {
+            const lit = tex.pixels(g.w, g.h, unhex(g.lit), { tile: true })
+            const height = tex.pixels(g.w, g.h, unhex(g.height), { tile: true })
+            const img = await grain(lit, height, g.spread)
+            console.log(`[tex-parity] case ${g.name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${hex(await img.pixels())}`)
+        } catch (e) {
+            console.log(`[tex-parity] error ${g.name} ${e instanceof Error ? e.message : String(e)}`)
+        }
+    }
+    console.log("[tex-parity] done")
+}
+
 async function main() {
+    if (CHAIN.length > 0) return chain()
+    if (GROUND.length > 0) return ground()
     for (const c of [...CASES, ...OJPLAY.flatMap(fromManifest)]) {
         // Fused as a bake draws it, then every node a pass of its own: both against the one golden.
         for (const fuse of [true, false]) {

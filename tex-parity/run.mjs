@@ -9,6 +9,20 @@
 // --container a PlayRuntime build folder (PlayRuntime/Builds/WebGL/PlayContainer)
 //             to draw in instead, for a runtime not yet on the site.
 // --software  SwiftShader, as a CI runner without a GPU draws.
+// --chain     a Magerie per-node dump folder (scripts/ojplay-dumps.sh): builds
+//             that whole board in tex and compares every node's output with
+//             Magerie's, fused only, instead of the cases.
+// --isolate  with --chain: these node ids (comma separated) only, each fed
+//             Magerie's own dumped inputs where they come from outside the
+//             set, so a node's error shows without the drift before it.
+//             `all`: every node on Magerie's inputs, the node-by-node check.
+//             Without it the chain shows drift, which a Curvature at
+//             intensity 3 multiplies about 36 times, so expect it to fail.
+// --ground    <Magerie's colour exports>,<primoeden-three's textures>: draws
+//             grain-textures.mjs's step as tex lines (cart/ground.ts) on each
+//             colour export ground.json pairs with a shipped picture, and
+//             compares with that picture, instead of the cases.
+// --save      a folder to write every drawing's bytes into, as <name>.bin
 // --negative  compares each case with the next golden of the same size, and
 //             passes only if that FAILS: the instrument's own check, so a
 //             harness that compares nothing cannot pass.
@@ -31,6 +45,7 @@ import os from "node:os"
 import path from "node:path"
 import zlib from "node:zlib"
 import { fileURLToPath } from "node:url"
+import { readPNG } from "./png.mjs"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const cli = path.resolve(here, "../cli")
@@ -56,7 +71,84 @@ const version = arg("runtime", manifest.runtime)
 const CONTAINER = arg("container", null)
 // A case drawn unfused (every node its own pass) is held to the same golden.
 const base = (name) => name.replace(/@unfused$/, "")
-const golden = (name) => fs.readFileSync(path.join(here, "goldens", `${base(name)}.bin`))
+const CHAIN_DIR = arg("chain", null)
+const golden = (name) => base(name).startsWith("ground/")
+    ? groundOut.get(base(name)).bytes
+    : base(name).startsWith("chain/")
+    ? fs.readFileSync(path.join(CHAIN_DIR, chainOut.get(base(name)).file))
+    : fs.readFileSync(path.join(here, "goldens", `${base(name)}.bin`))
+
+/**
+ * A dump's nodes as the cart reads them, in Magerie's order: each input by
+ * its port, less the node id Magerie prefixes it with, and the node it
+ * comes from. Writes an empty chain when there is none.
+ */
+function writeChain() {
+    const out = new Map()
+    let nodes = []
+    if (CHAIN_DIR !== null) {
+        const m = JSON.parse(fs.readFileSync(path.join(CHAIN_DIR, "manifest.json"), "utf8"))
+        const byId = new Map(m.nodes.map((n) => [n.id, n]))
+        const isolate = arg("isolate", null)?.split(",")
+        nodes = m.nodes.map((n) => ({
+            id: n.id, type: n.type, params: n.params,
+            inputs: Object.entries(n.inputs).map(([port, i]) => ({ port: port.slice(n.id.length + 1), from: i.node })),
+        }))
+        if (isolate) {
+            // Each chosen node on Magerie's own bytes: an input from outside the set becomes a source holding the dump.
+            const all = isolate.includes("all")
+            const chosen = (id) => all || isolate.includes(id)
+            const sources = new Map()
+            nodes = nodes.filter((n) => chosen(n.id)).map((n) => ({ ...n, inputs: n.inputs.map((i) => {
+                const o = Object.values(byId.get(i.from).outputs)[0]
+                // A material carries no pixels of its own: it is rebuilt from its maps, which do.
+                if (o?.file === undefined) {
+                    if (!chosen(i.from)) throw new Error(`--isolate: ${n.id} reads ${i.from}, which has no pixels in the dump; isolate it too`)
+                    return i
+                }
+                if (!all && chosen(i.from)) return i
+                const id = `dump:${i.from}`
+                sources.set(id, { id, type: "pixels", w: o.width, h: o.height, tiles: o.tiles, hex: fs.readFileSync(path.join(CHAIN_DIR, o.file)).toString("hex") })
+                return { ...i, from: id }
+            }) }))
+            nodes = [...sources.values(), ...nodes]
+        }
+        for (const n of m.nodes) {
+            const o = n.outputs["out-image"]
+            if (o?.type === "image" && o.format === "rgba8") out.set(`chain/${n.id}`, { file: o.file, tiles: o.tiles, tolerance: 1 })
+        }
+    }
+    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string }[], w?: number, h?: number, tiles?: boolean, hex?: string }[] = ${JSON.stringify(nodes)}\n`)
+    return out
+}
+const chainOut = writeChain()
+
+/**
+ * The ground pictures as the cart reads them: each colour export's RGB,
+ * opaque, and its alpha as a grey height, both premultiplied as tex.pixels
+ * takes them. The shipped picture is what each is compared with.
+ */
+function writeGround() {
+    const out = new Map()
+    const pictures = []
+    const dirs = arg("ground", null)?.split(",")
+    if (dirs !== undefined) {
+        const [colourDir, shippedDir] = dirs.map((d) => d.replace(/^~/, os.homedir()))
+        const set = JSON.parse(fs.readFileSync(path.join(here, "ground.json"), "utf8"))
+        for (const p of set.pictures) {
+            const c = readPNG(fs.readFileSync(path.join(colourDir, p.colour)))
+            const s = readPNG(fs.readFileSync(path.join(shippedDir, p.shipped)))
+            const lit = Buffer.from(c.rgba), height = Buffer.alloc(c.rgba.length)
+            for (let i = 0; i < c.rgba.length; i += 4) { lit[i + 3] = 255; height.fill(c.rgba[i + 3], i, i + 3); height[i + 3] = 255 }
+            const name = `ground/${p.shipped.replace(/\.png$/, "")}`
+            pictures.push({ name, w: c.width, h: c.height, lit: lit.toString("hex"), height: height.toString("hex"), spread: set.spread })
+            out.set(name, { bytes: Buffer.from(s.rgba), tiles: true, tolerance: 1 })
+        }
+    }
+    fs.writeFileSync(path.join(root, "ground.gen.ts"), `// Written by run.mjs from ground.json. Do not edit.\nexport const GROUND: { name: string, w: number, h: number, lit: string, height: string, spread: number }[] = ${JSON.stringify(pictures)}\n`)
+    return out
+}
+const groundOut = writeGround()
 
 /**
  * The manifest's cases as the cart reads them: inputs inlined as hex, each
@@ -115,7 +207,7 @@ async function draw() {
         await browser.navigate(server.url)
         await game.ready()
         // A budget per drawing, fused and unfused: SwiftShader compiles slowly, and the set grows.
-        const budget = 60 + 4 * 2 * ojplay.size
+        const budget = 60 + 4 * (CHAIN_DIR ? chainOut.size : groundOut.size || 2 * ojplay.size)
         const until = Date.now() + budget * 1000
         while (!browser.console.some((l) => l.text === "[tex-parity] done")) {
             if (Date.now() > until) {
@@ -152,6 +244,15 @@ function compare(bytes, expected, tolerance) {
 }
 
 const drawn = await draw()
+const SAVE = arg("save", null)
+if (SAVE !== null) {
+    for (const [name, got] of drawn) {
+        if (!got.bytes) continue
+        const file = path.join(SAVE, `${name}.bin`)
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, got.bytes)
+    }
+}
 const names = [...drawn.keys()].filter((n) => n.startsWith(ONLY))
 let compared = 0, failed = 0
 const rows = []
@@ -168,7 +269,7 @@ for (const [i, name] of names.entries()) {
         against = [...names.slice(i + 1), ...names.slice(0, i)].find((n) => base(n) !== base(name) && golden(n).length === size && !golden(n).equals(golden(name)))
         if (against === undefined) continue
     }
-    const expect = ojplay.get(base(name))
+    const expect = ojplay.get(base(name)) ?? chainOut.get(base(name)) ?? groundOut.get(base(name))
     const tolerance = expect?.tolerance ?? 1
     const r = compare(got.bytes, golden(against), tolerance)
     // Whether it tiles is part of the answer: it decides how every reader's edges go.
