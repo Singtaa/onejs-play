@@ -299,7 +299,7 @@ export const SPECS = {
         kind: "type",
         positional: ["seed"],
         defaults: {
-            type: "simplex", scale: 8, scaleY: null, scaleLock: true, voronoiMode: "f1", fractal: "standard",
+            type: "simplex", scale: 8, scaleY: null, scaleLock: null, voronoiMode: "f1", fractal: "standard",
             warp: 0, tile: null, seed: 0, offsetX: 0, offsetY: 0, octaves: 4, persistence: 0.5, lacunarity: 2,
             aspect: "square", bitDepth: null, ...SIZE,
         },
@@ -310,8 +310,12 @@ export const SPECS = {
             const tile = (p.tile ?? canvas.tile) === true
             const scale = num(p.scale, "noise scale", 0.1)
             // ExecutorRegistry.cpp:413-437: a lock keeps Y at X, squared to the picture.
+            // Unset, as in Magerie's script API (scriptapi/specs.ts noiseSpec), a scaleY
+            // given is drawn as given, and without one the lock holds: the emitter writes
+            // scaleY for an unlocked node and never scaleLock, so a default lock drew Y at X.
             let scaleY = p.scaleY === null ? scale : num(p.scaleY, "noise scaleY", 0.1)
-            if (p.scaleLock === true) scaleY = oneOf(p.aspect, ["square", "stretch"], "noise aspect") === "square" ? scale * (h / w) : scale
+            const locked = p.scaleLock === null ? p.scaleY === null : p.scaleLock === true
+            if (locked) scaleY = oneOf(p.aspect, ["square", "stretch"], "noise aspect") === "square" ? scale * (h / w) : scale
             const octaves = Math.trunc(num(p.octaves, "noise octaves", 1, 8))
             const lacunarity = num(p.lacunarity, "noise lacunarity")
             const warp = num(p.warp, "noise warp")

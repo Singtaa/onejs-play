@@ -48,6 +48,16 @@ describe("tex graph", () => {
         expect(() => noise("perlin").blend(noise("white"), "overlya" as never)).toThrow(/blend mode is "overlya"/)
     })
 
+    it("draws a noise's scaleY as given unless it is locked, as Magerie's script API and emitter mean it", () => {
+        const { noise } = tex.canvas(256, { height: 128 })
+        const scale = (o: object) => (noise("perlin", o).node.params.values as { scale: number[] }).scale
+        // Magerie writes `{ scale: 24, scaleY: 7 }` for an unlocked node, and never scaleLock.
+        expect(scale({ scale: 24, scaleY: 7 })).toEqual([24, 7])
+        expect(scale({ scale: 24 })).toEqual([24, 12])
+        expect(scale({ scale: 24, scaleY: 7, scaleLock: true })).toEqual([24, 12])
+        expect(scale({ scale: 24, scaleY: 7, scaleLock: false })).toEqual([24, 7])
+    })
+
     it("sizes generators by their canvas and tiles them when it does", () => {
         const { noise } = tex.canvas(256, { tile: true, height: 128 })
         const n = noise("perlin")

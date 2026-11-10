@@ -35,7 +35,9 @@ export interface SizeOptions {
 export interface NoiseOptions extends SizeOptions {
     type?: NoiseType
     scale?: number
+    /** Blobs top to bottom, drawn as given; without it Y follows `scale`, squared to the picture. */
     scaleY?: number
+    /** True keeps Y at X whatever `scaleY` says; false draws `scaleY`. Unset, a `scaleY` given unlocks it, as in Magerie's script API. */
     scaleLock?: boolean
     voronoiMode?: VoronoiMode
     fractal?: Fractal
