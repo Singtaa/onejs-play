@@ -23,5 +23,14 @@ describe("tex-nodes.json", () => {
         // A default that differs from Magerie's is what the emitter must write out (scaleLock: tex has none set).
         expect(nodes.noise!.options).toMatchObject({ scaleLock: null, bitDepth: null, type: "simplex" })
         expect(nodes.noise!.kind).toBe("type")
+        expect([nodes.scatter!.imageOptions, nodes.scatter!.options.mask]).toEqual([["mask"], null])
+    })
+
+    it("carries the canvas a null option resolves to and the material Material Light takes", () => {
+        const table = texNodeTable()
+        expect(table.canvas).toEqual({ width: 1024, height: 1024, tile: false, bitDepth: "8" })
+        expect(table.material.maps.albedo).toEqual({ takes: "image" })
+        expect(table.material.maps.roughness).toEqual({ default: 0.5, takes: "image or number" })
+        expect(Object.keys(table.material.maps)).toEqual(["albedo", "normal", "roughness", "metallic", "height", "ao", "emissive", "opacity"])
     })
 })

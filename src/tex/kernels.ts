@@ -957,7 +957,7 @@ export type ScatterOutput = "image" | "id" | "random"
  */
 export function scatter(
     s: Scope, stamp: TexRead, table: TexRead, count: number, ranges: readonly number[],
-    bg: readonly [number, number, number, number], wrap: boolean, output: ScatterOutput,
+    bg: readonly [number, number, number, number], wrap: boolean, output: ScatterOutput, mask: TexRead | null = null,
 ): Vec4 {
     const W: S = s.size.x, H: S = s.size.y
     const p: S = s.pixel.add(0.5)
@@ -984,7 +984,17 @@ export function scatter(
             // Back to the stamp's own texels: cos(-r) = cos(r), sin(-r) = -sin(r).
             const sx: S = dx.mul(c).add(dy.mul(sn)).div(max(scale, 1e-6)).add(half.x).floor()
             const sy: S = dx.mul(sn.neg()).add(dy.mul(c)).div(max(scale, 1e-6)).add(half.y).floor()
-            const lands: S = opacity.gt(0).and(scale.gt(0)).and(dx.abs().le(boxW)).and(dy.abs().le(boxH))
+            // Magerie's ScatterKeep: the mask's texel under the copy's centre, wrapped into the canvas and
+            // nearest by floor, keeps the copy when its stored luma beats the copy's own keep draw.
+            let kept: S = sl.bool(true)
+            if (mask !== null) {
+                const wx: S = cx.sub(W.mul(cx.div(W).floor())), wy: S = cy.sub(H.mul(cy.div(H).floor()))
+                const mx: S = wx.mul(mask.size.x).div(W).floor().clamp(0, mask.size.x.sub(1))
+                const my: S = wy.mul(mask.size.y).div(H).floor().clamp(0, mask.size.y.sub(1))
+                const m: S = mask.fetch(sl.vec2(mx, my))
+                kept = m.xyz.dot(sl.vec3(0.2126, 0.7152, 0.0722)).gt(unpack(row(6), 1))
+            }
+            const lands: S = kept.and(opacity.gt(0)).and(scale.gt(0)).and(dx.abs().le(boxW)).and(dy.abs().le(boxH))
                 .and(sx.ge(0)).and(sx.lt(stamp.size.x)).and(sy.ge(0)).and(sy.lt(stamp.size.y))
             const texel: S = stamp.fetch(sl.vec2(sx.clamp(0, stamp.size.x.sub(1)), sy.clamp(0, stamp.size.y.sub(1))))
             const raw: S = sl.select(lands, texel.w, 0)

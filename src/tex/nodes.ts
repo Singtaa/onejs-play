@@ -38,6 +38,8 @@ export interface Spec {
     readonly positional: readonly string[]
     /** Every option and its default. A key missing here is refused. */
     readonly defaults: Readonly<Record<string, unknown>>
+    /** Options that take an image from tex, or null for none: `make` gets the image's node. */
+    readonly imageOptions?: readonly string[]
     /** Takes a `material(...)` before anything else, as Material Light does. */
     readonly material?: true
     /**
@@ -64,7 +66,15 @@ export interface Material {
     readonly opacity: Node | number
 }
 
-const MATERIAL_DEFAULTS = { albedo: undefined, normal: null, roughness: 0.5, metallic: 0, height: null, ao: 1, emissive: null, opacity: 1 }
+/** Magerie's document default (nativePipelineHelpers.ts:22): what `tex.canvas()` and a method call draw at. */
+export const DEFAULT_CANVAS: Canvas = { width: 1024, height: 1024, tile: false, bitDepth: "8" }
+
+export const MATERIAL_DEFAULTS = { albedo: undefined, normal: null, roughness: 0.5, metallic: 0, height: null, ao: 1, emissive: null, opacity: 1 }
+/** What each of a material's maps takes: a picture, or a picture or a number from 0 to 1. */
+export const MATERIAL_TAKES: Readonly<Record<keyof typeof MATERIAL_DEFAULTS, "image" | "image or number">> = {
+    albedo: "image", normal: "image", roughness: "image or number", metallic: "image or number",
+    height: "image", ao: "image or number", emissive: "image", opacity: "image or number",
+}
 
 export function isMaterial(v: unknown): v is Material {
     return v !== null && typeof v === "object" && (v as { kind?: unknown }).kind === "material"
@@ -602,8 +612,9 @@ export const SPECS = {
         images: 1,
         kind: "layout",
         positional: ["count"],
+        imageOptions: ["mask"],
         defaults: {
-            layout: "random", count: 20, gridX: 8, gridY: 8, positionJitter: 0.5, seed: 42,
+            mask: null, layout: "random", count: 20, gridX: 8, gridY: 8, positionJitter: 0.5, seed: 42,
             scaleMin: 0.5, scaleMax: 1, rotationRange: 360, opacityMin: 0.5, opacityMax: 1,
             softnessMin: 0, softnessMax: 0, edges: "auto", bgColor: "#00000000", ...SIZE,
         },
@@ -626,15 +637,17 @@ export const SPECS = {
             if (num(p.softnessMin, "scatter softnessMin", 0, 1) > 0 || num(p.softnessMax, "scatter softnessMax", 0, 1) > 0) {
                 throw new Error("[oj] tex scatter: softness reads the stamp's mip chain, which tex does not build yet; leave softnessMin and softnessMax at 0")
             }
-            // Auto wraps when a Mask tiles, and the script API takes no Mask, so Auto clamps.
+            // Auto wraps when the mask tiles, and clamps with none.
+            const mask = p.mask as Node | null
             const edges = oneOf(p.edges, ["auto", "clamp", "wrap"], "scatter edges")
-            const wrap = edges === "wrap"
+            const wrap = edges === "wrap" || (edges === "auto" && mask !== null && mask.tiles)
             const bg = hexRGBA(String(p.bgColor), "scatter bgColor")
             const placements = scatterPlacements(v, w, h)
             const tableNode = table(scatterTable(placements, v.seed, w, h), SCATTER_TEXELS, placements.length)
-            const shared = { count: placements.length, ranges: scatterRanges(w, h), bg, wrap }
+            const shared = { count: placements.length, ranges: scatterRanges(w, h), bg, wrap, masked: mask !== null }
+            const inputs = mask === null ? [stamp!, tableNode] : [stamp!, tableNode, mask]
             return Object.fromEntries((["image", "id", "random"] as const).map((output) =>
-                [output, makeNode("scatter", "area", [stamp!, tableNode], { ...shared, output }, w, h, wrap)]))
+                [output, makeNode("scatter", "area", inputs, { ...shared, output }, w, h, wrap)]))
         },
     },
     sdfShape: {
@@ -818,7 +831,7 @@ export const KERNELS: Record<string, Kernel> = {
     warp: (s, n, i) => k.warp(s, i.texture(0, n.params.wrap as boolean), i.texture(1, n.params.wrap as boolean), n.params.strength as number),
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),
-    scatter: (s, n, i) => k.scatter(s, i.texture(0, false), i.texture(1, false), n.params.count as number, n.params.ranges as number[], n.params.bg as [number, number, number, number], n.params.wrap as boolean, n.params.output as k.ScatterOutput),
+    scatter: (s, n, i) => k.scatter(s, i.texture(0, false), i.texture(1, false), n.params.count as number, n.params.ranges as number[], n.params.bg as [number, number, number, number], n.params.wrap as boolean, n.params.output as k.ScatterOutput, n.params.masked === true ? i.texture(2, false) : null),
     sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
     pixelate: (s, n, i) => k.pixelate(s, i.texture(0, false), n.params.blockSize as number),
     transform: (s, n, i) => k.transform(s, i.texture(0, false), n.params.translate as [number, number], n.params.scale as number, n.params.rotation as number, n.params.flip as [boolean, boolean]),
@@ -875,6 +888,12 @@ export function resolve(name: SpecName, args: readonly unknown[], isImage: (v: u
     for (const [key, value] of Object.entries(options ?? {})) {
         if (!(key in spec.defaults)) throw new Error(`[oj] tex ${name}: no option "${key}"; it has ${Object.keys(spec.defaults).join(", ") || "none"}`)
         if (value !== undefined) params[key] = value
+    }
+    for (const key of spec.imageOptions ?? []) {
+        const v = params[key]
+        if (v === null) continue
+        if (!isImage(v)) throw new Error(`[oj] tex ${name}: ${key} is ${typeof v}, and is an image from tex or null`)
+        params[key] = v.node
     }
     return { images, params, material }
 }

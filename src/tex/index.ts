@@ -17,7 +17,7 @@ import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
 import { uploadRGBA } from "./upload"
 import { TexCache, cacheKey, hostBackend } from "./cache"
-import { KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type Spec, type SpecName } from "./nodes"
+import { DEFAULT_CANVAS, KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type Spec, type SpecName } from "./nodes"
 import type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
 
 declare const CS: any
@@ -207,6 +207,13 @@ export interface TransformOptions {
 }
 
 export interface ScatterOptions extends SizeOptions {
+    /**
+     * Where copies may land: a copy is kept when the mask's luma under its
+     * centre beats the copy's own random draw, so white keeps all, black none,
+     * grey some. A dropped copy is gone from image, id and random alike, and
+     * no other copy moves. Default none.
+     */
+    mask?: TexImage | null
     /** "random" places `count` copies anywhere; "grid" one a cell of `gridX` by `gridY`. Default "random". */
     layout?: "random" | "grid"
     /** Copies, for "random", 1 to 4096. Default 20. */
@@ -227,7 +234,7 @@ export interface ScatterOptions extends SizeOptions {
     /** Magerie blurs a copy by its stamp's mip chain, which tex does not build: anything above 0 is refused. */
     softnessMin?: number
     softnessMax?: number
-    /** "wrap" carries a copy across each edge to the other side, so the picture tiles. "auto" clamps, as with no mask. */
+    /** "wrap" carries a copy across each edge to the other side, so the picture tiles. "auto" wraps when `mask` tiles, and clamps otherwise. */
     edges?: Edges
     /** Behind every copy. Default "#00000000". */
     bgColor?: string
@@ -557,8 +564,6 @@ function functions(canvas: Canvas): TexFunctions {
     return out as unknown as TexFunctions
 }
 
-/** Magerie's document default (nativePipelineHelpers.ts:22). */
-const DEFAULT_CANVAS: Canvas = { width: 1024, height: 1024, tile: false, bitDepth: "8" }
 
 export interface CanvasOptions {
     /** Every generator from this canvas that can tile does, so every `edges: "auto"` filter wraps. */

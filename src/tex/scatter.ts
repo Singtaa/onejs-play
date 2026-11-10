@@ -27,6 +27,11 @@ export function instanceColor(seed: number, idx: number): [number, number, numbe
     return [Math.floor(rand() * 256), Math.floor(rand() * 256), Math.floor(rand() * 256)]
 }
 
+/** A copy's keep draw against a Mask, its own stream so a mask moves no placement: Magerie's scatterKeepRand. */
+export function scatterKeepRand(seed: number, idx: number): number {
+    return mulberry32((seed * 0x5BD1) ^ ((idx + 1) * 0x9E3779B1))()
+}
+
 export interface ScatterPlacementParams {
     layout: "random" | "grid"
     seed: number
@@ -86,8 +91,8 @@ export function scatterPlacements(p: ScatterPlacementParams, outW: number, outH:
     return out
 }
 
-/** Texels a copy takes in the table: cx, cy, scale, rotation, opacity, then its ID colour. */
-export const SCATTER_TEXELS = 6
+/** Texels a copy takes in the table: cx, cy, scale, rotation, opacity, its ID colour, then its keep draw. */
+export const SCATTER_TEXELS = 7
 
 /** Steps in a 24-bit fixed-point value, one per RGB byte triple: as fine as a float32 over these ranges. */
 const FIXED = 16777215
@@ -104,7 +109,8 @@ export function scatterRanges(outW: number, outH: number): [number, number, numb
 /**
  * The placements as RGBA bytes, `SCATTER_TEXELS` texels a row and one row a
  * copy, for an 8-bit table the kernel fetches: each of the first five values
- * as 24 bits over its range in R, G and B, then the ID colour's own bytes.
+ * as 24 bits over its range in R, G and B, the ID colour's own bytes, then
+ * the keep draw as 24 bits over [0, 1].
  */
 export function scatterTable(placements: readonly ScatterPlacement[], seed: number, outW: number, outH: number): number[] {
     const ranges = scatterRanges(outW, outH)
@@ -117,6 +123,8 @@ export function scatterTable(placements: readonly ScatterPlacement[], seed: numb
         })
         const [r, g, b] = instanceColor(seed, q.idx)
         out.push(r, g, b, 255)
+        const keep = Math.round(Math.fround(scatterKeepRand(seed, q.idx)) * FIXED)
+        out.push(keep >>> 16, (keep >>> 8) & 255, keep & 255, 255)
     }
     return out
 }

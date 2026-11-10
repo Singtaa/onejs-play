@@ -8,7 +8,7 @@
  * `npm run tex-nodes` writes it again.
  */
 import { makeNode, type Node } from "./graph"
-import { SPECS, makeMaterial, type Canvas, type Spec, type SpecName } from "./nodes"
+import { DEFAULT_CANVAS, MATERIAL_DEFAULTS, MATERIAL_TAKES, SPECS, makeMaterial, type Canvas, type Spec, type SpecName } from "./nodes"
 
 export interface TexNodeEntry {
     /** Leading image arguments, then up to `optionalImages` more. */
@@ -22,13 +22,19 @@ export interface TexNodeEntry {
     positional: string[]
     /** Every option tex takes and its default; any other key is refused. `null` is "the canvas's" or "none". */
     options: Record<string, unknown>
+    /** Options among `options` that take a picture from tex (or null for none), as scatter's mask. */
+    imageOptions?: string[]
     /** "image" for one picture; otherwise the record's keys, as `scatter(...).id`. */
     outputs: string[]
 }
 
 export interface TexNodeTable {
     /** Bumped when this file's shape changes, not when a node does. */
-    format: 1
+    format: 2
+    /** What a null size, tile or bitDepth option resolves to from `tex.canvas()` with no options, or a method call. */
+    canvas: { width: number, height: number, tile: boolean, bitDepth: "8" | "32" }
+    /** `tex.material({ ... })`, which Material Light takes first: each map's default (absent: required) and what it takes. */
+    material: { maps: Record<string, { default?: unknown, takes: "image" | "image or number" }> }
     nodes: Record<string, TexNodeEntry>
 }
 
@@ -53,8 +59,13 @@ export function texNodeTable(): TexNodeTable {
             ...(spec.kind !== undefined ? { kind: spec.kind } : {}),
             positional: [...spec.positional],
             options: JSON.parse(JSON.stringify(spec.defaults)) as Record<string, unknown>,
+            ...(spec.imageOptions ? { imageOptions: [...spec.imageOptions] } : {}),
             outputs: outputsOf(spec),
         }
     }
-    return { format: 1, nodes }
+    const maps: TexNodeTable["material"]["maps"] = {}
+    for (const [key, value] of Object.entries(MATERIAL_DEFAULTS)) {
+        maps[key] = { ...(value === undefined ? {} : { default: value }), takes: MATERIAL_TAKES[key as keyof typeof MATERIAL_TAKES] }
+    }
+    return { format: 2, canvas: { ...DEFAULT_CANVAS }, material: { maps }, nodes }
 }

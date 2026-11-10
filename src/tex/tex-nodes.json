@@ -1,5 +1,46 @@
 {
-    "format": 1,
+    "format": 2,
+    "canvas": {
+        "width": 1024,
+        "height": 1024,
+        "tile": false,
+        "bitDepth": "8"
+    },
+    "material": {
+        "maps": {
+            "albedo": {
+                "takes": "image"
+            },
+            "normal": {
+                "default": null,
+                "takes": "image"
+            },
+            "roughness": {
+                "default": 0.5,
+                "takes": "image or number"
+            },
+            "metallic": {
+                "default": 0,
+                "takes": "image or number"
+            },
+            "height": {
+                "default": null,
+                "takes": "image"
+            },
+            "ao": {
+                "default": 1,
+                "takes": "image or number"
+            },
+            "emissive": {
+                "default": null,
+                "takes": "image"
+            },
+            "opacity": {
+                "default": 1,
+                "takes": "image or number"
+            }
+        }
+    },
     "nodes": {
         "alpha": {
             "images": 2,
@@ -361,6 +402,7 @@
                 "count"
             ],
             "options": {
+                "mask": null,
                 "layout": "random",
                 "count": 20,
                 "gridX": 8,
@@ -379,6 +421,9 @@
                 "width": null,
                 "height": null
             },
+            "imageOptions": [
+                "mask"
+            ],
             "outputs": [
                 "image",
                 "id",

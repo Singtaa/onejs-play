@@ -3,7 +3,7 @@ import { tex, TexImage } from "../tex"
 import { plan, materialised } from "../tex/engine"
 import { KERNELS, SPECS, parseStops } from "../tex/nodes"
 import { toneTable } from "../tex/kernels"
-import { SCATTER_TEXELS, instanceColor, scatterPlacements, scatterRanges, scatterTable, scatterUnpack } from "../tex/scatter"
+import { SCATTER_TEXELS, instanceColor, scatterKeepRand, scatterPlacements, scatterRanges, scatterTable, scatterUnpack } from "../tex/scatter"
 import toneFixture from "./fixtures/tone-tables.json"
 
 /**
@@ -457,3 +457,39 @@ describe("tex transform", () => {
         expect(() => transform(c, { spin: 3 } as never)).toThrow(/no option "spin"/)
     })
 })
+
+describe("tex scatter's mask", () => {
+    it("draws each copy's keep from its own stream, so a mask moves no copy, and packs it last in the table", () => {
+        // Magerie's scatterKeepRand (scatter/core.ts:88): mulberry32((seed * 0x5BD1) ^ ((idx + 1) * 0x9E3779B1)), first draw.
+        expect(scatterKeepRand(42, 0)).toBe(mulberry32Once((42 * 0x5BD1) ^ 0x9E3779B1))
+        const q = scatterPlacements({ layout: "random", count: 5, gridX: 8, gridY: 8, positionJitter: 0.5, seed: 42, scaleMin: 0.5, scaleMax: 1, rotationRange: 360, opacityMin: 0.5, opacityMax: 1 }, 64, 64)
+        const bytes = scatterTable(q, 42, 64, 64)
+        expect(bytes.length).toBe(q.length * SCATTER_TEXELS * 4)
+        for (const p of q) {
+            const o = (p.idx * SCATTER_TEXELS + 6) * 4
+            expect(Math.abs(scatterUnpack(bytes[o]!, bytes[o + 1]!, bytes[o + 2]!, 1) - scatterKeepRand(42, p.idx))).toBeLessThan(1 / 16777215)
+        }
+    })
+
+    it("takes a picture or null, reads it as a third input, and wraps on auto when the mask tiles", () => {
+        const { noise, sdfShape, scatter } = tex.canvas(64)
+        const dot = sdfShape("circle", 0.2)
+        const plain = scatter(dot, { count: 6, seed: 3 })
+        const flat = scatter(dot, { count: 6, seed: 3, mask: noise(1) })
+        const tiled = scatter(dot, { count: 6, seed: 3, mask: noise(1, { tile: true }) })
+        expect(scatter(dot, { count: 6, seed: 3, mask: null }).image.node.id).toBe(plain.image.node.id)
+        expect([plain.image.node.inputs.length, flat.image.node.inputs.length]).toEqual([2, 3])
+        // The same placements: only the keep test differs.
+        expect(flat.image.node.inputs[1]!.id).toBe(plain.image.node.inputs[1]!.id)
+        expect([flat.image.tiles, tiled.image.tiles, tiled.id.tiles, tiled.random.tiles]).toEqual([false, true, true, true])
+        expect(scatter(dot, { count: 6, mask: noise(1, { tile: true }), edges: "clamp" }).image.tiles).toBe(false)
+        expect(() => scatter(dot, { mask: 0.5 as never })).toThrow(/scatter: mask is number, and is an image from tex or null/)
+    })
+})
+
+function mulberry32Once(seed: number): number {
+    let s = (seed | 0) + 0x6D2B79F5 | 0
+    let x = Math.imul(s ^ (s >>> 15), s | 1)
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61)
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296
+}
