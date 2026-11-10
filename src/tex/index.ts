@@ -441,7 +441,7 @@ interface Generators {
     noise(...args: [type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions] | [seed?: number | NoiseOptions, opts?: NoiseOptions]): TexImage
     /**
      * A circle, ellipse or vesica, antialiased, filled over a background: `sdfShape("ellipse", 0.8, { shapeHeight: 0.74 })`.
-     * The picture, which also carries Magerie's other output: `.sdf` (a working name until Sai picks it), the signed distance to the
+     * The picture, which also carries Magerie's other output: `.sdf`, the signed distance to the
      * edge in pixels, positive inside, in half floats. It was an image before it had two outputs,
      * so it is both an image and a record: `.image` is itself.
      */
