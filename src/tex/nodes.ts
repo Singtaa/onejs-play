@@ -23,6 +23,9 @@ export interface Canvas {
     readonly bitDepth: "8" | "32"
 }
 
+/** What sdfShape's image calls its signed distance. */
+export const SHAPE_SDF = "sdf"
+
 export interface Spec {
     /** Leading image arguments. */
     readonly images: number
@@ -42,6 +45,15 @@ export interface Spec {
     readonly imageOptions?: readonly string[]
     /** Takes a `material(...)` before anything else, as Material Light does. */
     readonly material?: true
+    /**
+     * Published as a plain image before it gained more outputs: the call
+     * returns the `image` output, which also carries itself as `.image` and
+     * each other output by name, so code written against the image still runs.
+     * A node with several outputs from the start returns a record instead.
+     */
+    readonly imageFirst?: true
+    /** An output tex names differently from Magerie's port, which would shadow a method: tex's name to Magerie's port. */
+    readonly ports?: Readonly<Record<string, string>>
     /**
      * The node a call makes, from its resolved parameters; or, for a node
      * with several outputs, one per output, named as Magerie's script API
@@ -654,6 +666,9 @@ export const SPECS = {
         images: 0,
         kind: "shape",
         positional: ["size"],
+        imageFirst: true,
+        // `distance` is every image's Distance method.
+        ports: { [SHAPE_SDF]: "out-distance" },
         defaults: { ...SHAPE_DEFAULTS, bitDepth: null, ...SIZE },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
@@ -674,7 +689,10 @@ export const SPECS = {
                 edgeBand: num(p.edgeBand, "sdfShape edgeBand", 0, 0.1),
                 fill: hexRGBA(String(p.fillColor), "sdfShape fillColor"), edge: hexRGBA(String(p.edgeColor), "sdfShape edgeColor"), background,
             }
-            return makeNode("sdfShape", "generator", [], (float ? { ...v, float } : v) as unknown as Record<string, unknown>, w, h, false)
+            const image = makeNode("sdfShape", "generator", [], (float ? { ...v, float } : v) as unknown as Record<string, unknown>, w, h, false)
+            // Magerie's out-distance: the analytic signed distance in pixels, positive inside, held in half floats whatever the bit depth.
+            const sdf = makeNode("sdfShape", "generator", [], { ...v, output: "distance", half: true } as unknown as Record<string, unknown>, w, h, false)
+            return { image, [SHAPE_SDF]: sdf }
         },
     },
     tileGrid: {
@@ -832,7 +850,7 @@ export const KERNELS: Record<string, Kernel> = {
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),
     scatter: (s, n, i) => k.scatter(s, i.texture(0, false), i.texture(1, false), n.params.count as number, n.params.ranges as number[], n.params.bg as [number, number, number, number], n.params.wrap as boolean, n.params.output as k.ScatterOutput, n.params.masked === true ? i.texture(2, false) : null),
-    sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
+    sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues, n.params.output === "distance" ? "distance" : "image"),
     pixelate: (s, n, i) => k.pixelate(s, i.texture(0, false), n.params.blockSize as number),
     transform: (s, n, i) => k.transform(s, i.texture(0, false), n.params.translate as [number, number], n.params.scale as number, n.params.rotation as number, n.params.flip as [boolean, boolean]),
     tileGrid: (s, n) => k.tileGrid(s, n.params.values as k.TileGridValues, n.params.output as k.TileGridOutput),

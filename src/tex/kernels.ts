@@ -1114,7 +1114,7 @@ function sdVesica(p: S, w: number, h: number): S {
 }
 
 /** Magerie's Shape (generateSDFShape): uv from the pixel's corner, both axes on [-1, 1], 1.5 px of antialiasing, premultiplied. */
-export function sdfShape(s: Scope, v: ShapeValues): Vec4 {
+export function sdfShape(s: Scope, v: ShapeValues, output: "image" | "distance" = "image"): Vec4 {
     const uv: S = s.pixel.div(s.size).sub(0.5).mul(2).sub(sl.vec2(s.f(v.offset[0] * 2), s.f(v.offset[1] * 2)))
     const c = s.f(v.cos), n = s.f(v.sin)
     const p: S = sl.vec2(uv.x.mul(c).add(uv.y.mul(n)), uv.x.neg().mul(n).add(uv.y.mul(c)))
@@ -1124,6 +1124,11 @@ export function sdfShape(s: Scope, v: ShapeValues): Vec4 {
     // Magerie's near-circle guard, decided where the sizes are known.
     else if (v.shape === "ellipse") d = Math.abs(v.a - v.b) / Math.max(v.a, v.b, 1e-10) < 0.001 ? p.length().sub(s.f((v.a + v.b) / 2)) : sdEllipse(p, A, B)
     else d = sdVesica(p, v.a, v.b)
+    // Magerie's out-distance (generateSDFShape): d is in UV, negative inside, and a UV unit is min(w, h) / 2 pixels.
+    if (output === "distance") {
+        const px: S = d.neg().mul(min(s.size.x, s.size.y).mul(0.5))
+        return sl.vec4(px, px, px, 1)
+    }
     const aa: S = sl.float(3).div(min(s.size.x, s.size.y))
     const inside: S = sl.float(1).sub(sl.smoothstep(aa.neg(), aa, d))
     let color: S = sl.mix(s.f4(v.background), s.f4(v.fill), inside)

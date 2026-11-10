@@ -20,6 +20,7 @@ describe("tex-nodes.json", () => {
         expect(nodes.scatter!.outputs).toEqual(["image", "id", "random"])
         expect(nodes.tileGrid!.outputs).toEqual(["image", "random", "uv"])
         expect(nodes.blur!.outputs).toEqual(["image"])
+        expect([nodes.sdfShape!.outputs, nodes.sdfShape!.imageFirst, nodes.sdfShape!.ports]).toEqual([["image", "sdf"], true, { sdf: "out-distance" }])
         // A default that differs from Magerie's is what the emitter must write out (scaleLock: tex has none set).
         expect(nodes.noise!.options).toMatchObject({ scaleLock: null, bitDepth: null, type: "simplex" })
         expect(nodes.noise!.kind).toBe("type")

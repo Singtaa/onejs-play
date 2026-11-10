@@ -193,6 +193,9 @@ export interface TileGridOptions extends SizeOptions {
     bitDepth?: "8" | "32"
 }
 
+/** sdfShape's picture, carrying its other output: an image first, so `.image` is itself. */
+export type ShapeImage = TexImage & { readonly image: TexImage, readonly sdf: TexImage }
+
 export interface TransformOptions {
     /** Pixels right. Default 0. */
     translateX?: number
@@ -436,8 +439,13 @@ interface Generators {
     /** Lights a material from `lightAngle` and renders it to a picture the albedo's size. */
     materialLight(material: Material, lightAngle?: number | MaterialLightOptions, opts?: MaterialLightOptions): TexImage
     noise(...args: [type?: NoiseType | NoiseOptions, seed?: number | NoiseOptions, opts?: NoiseOptions] | [seed?: number | NoiseOptions, opts?: NoiseOptions]): TexImage
-    /** A circle, ellipse or vesica, antialiased, filled over a background: `sdfShape("ellipse", 0.8, { shapeHeight: 0.74 })`. */
-    sdfShape(...args: [shape?: ShapeType | SdfShapeOptions, size?: number | SdfShapeOptions, opts?: SdfShapeOptions] | [size?: number | SdfShapeOptions, opts?: SdfShapeOptions]): TexImage
+    /**
+     * A circle, ellipse or vesica, antialiased, filled over a background: `sdfShape("ellipse", 0.8, { shapeHeight: 0.74 })`.
+     * The picture, which also carries Magerie's other output: `.sdf` (a working name until Sai picks it), the signed distance to the
+     * edge in pixels, positive inside, in half floats. It was an image before it had two outputs,
+     * so it is both an image and a record: `.image` is itself.
+     */
+    sdfShape(...args: [shape?: ShapeType | SdfShapeOptions, size?: number | SdfShapeOptions, opts?: SdfShapeOptions] | [size?: number | SdfShapeOptions, opts?: SdfShapeOptions]): ShapeImage
     /**
      * Bricks, tiles, slabs or planks, always seamless: `const { image, random, uv } = tileGrid(4, { rows: 8 })`.
      * `image` is the height (0 in the joint, 1 on the face), `random` one grey
@@ -537,8 +545,17 @@ function isImage(v: unknown): v is TexImage {
 
 function call(name: SpecName, canvas: Canvas, args: readonly unknown[]): TexImage | Readonly<Record<string, TexImage>> {
     const { images, params, material } = resolve(name, args, isImage)
-    const made = (SPECS[name] as Spec).make(params, images, canvas, material)
+    const spec: Spec = SPECS[name]
+    const made = spec.make(params, images, canvas, material)
     if ("op" in made) return new TexImage(made as Node)
+    if (spec.imageFirst) {
+        const outputs = made as Readonly<Record<string, Node>>
+        const image = new TexImage(outputs.image!)
+        for (const [port, n] of Object.entries(outputs)) {
+            Object.defineProperty(image, port, { value: port === "image" ? image : new TexImage(n), enumerable: true })
+        }
+        return image
+    }
     return Object.freeze(Object.fromEntries(Object.entries(made).map(([port, n]) => [port, new TexImage(n)])))
 }
 

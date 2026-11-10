@@ -108,6 +108,12 @@ const golden = (name) => base(name).startsWith("ground/")
     : fs.readFileSync(path.join(here, "goldens", `${base(name)}.bin`))
 
 /** A chain case's name: the node, and the port when it is not the node's image. */
+// tex's name for each output Magerie's port names otherwise (sdfShape's out-distance is its `sdf`), from the node table.
+const TEX_NODES = JSON.parse(fs.readFileSync(path.join(here, "..", "src", "tex", "tex-nodes.json"), "utf8"))
+const outputKey = (type, port) => {
+    const named = Object.entries(TEX_NODES.nodes[type]?.ports ?? {}).find(([, p]) => p === port)
+    return named ? named[0] : port.replace(/^out-/, "")
+}
 const chainName = (id, port) => `chain/${id}${port === "out-image" ? "" : `.${port}`}`
 
 /**
@@ -125,9 +131,12 @@ function writeChain() {
         nodes = m.nodes.map((n) => ({
             id: n.id, type: n.type, params: n.params,
             // Each input names the port it reads, so a Tile Grid's random and uv reach their readers, not its image.
-            inputs: Object.entries(n.inputs).map(([port, i]) => ({ port: port.slice(n.id.length + 1), from: i.node, out: i.port ? i.port.slice(i.node.length + 1) : "out-image" })),
+            inputs: Object.entries(n.inputs).map(([port, i]) => {
+                const out = i.port ? i.port.slice(i.node.length + 1) : "out-image"
+                return { port: port.slice(n.id.length + 1), from: i.node, out, key: outputKey(byId.get(i.node)?.type, out) }
+            }),
             outs: Object.entries(n.outputs ?? {}).filter(([, o]) => o?.type === "image" && o.file !== undefined)
-                .map(([port, o]) => ({ port, name: chainName(n.id, port), float: o.format === "float32" })),
+                .map(([port, o]) => ({ port, key: outputKey(n.type, port), name: chainName(n.id, port), float: o.format === "float32" })),
         }))
         if (isolate) {
             // Each chosen node on Magerie's own bytes: an input from outside the set becomes a source holding the dump.
@@ -149,7 +158,7 @@ function writeChain() {
                 const float = o.format === "float32"
                 if (float) floats.add(`${i.from} ${i.out}`)
                 sources.set(id, { id, type: "pixels", w: o.width, h: o.height, tiles: o.tiles, float, hex: bytes.toString("hex") })
-                return { ...i, from: id, out: "out-image" }
+                return { ...i, from: id, out: "out-image", key: "image" }
             }) }))
             nodes = [...sources.values(), ...nodes]
             if (floats.size > 0) console.log(`[tex-parity] --isolate fed ${floats.size} float32 dumps as floats: ${[...floats].join(", ")}`)
@@ -163,7 +172,7 @@ function writeChain() {
             }
         }
     }
-    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string, out: string }[], outs?: { port: string, name: string, float: boolean }[], w?: number, h?: number, tiles?: boolean, hex?: string, float?: boolean }[] = ${JSON.stringify(nodes)}\n`)
+    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string, out: string, key: string }[], outs?: { port: string, key: string, name: string, float: boolean }[], w?: number, h?: number, tiles?: boolean, hex?: string, float?: boolean }[] = ${JSON.stringify(nodes)}\n`)
     return out
 }
 const chainOut = writeChain()

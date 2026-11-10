@@ -28,7 +28,7 @@ type Input = { port: string, tiles?: boolean, w?: number, h?: number, hex?: stri
 function run(node: string, params: unknown, inputs: readonly Input[]): unknown {
     // A multi-output input node is read at the port `output` names, "out-image" when it names none.
     const images = inputs.map((i) => i.node !== undefined
-        ? pick(run(i.node, i.params, i.inputs ?? []), i.output ?? "out-image")
+        ? pick(run(i.node, i.params, i.inputs ?? []), (i.output ?? "out-image").replace(/^out-/, ""))
         : tex.pixels(i.w!, i.h!, unhex(i.hex!), { tile: i.tiles }))
     const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[node]
     if (typeof fn !== "function") throw new Pending(node)
@@ -37,9 +37,11 @@ function run(node: string, params: unknown, inputs: readonly Input[]): unknown {
     return fn(...images, params)
 }
 
-function pick(r: unknown, port: string): unknown {
-    const whole = r instanceof TexImage || (r as { kind?: unknown }).kind === "material"
-    return whole ? r : (r as Record<string, unknown>)[port.replace(/^out-/, "")]
+/** An output by tex's name for it: an image first (sdfShape) carries the others, so it is whole only for its image. */
+function pick(r: unknown, key: string): unknown {
+    if ((r as { kind?: unknown }).kind === "material") return r
+    if (r instanceof TexImage && (key === "image" || !(key in r))) return r
+    return (r as Record<string, unknown>)[key]
 }
 
 function fromManifest(c: (typeof OJPLAY)[number]): Case[] {
@@ -87,7 +89,7 @@ async function chain() {
             const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[n.type]
             if (typeof fn !== "function") throw new Pending(n.type)
             const values = inputs.map((i) => {
-                const v = pick(made.get(i.from), i.out)
+                const v = pick(made.get(i.from), i.key)
                 if (v === undefined) throw new Error(`${i.from} has no output ${i.out}`)
                 return v
             })
@@ -97,7 +99,7 @@ async function chain() {
             if (!dumped.has(n.id)) made.set(n.id, r)
             // Each picture Magerie stored, at the precision it stored it.
             for (const o of n.outs ?? []) {
-                const img = pick(r, o.port)
+                const img = pick(r, o.key)
                 if (!(img instanceof TexImage)) { console.log(`[tex-parity] error ${o.name} ${n.type} gave no picture at ${o.port}`); continue }
                 const px = o.float ? `f:${hex(new Uint8Array((await img.pixels({ float: true })).buffer))}` : hex(await img.pixels())
                 console.log(`[tex-parity] case ${o.name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${px}`)

@@ -493,3 +493,26 @@ function mulberry32Once(seed: number): number {
     x ^= x + Math.imul(x ^ (x >>> 7), x | 61)
     return ((x ^ (x >>> 14)) >>> 0) / 4294967296
 }
+
+describe("tex sdfShape's signed distance", () => {
+    it("is still the picture, and carries itself as .image and its distance as .sdf", () => {
+        const { sdfShape, blend } = tex.canvas(64)
+        const shape = sdfShape("circle", 0.6)
+        expect(shape).toBeInstanceOf(TexImage)
+        expect(shape.image).toBe(shape)
+        expect(shape.sdf).toBeInstanceOf(TexImage)
+        expect(shape.sdf.node.params).toMatchObject({ output: "distance", half: true })
+        expect(shape.node.params.output).toBeUndefined()
+        // Code written against the image runs as before, the Distance method included.
+        expect(blend(shape, shape).width).toBe(64)
+        expect(typeof shape.distance).toBe("function")
+        expect(shape.distance({ maxDistance: 20 })).toBeInstanceOf(TexImage)
+    })
+
+    it("stays half floats when the shape is 32-bit, as Magerie's RGBA16Float", () => {
+        const { sdfShape } = tex.canvas(32, { bitDepth: "32" })
+        const shape = sdfShape("ellipse", 0.8)
+        expect(shape.node.params.float).toBe(true)
+        expect(shape.sdf.node.params.float).toBeUndefined()
+    })
+})

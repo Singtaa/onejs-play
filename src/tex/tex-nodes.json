@@ -468,8 +468,13 @@
                 "height": null
             },
             "outputs": [
-                "image"
-            ]
+                "image",
+                "sdf"
+            ],
+            "imageFirst": true,
+            "ports": {
+                "sdf": "out-distance"
+            }
         },
         "slopeBlur": {
             "images": 2,

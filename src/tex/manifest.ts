@@ -26,6 +26,10 @@ export interface TexNodeEntry {
     imageOptions?: string[]
     /** "image" for one picture; otherwise the record's keys, as `scatter(...).id`. */
     outputs: string[]
+    /** The call returns its `image`, carrying the other outputs as properties: it was published as an image first. */
+    imageFirst?: true
+    /** An output whose name differs from Magerie's port: tex's name to Magerie's port id. */
+    ports?: Record<string, string>
 }
 
 export interface TexNodeTable {
@@ -61,6 +65,8 @@ export function texNodeTable(): TexNodeTable {
             options: JSON.parse(JSON.stringify(spec.defaults)) as Record<string, unknown>,
             ...(spec.imageOptions ? { imageOptions: [...spec.imageOptions] } : {}),
             outputs: outputsOf(spec),
+            ...(spec.imageFirst ? { imageFirst: true as const } : {}),
+            ...(spec.ports ? { ports: { ...spec.ports } } : {}),
         }
     }
     const maps: TexNodeTable["material"]["maps"] = {}
