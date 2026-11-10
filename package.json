@@ -35,7 +35,8 @@
     "test": "vitest run",
     "test:unit": "vitest run --exclude \"**/*.e2e.test.ts\"",
     "test:e2e": "vitest run .e2e.test",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "tex-nodes": "node scripts/tex-nodes.mjs"
   },
   "dependencies": {
     "@dimforge/rapier2d-deterministic": "0.21.0",

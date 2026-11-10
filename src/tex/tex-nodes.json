@@ -1,0 +1,544 @@
+{
+    "format": 1,
+    "nodes": {
+        "alpha": {
+            "images": 2,
+            "positional": [],
+            "options": {},
+            "outputs": [
+                "image"
+            ]
+        },
+        "alphaMerge": {
+            "images": 2,
+            "kind": "alphaChannel",
+            "positional": [],
+            "options": {
+                "alphaChannel": "luma"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "ambientOcclusion": {
+            "images": 1,
+            "positional": [
+                "radius"
+            ],
+            "options": {
+                "radius": 16,
+                "intensity": 1,
+                "samples": 16,
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "autoLevels": {
+            "images": 1,
+            "kind": "mode",
+            "positional": [],
+            "options": {
+                "mode": "luminance"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "blend": {
+            "images": 2,
+            "kind": "mode",
+            "positional": [
+                "opacity"
+            ],
+            "options": {
+                "mode": "normal",
+                "opacity": 1
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "blur": {
+            "images": 1,
+            "positional": [
+                "radius"
+            ],
+            "options": {
+                "radius": 5,
+                "quality": "medium",
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "channelMath": {
+            "images": 2,
+            "kind": "operation",
+            "positional": [],
+            "options": {
+                "operation": "add",
+                "channels": "rgb"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "channelShuffle": {
+            "images": 1,
+            "kind": "swizzle",
+            "positional": [],
+            "options": {
+                "swizzle": null,
+                "outR": "r",
+                "outG": "g",
+                "outB": "b",
+                "outA": "a"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "composite": {
+            "images": 1,
+            "optionalImages": 3,
+            "positional": [],
+            "options": {},
+            "outputs": [
+                "image"
+            ]
+        },
+        "curvature": {
+            "images": 1,
+            "kind": "mode",
+            "positional": [
+                "intensity"
+            ],
+            "options": {
+                "intensity": 1,
+                "mode": "both",
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "curves": {
+            "images": 1,
+            "kind": "preset",
+            "positional": [
+                "points"
+            ],
+            "options": {
+                "preset": null,
+                "points": null,
+                "channel": "rgb"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "directionalWarp": {
+            "images": 2,
+            "positional": [
+                "angle",
+                "intensity"
+            ],
+            "options": {
+                "angle": 0,
+                "intensity": 20,
+                "bothWays": false,
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "distance": {
+            "images": 1,
+            "kind": "mode",
+            "positional": [
+                "maxDistance"
+            ],
+            "options": {
+                "mode": "inside",
+                "maxDistance": 30,
+                "threshold": 0.5,
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "gradient": {
+            "images": 0,
+            "kind": "type",
+            "positional": [
+                "colors"
+            ],
+            "options": {
+                "type": "linear",
+                "colors": [
+                    "#000000",
+                    "#ffffff"
+                ],
+                "angle": 0,
+                "centerX": 0.5,
+                "centerY": 0.5,
+                "bitDepth": null,
+                "width": null,
+                "height": null
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "gradientMap": {
+            "images": 1,
+            "positional": [
+                "colors"
+            ],
+            "options": {
+                "colors": [
+                    "#000000",
+                    "#ffffff"
+                ],
+                "alphaFromInput": "off"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "histogramScan": {
+            "images": 1,
+            "positional": [
+                "position",
+                "contrast"
+            ],
+            "options": {
+                "position": 0.5,
+                "contrast": 1
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "hslAdjust": {
+            "images": 1,
+            "positional": [
+                "hue",
+                "saturation",
+                "lightness"
+            ],
+            "options": {
+                "hue": 0,
+                "saturation": 0,
+                "lightness": 0,
+                "targetHue": 0,
+                "targetRange": 180,
+                "targetFalloff": 0.5
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "invert": {
+            "images": 1,
+            "kind": "channels",
+            "positional": [],
+            "options": {
+                "channels": "rgb"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "levels": {
+            "images": 1,
+            "positional": [
+                "gamma"
+            ],
+            "options": {
+                "gamma": 1,
+                "inputBlack": 0,
+                "inputWhite": 1,
+                "outputBlack": 0,
+                "outputWhite": 1
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "mask": {
+            "images": 2,
+            "positional": [],
+            "options": {
+                "invert": false
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "materialLight": {
+            "images": 0,
+            "material": true,
+            "positional": [
+                "lightAngle"
+            ],
+            "options": {
+                "lightAngle": 135,
+                "lightElevation": 45,
+                "lightStrength": 1,
+                "ambient": 0.15
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "noise": {
+            "images": 0,
+            "kind": "type",
+            "positional": [
+                "seed"
+            ],
+            "options": {
+                "type": "simplex",
+                "scale": 8,
+                "scaleY": null,
+                "scaleLock": null,
+                "voronoiMode": "f1",
+                "fractal": "standard",
+                "warp": 0,
+                "tile": null,
+                "seed": 0,
+                "offsetX": 0,
+                "offsetY": 0,
+                "octaves": 4,
+                "persistence": 0.5,
+                "lacunarity": 2,
+                "aspect": "square",
+                "bitDepth": null,
+                "width": null,
+                "height": null
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "normalMap": {
+            "images": 1,
+            "positional": [
+                "strength"
+            ],
+            "options": {
+                "strength": 1,
+                "flipY": false,
+                "smoothRadius": 4,
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "pixelate": {
+            "images": 1,
+            "positional": [
+                "blockSize"
+            ],
+            "options": {
+                "blockSize": 8
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "scatter": {
+            "images": 1,
+            "kind": "layout",
+            "positional": [
+                "count"
+            ],
+            "options": {
+                "layout": "random",
+                "count": 20,
+                "gridX": 8,
+                "gridY": 8,
+                "positionJitter": 0.5,
+                "seed": 42,
+                "scaleMin": 0.5,
+                "scaleMax": 1,
+                "rotationRange": 360,
+                "opacityMin": 0.5,
+                "opacityMax": 1,
+                "softnessMin": 0,
+                "softnessMax": 0,
+                "edges": "auto",
+                "bgColor": "#00000000",
+                "width": null,
+                "height": null
+            },
+            "outputs": [
+                "image",
+                "id",
+                "random"
+            ]
+        },
+        "sdfShape": {
+            "images": 0,
+            "kind": "shape",
+            "positional": [
+                "size"
+            ],
+            "options": {
+                "shape": "circle",
+                "size": 1.5,
+                "edgeBand": 0,
+                "rotation": 0,
+                "offsetX": 0,
+                "offsetY": 0,
+                "shapeWidth": 0.5,
+                "shapeHeight": 0.5,
+                "capsuleLength": 0.6,
+                "capsuleThickness": 0.3,
+                "cornerRadius": 0.05,
+                "angle": 270,
+                "thickness": 0.05,
+                "eggHeight": 0.45,
+                "eggBottomRadius": 0.3,
+                "eggTopRadius": 0.1,
+                "eggBulge": 0.75,
+                "moonDistance": 0.2,
+                "moonOuterRadius": 0.45,
+                "moonInnerRadius": 0.32,
+                "vesicaWidth": 0.5,
+                "vesicaHeight": 0.8,
+                "fillColor": "#ffffff",
+                "edgeColor": "#ff6b6b",
+                "backgroundColor": "#000000",
+                "transparentBackground": false,
+                "bitDepth": null,
+                "width": null,
+                "height": null
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "slopeBlur": {
+            "images": 2,
+            "kind": "mode",
+            "positional": [
+                "intensity"
+            ],
+            "options": {
+                "intensity": 20,
+                "samples": 16,
+                "mode": "blur",
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "solidColor": {
+            "images": 0,
+            "kind": "color",
+            "positional": [],
+            "options": {
+                "color": "#808080",
+                "width": null,
+                "height": null
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "threshold": {
+            "images": 1,
+            "positional": [
+                "threshold"
+            ],
+            "options": {
+                "threshold": 0.5,
+                "smooth": false,
+                "smoothness": 0.02
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "tile": {
+            "images": 1,
+            "positional": [
+                "repeatX"
+            ],
+            "options": {
+                "repeatX": 2,
+                "repeatY": 2,
+                "offsetX": 0,
+                "offsetY": 0,
+                "mirror": false
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "tileGrid": {
+            "images": 0,
+            "positional": [
+                "columns"
+            ],
+            "options": {
+                "columns": 4,
+                "rows": 8,
+                "rowOffset": 0.5,
+                "offsetJitter": 0,
+                "lengthJitter": 0,
+                "sizeJitter": 0,
+                "jointWidth": 0.06,
+                "bevel": 0.08,
+                "round": 0,
+                "heightJitter": 0,
+                "seed": 0,
+                "bitDepth": null,
+                "width": null,
+                "height": null
+            },
+            "outputs": [
+                "image",
+                "random",
+                "uv"
+            ]
+        },
+        "transform": {
+            "images": 1,
+            "positional": [],
+            "options": {
+                "translateX": 0,
+                "translateY": 0,
+                "scale": 1,
+                "rotation": 0,
+                "flipX": false,
+                "flipY": false
+            },
+            "outputs": [
+                "image"
+            ]
+        },
+        "warp": {
+            "images": 2,
+            "positional": [
+                "strength"
+            ],
+            "options": {
+                "strength": 10,
+                "edges": "auto"
+            },
+            "outputs": [
+                "image"
+            ]
+        }
+    }
+}
