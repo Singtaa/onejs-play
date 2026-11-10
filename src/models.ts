@@ -169,8 +169,12 @@ export interface MeshModelOptions extends MeshData {
      * model's own units at a wind strength of 1: 0 at a trunk's foot, about
      * 0.3 at a crown's rim. Moved on the GPU, so a wood of scattered copies
      * sways for nothing on the CPU, each copy at its own phase. See `scene.wind`.
+     *
+     * Or a tree's sway in layers, each one a vertex (`SwayLayers`): the trunk
+     * bends, a limb swings, and a leaf flutters, each on its own beat. From
+     * runtime 1.8.
      */
-    sway?: Numbers
+    sway?: Numbers | SwayLayers
     /**
      * How rough its surface is, from 0 to 1: 1 by default, which spreads the
      * sun's highlight too wide to see. Water or a wet road is about 0.15, a
@@ -281,8 +285,32 @@ export interface MeshDrawOptions {
 export type MeshUpdate = Pick<MeshData, "positions"> & Partial<Omit<MeshData, "positions">> & {
     /** A splat's new weights, one a layer a vertex: a path worn into the grass. */
     weights?: Numbers
-    /** New sway, one a vertex, for a model made with `sway`. */
-    sway?: Numbers
+    /** New sway, one a vertex, for a model made with `sway`, in the form it was made with. */
+    sway?: Numbers | SwayLayers
+}
+
+/**
+ * A tree's sway in layers, each one a vertex in the model's own units at a
+ * wind strength of 1, and each 0 where it is left out. `scene.mesh({ ...tree,
+ * sway: { trunk, limb, leaf, phase } })`.
+ */
+export interface SwayLayers {
+    /**
+     * How far the trunk bends it downwind: 0 at the foot, growing up the
+     * trunk. A bent trunk keeps its length, so its crown sinks a little as it
+     * leans, and a gust is a patch blowing across the ground, not one swell.
+     */
+    trunk?: Numbers
+    /** How far a limb swings it, at a quicker beat than the trunk: 0 where a limb meets the trunk, more toward its tip. */
+    limb?: Numbers
+    /** How far a leaf flutters it along its normal, quicker still: a card's outer corners, with its stem at 0. */
+    leaf?: Numbers
+    /**
+     * Its place in the limb's and leaf's beat, in turns, 0 to 1: the same
+     * number over one limb's vertices moves them together, and a different
+     * one on the next limb sets it out of step.
+     */
+    phase?: Numbers
 }
 
 /** A model made from arrays: spawned, scattered and made a collider like a loaded one. */
@@ -1511,13 +1539,15 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         if (o.twoSided !== undefined && typeof o.twoSided !== "boolean") throw new Error(`[oj] scene.mesh: twoSided is ${o.twoSided}, and is true or false`)
         const sways = o.sway !== undefined
+        const swayLayers = sways && isSwayLayers(o.sway)
         for (const [given, method, what] of [[o.cutout !== undefined, "SetMeshCutout", "cutout"], [o.twoSided === true, "SetMeshTwoSided", "twoSided"], [sways, "SetMeshSway", "sway"]] as const) {
             if (given && typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.7).`)
         }
+        if (swayLayers && typeof b.SetMeshSwayLayers !== "function") throw new Error("[oj] scene.mesh sway in layers needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8). Give sway as one number a vertex.")
         // The streams a model is made with are its streams for good.
         const normals = o.normals !== undefined, colors = o.colors !== undefined, uvs = o.uvs !== undefined
         let latest: { positions: Float32Array, indices: Uint32Array | Uint16Array, colors: Float32Array | null, weights: Float32Array | null } | null = null
-        const write = (d: MeshUpdate, weights: Numbers | undefined, sway: Numbers | undefined, what: string) => {
+        const write = (d: MeshUpdate, weights: Numbers | undefined, sway: Numbers | SwayLayers | undefined, what: string) => {
             const positions = floats(d.positions, "positions", 3)
             if (positions === null) throw new Error(`[oj] ${what}: positions are required`)
             const indices = indexList(d.indices)
@@ -1525,7 +1555,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (weights !== undefined && look.splat === null) throw new Error(`[oj] ${what}: weights paint a splat, and this mesh was made without one`)
             const splatWeights = look.splat === null ? null : floats(weights, "weights", look.splat.layers.length)
             if (sway !== undefined && !sways) throw new Error(`[oj] ${what}: sway moves a mesh made with it, and this one was made without`)
-            const swayed = sways ? floats(sway, "sway", 1) : null
+            if (sway !== undefined && isSwayLayers(sway) !== swayLayers) throw new Error(`[oj] ${what}: this mesh was made with sway ${swayLayers ? "in layers" : "as one number a vertex"}, and takes it that way`)
+            const swayed = !sways || sway === undefined ? null : swayLayers ? layered(sway as SwayLayers, positions.length / 3, what) : floats(sway as Numbers, "sway", 1)
             const streams = [id, positions, indices, floats(d.normals, "normals", 3), vertexColors, floats(d.uvs, "uvs", 2)]
             // Six arguments to a mesh without a splat or sway, as every OneJS before them takes.
             const problem = String(sways ? b.SetMesh(...streams, splatWeights, swayed) : look.splat === null ? b.SetMesh(...streams) : b.SetMesh(...streams, splatWeights))
@@ -1561,7 +1592,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const looks: [boolean, () => unknown, string][] = [
                 [o.cutout !== undefined, () => b.SetMeshCutout(id, o.cutout), "cutout"],
                 [o.twoSided === true, () => b.SetMeshTwoSided(id), "twoSided"],
-                [sways, () => b.SetMeshSway(id), "sway"],
+                [sways, () => swayLayers ? b.SetMeshSwayLayers(id) : b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
                 [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
                 [leafGiven, () => b.SetMeshLeafLight(id, ...leafArgs(leaf, "scene.mesh translucencyColor")), o.wrap !== undefined ? "wrap" : "translucency"],
@@ -1989,4 +2020,26 @@ function edgeRange(v: unknown, what: string) {
     const ok = Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number")
         && ((v[0] === 0 && v[1] === 0) || (v[0] >= 0 && v[1] > v[0] && v[1] <= 1))
     if (!ok) throw new Error(`[oj] ${what} is ${JSON.stringify(v)}, and is [start, end] with 0 <= start < end <= 1, or [0, 0] for none`)
+}
+
+// Sway in layers, as against one number a vertex.
+function isSwayLayers(sway: unknown): sway is SwayLayers {
+    return typeof sway === "object" && sway !== null && !Array.isArray(sway) && !ArrayBuffer.isView(sway)
+}
+
+// A layered sway as ModelBridge takes it: trunk, limb, leaf and phase, four a vertex, 0 for a layer left out.
+function layered(sway: SwayLayers, count: number, what: string): Float32Array {
+    const names = ["trunk", "limb", "leaf", "phase"] as const
+    for (const k of Object.keys(sway)) {
+        if (!(names as readonly string[]).includes(k)) throw new Error(`[oj] ${what}: sway has ${k}, and its layers are trunk, limb, leaf and phase`)
+    }
+    const layers = names.map((k) => floats(sway[k], `sway.${k}`, 1))
+    if (layers.every((l) => l === null)) throw new Error(`[oj] ${what}: sway in layers names none; give trunk, limb, leaf or phase, one a vertex`)
+    const out = new Float32Array(count * 4)
+    layers.forEach((l, i) => {
+        if (l === null) return
+        if (l.length !== count) throw new Error(`[oj] ${what}: sway.${names[i]} has ${l.length} numbers for ${count} vertices`)
+        for (let v = 0; v < count; v++) out[v * 4 + i] = l[v]!
+    })
+    return out
 }

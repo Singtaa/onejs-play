@@ -26,7 +26,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "Scatter" || name === "ScatterWith" || name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshCutout" || name === "SetMeshTwoSided" || name === "SetMeshSway" || name === "SetMeshTexture") return lookAnswer
+                if (name === "SetMeshCutout" || name === "SetMeshTwoSided" || name === "SetMeshSway" || name === "SetMeshSwayLayers" || name === "SetMeshTexture") return lookAnswer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -126,6 +126,46 @@ describe("scene.mesh sway", () => {
         const rock = s.mesh(SQUARE)
         expect(() => rock.set({ positions: SQUARE.positions, sway: [0, 1, 1, 0] })).toThrow("mesh.set: sway moves a mesh made with it, and this one was made without")
         expect(of("SetMesh")[0], "and a mesh without it sends six arguments, as every OneJS takes").toHaveLength(7)
+    })
+})
+
+describe("scene.mesh sway in layers", () => {
+    it("asks for layers before the vertices, and sends trunk, limb, leaf and phase four a vertex, 0 where left out", () => {
+        const s = scene()
+        const tree = s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0], leaf: [0, 0.2, 0.3, 0], phase: [0.5, 0.5, 0.5, 0.5] } })
+        expect(of("SetMeshSwayLayers")).toEqual([["SetMeshSwayLayers", tree.id]])
+        expect(of("SetMeshSway"), "not the plain sway").toHaveLength(0)
+        expect(order("SetMeshSwayLayers", "SetMesh")).toEqual(["SetMeshSwayLayers", "SetMesh"])
+        expect(Array.from(of("SetMesh")[0]![8] as Float32Array)).toEqual([0, 0, 0, 0.5, 1, 0, 0.2, 0.5, 1, 0, 0.3, 0.5, 0, 0, 0, 0.5].map(Math.fround))
+        tree.set({ positions: SQUARE.positions })
+        expect(of("SetMesh")[1]![8], "left out, it stays").toBeNull()
+        tree.set({ positions: SQUARE.positions, sway: { limb: [1, 1, 1, 1] } })
+        expect(Array.from(of("SetMesh")[2]![8] as Float32Array)).toEqual([0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0])
+    })
+
+    it("keeps the form a mesh was made with", () => {
+        const s = scene()
+        const layered = s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0] } })
+        expect(() => layered.set({ positions: SQUARE.positions, sway: [0, 1, 1, 0] })).toThrow("this mesh was made with sway in layers, and takes it that way")
+        const plain = s.mesh({ ...SQUARE, sway: [0, 1, 1, 0] })
+        expect(() => plain.set({ positions: SQUARE.positions, sway: { trunk: [0, 1, 1, 0] } })).toThrow("made with sway as one number a vertex")
+    })
+
+    it("refuses a layer it does not know, one the wrong length, or none, before making anything", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0], branch: [0, 1, 1, 0] } as any })).toThrow("sway has branch, and its layers are trunk, limb, leaf and phase")
+        expect(() => s.mesh({ ...SQUARE, sway: { limb: [0, 1] } })).toThrow("sway.limb has 2 numbers for 4 vertices")
+        expect(() => s.mesh({ ...SQUARE, sway: {} })).toThrow("sway in layers names none")
+        expect(of("SetMesh")).toHaveLength(0)
+    })
+
+    it("needs a OneJS that has them, and says so before making anything, while a plain sway is made as ever", () => {
+        missing = new Set(["SetMeshSwayLayers"])
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0] } })).toThrow("scene.mesh sway in layers needs a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
+        s.mesh({ ...SQUARE, sway: [0, 1, 1, 0] })
+        expect(of("SetMeshSway")).toHaveLength(1)
     })
 })
 
