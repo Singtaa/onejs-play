@@ -107,8 +107,9 @@ describe("the local server", () => {
             const got = await fetch(`${server.url}pipelines/${KEY}.json.gz`)
             expect(got.status).toBe(200)
             expect(Buffer.from(await got.arrayBuffer())).toEqual(bytes)
-            expect((await fetch(`${server.url}pipelines/ffffffffffffffffffffffffffffffff.json.gz`)).status).toBe(404)
-            expect((await fetch(`${plain.url}pipelines/${KEY}.json.gz`)).status).toBe(404)
+            // None is 204, not 404, which Chrome would log as an error and ojplay fail the run for.
+            expect((await fetch(`${server.url}pipelines/ffffffffffffffffffffffffffffffff.json.gz`)).status).toBe(204)
+            expect((await fetch(`${plain.url}pipelines/${KEY}.json.gz`)).status).toBe(204)
             const page = await (await fetch(server.url)).text()
             expect(page.indexOf("__ojRecordPipelines = true")).toBeGreaterThan(-1)
             expect(page.indexOf("__ojRecordPipelines = true")).toBeLessThan(page.indexOf("PlayContainer.loader.js"))

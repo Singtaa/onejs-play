@@ -218,7 +218,8 @@ export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, po
         const set = /^\/pipelines\/([0-9a-f]{16,64})\.json\.gz$/.exec(url)
         if (set !== null) {
             const bytes = pipelines === null ? null : pipelines(set[1])
-            if (bytes === null) return send(404, "no set", "text/plain")
+            // 204 as the site answers it: a 404 is a console error, and ojplay fails a run for one.
+            if (bytes === null) { res.writeHead(204, { "cache-control": "no-store" }); return res.end() }
             return send(200, bytes, "application/gzip")
         }
         if (url === "/bundle.js") return send(200, bundle(), TYPES[".js"])
