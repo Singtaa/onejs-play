@@ -90,8 +90,16 @@ describe("a streamed world, 3 by 3 chunks", () => {
         const made = nav.tiles - had
         say(`collider for a chunk: world.mesh ${median(meshMs).toFixed(3)} ms, world.heightfield ${median(hfMs).toFixed(3)} ms`)
         say(`nav for a chunk: solo (today) ${median(soloMs).toFixed(1)} ms in one call; tiled ${tiles.length} tiles stale and ${made} new, each median ${median(tiles).toFixed(2)} ms, slowest ${Math.max(...tiles).toFixed(2)} ms, ${own.toFixed(1)} ms in all`)
-        // 0.4 to 0.7 ms on a Mac, 2.1 on CI's Windows runner (8 Nov): under 2 ms is the claim, this the tripwire.
-        expect(median(tiles)).toBeLessThan(6)
+        // The milliseconds are reported above, not asserted: that a tile fits a 2 ms job is a budget
+        // for a benchmark (0.4 to 0.7 ms on a Mac, 0.8 to 1.5 here, 2.1 on CI's Windows runner), and
+        // a clock bound reds whenever another session is building. Asserted instead: a tile costs a
+        // small part of the solo build of its chunk, timed in the same run, so load scales both.
+        // Measured on 9 Nov, 16 cores: 0.040 to 0.061 over ten quiet runs, 0.018 to 0.030 over ten
+        // with every core busy (load slows the longer solo build more). Each tile built ten times
+        // over read 0.291. The bound, 0.15, is 2.5 times the quiet worst and half the ten-times build.
+        const ratio = median(tiles) / median(soloMs)
+        say(`a tile against the solo build of its chunk: ${ratio.toFixed(3)}`)
+        expect(ratio).toBeLessThan(0.15)
         expect(tiles.length).toBeGreaterThanOrEqual(16)
         today.dispose(); w.dispose()
     })
