@@ -450,6 +450,10 @@ Three things that are not obvious from the code:
   start only where the host has `SetWind`, warning only a cart that asked; the
   wind's clock is the scene's own, sent each frame once a mesh sways and held
   while `paused`.
+  `wrap` and `translucency` are one `SetMeshLeafLight(id, wrap, translucency)`
+  among the looks, sent only when either is above 0, and again on
+  `mesh.wrap` or `mesh.translucency`; a splat is refused before anything is
+  made, and so is a host without the call.
 - **`scene.texture` is lent, not owned.** It is onejs-react's `LentTexture`:
   each program or pass that reads it acquires it once and releases it when
   it stops, and the scene counts its own readers, so a release after the
