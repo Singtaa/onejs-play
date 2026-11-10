@@ -253,6 +253,10 @@ export interface ScatterOptions {
      * copy by copy with nothing drawn twice. 0 by default: a hard edge.
      */
     fade?: number
+    /** Whether the copies cast shadows. On by default; a far scatter past the shadows' reach gains nothing by casting. */
+    castShadows?: boolean
+    /** Whether shadows fall on the copies. On by default. */
+    receiveShadows?: boolean
 }
 
 /**
@@ -271,6 +275,16 @@ export interface WindOptions {
 /** Copies of a model that never move, from `scene.scatter`. */
 export interface Scatter {
     readonly count: number
+    /** Whether the copies cast shadows. Settable. */
+    castShadows: boolean
+    /** Whether shadows fall on the copies. Settable. */
+    receiveShadows: boolean
+    /**
+     * False skips every draw of the copies, shadows included, until it is set
+     * true again: a batch out of view or range is hidden for nothing and
+     * shown again without being made again. True by default.
+     */
+    visible: boolean
     destroy(): void
 }
 
@@ -1444,10 +1458,45 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (id === 0) throw new Error("[oj] scene.scatter: this model has a skinned mesh, and scattered copies never move. Spawn it instead.")
         const born = generation
         let alive = true
+        let cast = options.castShadows ?? true
+        let receive = options.receiveShadows ?? true
+        let visible = true
+        const live = () => alive && born === generation
+        // Asked first and kept after, so a host that refuses leaves the scatter as it was.
+        const shadows = (c: boolean, r: boolean) => {
+            if (typeof b.SetScatterShadows !== "function") throw new Error("[oj] scatter castShadows and receiveShadows need a newer OneJS: this host's ModelBridge cannot turn a scatter's shadows off (they came with runtime 1.8).")
+            b.SetScatterShadows(id, c, r)
+            cast = c
+            receive = r
+        }
         // Kept as given: the copies are baked from these numbers, so a cart reusing its array cannot move them.
         scatters.set(id, { model, data: data.slice(), stride })
+        if (!cast || !receive) {
+            try {
+                shadows(cast, receive)
+            } catch (e) {
+                b.DestroyScatter(id)
+                scatters.delete(id)
+                throw e
+            }
+        }
         return Object.freeze({
             count: data.length / stride,
+            get castShadows() { return cast },
+            set castShadows(on: boolean) {
+                if (live() && on !== cast) shadows(on, receive)
+            },
+            get receiveShadows() { return receive },
+            set receiveShadows(on: boolean) {
+                if (live() && on !== receive) shadows(cast, on)
+            },
+            get visible() { return visible },
+            set visible(on: boolean) {
+                if (!live() || on === visible) return
+                if (typeof b.SetScatterVisible !== "function") throw new Error("[oj] scatter.visible needs a newer OneJS: this host's ModelBridge cannot hide a scatter (it came with runtime 1.8).")
+                visible = on
+                b.SetScatterVisible(id, visible)
+            },
             destroy() {
                 if (!alive || born !== generation) return
                 alive = false

@@ -129,6 +129,53 @@ describe("scene.mesh sway", () => {
     })
 })
 
+describe("scene.scatter shadows and visible", () => {
+    it("sends nothing more for a scatter that casts and keeps its shadows, as 1.7 drew it", () => {
+        const s = scene()
+        const grass = s.scatter(s.mesh(SQUARE), [{ x: 0, z: 0 }])
+        expect(of("SetScatterShadows")).toHaveLength(0)
+        expect(of("SetScatterVisible")).toHaveLength(0)
+        expect([grass.castShadows, grass.receiveShadows, grass.visible]).toEqual([true, true, true])
+    })
+
+    it("takes castShadows and receiveShadows as spawn does, right after the scatter is made", () => {
+        const s = scene()
+        const far = s.scatter(s.mesh(SQUARE), [{ x: 0, z: 0 }], { castShadows: false })
+        const id = of("Scatter")[0]
+        expect(order("Scatter", "SetScatterShadows")).toEqual(["Scatter", "SetScatterShadows"])
+        expect(of("SetScatterShadows")[0]!.slice(2)).toEqual([false, true])
+        expect(id).toBeDefined()
+        expect([far.castShadows, far.receiveShadows]).toEqual([false, true])
+        far.receiveShadows = false
+        expect(of("SetScatterShadows")[1]!.slice(2)).toEqual([false, false])
+    })
+
+    it("hides and shows a batch without making it again", () => {
+        const s = scene()
+        const patch = s.scatter(s.mesh(SQUARE), [{ x: 0, z: 0 }])
+        patch.visible = false
+        patch.visible = false
+        patch.visible = true
+        expect(of("SetScatterVisible").map((c) => c[2])).toEqual([false, true])
+        expect(of("Scatter")).toHaveLength(1)
+        patch.destroy()
+        patch.visible = false
+        expect(of("SetScatterVisible"), "a destroyed scatter asks nothing").toHaveLength(2)
+    })
+
+    it("says which runtime it needs on a host without them, rather than drawing what it was told not to", () => {
+        missing = new Set(["SetScatterShadows", "SetScatterVisible"])
+        const s = scene()
+        const model = s.mesh(SQUARE)
+        expect(() => s.scatter(model, [{ x: 0, z: 0 }], { castShadows: false })).toThrow("came with runtime 1.8")
+        const plain = s.scatter(model, [{ x: 0, z: 0 }], { castShadows: true })
+        expect(() => { plain.visible = false }).toThrow("came with runtime 1.8")
+        expect(() => { plain.receiveShadows = false }).toThrow("came with runtime 1.8")
+        expect([plain.receiveShadows, plain.visible], "and the scatter stays as it was").toEqual([true, true])
+        expect(of("DestroyScatter"), "the refused one is not left drawing").toHaveLength(1)
+    })
+})
+
 describe("scene.scatter tint, tilt and range", () => {
     it("sends ten numbers a copy when any copy is tilted or tinted, with the tint in sRGB", () => {
         const s = scene()
