@@ -362,6 +362,12 @@ export interface MeshModel extends Model {
 export type SceneTexture = LentTexture
 
 /**
+ * The scene's distances as a texture, for a program to read:
+ * `textures={{ depth: scene.depth }}`. Its red channel is metres.
+ */
+export type SceneDepth = LentTexture
+
+/**
  * One copy in a scatter. y, yaw, pitch and roll (degrees, as an actor's
  * rotation is) and scale default to 0, 0, 0, 0 and 1.
  */
@@ -707,6 +713,23 @@ export interface Scene {
      * drawn just before the programs are, so they read this frame's picture.
      */
     readonly texture: SceneTexture
+    /**
+     * How far each pixel's surface is, for a program to read beside
+     * `scene.texture`: mist that thickens with distance, depth of field,
+     * outlines.
+     *
+     *     <ShaderProgram program={mist}
+     *         textures={{ scene: scene.texture, depth: scene.depth }} />
+     *
+     * Its red channel is the distance in metres from the camera to the
+     * opaque surface along the pixel's ray, not the eye's z, so a pixel's
+     * point is `eye + ray * depth`. Where nothing was drawn it reads the
+     * camera's far distance. See-through things are not in it. Read with
+     * `scene.texture`, both are this frame's; read alone, it is the frame
+     * before. It costs nothing until read, and one full-screen pass while
+     * read. Drawn on URP only: elsewhere a program reads nothing.
+     */
+    readonly depth: SceneDepth
     pointLight(options: PointLightOptions): PointLight
     /**
      * Bakes the light that bounces round the scene into its static actors and
@@ -1060,8 +1083,8 @@ function rootElement(): any {
     return getCurrentRuntime()?.root ?? globalThis.__root
 }
 
-/** Said once: a host without AcquireSceneTexture. */
-let saidNoSceneTexture = false
+/** Said once each: a host without AcquireSceneTexture, or without AcquireSceneDepth. */
+const saidNoLender = new Set<string>()
 /** Said once: a host without SetSky. */
 let saidNoSky = false
 /** Said once: a host without SetSkyReflect. */
@@ -1821,27 +1844,32 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
     }
 
-    // Readers this scene counted, so a release after the scene is gone, or one
+    // A texture the bridge lends while a program reads it. Each counts the
+    // readers this scene gave it, so a release after the scene is gone, or one
     // too many, never takes a reader from the next scene.
-    let readers = 0
-    const texture: SceneTexture = Object.freeze({
-        [LENT_TEXTURE]: true as const,
-        acquire() {
-            if (disposed) return null
-            if (typeof b.AcquireSceneTexture !== "function") {
-                if (!saidNoSceneTexture) console.warn("[oj] scene.texture needs a newer OneJS: this host's ModelBridge cannot draw the scene into a texture (it came after 3.9.18), so the program reads nothing.")
-                saidNoSceneTexture = true
-                return null
-            }
-            readers++
-            return b.AcquireSceneTexture()
-        },
-        release() {
-            if (disposed || readers === 0) return
-            readers--
-            b.ReleaseSceneTexture()
-        },
-    })
+    const lend = (what: string, name: string, missing: string): LentTexture => {
+        let readers = 0
+        return Object.freeze({
+            [LENT_TEXTURE]: true as const,
+            acquire() {
+                if (disposed) return null
+                if (typeof b[`Acquire${name}`] !== "function") {
+                    if (!saidNoLender.has(name)) console.warn(`[oj] ${what} needs a newer OneJS: this host's ModelBridge cannot ${missing}, so the program reads nothing.`)
+                    saidNoLender.add(name)
+                    return null
+                }
+                readers++
+                return b[`Acquire${name}`]()
+            },
+            release() {
+                if (disposed || readers === 0) return
+                readers--
+                b[`Release${name}`]()
+            },
+        })
+    }
+    const texture: SceneTexture = lend("scene.texture", "SceneTexture", "draw the scene into a texture (it came after 3.9.18)")
+    const depth: SceneDepth = lend("scene.depth", "SceneDepth", "draw the scene's depth (it came after 3.9.18)")
 
     const pointLight = (o: PointLightOptions): PointLight => {
         let position = vec3(o.position)
@@ -1939,6 +1967,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         mesh,
         scatter,
         texture,
+        depth,
         pointLight,
         bake: baker.bake,
         clearLight: baker.clearLight,

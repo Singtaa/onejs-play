@@ -1,7 +1,8 @@
 /**
- * `scene.texture`, as the calls it makes on OneJS's ModelBridge
- * (AcquireSceneTexture and ReleaseSceneTexture, tested in OneJS's
- * SceneTextureEditModeTests). How a program borrows and gives it back is
+ * `scene.texture` and `scene.depth`, as the calls they make on OneJS's ModelBridge
+ * (AcquireSceneTexture and ReleaseSceneTexture, AcquireSceneDepth and
+ * ReleaseSceneDepth, tested in OneJS's SceneTextureEditModeTests and
+ * SceneDepthEditModeTests). How a program borrows and gives it back is
  * onejs-react's lent texture, tested there (lent-texture.test.tsx); this is
  * the lender's half: it counts its own readers, so a release after its scene
  * is gone, or one too many, never takes a reader from the scene that is.
@@ -15,6 +16,7 @@ type Call = [string, ...unknown[]]
 let calls: Call[]
 let savedCS: unknown
 const TEXTURE = { name: "OneJS Scene" }
+const DEPTH = { name: "OneJS Scene Depth" }
 
 // Every ModelBridge method, recorded; `without` names ones an older OneJS lacks.
 function bridge(without: string[] = []): any {
@@ -24,6 +26,7 @@ function bridge(without: string[] = []): any {
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "AcquireSceneTexture") return TEXTURE
+                if (name === "AcquireSceneDepth") return DEPTH
                 return undefined
             }
         },
@@ -110,5 +113,46 @@ describe("scene.texture", () => {
         s.texture.release()
         expect(warn.mock.calls.filter((c) => String(c[0]).includes("scene.texture needs a newer OneJS"))).toHaveLength(1)
         expect(calls.some((c) => c[0] === "ReleaseSceneTexture")).toBe(false)
+    })
+})
+
+describe("scene.depth", () => {
+    it("is a lent texture of its own, asking for nothing until read", () => {
+        const { scene: s } = scene()
+        expect(isLentTexture(s.depth)).toBe(true)
+        expect(s.depth).toBe(s.depth)
+        expect(s.depth).not.toBe(s.texture)
+        expect(Object.isFrozen(s.depth)).toBe(true)
+        expect(of("AcquireSceneDepth")).toBe(0)
+    })
+
+    it("lends the bridge's depth and counts its readers apart from the texture's", () => {
+        const { scene: s } = scene()
+        expect(s.depth.acquire()).toBe(DEPTH)
+        expect(s.texture.acquire()).toBe(TEXTURE)
+        s.depth.release()
+        s.depth.release()
+        expect(of("ReleaseSceneDepth")).toBe(1)
+        expect(of("ReleaseSceneTexture")).toBe(0)
+    })
+
+    it("lends nothing once its scene is gone", () => {
+        const first = scene()
+        first.scene.depth.acquire()
+        first.dispose()
+        expect(first.scene.depth.acquire()).toBeNull()
+        first.scene.depth.release()
+        expect(of("ReleaseSceneDepth")).toBe(0)
+    })
+
+    it("says once that an older OneJS cannot draw the depth, while scene.texture still works", () => {
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: bridge(["AcquireSceneDepth", "ReleaseSceneDepth"]) } } }
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const { scene: s } = scene()
+        expect(s.depth.acquire()).toBeNull()
+        expect(s.depth.acquire()).toBeNull()
+        s.depth.release()
+        expect(warn.mock.calls.filter((c) => String(c[0]).includes("scene.depth needs a newer OneJS"))).toHaveLength(1)
+        expect(s.texture.acquire()).toBe(TEXTURE)
     })
 })
