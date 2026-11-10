@@ -74,7 +74,11 @@ async function chain() {
     for (const n of CHAIN) {
         if (n.type === "export") continue
         // A dumped input, for a node checked in isolation: Magerie's bytes, not drawn here.
-        if (n.type === "pixels") { made.set(n.id, tex.pixels(n.w!, n.h!, unhex(n.hex!), { tile: n.tiles })); continue }
+        if (n.type === "pixels") {
+            const bytes = unhex(n.hex!)
+            made.set(n.id, tex.pixels(n.w!, n.h!, n.float ? new Float32Array(bytes.buffer, bytes.byteOffset, bytes.length / 4) : bytes, { tile: n.tiles }))
+            continue
+        }
         const name = `chain/${n.id}`
         const inputs = n.inputs ?? []
         try {

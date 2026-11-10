@@ -15,7 +15,7 @@
 import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
-import { uploadRGBA } from "./upload"
+import { uploadRGBA, uploadRGBAFloat } from "./upload"
 import { TexCache, cacheKey, hostBackend } from "./cache"
 import { DEFAULT_CANVAS, KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type Spec, type SpecName } from "./nodes"
 import type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
@@ -589,12 +589,17 @@ function canvas(width: number, options: CanvasOptions = {}): TexFunctions {
 
 /**
  * A picture from bytes: `width * height * 4`, RGBA, premultiplied, as
- * Magerie stores them. For tests, and for data a cart computes.
+ * Magerie stores them. For tests, and for data a cart computes. A
+ * Float32Array makes a 32-bit picture, unrounded, as a `bitDepth: "32"`
+ * generator's, and everything reading it is 32-bit too.
  */
-function pixels(width: number, height: number, rgba: Uint8Array | readonly number[], options: { tile?: boolean } = {}): TexImage {
-    if (rgba.length !== width * height * 4) throw new Error(`[oj] tex.pixels: ${width} by ${height} is ${width * height * 4} bytes, and these are ${rgba.length}`)
-    const texture = uploadRGBA(width, height, rgba, options.tile === true)
-    return new TexImage(makeNode("pixels", "source", [], {}, width, height, options.tile === true, texture))
+function pixels(width: number, height: number, rgba: Uint8Array | Float32Array | readonly number[], options: { tile?: boolean } = {}): TexImage {
+    if (rgba.length !== width * height * 4) throw new Error(`[oj] tex.pixels: ${width} by ${height} is ${width * height * 4} values, and these are ${rgba.length}`)
+    const tile = options.tile === true
+    if (rgba instanceof Float32Array) {
+        return new TexImage(makeNode("pixels", "source", [], { float: true }, width, height, tile, uploadRGBAFloat(width, height, rgba, tile)))
+    }
+    return new TexImage(makeNode("pixels", "source", [], {}, width, height, tile, uploadRGBA(width, height, rgba, tile)))
 }
 
 /** A pass's texels, read back from the GPU, as the bytes C#'s `encode` hands over in one crossing, row 0 at the top. */

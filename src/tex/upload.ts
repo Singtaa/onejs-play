@@ -20,6 +20,23 @@ export function uploadRGBA(width: number, height: number, rgba: ArrayLike<number
     return texture
 }
 
+/**
+ * Floats to a 32-bit texture, RGBA a texel, row 0 at the top. Point filtered:
+ * a float texture is never sampled with a filter (engine.ts), so it is fetched.
+ */
+export function uploadRGBAFloat(width: number, height: number, rgba: Float32Array, tile: boolean): unknown {
+    const T = CS.UnityEngine
+    const texture = new T.Texture2D(width, height, T.TextureFormat.RGBAFloat, false, true)
+    texture.filterMode = T.FilterMode.Point
+    texture.wrapMode = tile ? T.TextureWrapMode.Repeat : T.TextureWrapMode.Clamp
+    const flipped = new Float32Array(rgba.length)
+    const row = width * 4
+    for (let y = 0; y < height; y++) flipped.set(rgba.subarray(y * row, (y + 1) * row), (height - 1 - y) * row)
+    texture.LoadRawTextureData(new Uint8Array(flipped.buffer))
+    texture.Apply(false, false)
+    return texture
+}
+
 export function destroyTexture(texture: unknown): void {
     CS.UnityEngine.Object.Destroy(texture)
 }

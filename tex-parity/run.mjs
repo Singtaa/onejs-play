@@ -134,7 +134,7 @@ function writeChain() {
             const all = isolate.includes("all")
             const chosen = (id) => all || isolate.includes(id)
             const sources = new Map()
-            const rounded = new Set()
+            const floats = new Set()
             nodes = nodes.filter((n) => chosen(n.id)).map((n) => ({ ...n, inputs: n.inputs.map((i) => {
                 const o = byId.get(i.from).outputs[i.out]
                 // A material carries no pixels of its own: it is rebuilt from its maps, which do.
@@ -144,17 +144,15 @@ function writeChain() {
                 }
                 if (!all && chosen(i.from)) return i
                 const id = `dump:${i.from}:${i.out}`
-                let bytes = fs.readFileSync(path.join(CHAIN_DIR, o.file))
-                // tex.pixels takes 8 bits: a float32 dump is rounded to them, an input off by at most 1/510.
-                if (o.format === "float32") {
-                    rounded.add(`${i.from} ${i.out}`)
-                    bytes = Buffer.from(Array.from({ length: bytes.length / 4 }, (_, k) => Math.round(Math.min(1, Math.max(0, bytes.readFloatLE(k * 4))) * 255)))
-                }
-                sources.set(id, { id, type: "pixels", w: o.width, h: o.height, tiles: o.tiles, hex: bytes.toString("hex") })
+                const bytes = fs.readFileSync(path.join(CHAIN_DIR, o.file))
+                // A float32 dump goes in as floats, unrounded, so a node is judged on Magerie's exact input.
+                const float = o.format === "float32"
+                if (float) floats.add(`${i.from} ${i.out}`)
+                sources.set(id, { id, type: "pixels", w: o.width, h: o.height, tiles: o.tiles, float, hex: bytes.toString("hex") })
                 return { ...i, from: id, out: "out-image" }
             }) }))
             nodes = [...sources.values(), ...nodes]
-            if (rounded.size > 0) console.log(`[tex-parity] --isolate fed ${rounded.size} float32 dumps rounded to 8 bits: ${[...rounded].join(", ")}`)
+            if (floats.size > 0) console.log(`[tex-parity] --isolate fed ${floats.size} float32 dumps as floats: ${[...floats].join(", ")}`)
         }
         // Every picture a node stores is a case, a float32 one compared as floats.
         for (const n of m.nodes) {
@@ -165,7 +163,7 @@ function writeChain() {
             }
         }
     }
-    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string, out: string }[], outs?: { port: string, name: string, float: boolean }[], w?: number, h?: number, tiles?: boolean, hex?: string }[] = ${JSON.stringify(nodes)}\n`)
+    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string, out: string }[], outs?: { port: string, name: string, float: boolean }[], w?: number, h?: number, tiles?: boolean, hex?: string, float?: boolean }[] = ${JSON.stringify(nodes)}\n`)
     return out
 }
 const chainOut = writeChain()
@@ -223,7 +221,9 @@ function writeBuildings() {
             const exports = []
             for (const [name, png] of Object.entries(b.exports)) {
                 const p = readPNG(fs.readFileSync(path.join(dir, png)))
-                out.set(`${SET}/${name}`, { bytes: Buffer.from(p.rgba), look: set.look, report: true, cutout: set.look?.cutout !== undefined })
+                // A texture's own look, where its board amplifies what the set's allows (its lookWhy says how), overrides the set's key by key.
+                const look = b.look ? { ...set.look, ...b.look } : set.look
+                out.set(`${SET}/${name}`, { bytes: Buffer.from(p.rgba), look, report: true, cutout: look?.cutout !== undefined })
                 exports.push(name)
             }
             // The nodes it takes from tex.canvas(), so a gap is named and not a minified "kd is not a function".
