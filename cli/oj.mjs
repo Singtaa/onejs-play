@@ -32,6 +32,7 @@ import { cloneCart, login, logout } from "./login.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript } from "./run.mjs"
+import { keepRecorded, sendSets } from "./pipelines.mjs"
 import { bake } from "./bake.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
@@ -271,6 +272,7 @@ async function main() {
                 }
                 return 0
             } finally {
+                await keepRecorded(game)
                 stop(game)
             }
         }
@@ -334,6 +336,7 @@ async function main() {
                 try { say(`screenshot ${path.relative(root, await game.shot(path.resolve(root, ".oj/failed.png")))}`) } catch { /* the page may be gone */ }
                 return 1
             } finally {
+                if (signalled === null) await keepRecorded(game)
                 stop(game)
             }
         }
@@ -386,6 +389,7 @@ async function main() {
                 const was = following(before, branch)[0]?.live ?? null
                 const code = await git(["push", "origin", branch], { cwd: root, bearer })
                 if (code !== 0) return code
+                await sendSets({ root, site: siteOrigin(), sid, bearer, commit: tip })
                 const said = describeBranchPush(branch, was, tip, await status(sid, { bearer }), left)
                 for (const line of said.lines) say(line)
                 return said.code
@@ -393,6 +397,7 @@ async function main() {
             const { head } = before
             const code = await git(["push", "origin", "main"], { cwd: root, bearer })
             if (code !== 0) return code
+            await sendSets({ root, site: siteOrigin(), sid, bearer, commit: tipOf(root) })
             const said = describePush(head, await status(sid, { bearer }), left)
             for (const line of said.lines) say(line)
             return said.code

@@ -122,7 +122,16 @@ function lightFileSaid(name) {
     return btoa(binary)
 }`
 
-function hostPage(manifest, { light = false } = {}) {
+/**
+ * With `record`, the container records the pipelines the game draws (from
+ * runtime 1.8; PlaySite/docs/proposals/pipeline-sets.md), and the command line
+ * reads the game's set through `__ojLocal.pipelines()`. Set before the boot,
+ * since the container reads it as it starts. An older container has no
+ * recorder, and the read is null.
+ */
+const RECORD_PIPELINES = "globalThis.__ojRecordPipelines = true\n"
+
+function hostPage(manifest, { light = false, record = false } = {}) {
     const boot = containerBoot({
         runtime: "/runtime",
         manifest,
@@ -153,18 +162,23 @@ function hostPage(manifest, { light = false } = {}) {
 <body>
 <canvas id="c" tabindex="1"></canvas>
 <div id="s">loading runtime</div>
-<script>${boot}
+<script>${record ? RECORD_PIPELINES : ""}${boot}
 // What the command line calls to swap in a new build without reloading the
 // 14 MB behind it. Reports the way the boot does.
 globalThis.__ojLocal = {
     async reload() {
-        const ms = startGame(await bundle())
+        const source = await bundle()
+        // Other code from here on, so a recorded set carries only this code's own shaders.
+        if (globalThis.__ojPrewarm && globalThis.__ojPrewarm.mark) globalThis.__ojPrewarm.mark("swap")
+        const ms = startGame(source)
         report(ms < 0 ? "error" : "ready", ms < 0 ? { message: "the cart failed to start" } : { ms })
         return ms
     },${light ? `
     // What ojplay bake reads: each named bake so far, and a finished one's file as base64.
     lights: lightsSaid,
-    lightFile: lightFileSaid,` : ""}
+    lightFile: lightFileSaid,` : ""}${record ? `
+    // The game's pipeline set as JSON, or "null" before the container has one.
+    pipelines: () => JSON.stringify(globalThis.__ojPrewarm && globalThis.__ojPrewarm.recorded ? globalThis.__ojPrewarm.recorded() : null),` : ""}
 }
 </script>
 </body>
@@ -182,9 +196,13 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
  * request the site would 404 was refused. The host page carries the game
  * origin's Content Security Policy for `site`, so what the site would refuse
  * is refused here too. With `light`, the page keeps the named bakes the
- * container tells it of (LIGHT_RECORDER), for `ojplay bake`.
+ * container tells it of (LIGHT_RECORDER), for `ojplay bake`. With `record`, the
+ * container records the game's pipelines (RECORD_PIPELINES). `pipelines` is
+ * asked for a game's set by its container key, and answers its gzipped bytes or
+ * null, which is served as the game's origin serves it, at
+ * /pipelines/<key>.json.gz.
  */
-export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, port = 0, refused = () => {}, fetchStreaming = null, light = false }) {
+export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, port = 0, refused = () => {}, fetchStreaming = null, light = false, record = false, pipelines = null }) {
     // When the browser first asked for the page, so a navigate that times out
     // can say whether the page was ever asked for, rather than leave a slow
     // machine, a slow server and a stuck browser reading the same.
@@ -195,7 +213,13 @@ export function serve({ runtime, root, manifest, bundle, site = DEFAULT_SITE, po
         if (url === "/") {
             pageAskedAt ??= Date.now()
             res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store", "content-security-policy": gameCsp(site) })
-            return res.end(hostPage(manifest, { light }))
+            return res.end(hostPage(manifest, { light, record }))
+        }
+        const set = /^\/pipelines\/([0-9a-f]{16,64})\.json\.gz$/.exec(url)
+        if (set !== null) {
+            const bytes = pipelines === null ? null : pipelines(set[1])
+            if (bytes === null) return send(404, "no set", "text/plain")
+            return send(200, bytes, "application/gzip")
         }
         if (url === "/bundle.js") return send(200, bundle(), TYPES[".js"])
         // Chrome asks for one unprompted, and a 404 is logged as a network

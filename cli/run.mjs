@@ -14,6 +14,7 @@ import { unservableAssets } from "./assets.mjs"
 import { launch } from "./chrome.mjs"
 import { siteOrigin, version } from "./site.mjs"
 import { rowProblemsExpression } from "./rows.mjs"
+import { newestSet } from "./pipelines.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -309,8 +310,13 @@ export async function start(root, { headless = true, gpu = false, window: size, 
     say(`runtime ${runtimeVersion}`)
 
     const manifest = { name: built.manifest.name ?? path.basename(root), runtime: runtimeVersion }
-    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, site, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion), light })
+    // On a real GPU the container records the game's pipeline set, and is
+    // served the newest one kept here (pipelines.mjs). SwiftShader's would be
+    // a software adapter's, so a headless run without --gpu records nothing.
+    const record = !headless || gpu
+    const server = await serve({ runtime, root, manifest, bundle: () => server.bundle, site, refused: (reason) => say(`404 ${reason}`), fetchStreaming: streamingFetcher(site, runtimeVersion), light, record, pipelines: (key) => newestSet(root, key) })
     server.bundle = built.code
+    server.record = record
     say(`serving ${server.url}`)
 
     let browser
