@@ -203,11 +203,13 @@ function writeBuildings() {
                 out.set(`buildings/${name}`, { bytes: Buffer.from(p.rgba), tolerance: set.tolerance, report: true })
                 exports.push(name)
             }
-            entries.push({ file: b.file, exports })
+            // The nodes it takes from tex.canvas(), so a gap is named and not a minified "kd is not a function".
+            const names = (/const {([^}]*)} = tex.canvas(/.exec(source)?.[1] ?? "").split(",").map((n) => n.trim()).filter(Boolean)
+            entries.push({ file: b.file, exports, names })
         }
     }
-    const loads = entries.map((e) => `    { file: ${JSON.stringify(e.file)}, exports: ${JSON.stringify(e.exports)}, load: () => import("./buildings/${e.file}") },`)
-    fs.writeFileSync(path.join(root, "buildings.gen.ts"), `// Written by run.mjs from goldens/buildings/buildings.json. Do not edit.\nexport const BUILDINGS: { file: string, exports: string[], load: () => Promise<Record<string, unknown>> }[] = [\n${loads.join("\n")}\n]\n`)
+    const loads = entries.map((e) => `    { file: ${JSON.stringify(e.file)}, exports: ${JSON.stringify(e.exports)}, names: ${JSON.stringify(e.names)}, load: () => import("./buildings/${e.file}") },`)
+    fs.writeFileSync(path.join(root, "buildings.gen.ts"), `// Written by run.mjs from goldens/buildings/buildings.json. Do not edit.\nexport const BUILDINGS: { file: string, exports: string[], names: string[], load: () => Promise<Record<string, unknown>> }[] = [\n${loads.join("\n")}\n]\n`)
     return out
 }
 const buildingsOut = writeBuildings()
@@ -375,13 +377,13 @@ if (SAVE !== null) {
     }
 }
 const names = [...drawn.keys()].filter((n) => n.startsWith(ONLY))
-let compared = 0, failed = 0
+let compared = 0, failed = 0, errored = 0
 const rows = []
 // Cases for nodes tex has not built yet: listed, never compared, never a pass.
 const pending = new Map()
 for (const [i, name] of names.entries()) {
     const got = drawn.get(name)
-    if (got.error) { failed++; rows.push(`FAIL  ${name}: ${got.error}`); continue }
+    if (got.error) { failed++; errored++; rows.push(`FAIL  ${name}: ${got.error}`); continue }
     if (got.pending) { if (!name.endsWith("@unfused")) pending.set(got.pending, (pending.get(got.pending) ?? 0) + 1); continue }
     let against = name
     if (NEGATIVE) {
@@ -413,6 +415,6 @@ if (compared === 0) {
     say(`${compared} swapped comparisons, ${passedWrongly} wrongly passed`)
     process.exitCode = passedWrongly === 0 ? 0 : 1
 } else {
-    say(`${compared - failed} of ${compared} within tolerance${failed ? `, ${failed} failed` : ""}`)
+    say(`${compared - (failed - errored)} of ${compared} within tolerance${failed ? `, ${failed} failed${errored ? `, ${errored} of them drawing nothing` : ""}` : ""}`)
     process.exitCode = failed === 0 ? 0 : 1
 }

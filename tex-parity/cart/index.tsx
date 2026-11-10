@@ -124,7 +124,10 @@ async function buildings() {
         try {
             m = await b.load()
         } catch (e) {
-            for (const name of b.exports) console.log(`[tex-parity] error buildings/${name} ${b.file}.ts: ${e instanceof Error ? e.message : String(e)}`)
+            const canvas = tex.canvas(1) as unknown as Record<string, unknown>
+            const missing = b.names.filter((n) => typeof canvas[n] !== "function")
+            const why = missing.length > 0 ? `tex has no ${missing.join(", ")}` : e instanceof Error ? e.message : String(e)
+            for (const name of b.exports) console.log(`[tex-parity] error buildings/${name} ${b.file}.ts: ${why}`)
             continue
         }
         for (const name of b.exports) {
