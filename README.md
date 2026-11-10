@@ -446,9 +446,11 @@ Three things that are not obvious from the code:
   and `sway` are each a bridge call between the splat or texture and the
   first `SetMesh` (sway adds a stream), refused before anything is made on a
   host without them. A mesh with sway sends `SetMesh` its eight-argument form.
-  Sway in layers (`{ trunk, limb, leaf, phase }`) asks `SetMeshSwayLayers`
-  in place of `SetMeshSway` and sends the four interleaved a vertex, 0 for a
-  layer left out; a set must give the form the mesh was made with.
+  Sway in layers (`{ trunk, limb, leaf, phase, leafPhase }`) asks
+  `SetMeshSwayLayers` in place of `SetMeshSway` and sends four numbers a
+  vertex, 0 for a layer left out, the two phases sharing the fourth (the
+  limb's in 256ths of a turn as its whole part, the card's as its fraction);
+  a set must give the form the mesh was made with.
   `scene.wind` starts from `SCENE_DEFAULTS.wind` and is sent at the scene's
   start only where the host has `SetWind`, warning only a cart that asked; the
   wind's clock is the scene's own, sent each frame once a mesh sways and held

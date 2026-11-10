@@ -132,15 +132,21 @@ describe("scene.mesh sway", () => {
 describe("scene.mesh sway in layers", () => {
     it("asks for layers before the vertices, and sends trunk, limb, leaf and phase four a vertex, 0 where left out", () => {
         const s = scene()
-        const tree = s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0], leaf: [0, 0.2, 0.3, 0], phase: [0.5, 0.5, 0.5, 0.5] } })
+        const tree = s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0], leaf: [0, 0.2, 0.3, 0], phase: [0.5, 0.5, 0.5, 0.5], leafPhase: [0.25, 0.25, 0.25, 0.25] } })
         expect(of("SetMeshSwayLayers")).toEqual([["SetMeshSwayLayers", tree.id]])
         expect(of("SetMeshSway"), "not the plain sway").toHaveLength(0)
         expect(order("SetMeshSwayLayers", "SetMesh")).toEqual(["SetMeshSwayLayers", "SetMesh"])
-        expect(Array.from(of("SetMesh")[0]![8] as Float32Array)).toEqual([0, 0, 0, 0.5, 1, 0, 0.2, 0.5, 1, 0, 0.3, 0.5, 0, 0, 0, 0.5].map(Math.fround))
+        expect(Array.from(of("SetMesh")[0]![8] as Float32Array)).toEqual([0, 0, 0, 128.25, 1, 0, 0.2, 128.25, 1, 0, 0.3, 128.25, 0, 0, 0, 128.25].map(Math.fround))
         tree.set({ positions: SQUARE.positions })
         expect(of("SetMesh")[1]![8], "left out, it stays").toBeNull()
         tree.set({ positions: SQUARE.positions, sway: { limb: [1, 1, 1, 1] } })
         expect(Array.from(of("SetMesh")[2]![8] as Float32Array)).toEqual([0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0])
+    })
+
+    it("packs both phases in the fourth: the limb's in 256ths of a turn, whole, and the card's as the fraction", () => {
+        const s = scene()
+        s.mesh({ ...SQUARE, sway: { phase: [0, 0.25, 1, 1.75], leafPhase: [0.5, 0, 1.25, 0.9999] } })
+        expect(Array.from(of("SetMesh")[0]![8] as Float32Array).filter((_, i) => i % 4 === 3)).toEqual([0.5, 64, 0.25, 192.999].map(Math.fround))
     })
 
     it("keeps the form a mesh was made with", () => {
@@ -153,7 +159,7 @@ describe("scene.mesh sway in layers", () => {
 
     it("refuses a layer it does not know, one the wrong length, or none, before making anything", () => {
         const s = scene()
-        expect(() => s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0], branch: [0, 1, 1, 0] } as any })).toThrow("sway has branch, and its layers are trunk, limb, leaf and phase")
+        expect(() => s.mesh({ ...SQUARE, sway: { trunk: [0, 1, 1, 0], branch: [0, 1, 1, 0] } as any })).toThrow("sway has branch, and its layers are trunk, limb, leaf, phase and leafPhase")
         expect(() => s.mesh({ ...SQUARE, sway: { limb: [0, 1] } })).toThrow("sway.limb has 2 numbers for 4 vertices")
         expect(() => s.mesh({ ...SQUARE, sway: {} })).toThrow("sway in layers names none")
         expect(of("SetMesh")).toHaveLength(0)

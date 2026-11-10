@@ -306,11 +306,19 @@ export interface SwayLayers {
     /** How far a leaf flutters it along its normal, quicker still: a card's outer corners, with its stem at 0. */
     leaf?: Numbers
     /**
-     * Its place in the limb's and leaf's beat, in turns, 0 to 1: the same
-     * number over one limb's vertices moves them together, and a different
-     * one on the next limb sets it out of step.
+     * Its limb's place in the limb's beat, in turns, 0 to 1, held to 256ths
+     * of a turn: the same number over one limb's wood and every card hung on
+     * it moves them together, and a different one sets the next limb out of
+     * step. Give a card the trunk and limb of the wood where it hangs, and
+     * its root moves as that wood does.
      */
     phase?: Numbers
+    /**
+     * Its card's place in the leaf's beat, in turns, 0 to 1: the same number
+     * over one card's corners flutters it whole, and a different one on the
+     * next card sets it apart. 0 on wood.
+     */
+    leafPhase?: Numbers
 }
 
 /** A model made from arrays: spawned, scattered and made a collider like a loaded one. */
@@ -2027,19 +2035,28 @@ function isSwayLayers(sway: unknown): sway is SwayLayers {
     return typeof sway === "object" && sway !== null && !Array.isArray(sway) && !ArrayBuffer.isView(sway)
 }
 
-// A layered sway as ModelBridge takes it: trunk, limb, leaf and phase, four a vertex, 0 for a layer left out.
+// A layered sway as ModelBridge takes it: trunk, limb, leaf and both phases, four a vertex, 0
+// for a layer left out. The phases share the fourth: the limb's in 256ths of a turn as its whole
+// part, the card's as its fraction (ModelWind.hlsl's ModelSwayedLayered).
 function layered(sway: SwayLayers, count: number, what: string): Float32Array {
-    const names = ["trunk", "limb", "leaf", "phase"] as const
+    const names = ["trunk", "limb", "leaf", "phase", "leafPhase"] as const
     for (const k of Object.keys(sway)) {
-        if (!(names as readonly string[]).includes(k)) throw new Error(`[oj] ${what}: sway has ${k}, and its layers are trunk, limb, leaf and phase`)
+        if (!(names as readonly string[]).includes(k)) throw new Error(`[oj] ${what}: sway has ${k}, and its layers are trunk, limb, leaf, phase and leafPhase`)
     }
     const layers = names.map((k) => floats(sway[k], `sway.${k}`, 1))
-    if (layers.every((l) => l === null)) throw new Error(`[oj] ${what}: sway in layers names none; give trunk, limb, leaf or phase, one a vertex`)
-    const out = new Float32Array(count * 4)
+    if (layers.every((l) => l === null)) throw new Error(`[oj] ${what}: sway in layers names none; give trunk, limb, leaf, phase or leafPhase, one a vertex`)
     layers.forEach((l, i) => {
-        if (l === null) return
-        if (l.length !== count) throw new Error(`[oj] ${what}: sway.${names[i]} has ${l.length} numbers for ${count} vertices`)
-        for (let v = 0; v < count; v++) out[v * 4 + i] = l[v]!
+        if (l !== null && l.length !== count) throw new Error(`[oj] ${what}: sway.${names[i]} has ${l.length} numbers for ${count} vertices`)
     })
+    const [trunk, limb, leaf, phase, leafPhase] = layers
+    const turn = (x: number) => x - Math.floor(x)
+    const out = new Float32Array(count * 4)
+    for (let v = 0; v < count; v++) {
+        out[v * 4] = trunk ? trunk[v]! : 0
+        out[v * 4 + 1] = limb ? limb[v]! : 0
+        out[v * 4 + 2] = leaf ? leaf[v]! : 0
+        const limbTurns = phase ? Math.round(turn(phase[v]!) * 256) % 256 : 0
+        out[v * 4 + 3] = limbTurns + (leafPhase ? Math.min(turn(leafPhase[v]!), 0.999) : 0)
+    }
     return out
 }
