@@ -1003,6 +1003,22 @@ worst law was 0.95 levels off on WebGPU and on WebGL 2 alike. It names runtime
 passing set of pixels, an unfogged splat, an unfogged triplanar layer, no fog at
 all, an exp2 drawn as no fog, and a GroundLit height fog drawn at one density.
 
+**The depth is the distance along each ray.** `cli/fixtures/scene-depth`
+draws a wall 10 m ahead across the left half of the view and the sky to its
+right, and `check.sl` reads `scene.depth`, painting each pixel green where it
+holds the distance along that pixel's ray to the wall (or the far distance, for
+the sky) and red where it does not, with the black band down the wall's edge
+left out. Pure colours, so the screenshot's verdict survives the colour space.
+Read alone and then beside `scene.texture`, each half must be 99% green; then,
+with the wall expected a metre further, the wall must turn 99% red, so a run
+shows the check can fail on the build it measures. On runtime 9.9.99, which
+has no `scene.depth`, it read 100% red throughout and exited 1. It names
+runtime 1.8, so the sweep waits for that line; `scene-depth.test.ts` feeds the
+check a pass, a depth of the eye's z, a sky that is not the far distance, a
+depth wrong only beside `scene.texture`, a check that stays green whatever the
+wall, and a black screen. The orthographic camera and the full float fallback
+cannot be reached from a cart and are OneJS's `SceneDepthEditModeTests`.
+
 **A glossy mesh glints, and water deepens.** `cli/fixtures/mesh-material` draws a grey quad from
 straight above with the sun nearly behind the camera, so its middle pixel sees
 the sun's mirror image: made rough (every mesh before runtime 1.8), at
