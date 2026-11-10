@@ -4,3 +4,5 @@ cli/scaffold/* text eol=lf
 # checkout would make them a scene Unity never wrote.
 cli/fixtures/unity-scene/*.unity -text
 *.wasm binary
+# Pixel goldens are bytes: a CRLF checkout adds a byte wherever a pixel holds 10.
+tex-parity/goldens/** binary
