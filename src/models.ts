@@ -185,6 +185,21 @@ export interface MeshModelOptions extends MeshData {
      * after, as `mesh.metallic`.
      */
     metallic?: number
+    /**
+     * Metres over which a see-through mesh fades out where the world behind it
+     * comes near: a lake's shore fades per pixel instead of ending on the
+     * triangle where the water meets the beach, and mist thins where it lies
+     * on a field. Only on a mesh whose `color` has an alpha below 1, and not
+     * with a cutout or depthOnly. URP only.
+     */
+    soften?: number
+    /**
+     * The colour a see-through mesh takes, alpha and all, where it is deep:
+     * from its own colour at the surface to this one `metres` in (95% there),
+     * along each pixel's ray, so a grazing look through shallow water counts
+     * the long path it is. Lit like the rest of the mesh. Same limits as `soften`.
+     */
+    deepColor?: { color: ColorInput, metres: number }
 }
 
 /** How a mesh model draws, fixed when it is made. */
@@ -1324,6 +1339,21 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] scene.mesh: ${what} is ${v}, and runs from 0 to 1`)
             if (typeof b.SetMeshSurface !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot set it (it came with runtime 1.8).`)
         }
+        const fades = o.soften !== undefined || o.deepColor !== undefined
+        let fade: [number, number, number, number, number, number] | null = null
+        if (fades) {
+            const what = o.soften !== undefined ? "soften" : "deepColor"
+            const why = `[oj] scene.mesh: ${what} fades a see-through mesh by what is behind it, and`
+            if (o.soften !== undefined && (typeof o.soften !== "number" || !(o.soften >= 0) || o.soften === Infinity)) throw new Error(`[oj] scene.mesh: soften is ${o.soften}, and is metres from 0`)
+            const deep = o.deepColor
+            if (deep !== undefined && (typeof deep?.metres !== "number" || !(deep.metres > 0) || deep.metres === Infinity)) throw new Error(`[oj] scene.mesh: deepColor's metres is ${deep?.metres}, and is metres above 0`)
+            const deepRGBA = deep === undefined ? [0, 0, 0, 0] : toRGBA(deep.color, "[oj] scene.mesh deepColor color")
+            if (!(color[3]! < 1)) throw new Error(`${why} this one draws opaque (its color's alpha is 1). Give its color an alpha below 1.`)
+            if (o.cutout !== undefined) throw new Error(`${why} a cutout draws it opaque`)
+            if (draw.depthOnly === true) throw new Error(`${why} a depthOnly mesh draws no colour`)
+            if (typeof b.SetMeshDepthFade !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
+            fade = [o.soften ?? 0, deepRGBA[0]!, deepRGBA[1]!, deepRGBA[2]!, deepRGBA[3]!, deep?.metres ?? 0]
+        }
         // Today's values unless given: a rough non-metal.
         let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
         let colorGiven: ColorInput = o.color ?? "#ffffff"
@@ -1387,6 +1417,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [o.twoSided === true, () => b.SetMeshTwoSided(id), "twoSided"],
                 [sways, () => b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
+                [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
             ]
             for (const [given, apply, what] of looks) {
                 if (!given) continue

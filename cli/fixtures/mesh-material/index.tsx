@@ -5,26 +5,32 @@ import { mount, useScene, type Scene, type Actor, type MeshModel } from "oj"
 // behind the camera, so the middle pixel sees the sun's mirror image: a glossy
 // quad is bright there and a rough one is not. mesh-material.playtest.mjs makes
 // it with a surface, or changes the live one's, and reads the middle pixel.
-type Surface = { color?: string, roughness?: number, metallic?: number }
+// Given a `floor`, a black floor lies that many metres below a see-through
+// quad, for soften and deepColor to fade it by.
+type Surface = { color?: string, roughness?: number, metallic?: number, soften?: number, deepColor?: { color: string, metres: number }, floor?: number }
 
-let live: { model: MeshModel, actor: Actor } | null = null
+let live: { model: MeshModel, actor: Actor }[] = []
 
-function show(scene: Scene, made: Surface) {
-    live?.actor.destroy()
-    live?.model.destroy()
+function quad(scene: Scene, y: number, look: object) {
     const h = 40
     const model = scene.mesh({
-        positions: new Float32Array([-h, 0, -h, h, 0, -h, h, 0, h, -h, 0, h]),
+        positions: new Float32Array([-h, y, -h, h, y, -h, h, y, h, -h, y, h]),
         indices: new Uint32Array([0, 2, 1, 0, 3, 2]),
         normals: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]),
-        color: "#808080",
-        ...made,
+        ...look,
     })
-    live = { model, actor: scene.spawn(model, { static: true }) }
+    live.push({ model, actor: scene.spawn(model, { static: true }) })
+}
+
+function show(scene: Scene, { floor, ...made }: Surface) {
+    for (const l of live) { l.actor.destroy(); l.model.destroy() }
+    live = []
+    if (floor !== undefined) quad(scene, -floor, { color: "#000000" })
+    quad(scene, 0, { color: "#808080", ...made })
 }
 
 function change(changed: Surface) {
-    const model = live!.model
+    const model = live.at(-1)!.model
     if (changed.color !== undefined) model.color = changed.color
     if (changed.roughness !== undefined) model.roughness = changed.roughness
     if (changed.metallic !== undefined) model.metallic = changed.metallic

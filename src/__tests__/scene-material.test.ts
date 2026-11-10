@@ -1,7 +1,8 @@
 /**
  * A mesh's surface as the calls it makes on OneJS's ModelBridge (tested in
- * OneJS's MeshMaterialEditModeTests): `scene.mesh({ roughness, metallic })`,
- * and `mesh.color`, `mesh.roughness` and `mesh.metallic` after it is made.
+ * OneJS's MeshMaterialEditModeTests and MeshDepthFadeEditModeTests):
+ * `scene.mesh({ roughness, metallic, soften, deepColor })`, and `mesh.color`,
+ * `mesh.roughness` and `mesh.metallic` after it is made.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createScene } from "../models"
@@ -22,7 +23,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshSurface" || name === "SetMeshColor") return answer
+                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade") return answer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -143,5 +144,63 @@ describe("a mesh's colour, roughness and metallic after it is made", () => {
         dispose = createScene({}).dispose
         expect(() => { m.color = "#000000" }).toThrow("this mesh was made for a scene that is gone")
         expect(() => { m.roughness = 0.5 }).toThrow("this mesh was made for a scene that is gone")
+    })
+})
+
+const WATER = { ...SQUARE, color: "#2e7fa8a0" }
+
+describe("scene.mesh soften and deepColor", () => {
+    it("ask for nothing when neither is given", () => {
+        scene().mesh(WATER)
+        expect(of("SetMeshDepthFade")).toHaveLength(0)
+    })
+
+    it("are sent together before the vertices, the deep colour in sRGB, each 0 when left out", () => {
+        const s = scene()
+        const lake = s.mesh({ ...WATER, soften: 0.6, deepColor: { color: "#ff0000", metres: 5 } })
+        expect(of("SetMeshDepthFade")).toEqual([["SetMeshDepthFade", lake.id, 0.6, 1, 0, 0, 1, 5]])
+        expect(order("CreateMesh", "SetMeshDepthFade", "SetMesh")).toEqual(["CreateMesh", "SetMeshDepthFade", "SetMesh"])
+        const mist = s.mesh({ ...WATER, soften: 2 })
+        expect(of("SetMeshDepthFade")[1]).toEqual(["SetMeshDepthFade", mist.id, 2, 0, 0, 0, 0, 0])
+        const deep = s.mesh({ ...WATER, deepColor: { color: "#00000080", metres: 3 } })
+        const [, , soften, r, g, b, a, metres] = of("SetMeshDepthFade")[2]!
+        expect([soften, r, g, b, metres]).toEqual([0, 0, 0, 0, 3])
+        expect(a).toBeCloseTo(128 / 255, 5)
+        expect(deep.id).toBeGreaterThan(0)
+    })
+
+    it("are refused on a mesh that draws opaque, before making anything", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, soften: 1 })).toThrow("scene.mesh: soften fades a see-through mesh by what is behind it, and this one draws opaque (its color's alpha is 1)")
+        expect(() => s.mesh({ ...SQUARE, color: "#ffffff", deepColor: { color: "#000000", metres: 1 } })).toThrow("scene.mesh: deepColor fades a see-through mesh")
+        expect(() => s.mesh({ ...WATER, soften: 1, cutout: 0.5 })).toThrow("scene.mesh: soften fades a see-through mesh by what is behind it, and a cutout draws it opaque")
+        expect(() => s.mesh({ ...WATER, soften: 1 }, { depthOnly: true })).toThrow("scene.mesh: soften fades a see-through mesh by what is behind it, and a depthOnly mesh draws no colour")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    it("are refused outside their range, before making anything", () => {
+        const s = scene()
+        for (const bad of [-1, Number.NaN, Infinity, "1" as any]) {
+            expect(() => s.mesh({ ...WATER, soften: bad })).toThrow(`scene.mesh: soften is ${bad}, and is metres from 0`)
+            expect(() => s.mesh({ ...WATER, deepColor: { color: "#000000", metres: bad } })).toThrow(`scene.mesh: deepColor's metres is ${bad}, and is metres above 0`)
+        }
+        expect(() => s.mesh({ ...WATER, deepColor: { color: "#000000", metres: 0 } })).toThrow("scene.mesh: deepColor's metres is 0, and is metres above 0")
+        expect(() => s.mesh({ ...WATER, deepColor: { metres: 1 } as any })).toThrow("scene.mesh deepColor color")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    it("say what the bridge refused, and keep nothing", () => {
+        const s = scene()
+        answer = "this project's render pipeline is not URP, and OneJS fades a mesh by the depth behind it on URP alone"
+        expect(() => s.mesh({ ...WATER, soften: 1 })).toThrow("[oj] scene.mesh soften: this project's render pipeline is not URP")
+        expect(of("Unload")).toHaveLength(1)
+    })
+
+    it("need a OneJS that has them", () => {
+        missing = new Set(["SetMeshDepthFade"])
+        const s = scene()
+        expect(() => s.mesh({ ...WATER, soften: 1 })).toThrow("scene.mesh soften needs a newer OneJS")
+        expect(() => s.mesh({ ...WATER, deepColor: { color: "#000000", metres: 1 } })).toThrow("scene.mesh deepColor needs a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
     })
 })
