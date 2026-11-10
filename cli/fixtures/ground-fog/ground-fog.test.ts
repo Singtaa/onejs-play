@@ -8,9 +8,10 @@ const lawful = (law: Law, view: "down" | "slant") => underFog(CLEAR, share(law, 
 
 /**
  * A game whose screenshots' middle pixel is `pixels[kind near|far]` for the quads, and for the
- * ground `ground(law, view)`, or the unfogged CLEAR with no fog, as the playtest asks for them.
+ * ground `ground(law, view)`, or the unfogged CLEAR with no fog, as the playtest asks for them,
+ * each screenshot `page` in size.
  */
-function fake(pixels: Record<string, number[]>, ground: (law: Law, view: "down" | "slant", kind: string) => number[] = lawful) {
+function fake(pixels: Record<string, number[]>, ground: (law: Law, view: "down" | "slant", kind: string) => number[] = lawful, page = [240, 135]) {
     let shown = ""
     let view: "down" | "slant" = "down"
     let law: Law | null = null
@@ -29,8 +30,9 @@ function fake(pixels: Record<string, number[]>, ground: (law: Law, view: "down" 
             const fog = /groundFog\.fog\((.*)\)$/.exec(code)
             if (fog) { law = fog[1] === "false" ? null : lawOf(JSON.parse(fog[1])); return undefined }
             if (code.includes("getImageData")) {
-                if (!shown.endsWith("ground")) return JSON.stringify(pixels[shown])
-                return JSON.stringify(law === null ? CLEAR : ground(law, view, shown.split(" ")[0]))
+                // The screenshot's size, then its middle pixel, as the playtest's page decodes it.
+                if (!shown.endsWith("ground")) return JSON.stringify([...page, ...pixels[shown]])
+                return JSON.stringify([...page, ...(law === null ? CLEAR : ground(law, view, shown.split(" ")[0]))])
             }
             throw new Error(`unexpected eval: ${code.slice(0, 60)}`)
         },
@@ -48,6 +50,10 @@ const all = (far: number[], splatFar = far, triplanarFar = far) => ({
 describe("the ground-fog playtest", () => {
     it("passes when plain, texture, splat and triplanar fog alike", async () => {
         await expect(check(fake(all(fogged)))).resolves.toBeUndefined()
+    })
+
+    it("fails when the page kept oj test's size, where a software runner draws it too slowly", async () => {
+        await expect(check(fake(all(fogged), lawful, [960, 540]))).rejects.toThrow(/the page is 960 by 540, not the 240 by 135/)
     })
 
     it("fails when the splat stays unfogged, as runtime 1.6's first builds drew it", async () => {

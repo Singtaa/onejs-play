@@ -1001,7 +1001,12 @@ the ray gives, within 3 levels. Measured on runtime 9.9.91 (9 Nov 2026), the
 worst law was 0.95 levels off on WebGPU and on WebGL 2 alike. It names runtime
 1.8, so the sweep waits for that line; `ground-fog.test.ts` feeds the check a
 passing set of pixels, an unfogged splat, an unfogged triplanar layer, no fog at
-all, an exp2 drawn as no fog, and a GroundLit height fog drawn at one density.
+all, an exp2 drawn as no fog, a GroundLit height fog drawn at one density, and
+a page of the wrong size. The playtest sets its own page to 240 by 135, since
+a run drawn in software is as long as the pixels it draws: at `oj test`'s 960
+by 540 its 32 readings took 156 s on ubuntu-latest and ran past the sweep's
+180 s on windows-latest, and a quarter the width reads the same pixels to
+within a level in 27 s where the full size took 69.
 
 **The depth is the distance along each ray.** `cli/fixtures/scene-depth`
 draws a wall 10 m ahead across the left half of the view and the sky to its
