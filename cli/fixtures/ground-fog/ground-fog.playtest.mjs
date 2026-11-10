@@ -57,7 +57,7 @@ export function fogged(clear, s) {
 
 async function middle(game) {
     const { data } = await game.browser.send("Page.captureScreenshot", { format: "png" })
-    return JSON.parse(await game.eval(`(async () => {
+    const [width, height, ...pixel] = JSON.parse(await game.eval(`(async () => {
         const img = new Image()
         img.src = "data:image/png;base64,${data}"
         await img.decode()
@@ -65,11 +65,21 @@ async function middle(game) {
         c.width = img.width; c.height = img.height
         const g = c.getContext("2d")
         g.drawImage(img, 0, 0)
-        return JSON.stringify(Array.from(g.getImageData(img.width >> 1, img.height >> 1, 1, 1).data.slice(0, 3)))
+        return JSON.stringify([img.width, img.height, ...g.getImageData(img.width >> 1, img.height >> 1, 1, 1).data.slice(0, 3)])
     })()`))
+    // A page that kept oj test's size would pass, slowly: the size is part of what this run claims.
+    if (width !== PAGE.width || height !== PAGE.height) throw new Error(`the page is ${width} by ${height}, not the ${PAGE.width} by ${PAGE.height} this run asked for`)
+    return pixel
 }
 
+// The page this reads its one pixel from. Drawn in software, the run's length is the pixels
+// drawn: 32 readings at oj test's 960 by 540 took 156 s on ubuntu-latest and ran past the
+// sweep's 180 s on windows-latest (10 Nov 2026), and 69 s on a 16-core PC, where this size
+// takes 27 s and reads the same pixels to within a level.
+const PAGE = { width: 240, height: 135 }
+
 export default async function (game) {
+    await game.browser.send("Emulation.setDeviceMetricsOverride", { ...PAGE, deviceScaleFactor: 1, mobile: false })
     await game.until(async () => (await game.eval("typeof globalThis.groundFog")) === "object", { what: "the fog cart", timeoutMs: 30000 })
     const seen = {}
     for (const kind of KINDS) {
