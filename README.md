@@ -992,6 +992,18 @@ worst law was 0.95 levels off on WebGPU and on WebGL 2 alike. It names runtime
 passing set of pixels, an unfogged splat, an unfogged triplanar layer, no fog at
 all, an exp2 drawn as no fog, and a GroundLit height fog drawn at one density.
 
+**A glossy mesh glints.** `cli/fixtures/mesh-material` draws a grey quad from
+straight above with the sun nearly behind the camera, so its middle pixel sees
+the sun's mirror image: made rough (every mesh before runtime 1.8), at
+`roughness: 0.15` and at `metallic: 1`, then the rough one given a roughness
+and a colour after it was made. The glossy quad must outshine the rough one by
+40 levels and the metal one fall 20 below it; a roughness set after must draw
+as one given at creation within 4, and a red set after must draw red. It names
+runtime 1.8, so the sweep waits for that line; `mesh-material.test.ts` feeds the
+check a pass, a glossy quad without a highlight, a metal quad that still
+scatters, a roughness and a colour set after that drew nothing, and a black
+screen.
+
 **A triplanar layer keeps its size on a steep face.** `cli/fixtures/triplanar`
 draws two 70 degree faces 48 m high in red and green bands, one splat read at
 its uvs (laid flat, 4 m a repeat) and one whose layer is `triplanar: 4`, and
