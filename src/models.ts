@@ -524,6 +524,13 @@ export interface SkyOptions {
     sun?: { size?: number, glow?: number } | false
     /** From 0, none, to 1. */
     stars?: number
+    /**
+     * Whether shiny surfaces show this sky: a mesh or a model with a low `roughness` reflects the
+     * gradient, the sun's glow and the fog's haze the way it faces, a mirror sharply and a rough
+     * surface barely. `false`, the default, keeps the look every scene had before: one flat
+     * colour, the ambient's average, in every direction.
+     */
+    reflect?: boolean
 }
 
 /**
@@ -700,7 +707,7 @@ export const SCENE_DEFAULTS = deepFreeze({
     background: "#14181d",
     fog: { near: 10, far: 40, mode: "linear" as const },
     wind: { direction: [1, 0] as [number, number], strength: 1, gust: 0.3 },
-    sky: { top: "#2f6fd6", horizon: "#cfe6f7", sun: { size: 2, glow: 12 }, stars: 0 },
+    sky: { top: "#2f6fd6", horizon: "#cfe6f7", sun: { size: 2, glow: 12 }, stars: 0, reflect: false },
     pointLight: { color: "#ffffff", intensity: 1, range: 10 },
 })
 
@@ -962,8 +969,10 @@ function rootElement(): any {
 let saidNoSceneTexture = false
 /** Said once: a host without SetSky. */
 let saidNoSky = false
+/** Said once: a host without SetSkyReflect. */
+let saidNoSkyReflect = false
 
-type SkyNow = { top: ColorInput, horizon: ColorInput, bottom?: ColorInput, sun: { size: number, glow: number } | false, stars: number }
+type SkyNow = { top: ColorInput, horizon: ColorInput, bottom?: ColorInput, sun: { size: number, glow: number } | false, stars: number, reflect: boolean }
 
 /** `o` over `was` (or the defaults), every colour parsed so a typo throws before anything changes. */
 function nextSky(was: SkyNow | null, o: SkyOptions, d: typeof SCENE_DEFAULTS): SkyNow {
@@ -971,7 +980,7 @@ function nextSky(was: SkyNow | null, o: SkyOptions, d: typeof SCENE_DEFAULTS): S
     const sun = o.sun === undefined ? base.sun
         : o.sun === false ? false
         : { ...(base.sun || d.sky.sun), ...o.sun }
-    const next: SkyNow = { ...base, ...o, sun, stars: o.stars ?? base.stars }
+    const next: SkyNow = { ...base, ...o, sun, stars: o.stars ?? base.stars, reflect: o.reflect ?? base.reflect }
     rgb(next.top, "sky top")
     rgb(next.horizon, "sky horizon")
     if (next.bottom !== undefined) rgb(next.bottom, "sky bottom")
@@ -1235,6 +1244,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     }
     // Nothing is sent for a scene that never has a sky, so an older host hears nothing of it.
     let skySent = false
+    let reflectSent = false
     const applySky = () => {
         if (skyNow === null && !skySent) return
         if (typeof b.SetSky !== "function") {
@@ -1243,10 +1253,20 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             return
         }
         skySent = true
-        if (skyNow === null) { b.SetSky(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); return }
+        // The bridge stops reflecting with the sky, so nothing is owed after a sky(false).
+        if (skyNow === null) { b.SetSky(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); reflectSent = false; return }
         const sun = skyNow.sun
         b.SetSky(true, ...rgb(skyNow.top), ...rgb(skyNow.horizon), ...rgb(skyNow.bottom ?? skyNow.horizon),
             sun ? sun.size : 0, sun ? sun.glow : 0, skyNow.stars)
+        // Nothing is sent for a sky never asked to be reflected, so its calls are a 1.7 scene's.
+        if (!skyNow.reflect && !reflectSent) return
+        if (typeof b.SetSkyReflect !== "function") {
+            if (!saidNoSkyReflect) console.warn("[oj] scene.sky's reflect needs a newer OneJS: this host's ModelBridge has no sky reflections (they came with runtime 1.8), so shiny surfaces keep their flat look.")
+            saidNoSkyReflect = true
+            return
+        }
+        b.SetSkyReflect(skyNow.reflect)
+        reflectSent = skyNow.reflect
     }
 
     b.BeginScene()

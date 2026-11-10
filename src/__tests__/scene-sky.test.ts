@@ -121,4 +121,44 @@ describe("scene.sky", () => {
         s.sky({ stars: 1 })
         expect(warn.mock.calls.filter((c) => String(c[0]).includes("scene.sky needs a newer OneJS"))).toHaveLength(1)
     })
+
+    it("sends no reflection for a sky never asked to reflect, so its calls are a 1.7 scene's", () => {
+        const s = scene({ sky: { top: "#ff0000" } })
+        s.sky({ stars: 1 })
+        s.sky(false)
+        expect(of("SetSkyReflect")).toHaveLength(0)
+    })
+
+    it("reflects once asked, after the sky it reflects, and keeps reflecting through later changes", () => {
+        const s = scene({ sky: { reflect: true } })
+        const names = calls.map((c) => c[0])
+        expect(names.indexOf("SetSkyReflect")).toBeGreaterThan(names.lastIndexOf("SetSky"))
+        expect(last("SetSkyReflect")).toEqual([true])
+        s.sky({ stars: 1 })
+        expect(last("SetSkyReflect")).toEqual([true])
+        s.sky({ reflect: false })
+        expect(last("SetSkyReflect")).toEqual([false])
+        const sent = of("SetSkyReflect").length
+        s.sky({ stars: 0 })
+        expect(of("SetSkyReflect")).toHaveLength(sent)
+    })
+
+    it("forgets reflect with the rest of a sky taken away, and asks again when told", () => {
+        const s = scene({ sky: { reflect: true } })
+        s.sky(false)
+        const sent = of("SetSkyReflect").length
+        s.sky()
+        expect(of("SetSkyReflect")).toHaveLength(sent)
+        s.sky({ reflect: true })
+        expect(last("SetSkyReflect")).toEqual([true])
+    })
+
+    it("says once that an older OneJS has no reflections, and still draws the sky", () => {
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: bridge(["SetSkyReflect"]) } } }
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const s = scene({ sky: { reflect: true } })
+        s.sky({ stars: 1 })
+        expect(of("SetSky")).toHaveLength(2)
+        expect(warn.mock.calls.filter((c) => String(c[0]).includes("reflect needs a newer OneJS"))).toHaveLength(1)
+    })
 })
