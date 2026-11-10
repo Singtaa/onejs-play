@@ -171,6 +171,20 @@ export interface MeshModelOptions extends MeshData {
      * sways for nothing on the CPU, each copy at its own phase. See `scene.wind`.
      */
     sway?: Numbers
+    /**
+     * How rough its surface is, from 0 to 1: 1 by default, which spreads the
+     * sun's highlight too wide to see. Water or a wet road is about 0.15, a
+     * worn metal 0.4. A see-through mesh's highlight is scaled by its alpha.
+     * Settable after, as `mesh.roughness`.
+     */
+    roughness?: number
+    /**
+     * How metallic it is, from 0 to 1: 0 by default. A metal takes its colour
+     * from what it reflects rather than from the light it scatters, so a
+     * metallic mesh is darker than a plain one under the same sun. Settable
+     * after, as `mesh.metallic`.
+     */
+    metallic?: number
 }
 
 /** How a mesh model draws, fixed when it is made. */
@@ -206,6 +220,17 @@ export interface MeshModel extends Model {
      * became a physics collider keeps its shape and refuses.
      */
     set(data: MeshUpdate): void
+    /**
+     * Its colour, as given at creation until set: every actor and scattered
+     * copy of it changes at once, for nothing a frame. An alpha that crosses 1
+     * moves it between opaque and see-through; a cutout or depthOnly mesh
+     * draws as it did. A baked light keeps the colour it was baked with.
+     */
+    color: ColorInput
+    /** Its roughness, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
+    roughness: number
+    /** Its metallic, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
+    metallic: number
     /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
     destroy(): void
 }
@@ -1293,6 +1318,17 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         const color = toRGBA(o.color ?? "#ffffff", "[oj] scene.mesh color")
         const look = meshLook(o, draw, b)
+        for (const what of ["roughness", "metallic"] as const) {
+            const v = o[what]
+            if (v === undefined) continue
+            if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] scene.mesh: ${what} is ${v}, and runs from 0 to 1`)
+            if (typeof b.SetMeshSurface !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot set it (it came with runtime 1.8).`)
+        }
+        // Today's values unless given: a rough non-metal.
+        let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
+        let colorGiven: ColorInput = o.color ?? "#ffffff"
+        const surfaceGiven = o.roughness !== undefined || o.metallic !== undefined
+        const madeMetallic = metallic
         if (o.cutout !== undefined) {
             if (typeof o.cutout !== "number" || !(o.cutout >= 0 && o.cutout <= 1)) throw new Error(`[oj] scene.mesh: cutout is ${o.cutout}, and runs from 0 to 1`)
             if (look.splat !== null) throw new Error("[oj] scene.mesh: a splat has no alpha to cut out. Give cutout with a texture or vertex colours.")
@@ -1350,6 +1386,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [o.cutout !== undefined, () => b.SetMeshCutout(id, o.cutout), "cutout"],
                 [o.twoSided === true, () => b.SetMeshTwoSided(id), "twoSided"],
                 [sways, () => b.SetMeshSway(id), "sway"],
+                [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
             ]
             for (const [given, apply, what] of looks) {
                 if (!given) continue
@@ -1368,12 +1405,38 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 indices: latest!.indices instanceof Uint32Array ? latest!.indices.slice() : Uint32Array.from(latest!.indices),
             }),
         }
+        const live = () => {
+            if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
+        }
+        // A surface value after creation: checked, sent, and kept only once the bridge took it.
+        const surface = (what: "roughness" | "metallic", v: number) => {
+            live()
+            if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] mesh.${what} is ${v}, and runs from 0 to 1`)
+            if (typeof b.SetMeshSurface !== "function") throw new Error(`[oj] mesh.${what} needs a newer OneJS: this host's ModelBridge cannot set it (it came with runtime 1.8).`)
+            const next = what === "roughness" ? [v, metallic] : [roughness, v]
+            const problem = String(b.SetMeshSurface(id, next[0], next[1]))
+            if (problem !== "") throw new Error(`[oj] mesh.${what}: ${problem}`)
+            ;[roughness, metallic] = next as [number, number]
+        }
         const model: MeshModel = Object.freeze({
             id,
             clips: Object.freeze([]) as readonly string[],
             get height() { return Number(b.Height(id)) },
+            get color() { return colorGiven },
+            set color(c: ColorInput) {
+                live()
+                const rgba = toRGBA(c, "[oj] mesh.color")
+                if (typeof b.SetMeshColor !== "function") throw new Error("[oj] mesh.color needs a newer OneJS: this host's ModelBridge cannot change a mesh's colour (it came with runtime 1.8).")
+                const problem = String(b.SetMeshColor(id, ...rgba))
+                if (problem !== "") throw new Error(`[oj] mesh.color: ${problem}`)
+                colorGiven = c
+            },
+            get roughness() { return roughness },
+            set roughness(v: number) { surface("roughness", v) },
+            get metallic() { return metallic },
+            set metallic(v: number) { surface("metallic", v) },
             set(d: MeshUpdate) {
-                if (generationOf.get(model) !== generation) throw new Error("[oj] this mesh was made for a scene that is gone. Make it again with scene.mesh once the scene is live.")
+                live()
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
                 write(d, d.weights, d.sway, "mesh.set")
                 // Its unwrap was of the old triangles; OneJS drew it unbaked as it took the new ones.
@@ -1391,6 +1454,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             // textured or painted mesh adds what it was painted with, since the bake bounces it.
             const parts: ArrayBufferView[] = [new Float32Array(color), latest!.positions, latest!.indices, latest!.colors ?? new Float32Array(0)]
             if (look.fingerprint !== "") parts.push(utf16(look.fingerprint), latest!.weights ?? new Float32Array(0))
+            // The bake reads a metal's metallic; a mesh made without one keeps a 1.7 mesh's bytes.
+            if (madeMetallic !== 0) parts.push(new Float32Array([madeMetallic]))
             const out = new Uint8Array(parts.reduce((n, p) => n + 4 + p.byteLength, 0))
             const view = new DataView(out.buffer)
             let at = 0
