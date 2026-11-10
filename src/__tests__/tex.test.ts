@@ -207,6 +207,26 @@ describe("tex tile grid", () => {
         expect(() => tex.canvas(64, { bitDepth: "16" as "8" })).toThrow(/"8" or "32"/)
     })
 
+    it("takes bitDepth on every generator Magerie gives it: Noise, Gradient and Shape", () => {
+        const c = tex.canvas(64)
+        for (const img of [c.noise("perlin", { bitDepth: "32" }), c.gradient({ bitDepth: "32" }), c.sdfShape({ bitDepth: "32" })]) {
+            expect(img.node.params.float).toBe(true)
+            expect(passes(img.levels({ gamma: 1.3 })).every((p) => p.bits === 32)).toBe(true)
+        }
+        // "8" and absent are the same node, and the canvas's 32 reaches a call that does not say.
+        expect(c.noise("perlin", { bitDepth: "8" }).node.id).toBe(c.noise("perlin").node.id)
+        expect(tex.canvas(64, { bitDepth: "32" }).noise("perlin").node.params.float).toBe(true)
+        expect(() => c.noise({ bitDepth: 32 as unknown as "32" })).toThrow(/noise bitDepth is 32/)
+    })
+
+    it("dithers an 8-bit Gradient and never a 32-bit one, as Magerie's dither is for an 8-bit store", () => {
+        const c = tex.canvas(64)
+        // The dither is a sixteenth of a level over 255; a float gradient is neither dithered nor rounded to 255ths.
+        const glsl = (img: TexImage): string => passes(img)[0]!.program.glsl
+        expect(glsl(c.gradient())).toMatch(/16\.0|0\.0625/)
+        expect(glsl(c.gradient({ bitDepth: "32" }))).not.toMatch(/255|16\.0|0\.0625/)
+    })
+
     it("reads a float picture by fetches only, unfiltered, since a float texture may not filter", () => {
         const { image } = tex.canvas(64).tileGrid({ bitDepth: "32" })
         const blurred = passes(image.blur(2))

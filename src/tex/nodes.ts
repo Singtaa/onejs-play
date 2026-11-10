@@ -8,7 +8,7 @@
  * object. Unknown option keys throw, as Magerie's do, so a misspelt key is
  * an error and not a silent default.
  */
-import { makeNode, type Edges, type Node, type NodeKind } from "./graph"
+import { isFloat, makeNode, type Edges, type Node, type NodeKind } from "./graph"
 import type { Kernel } from "./engine"
 import * as k from "./kernels"
 import type { BlendMode, Fractal, InvertChannels, NoiseType, Stop, VoronoiMode } from "./kernels"
@@ -108,6 +108,16 @@ function sizeOf(p: Record<string, unknown>, canvas: Canvas): [number, number] {
         if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 8192) throw new Error(`[oj] tex: ${what} is ${String(v)}, a whole number of pixels from 1 to 8192`)
     }
     return [w as number, h as number]
+}
+
+/**
+ * Magerie's Bit Depth (nodes/_bitDepth.ts), on every generator that has it:
+ * "32" holds the output in 32-bit floats, and everything reading it, as
+ * Magerie's float wins downstream; "8" or absent is 8 bits. A call that does
+ * not say takes the canvas's.
+ */
+function bitDepthOf(p: Record<string, unknown>, canvas: Canvas, what: string): boolean {
+    return oneOf(p.bitDepth ?? canvas.bitDepth, ["8", "32"], `${what} bitDepth`) === "32"
 }
 
 function wraps(edges: unknown, input: Node, what: string): boolean {
@@ -291,10 +301,11 @@ export const SPECS = {
         defaults: {
             type: "simplex", scale: 8, scaleY: null, scaleLock: true, voronoiMode: "f1", fractal: "standard",
             warp: 0, tile: null, seed: 0, offsetX: 0, offsetY: 0, octaves: 4, persistence: 0.5, lacunarity: 2,
-            aspect: "square", ...SIZE,
+            aspect: "square", bitDepth: null, ...SIZE,
         },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
+            const float = bitDepthOf(p, canvas, "noise")
             const type = oneOf(p.type, NOISE_TYPES, "noise type")
             const tile = (p.tile ?? canvas.tile) === true
             const scale = num(p.scale, "noise scale", 0.1)
@@ -318,7 +329,8 @@ export const SPECS = {
                     lacunarity: lacunarity > 1 ? lacunarity : 2, warp: warp > 0 ? warp : 0,
                 },
             }
-            return makeNode("noise", "generator", [], params, w, h, tile)
+            // Noise is never dithered (#574), so 32 bits only changes how it is held.
+            return makeNode("noise", "generator", [], float ? { ...params, float } : params, w, h, tile)
         },
     },
     invert: {
@@ -368,12 +380,16 @@ export const SPECS = {
         images: 0,
         kind: "type",
         positional: ["colors"],
-        defaults: { type: "linear", colors: ["#000000", "#ffffff"], angle: 0, centerX: 0.5, centerY: 0.5, ...SIZE },
+        defaults: { type: "linear", colors: ["#000000", "#ffffff"], angle: 0, centerX: 0.5, centerY: 0.5, bitDepth: null, ...SIZE },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
+            const float = bitDepthOf(p, canvas, "gradient")
+            // Never tiles, as Magerie's never says it does. At 32 bits it is not
+            // dithered: the dither is for an 8-bit store (MetalRenderer+Gradient.mm:272).
             return makeNode("gradient", "generator", [], {
                 type: oneOf(p.type, GRADIENT_TYPES, "gradient type"), stops: parseStops(p.colors, "gradient", 16),
                 angle: num(p.angle, "gradient angle"), center: [num(p.centerX, "gradient centerX"), num(p.centerY, "gradient centerY")],
+                ...(float ? { float } : {}),
             }, w, h, false)
         },
     },
@@ -581,9 +597,10 @@ export const SPECS = {
         images: 0,
         kind: "shape",
         positional: ["size"],
-        defaults: { ...SHAPE_DEFAULTS, ...SIZE },
+        defaults: { ...SHAPE_DEFAULTS, bitDepth: null, ...SIZE },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
+            const float = bitDepthOf(p, canvas, "sdfShape")
             const shape = p.shape as k.ShapeType
             if (!SHAPES.includes(shape)) throw new Error(`[oj] tex sdfShape: shape is ${JSON.stringify(p.shape)}; tex draws ${SHAPES.join(", ")} so far`)
             const size = num(p.size, "sdfShape size", 0.01, 2)
@@ -600,7 +617,7 @@ export const SPECS = {
                 edgeBand: num(p.edgeBand, "sdfShape edgeBand", 0, 0.1),
                 fill: hexRGBA(String(p.fillColor), "sdfShape fillColor"), edge: hexRGBA(String(p.edgeColor), "sdfShape edgeColor"), background,
             }
-            return makeNode("sdfShape", "generator", [], v as unknown as Record<string, unknown>, w, h, false)
+            return makeNode("sdfShape", "generator", [], (float ? { ...v, float } : v) as unknown as Record<string, unknown>, w, h, false)
         },
     },
     tileGrid: {
@@ -612,7 +629,7 @@ export const SPECS = {
         },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
-            const float = oneOf(p.bitDepth ?? canvas.bitDepth, ["8", "32"], "tileGrid bitDepth") === "32"
+            const float = bitDepthOf(p, canvas, "tileGrid")
             // Magerie's resolveTileGridParams: counts whole, the shares clamped.
             const share = (key: string, most = 1) => num(p[key], `tileGrid ${key}`, 0, most)
             const values: k.TileGridValues = {
@@ -709,7 +726,7 @@ export const KERNELS: Record<string, Kernel> = {
     levels: (s, n, i) => k.levels(s, i.value(0), n.params as unknown as k.LevelsValues),
     gradientMap: (s, n, i) => k.gradientMap(s, i.value(0), n.params.stops as Stop[]),
     curves: (_s, n, i) => k.curves(i.value(0), i.texture(1, false), n.params.channel as k.CurvesChannel),
-    gradient: (s, n) => k.gradient(s, n.params.type as k.GradientType, n.params.stops as Stop[], n.params.angle as number, n.params.center as [number, number]),
+    gradient: (s, n) => k.gradient(s, n.params.type as k.GradientType, n.params.stops as Stop[], n.params.angle as number, n.params.center as [number, number], isFloat(n)),
     hslAdjust: (s, n, i) => k.hslAdjust(s, i.value(0), n.params as unknown as k.HslValues),
     mask: (_s, n, i) => k.mask(i.value(0), i.value(1), n.params.invert as boolean),
     channelMath: (_s, n, i) => k.channelMath(i.value(0), i.value(1), n.params.operation as k.ChannelMathOp, n.params.channels as k.ChannelMathChannels),

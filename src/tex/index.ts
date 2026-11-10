@@ -49,6 +49,8 @@ export interface NoiseOptions extends SizeOptions {
     persistence?: number
     lacunarity?: number
     aspect?: "square" | "stretch"
+    /** "32" holds it in 32-bit floats, and everything reading it, so a gentle height keeps its slope. Default: the canvas's. */
+    bitDepth?: "8" | "32"
 }
 
 export interface EdgesOptions {
@@ -97,6 +99,8 @@ export interface GradientOptions extends SizeOptions {
     /** Radial and angular centre, 0 to 1 with y down. */
     centerX?: number
     centerY?: number
+    /** "32" holds it in 32-bit floats, undithered, and everything reading it. Default: the canvas's. */
+    bitDepth?: "8" | "32"
 }
 
 export interface SolidColorOptions extends SizeOptions {
@@ -143,6 +147,8 @@ export interface SdfShapeOptions extends SizeOptions {
     backgroundColor?: string
     /** The background's alpha 0, whatever its colour says. */
     transparentBackground?: boolean
+    /** "32" holds it in 32-bit floats, and everything reading it. Default: the canvas's. */
+    bitDepth?: "8" | "32"
     // Magerie's parameters for the shapes tex does not draw yet, taken so a
     // board's call compiles whole; the three shapes above ignore them.
     capsuleLength?: number

@@ -601,8 +601,8 @@ function dither8(s: Scope, rgb: S): S {
     return rgb.add(b.div(16).sub(0.5).div(255)).saturate()
 }
 
-/** Magerie's Gradient generator: premultiplied stops, interpolated premultiplied, dithered unless every stop is one colour. */
-export function gradient(s: Scope, type: GradientType, stops: readonly Stop[], angle: number, center: [number, number]): Vec4 {
+/** Magerie's Gradient generator: premultiplied stops, interpolated premultiplied, dithered unless every stop is one colour or it is held in floats. */
+export function gradient(s: Scope, type: GradientType, stops: readonly Stop[], angle: number, center: [number, number], float = false): Vec4 {
     const uv: S = s.pixel.add(0.5).div(s.size)
     let t: S
     if (type === "linear") {
@@ -634,7 +634,7 @@ export function gradient(s: Scope, type: GradientType, stops: readonly Stop[], a
         found = found.or(here)
     }
     const flat = stops.every((p) => p.color.every((c, i) => c === stops[0]!.color[i]) && p.alpha === stops[0]!.alpha)
-    const rgb: S = flat ? out.xyz : dither8(s, out.xyz).min(out.w)
+    const rgb: S = flat || float ? out.xyz : dither8(s, out.xyz).min(out.w)
     return sl.vec4(rgb, out.w)
 }
 
