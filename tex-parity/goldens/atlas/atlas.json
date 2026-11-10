@@ -28,7 +28,7 @@
             "look": {
                 "over2": 0.04
             },
-            "lookWhy": "The mass boards amplify float maths no node gets wrong. Fed Magerie's exact inputs (--chain with --isolate, floats unrounded), every node of both boards matches to 1/8192. Drawn whole, differences under that pass a Levels whose input window is 0.04 wide (gain 25), copied 900 times by Scatter, then a Gradient Map of hard bands 0.04 apart moves pixels at a band's edge by a band's colour (max 21). Measured on 9 Nov 2026: oak 2.8% of bytes off by > 2, birch 1.3%, mean 0.20 and 0.16. 4% holds both with room; a broken kernel (--sabotage) still fails them."
+            "lookWhy": "The mass boards amplify float maths no node gets wrong. Fed Magerie's exact inputs (--chain with --isolate, floats unrounded), every node of both boards matches to 1/8192. Drawn whole, differences under that pass a Levels whose input window is 0.04 wide (gain 25), copied 900 times by Scatter, then a Gradient Map of hard bands 0.04 apart moves pixels at a band's edge by a band's colour (max 21). Measured on 9 Nov 2026: oak 2.8% of bytes off by > 2, birch 1.3%, mean 0.20 and 0.16. Each board has its own bound, its clean measurement plus a margin that a Warp drawn 5% too strong (--plant warp) still breaks: that plant measures 4.1% on this GPU and 4.2% on SwiftShader (clean 2.8% on both, 10 Nov 2026), so 4% holds oak; a bound shared with birch let the plant pass on birch."
         },
         {
             "file": "birch-leaves-mass",
@@ -36,9 +36,9 @@
                 "birchLeavesMass": "birch-leaves-mass.png"
             },
             "look": {
-                "over2": 0.04
+                "over2": 0.016
             },
-            "lookWhy": "The mass boards amplify float maths no node gets wrong. Fed Magerie's exact inputs (--chain with --isolate, floats unrounded), every node of both boards matches to 1/8192. Drawn whole, differences under that pass a Levels whose input window is 0.04 wide (gain 25), copied 900 times by Scatter, then a Gradient Map of hard bands 0.04 apart moves pixels at a band's edge by a band's colour (max 21). Measured on 9 Nov 2026: oak 2.8% of bytes off by > 2, birch 1.3%, mean 0.20 and 0.16. 4% holds both with room; a broken kernel (--sabotage) still fails them."
+            "lookWhy": "The mass boards amplify float maths no node gets wrong. Fed Magerie's exact inputs (--chain with --isolate, floats unrounded), every node of both boards matches to 1/8192. Drawn whole, differences under that pass a Levels whose input window is 0.04 wide (gain 25), copied 900 times by Scatter, then a Gradient Map of hard bands 0.04 apart moves pixels at a band's edge by a band's colour (max 21). Measured on 9 Nov 2026: oak 2.8% of bytes off by > 2, birch 1.3%, mean 0.20 and 0.16. Each board has its own bound, its clean measurement plus a margin that a Warp drawn 5% too strong (--plant warp) still breaks: that plant measures 1.8% on this GPU and on SwiftShader (clean 1.3% on both, three GPU runs alike, 10 Nov 2026), which the 4% this board shared with oak until then passed, so birch is held to 1.6%."
         }
     ]
 }
