@@ -3,7 +3,7 @@ import { tex } from "oj"
 
 const { blend, blur, curvature, directionalWarp, gradient, gradientMap, hslAdjust, invert, levels, mask, noise, normalMap, solidColor, tile, warp } = tex.canvas(256)
 
-const y = gradient({ angle: 90 })
+const y = gradient({ colors: [{ position: 0, color: "#000000" }, { position: 1, color: "#ffffff" }], angle: 90 })
 const layerRamp = tile(y, { repeatX: 1, repeatY: 6 })
 const clumps = noise("perlin", { scale: 12, tile: true, seed: 801, octaves: 2, scaleY: 6 })
 const strawEnds = noise("perlin", { scale: 48, fractal: "ridged", tile: true, seed: 802, octaves: 1, scaleY: 6 })

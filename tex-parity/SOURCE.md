@@ -44,3 +44,10 @@ theirs, and says why the delivered atlas boards do not emit whole yet).
 `node run.mjs --set leaves` compares them as `--buildings` does, and also
 counts the pixels whose alpha falls on the other side of 0.5 from Magerie's,
 since a leaf is drawn cut out there; `leaves.json` has the limit and why.
+
+`goldens/atlas/` is Magerie's four PrimoEden leaf atlas boards emitted whole
+by magerie-one `fix/ojplay-truthful-win003` at `cefa1f516` (#1196, #1155),
+with the PNGs from `primoeden-leaves-tex-check` `298f0e803`. The two mass
+boards carry their own Look in `atlas.json`, with why. `buildings/thatch.ts`
+is the same commit's emit; the other building emits were byte for byte
+what was here, and its `stone-face` predates the lichen fix, so it was kept.
