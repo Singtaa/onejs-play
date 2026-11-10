@@ -7,7 +7,7 @@ import { CASES, type Case } from "./cases"
 import { OJPLAY } from "./ojplay.gen"
 import { CHAIN } from "./chain.gen"
 import { GROUND } from "./ground.gen"
-import { BUILDINGS } from "./buildings.gen"
+import { BUILDINGS, SET_NAME } from "./buildings.gen"
 import { grain } from "./ground"
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
@@ -135,16 +135,16 @@ async function buildings() {
             const canvas = tex.canvas(1) as unknown as Record<string, unknown>
             const missing = b.names.filter((n) => typeof canvas[n] !== "function")
             const why = missing.length > 0 ? `tex has no ${missing.join(", ")}` : e instanceof Error ? e.message : String(e)
-            for (const name of b.exports) console.log(`[tex-parity] error buildings/${name} ${b.file}.ts: ${why}`)
+            for (const name of b.exports) console.log(`[tex-parity] error ${SET_NAME}/${name} ${b.file}.ts: ${why}`)
             continue
         }
         for (const name of b.exports) {
             try {
                 const img = m[name]
                 if (!(img instanceof TexImage)) throw new Error(`${b.file}.ts exports no picture ${name}`)
-                console.log(`[tex-parity] case buildings/${name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${hex(await img.pixels())}`)
+                console.log(`[tex-parity] case ${SET_NAME}/${name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${hex(await img.pixels())}`)
             } catch (e) {
-                console.log(`[tex-parity] error buildings/${name} ${e instanceof Error ? e.message : String(e)}`)
+                console.log(`[tex-parity] error ${SET_NAME}/${name} ${e instanceof Error ? e.message : String(e)}`)
             }
         }
     }

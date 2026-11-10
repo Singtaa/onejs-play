@@ -22,10 +22,12 @@
 //             grain-textures.mjs's step as tex lines (cart/ground.ts) on each
 //             colour export ground.json pairs with a shipped picture, and
 //             compares with that picture, instead of the cases.
-// --buildings draws goldens/buildings: Magerie's emitted OJPlay code for a
+// --set <name> draws goldens/<name>: Magerie's emitted OJPlay code for a
 //             set of textures, each file unchanged, against the PNGs Magerie
-//             exported from the same boards, instead of the cases. Prints the
-//             mean and spread of the difference beside the verdict.
+//             exported from the same boards (<name>.json), instead of the
+//             cases. Prints the mean and spread of the difference, and where
+//             the set asks, how many pixels fall on the other side of the
+//             cutout (alpha 0.5) from Magerie's. --buildings is --set buildings.
 // --tex-src   draws with this checkout's src/tex instead of the container's:
 //             run.mjs bundles it and the cart evaluates the bundle before any
 //             case (cart/tex.ts), so a tex edit is tried on a built container
@@ -97,7 +99,7 @@ const FLOAT_TOLERANCE = 1 / 8192
 const OJPLAY_DIR = path.resolve(arg("ojplay", path.join(here, "goldens", "ojplay")))
 const golden = (name) => base(name).startsWith("ground/")
     ? groundOut.get(base(name)).bytes
-    : base(name).startsWith("buildings/")
+    : buildingsOut.has(base(name))
     ? buildingsOut.get(base(name)).bytes
     : base(name).startsWith("chain/")
     ? fs.readFileSync(path.join(CHAIN_DIR, chainOut.get(base(name)).file))
@@ -195,30 +197,33 @@ function writeGround() {
 }
 const groundOut = writeGround()
 
+/** The set --set (or --buildings) draws, or null. */
+const SET = process.argv.includes("--buildings") ? "buildings" : arg("set", null)
+
 /**
- * goldens/buildings as the cart reads it: each emitted file copied into
+ * goldens/<SET> as the cart reads it: each emitted file copied into
  * cart/buildings/ with its `import { tex } from "oj"` pointed at cart/tex.ts,
  * the one edit, so --tex-src reaches it; and each export it names compared
- * with the PNG Magerie wrote for it (buildings.json).
+ * with the PNG Magerie wrote for it (<SET>.json).
  */
 function writeBuildings() {
     const out = new Map()
     const entries = []
-    const dir = path.join(here, "goldens", "buildings")
+    const dir = path.join(here, "goldens", SET ?? "buildings")
     const genDir = path.join(root, "buildings")
     fs.rmSync(genDir, { recursive: true, force: true })
-    if (process.argv.includes("--buildings")) {
+    if (SET !== null) {
         fs.mkdirSync(genDir)
-        const set = JSON.parse(fs.readFileSync(path.join(dir, "buildings.json"), "utf8"))
+        const set = JSON.parse(fs.readFileSync(path.join(dir, `${SET}.json`), "utf8"))
         for (const b of set.textures) {
             const source = fs.readFileSync(path.join(dir, `${b.file}.ts`), "utf8")
             const pointed = source.replace(/^import \{ tex \} from "oj"$/m, `import { tex } from "../tex"`)
-            if (pointed === source) throw new Error(`goldens/buildings/${b.file}.ts does not import tex from "oj" as Magerie writes it`)
+            if (pointed === source) throw new Error(`goldens/${SET}/${b.file}.ts does not import tex from "oj" as Magerie writes it`)
             fs.writeFileSync(path.join(genDir, `${b.file}.ts`), pointed)
             const exports = []
             for (const [name, png] of Object.entries(b.exports)) {
                 const p = readPNG(fs.readFileSync(path.join(dir, png)))
-                out.set(`buildings/${name}`, { bytes: Buffer.from(p.rgba), look: set.look, report: true })
+                out.set(`${SET}/${name}`, { bytes: Buffer.from(p.rgba), look: set.look, report: true, cutout: set.look?.cutout !== undefined })
                 exports.push(name)
             }
             // The nodes it takes from tex.canvas(), so a gap is named and not a minified "kd is not a function".
@@ -227,7 +232,7 @@ function writeBuildings() {
         }
     }
     const loads = entries.map((e) => `    { file: ${JSON.stringify(e.file)}, exports: ${JSON.stringify(e.exports)}, names: ${JSON.stringify(e.names)}, load: () => import("./buildings/${e.file}") },`)
-    fs.writeFileSync(path.join(root, "buildings.gen.ts"), `// Written by run.mjs from goldens/buildings/buildings.json. Do not edit.\nexport const BUILDINGS: { file: string, exports: string[], names: string[], load: () => Promise<Record<string, unknown>> }[] = [\n${loads.join("\n")}\n]\n`)
+    fs.writeFileSync(path.join(root, "buildings.gen.ts"), `// Written by run.mjs from goldens/${SET}/${SET}.json. Do not edit.\nexport const SET_NAME = ${JSON.stringify(SET ?? "")}\nexport const BUILDINGS: { file: string, exports: string[], names: string[], load: () => Promise<Record<string, unknown>> }[] = [\n${loads.join("\n")}\n]\n`)
     return out
 }
 const buildingsOut = writeBuildings()
@@ -384,7 +389,10 @@ function compare(got, expected, tolerance, float) {
         if (levels > 2) over2++
         sum += levels
     }
-    return { worst, off, mean: sum / bytes.length, over2: over2 / bytes.length }
+    // Pixels on the other side of the cutout (alpha 0.5) from the golden's: an edge moved, whatever the mean says.
+    let cutout = 0
+    if (!float) for (let i = 3; i < bytes.length; i += 4) if ((bytes[i] >= 128) !== (expected[i] >= 128)) cutout++
+    return { worst, off, mean: sum / bytes.length, over2: over2 / bytes.length, cutout, pixels: bytes.length / 4 }
 }
 
 const drawn = await draw()
@@ -422,9 +430,9 @@ for (const [i, name] of names.entries()) {
     compared++
     // A Look case (buildings.json says why) passes on its mean and its share of bytes off by more than 2.
     const look = expect?.look
-    const ok = (look ? r.mean <= look.mean && r.over2 <= look.over2 : r.worst <= tolerance) && !tilesWrong
+    const ok = (look ? r.mean <= look.mean && r.over2 <= look.over2 && (look.cutout === undefined || r.cutout / r.pixels <= look.cutout) : r.worst <= tolerance) && !tilesWrong
     if (!ok) failed++
-    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${look ? ` (Look: mean at most ${look.mean}, at most ${100 * look.over2}% off by > 2)` : `${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}`}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
+    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${look ? ` (Look: mean at most ${look.mean}, at most ${100 * look.over2}% off by > 2)` : `${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}`}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${expect?.cutout ? `; cutout ${r.cutout} px (${(100 * r.cutout / r.pixels).toFixed(2)}%) across alpha 0.5` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
 }
 for (const r of rows) console.log(r)
 if (pending.size > 0) say(`not compared, nodes tex does not have yet: ${[...pending].map(([n, k]) => `${n} (${k})`).join(", ")}`)
