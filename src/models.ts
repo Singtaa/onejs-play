@@ -200,6 +200,28 @@ export interface MeshModelOptions extends MeshData {
      * the long path it is. Lit like the rest of the mesh. Same limits as `soften`.
      */
     deepColor?: { color: ColorInput, metres: number }
+    /** A picture that bends the light across the mesh: ripples, a road's grain, lava's crust. Needs `uvs`. URP only. */
+    normalMap?: MeshNormalMap
+}
+
+/**
+ * A normal map, from `loadTexture` or `tex`'s `normalMap()`, read as the data
+ * it is. `scene.mesh({ ...plane, uvs, roughness: 0.15, normalMap: { picture:
+ * waves, tiling: 0.25, scale: 0.6, flow: [0.03, 0.01] } })` is water. The
+ * picture should tile seamlessly, since it repeats.
+ */
+export interface MeshNormalMap {
+    picture: Texture
+    /** How often it repeats across a uv of 0 to 1, its own, not the texture's. 1 by default. */
+    tiling?: Tiling
+    /** How far it bends the light, glTF's normal scale: 0 flat, 1 as drawn. 1 by default. */
+    scale?: number
+    /**
+     * `[u, v]` uvs a second it slides by the scene's clock, before its tiling:
+     * with uvs in metres, metres a second. Stands still while the scene is
+     * paused. `[0, 0]` by default.
+     */
+    flow?: [number, number]
 }
 
 /** How a mesh model draws, fixed when it is made. */
@@ -1354,6 +1376,21 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof b.SetMeshDepthFade !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
             fade = [o.soften ?? 0, deepRGBA[0]!, deepRGBA[1]!, deepRGBA[2]!, deepRGBA[3]!, deep?.metres ?? 0]
         }
+        let normalMap: [Texture, number, number, number, number, number] | null = null
+        if (o.normalMap !== undefined) {
+            const n = o.normalMap
+            const what = "[oj] scene.mesh normalMap"
+            picture(n?.picture, "scene.mesh normalMap picture")
+            if (o.uvs === undefined) throw new Error(`${what}: a normal map is read at the mesh's uvs, and it has none. Give uvs, two numbers a vertex.`)
+            if (o.splat !== undefined) throw new Error(`${what}: a splat is lit by its vertex normals, and takes no normal map`)
+            const tiling = tilingOf(n.tiling, "scene.mesh normalMap tiling")
+            const scale = n.scale ?? 1
+            if (typeof scale !== "number" || !Number.isFinite(scale)) throw new Error(`${what}: scale is ${scale}, and is a number`)
+            const flow = n.flow ?? [0, 0]
+            if (!Array.isArray(flow) || flow.length !== 2 || !flow.every((f) => typeof f === "number" && Number.isFinite(f))) throw new Error(`${what}: flow is [u, v], uvs a second`)
+            if (typeof b.SetMeshNormalMap !== "function") throw new Error(`${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
+            normalMap = [n.picture, tiling[0], tiling[1], scale, flow[0], flow[1]]
+        }
         // Today's values unless given: a rough non-metal.
         let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
         let colorGiven: ColorInput = o.color ?? "#ffffff"
@@ -1418,6 +1455,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [sways, () => b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
                 [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
+                [normalMap !== null, () => b.SetMeshNormalMap(id, ...normalMap!), "normalMap"],
             ]
             for (const [given, apply, what] of looks) {
                 if (!given) continue
@@ -1498,7 +1536,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             return out
         })
         if (draw.depthOnly === true) depthOnly.add(model)
-        if (sways) swaying = true
+        // The wind's clock is the scene's: a flowing normal map slides by it as a sway moves by it.
+        if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0))) swaying = true
         return model
     }
 

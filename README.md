@@ -1001,11 +1001,13 @@ and a colour after it was made. The glossy quad must outshine the rough one by
 as one given at creation within 4, and a red set after must draw red. Then a
 white see-through quad a quarter metre over a black floor: with `soften: 1` it
 must fall 30 levels toward the floor, and 3 m deep under a red `deepColor` over
-a metre it must draw red. It names runtime 1.8, so the sweep waits for that
+a metre it must draw red. Last the glossy quad under a `normalMap` tilted 0.8
+one way everywhere must lose half its glint, since the sun's mirror image
+turns away from the camera. It names runtime 1.8, so the sweep waits for that
 line; `mesh-material.test.ts` feeds the check a pass, a glossy quad without a
 highlight, a metal quad that still scatters, a roughness and a colour set after
 that drew nothing, a shore that does not fade, deep water that keeps its
-colour, and a black screen.
+colour, a normal map that bends nothing, and a black screen.
 
 **A triplanar layer keeps its size on a steep face.** `cli/fixtures/triplanar`
 draws two 70 degree faces 48 m high in red and green bands, one splat read at

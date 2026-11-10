@@ -10,7 +10,8 @@ function fake(pixels: Record<string, number[]>) {
         until: async (f: () => Promise<boolean>) => { if (!(await f())) throw new Error("never") },
         eval: async (code: string) => {
             if (code.includes("typeof globalThis.meshMaterial")) return "object"
-            if (code.includes("soften")) shown = "softened"
+            if (code.includes("tilted: true")) shown = "glossy tilted"
+            else if (code.includes("soften")) shown = "softened"
             else if (code.includes("deepColor")) shown = "deep"
             else if (code.includes("floor: 0.25")) shown = "shallow"
             else if (code.includes("show({})")) shown = "rough"
@@ -34,6 +35,7 @@ const GOOD = {
     shallow: [140, 140, 140],
     softened: [40, 40, 40],
     deep: [160, 30, 30],
+    "glossy tilted": [100, 100, 100],
 }
 
 describe("the mesh-material playtest", () => {
@@ -59,7 +61,11 @@ describe("the mesh-material playtest", () => {
         await expect(check(fake({ ...GOOD, deep: GOOD.shallow }) as any)).rejects.toThrow("3 m deep under a red deepColor")
     })
 
+    it("fails a normal map that bends nothing", async () => {
+        await expect(check(fake({ ...GOOD, "glossy tilted": GOOD.glossy }) as any)).rejects.toThrow("the normal map bent nothing")
+    })
+
     it("fails when nothing was lit, rather than measuring black", async () => {
-        await expect(check(fake({ rough: [0, 0, 0], glossy: [0, 0, 0], metal: [0, 0, 0], "made glossy after": [0, 0, 0], "made red after": [0, 0, 0], shallow: [0, 0, 0], softened: [0, 0, 0], deep: [0, 0, 0] }) as any)).rejects.toThrow("nothing was lit")
+        await expect(check(fake({ rough: [0, 0, 0], glossy: [0, 0, 0], metal: [0, 0, 0], "made glossy after": [0, 0, 0], "made red after": [0, 0, 0], shallow: [0, 0, 0], softened: [0, 0, 0], deep: [0, 0, 0], "glossy tilted": [0, 0, 0] }) as any)).rejects.toThrow("nothing was lit")
     })
 })

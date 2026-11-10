@@ -1,11 +1,12 @@
 /**
  * A mesh's surface as the calls it makes on OneJS's ModelBridge (tested in
  * OneJS's MeshMaterialEditModeTests and MeshDepthFadeEditModeTests):
- * `scene.mesh({ roughness, metallic, soften, deepColor })`, and `mesh.color`,
+ * `scene.mesh({ roughness, metallic, soften, deepColor, normalMap })`, and `mesh.color`,
  * `mesh.roughness` and `mesh.metallic` after it is made.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createScene } from "../models"
+import { createRuntime } from "../runtime"
 
 type Call = [string, ...unknown[]]
 
@@ -23,7 +24,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade") return answer
+                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap") return answer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -201,6 +202,68 @@ describe("scene.mesh soften and deepColor", () => {
         const s = scene()
         expect(() => s.mesh({ ...WATER, soften: 1 })).toThrow("scene.mesh soften needs a newer OneJS")
         expect(() => s.mesh({ ...WATER, deepColor: { color: "#000000", metres: 1 } })).toThrow("scene.mesh deepColor needs a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+})
+
+const UVS = [0, 0, 0, 1, 1, 1, 1, 0]
+const waves = { width: 4, height: 4 } as any
+
+describe("scene.mesh normalMap", () => {
+    it("asks for nothing when not given", () => {
+        scene().mesh({ ...SQUARE, uvs: UVS })
+        expect(of("SetMeshNormalMap")).toHaveLength(0)
+    })
+
+    it("is sent before the vertices with its tiling, scale and flow, each at its default when left out", () => {
+        const s = scene()
+        const sea = s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves, tiling: 0.25, scale: 0.6, flow: [0.03, 0.01] } })
+        expect(of("SetMeshNormalMap")).toEqual([["SetMeshNormalMap", sea.id, waves, 0.25, 0.25, 0.6, 0.03, 0.01]])
+        expect(order("CreateMesh", "SetMeshNormalMap", "SetMesh")).toEqual(["CreateMesh", "SetMeshNormalMap", "SetMesh"])
+        const road = s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves, tiling: [2, 4] } })
+        expect(of("SetMeshNormalMap")[1]).toEqual(["SetMeshNormalMap", road.id, waves, 2, 4, 1, 0, 0])
+        s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves } })
+        expect(of("SetMeshNormalMap")[2]!.slice(2)).toEqual([waves, 1, 1, 1, 0, 0])
+    })
+
+    describe("its clock", () => {
+        let host: ReturnType<typeof createRuntime>
+        beforeEach(() => { host = createRuntime({ root: {}, version: "0.0.0" }) })
+        afterEach(() => host.dispose())
+
+        it("runs by the scene's frames once a normal map flows, and not for one that stands still", () => {
+            const s = scene()
+            s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves } })
+            host.beginFrame(0.5)
+            expect(of("SetWindClock"), "a normal map that stands still needs no clock").toHaveLength(0)
+            s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves, flow: [0.03, 0] } })
+            host.beginFrame(0.25)
+            host.beginFrame(0.25)
+            expect(of("SetWindClock").map((c) => c[1])).toEqual([0.25, 0.5])
+        })
+    })
+
+    it("is refused before anything is made without uvs, on a splat, or outside its range", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, normalMap: { picture: waves } })).toThrow("scene.mesh normalMap: a normal map is read at the mesh's uvs, and it has none")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [waves], weights: [1, 1, 1, 1] }, normalMap: { picture: waves } })).toThrow("scene.mesh normalMap: a splat is lit by its vertex normals, and takes no normal map")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves, scale: Number.NaN } })).toThrow("scene.mesh normalMap: scale is NaN, and is a number")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves, flow: [1] as any } })).toThrow("scene.mesh normalMap: flow is [u, v], uvs a second")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves, tiling: 0 } })).toThrow("scene.mesh normalMap tiling")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, normalMap: {} as any })).toThrow("scene.mesh normalMap picture")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    it("says what the bridge refused, and keeps nothing", () => {
+        const s = scene()
+        answer = "this project's render pipeline is not URP, and OneJS draws a mesh's normal map on URP alone"
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves } })).toThrow("[oj] scene.mesh normalMap: this project's render pipeline is not URP")
+        expect(of("Unload")).toHaveLength(1)
+    })
+
+    it("needs a OneJS that has it", () => {
+        missing = new Set(["SetMeshNormalMap"])
+        expect(() => scene().mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves } })).toThrow("scene.mesh normalMap needs a newer OneJS")
         expect(of("CreateMesh")).toHaveLength(0)
     })
 })
