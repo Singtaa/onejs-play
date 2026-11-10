@@ -6,7 +6,7 @@
         "over2": 0.01,
         "cutout": 0.0001
     },
-    "lookWhy": "As leaves.json: the four atlas boards, emitted whole by Magerie (#1196, #1155).",
+    "lookWhy": "As leaves.json: the four atlas boards, emitted whole by Magerie (#1196, #1155). On SwiftShader oakLeaves and birchLeaves fail the cutout (123 and 187 pixels on 10 Nov 2026, where a GPU has 11 and 27): onejs-play issue 8 has what the pixels are and why the bound stays.",
     "textures": [
         {
             "file": "oak-leaves",

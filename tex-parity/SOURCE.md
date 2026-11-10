@@ -75,4 +75,5 @@ GPU and SwiftShader, so the ellipse's solver is where it comes from) and a
 192 by 128 vesica (two pixels on the line where Magerie's formula changes
 sign, where the two take opposite sides). The dump is
 `D:/handoff/magerie-win003-sdfshape-ea7b1ae92/chain-dumps/sdf-shapes` on
-the Windows PC; both were reported to magerie-one on 10 Nov 2026.
+the Windows PC; both are magerie-one issue 1201
+(https://gitea.magerie.com/rootroot/magerie-one/issues/1201).
