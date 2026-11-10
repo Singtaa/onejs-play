@@ -218,7 +218,7 @@ function writeBuildings() {
             const exports = []
             for (const [name, png] of Object.entries(b.exports)) {
                 const p = readPNG(fs.readFileSync(path.join(dir, png)))
-                out.set(`buildings/${name}`, { bytes: Buffer.from(p.rgba), tolerance: set.tolerance, report: true })
+                out.set(`buildings/${name}`, { bytes: Buffer.from(p.rgba), look: set.look, report: true })
                 exports.push(name)
             }
             // The nodes it takes from tex.canvas(), so a gap is named and not a minified "kd is not a function".
@@ -420,9 +420,11 @@ for (const [i, name] of names.entries()) {
     // Whether it tiles is part of the answer: it decides how every reader's edges go.
     const tilesWrong = !NEGATIVE && typeof expect?.tiles === "boolean" && expect.tiles !== got.tiles
     compared++
-    const ok = r.worst <= tolerance && !tilesWrong
+    // A Look case (buildings.json says why) passes on its mean and its share of bytes off by more than 2.
+    const look = expect?.look
+    const ok = (look ? r.mean <= look.mean && r.over2 <= look.over2 : r.worst <= tolerance) && !tilesWrong
     if (!ok) failed++
-    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
+    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${look ? ` (Look: mean at most ${look.mean}, at most ${100 * look.over2}% off by > 2)` : `${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}`}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
 }
 for (const r of rows) console.log(r)
 if (pending.size > 0) say(`not compared, nodes tex does not have yet: ${[...pending].map(([n, k]) => `${n} (${k})`).join(", ")}`)

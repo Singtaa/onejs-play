@@ -1,7 +1,8 @@
 {
     "magerieCommit": "44d69541b",
     "handedOver": "magerie-one primoeden-buildings-tex-check 69f20abf3",
-    "tolerance": 1,
+    "look": { "mean": 0.25, "over2": 0.01 },
+    "lookWhy": "Magerie's Look tier (texture-node-spec, Slope Blur 4.3): a 32-bit Noise's float maths, a few 1e-4 apart between Metal and another GPU, is moved by Warp, Slope Blur's walk and Curvature into a few texels many levels off. So each texture passes on its mean (at most 0.25 levels) and the share of its bytes off by more than 2 (at most 1%), not on its worst byte. The worst measured on 9 Nov 2026 is thatch at 0.16 and 0.8%; every bug found that week failed it, the smallest plaster daub decal's at 0.28 and 3.8%.",
     "textures": [
         {
             "file": "planks",
