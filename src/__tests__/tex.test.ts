@@ -488,7 +488,7 @@ describe("tex scatter's mask", () => {
 })
 
 function mulberry32Once(seed: number): number {
-    let s = (seed | 0) + 0x6D2B79F5 | 0
+    const s = (seed | 0) + 0x6D2B79F5 | 0
     let x = Math.imul(s ^ (s >>> 15), s | 1)
     x ^= x + Math.imul(x ^ (x >>> 7), x | 61)
     return ((x ^ (x >>> 14)) >>> 0) / 4294967296
