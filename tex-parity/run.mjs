@@ -105,6 +105,9 @@ const golden = (name) => base(name).startsWith("ground/")
     ? fs.readFileSync(path.join(OJPLAY_DIR, `${base(name).slice("ojplay/".length)}.bin`))
     : fs.readFileSync(path.join(here, "goldens", `${base(name)}.bin`))
 
+/** A chain case's name: the node, and the port when it is not the node's image. */
+const chainName = (id, port) => `chain/${id}${port === "out-image" ? "" : `.${port}`}`
+
 /**
  * A dump's nodes as the cart reads them, in Magerie's order: each input by
  * its port, less the node id Magerie prefixes it with, and the node it
@@ -119,33 +122,48 @@ function writeChain() {
         const isolate = arg("isolate", null)?.split(",")
         nodes = m.nodes.map((n) => ({
             id: n.id, type: n.type, params: n.params,
-            inputs: Object.entries(n.inputs).map(([port, i]) => ({ port: port.slice(n.id.length + 1), from: i.node })),
+            // Each input names the port it reads, so a Tile Grid's random and uv reach their readers, not its image.
+            inputs: Object.entries(n.inputs).map(([port, i]) => ({ port: port.slice(n.id.length + 1), from: i.node, out: i.port ? i.port.slice(i.node.length + 1) : "out-image" })),
+            outs: Object.entries(n.outputs ?? {}).filter(([, o]) => o?.type === "image" && o.file !== undefined)
+                .map(([port, o]) => ({ port, name: chainName(n.id, port), float: o.format === "float32" })),
         }))
         if (isolate) {
             // Each chosen node on Magerie's own bytes: an input from outside the set becomes a source holding the dump.
             const all = isolate.includes("all")
             const chosen = (id) => all || isolate.includes(id)
             const sources = new Map()
+            const rounded = new Set()
             nodes = nodes.filter((n) => chosen(n.id)).map((n) => ({ ...n, inputs: n.inputs.map((i) => {
-                const o = Object.values(byId.get(i.from).outputs)[0]
+                const o = byId.get(i.from).outputs[i.out]
                 // A material carries no pixels of its own: it is rebuilt from its maps, which do.
                 if (o?.file === undefined) {
                     if (!chosen(i.from)) throw new Error(`--isolate: ${n.id} reads ${i.from}, which has no pixels in the dump; isolate it too`)
                     return i
                 }
                 if (!all && chosen(i.from)) return i
-                const id = `dump:${i.from}`
-                sources.set(id, { id, type: "pixels", w: o.width, h: o.height, tiles: o.tiles, hex: fs.readFileSync(path.join(CHAIN_DIR, o.file)).toString("hex") })
-                return { ...i, from: id }
+                const id = `dump:${i.from}:${i.out}`
+                let bytes = fs.readFileSync(path.join(CHAIN_DIR, o.file))
+                // tex.pixels takes 8 bits: a float32 dump is rounded to them, an input off by at most 1/510.
+                if (o.format === "float32") {
+                    rounded.add(`${i.from} ${i.out}`)
+                    bytes = Buffer.from(Array.from({ length: bytes.length / 4 }, (_, k) => Math.round(Math.min(1, Math.max(0, bytes.readFloatLE(k * 4))) * 255)))
+                }
+                sources.set(id, { id, type: "pixels", w: o.width, h: o.height, tiles: o.tiles, hex: bytes.toString("hex") })
+                return { ...i, from: id, out: "out-image" }
             }) }))
             nodes = [...sources.values(), ...nodes]
+            if (rounded.size > 0) console.log(`[tex-parity] --isolate fed ${rounded.size} float32 dumps rounded to 8 bits: ${[...rounded].join(", ")}`)
         }
+        // Every picture a node stores is a case, a float32 one compared as floats.
         for (const n of m.nodes) {
-            const o = n.outputs["out-image"]
-            if (o?.type === "image" && o.format === "rgba8") out.set(`chain/${n.id}`, { file: o.file, tiles: o.tiles, tolerance: 1 })
+            for (const [port, o] of Object.entries(n.outputs ?? {})) {
+                if (o?.type !== "image" || o.file === undefined) continue
+                const float = o.format === "float32"
+                out.set(chainName(n.id, port), { file: o.file, tiles: o.tiles, float, tolerance: float ? FLOAT_TOLERANCE : 1, report: true })
+            }
         }
     }
-    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string }[], w?: number, h?: number, tiles?: boolean, hex?: string }[] = ${JSON.stringify(nodes)}\n`)
+    fs.writeFileSync(path.join(root, "chain.gen.ts"), `// Written by run.mjs${CHAIN_DIR ? ` from ${path.basename(CHAIN_DIR)}/manifest.json` : ""}. Do not edit.\nexport const CHAIN: { id: string, type: string, params?: unknown, inputs?: { port: string, from: string, out: string }[], outs?: { port: string, name: string, float: boolean }[], w?: number, h?: number, tiles?: boolean, hex?: string }[] = ${JSON.stringify(nodes)}\n`)
     return out
 }
 const chainOut = writeChain()
@@ -204,7 +222,7 @@ function writeBuildings() {
                 exports.push(name)
             }
             // The nodes it takes from tex.canvas(), so a gap is named and not a minified "kd is not a function".
-            const names = (/const {([^}]*)} = tex.canvas(/.exec(source)?.[1] ?? "").split(",").map((n) => n.trim()).filter(Boolean)
+            const names = (/const \{([^}]*)\} = tex\.canvas\(/.exec(source)?.[1] ?? "").split(",").map((n) => n.trim()).filter(Boolean)
             entries.push({ file: b.file, exports, names })
         }
     }
@@ -353,6 +371,7 @@ const floats = (b) => Array.from({ length: b.length / 4 }, (_, i) => b.readFloat
 
 function compare(got, expected, tolerance, float) {
     const bytes = float ? floats(got) : got
+
     if (float) expected = floats(expected)
     if (bytes.length !== expected.length) return { worst: Infinity, off: bytes.length, note: `${bytes.length} values against ${expected.length}` }
     let worst = 0, off = 0, sum = 0, over2 = 0
@@ -360,8 +379,10 @@ function compare(got, expected, tolerance, float) {
         const d = Math.abs(bytes[i] - expected[i])
         if (d > worst) worst = d
         if (d > tolerance) off++
-        if (d > 2) over2++
-        sum += d
+        // The mean and the share past 2 are in 8-bit levels for a float too, so the two read alike.
+        const levels = float ? d * 255 : d
+        if (levels > 2) over2++
+        sum += levels
     }
     return { worst, off, mean: sum / bytes.length, over2: over2 / bytes.length }
 }

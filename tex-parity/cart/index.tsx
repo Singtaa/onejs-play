@@ -82,13 +82,21 @@ async function chain() {
             if (missing !== undefined) throw new Pending(`${n.type}, after ${missing.from}`)
             const fn = (tex as unknown as Record<string, (...a: unknown[]) => unknown>)[n.type]
             if (typeof fn !== "function") throw new Pending(n.type)
-            const values = inputs.map((i) => made.get(i.from))
+            const values = inputs.map((i) => {
+                const v = pick(made.get(i.from), i.out)
+                if (v === undefined) throw new Error(`${i.from} has no output ${i.out}`)
+                return v
+            })
             const r = n.type === "material"
                 ? fn({ ...(n.params as object), ...Object.fromEntries(inputs.map((i, k) => [i.port.replace(/^in-/, ""), values[k]])) })
                 : fn(...values, n.params)
             if (!dumped.has(n.id)) made.set(n.id, r)
-            if (r instanceof TexImage) {
-                console.log(`[tex-parity] case ${name} ${r.width}x${r.height} ${r.tiles ? "tiles" : "edges"} ${hex(await r.pixels())}`)
+            // Each picture Magerie stored, at the precision it stored it.
+            for (const o of n.outs ?? []) {
+                const img = pick(r, o.port)
+                if (!(img instanceof TexImage)) { console.log(`[tex-parity] error ${o.name} ${n.type} gave no picture at ${o.port}`); continue }
+                const px = o.float ? `f:${hex(new Uint8Array((await img.pixels({ float: true })).buffer))}` : hex(await img.pixels())
+                console.log(`[tex-parity] case ${o.name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${px}`)
             }
         } catch (e) {
             if (e instanceof Pending) { console.log(`[tex-parity] pending ${name} ${e.message}`); continue }
