@@ -105,7 +105,7 @@ export type { TiledNav, NavBox, NavMark, NavMarkOptions, PathOptions } from "./n
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
 export type {
     Model, Actor, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
-    Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions, SkyOptions,
+    Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, FogOptions, SkyOptions, Reflections,
     MeshData, MeshModelOptions, MeshDrawOptions, MeshUpdate, MeshModel, MeshNormalMap, MeshSplat, MeshSplatLayer, Tiling, Numbers, Scatter, ScatterCopy, SceneTexture,
     Bake, BakeOptions, BakeResult,
 } from "./models"

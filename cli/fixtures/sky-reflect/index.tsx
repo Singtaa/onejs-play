@@ -2,8 +2,8 @@ import { useEffect } from "react"
 import { mount, useScene, type Scene, type Actor, type MeshModel } from "oj"
 
 // A chrome ball seen side on under a blue sky with an orange horizon, so its middle reflects the
-// horizon and its upper part the sky once the sky is asked to reflect, and both read the ambient's
-// flat average when it is not. sky-reflect.playtest.mjs turns reflect on and off and reads pixels.
+// horizon and its upper part the sky once the scene's reflections are "sky", and both read the
+// ambient's flat average when they are not. sky-reflect.playtest.mjs turns reflect on and off and reads pixels.
 let live: { model: MeshModel, actor: Actor } | null = null
 
 function ball(rings = 48, segments = 96) {
@@ -30,8 +30,9 @@ function show(scene: Scene, reflect: boolean) {
         const model = scene.mesh({ ...ball(), color: "#f2f2f2", roughness: 0.02, metallic: 1 })
         live = { model, actor: scene.spawn(model, { static: true }) }
     }
-    // Named only when asked, so the unasked scene makes exactly the calls an older runtime makes.
-    scene.sky(reflect ? { reflect: true } : { reflect: false })
+    // A scene never asked sends nothing for it, so the unasked scene makes exactly the calls an
+    // older runtime makes.
+    scene.reflections = reflect ? "sky" : false
 }
 
 function Reflect() {
