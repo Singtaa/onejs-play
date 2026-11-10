@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.8",
+    "name": "Sky Reflect",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}

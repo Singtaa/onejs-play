@@ -1009,6 +1009,18 @@ highlight, a metal quad that still scatters, a roughness and a colour set after
 that drew nothing, a shore that does not fade, deep water that keeps its
 colour, a normal map that bends nothing, and a black screen.
 
+**A mirror shows the sky, and only when asked.** `cli/fixtures/sky-reflect`
+draws a chrome ball side on under a blue sky with an orange horizon. Not
+asked, it prints the screenshot's SHA-256 as `UNASKED`, so two runtimes can
+be compared byte for byte; asked with `sky: { reflect: true }`, the ball's
+middle must lead red over blue by 40 levels (the horizon) and a point higher
+up lead blue over red by 40 (the sky); not asked again, it must draw the
+first screenshot's bytes. It prints `BACKEND`, WebGL 2 by default and WebGPU
+with `--gpu`. It names runtime 1.8, so the sweep waits for that line;
+`sky-reflect.test.ts` feeds the check a pass, a flat reflection, an upside
+down sky, a scene that changed after reflections went off, and a black
+screen.
+
 **A triplanar layer keeps its size on a steep face.** `cli/fixtures/triplanar`
 draws two 70 degree faces 48 m high in red and green bands, one splat read at
 its uvs (laid flat, 4 m a repeat) and one whose layer is `triplanar: 4`, and
