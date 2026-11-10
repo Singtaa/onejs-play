@@ -186,6 +186,21 @@ export interface MeshModelOptions extends MeshData {
      */
     metallic?: number
     /**
+     * How far the sun's light reaches round past where the surface turns away
+     * from it, from 0 to 1: 0 by default, a hard shadow line. A leaf, moss or
+     * skin lets light in past it, so a crown's cards turned from the sun stay
+     * lit; about 0.5 for leaves. The sun only. Not with a splat. URP only.
+     * Settable after, as `mesh.wrap`.
+     */
+    wrap?: number
+    /**
+     * How much of the sun shows through from behind, toward the eye, tinted by
+     * the surface's colour, from 0 to 1: 0 by default. A leaf seen against the
+     * sun glows; give it with `twoSided` and `cutout` for leaf cards. The sun
+     * only. Not with a splat. URP only. Settable after, as `mesh.translucency`.
+     */
+    translucency?: number
+    /**
      * Metres over which a see-through mesh fades out where the world behind it
      * comes near: a lake's shore fades per pixel instead of ending on the
      * triangle where the water meets the beach, and mist thins where it lies
@@ -268,6 +283,10 @@ export interface MeshModel extends Model {
     roughness: number
     /** Its metallic, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
     metallic: number
+    /** How far the sun's light wraps round it, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
+    wrap: number
+    /** How much of the sun shows through it from behind, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
+    translucency: number
     /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
     destroy(): void
 }
@@ -1381,6 +1400,13 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] scene.mesh: ${what} is ${v}, and runs from 0 to 1`)
             if (typeof b.SetMeshSurface !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot set it (it came with runtime 1.8).`)
         }
+        for (const what of ["wrap", "translucency"] as const) {
+            const v = o[what]
+            if (v === undefined) continue
+            if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] scene.mesh: ${what} is ${v}, and runs from 0 to 1`)
+            if (o.splat !== undefined) throw new Error(`[oj] scene.mesh: a splat is lit by its vertex normals, and takes no ${what}`)
+            if (typeof b.SetMeshLeafLight !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot light it so (it came with runtime 1.8).`)
+        }
         const fades = o.soften !== undefined || o.deepColor !== undefined
         let fade: [number, number, number, number, number, number] | null = null
         if (fades) {
@@ -1415,6 +1441,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
         let colorGiven: ColorInput = o.color ?? "#ffffff"
         const surfaceGiven = o.roughness !== undefined || o.metallic !== undefined
+        let wrap = o.wrap ?? 0, translucency = o.translucency ?? 0
+        const leafGiven = wrap > 0 || translucency > 0
         const madeMetallic = metallic
         if (o.cutout !== undefined) {
             if (typeof o.cutout !== "number" || !(o.cutout >= 0 && o.cutout <= 1)) throw new Error(`[oj] scene.mesh: cutout is ${o.cutout}, and runs from 0 to 1`)
@@ -1475,6 +1503,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [sways, () => b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
                 [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
+                [leafGiven, () => b.SetMeshLeafLight(id, wrap, translucency), o.wrap !== undefined ? "wrap" : "translucency"],
                 [normalMap !== null, () => b.SetMeshNormalMap(id, ...normalMap!), "normalMap"],
             ]
             for (const [given, apply, what] of looks) {
@@ -1507,6 +1536,17 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (problem !== "") throw new Error(`[oj] mesh.${what}: ${problem}`)
             ;[roughness, metallic] = next as [number, number]
         }
+        // The leaf light after creation, as the surface: checked, sent, and kept only once the bridge took it.
+        const leafLight = (what: "wrap" | "translucency", v: number) => {
+            live()
+            if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] mesh.${what} is ${v}, and runs from 0 to 1`)
+            if (look.splat !== null) throw new Error(`[oj] mesh.${what}: a splat is lit by its vertex normals, and takes no ${what}`)
+            if (typeof b.SetMeshLeafLight !== "function") throw new Error(`[oj] mesh.${what} needs a newer OneJS: this host's ModelBridge cannot light it so (it came with runtime 1.8).`)
+            const next = what === "wrap" ? [v, translucency] : [wrap, v]
+            const problem = String(b.SetMeshLeafLight(id, next[0], next[1]))
+            if (problem !== "") throw new Error(`[oj] mesh.${what}: ${problem}`)
+            ;[wrap, translucency] = next as [number, number]
+        }
         const model: MeshModel = Object.freeze({
             id,
             clips: Object.freeze([]) as readonly string[],
@@ -1524,6 +1564,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set roughness(v: number) { surface("roughness", v) },
             get metallic() { return metallic },
             set metallic(v: number) { surface("metallic", v) },
+            get wrap() { return wrap },
+            set wrap(v: number) { leafLight("wrap", v) },
+            get translucency() { return translucency },
+            set translucency(v: number) { leafLight("translucency", v) },
             set(d: MeshUpdate) {
                 live()
                 if (made.collider) throw new Error("[oj] this mesh is a physics collider, which keeps the shape it was made with. Draw what moves with a second scene.mesh, and leave the collider as it is.")
