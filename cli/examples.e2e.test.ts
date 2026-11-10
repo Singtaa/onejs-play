@@ -257,9 +257,9 @@ describe("the sweep's runtime line gate", () => {
     it("names, and does not run, a cart that needs a line the live runtime is older than", async () => {
         const dir = broken("99.0")
         try {
-            const began = Date.now()
-            expect(await sweepOne(dir)).toEqual({ waits: "99.0" })
-            expect(Date.now() - began, "it started a browser for a cart that waits").toBeLessThan(1000)
+            // Exactly { waits }: a cart that ran would also carry its code, output and runS, so this
+            // says no browser started without timing it, which a loaded machine made flaky.
+            expect(await sweepOne(dir)).toStrictEqual({ waits: "99.0" })
         } finally {
             fs.rmSync(dir, { recursive: true, force: true })
         }
