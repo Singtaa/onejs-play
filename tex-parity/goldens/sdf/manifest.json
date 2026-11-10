@@ -1,0 +1,117 @@
+{
+  "magerieCommit": "ea7b1ae92",
+  "cases": [
+    {
+      "name": "sdf/circle-offset",
+      "node": "sdfShape",
+      "size": [
+        256,
+        256
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "circle",
+        "size": 0.84,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": -0.25,
+        "offsetY": -0.25,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 256,
+        "height": 256
+      },
+      "inputs": {},
+      "outputs": [
+        {
+          "port": "out-image",
+          "file": "circle-offset.bin",
+          "format": "rgba8",
+          "tiles": false
+        },
+        {
+          "port": "out-distance",
+          "file": "circle-offset-distance.bin",
+          "format": "rgba32f",
+          "tiles": false,
+          "tolerance": 0,
+          "halfSteps": 1
+        }
+      ]
+    },
+    {
+      "name": "sdf/vesica-needle-rot45",
+      "node": "sdfShape",
+      "size": [
+        128,
+        128
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "vesica",
+        "size": 1.5,
+        "edgeBand": 0,
+        "rotation": 45,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.14,
+        "vesicaHeight": 0.72,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 128,
+        "height": 128
+      },
+      "inputs": {},
+      "outputs": [
+        {
+          "port": "out-image",
+          "file": "vesica-needle-rot45.bin",
+          "format": "rgba8",
+          "tiles": false
+        },
+        {
+          "port": "out-distance",
+          "file": "vesica-needle-rot45-distance.bin",
+          "format": "rgba32f",
+          "tiles": false,
+          "tolerance": 0,
+          "halfSteps": 1
+        }
+      ]
+    }
+  ]
+}

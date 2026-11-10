@@ -51,3 +51,28 @@ with the PNGs from `primoeden-leaves-tex-check` `298f0e803`. The two mass
 boards carry their own Look in `atlas.json`, with why. `buildings/thatch.ts`
 is the same commit's emit; the other building emits were byte for byte
 what was here, and its `stone-face` predates the lichen fix, so it was kept.
+
+`goldens/sdf/` is sdfShape's signed distance (tex's `.sdf`, Magerie's
+`out-distance`) as Magerie itself stores it: a circle off centre at 256 by
+256 and a needle vesica turned 45 degrees at 128 by 128, dumped by
+magerie-one `ea7b1ae92` (main `396dc943a` plus #1199, which does not touch
+sdfShape) on Windows D3D11, each with its 8-bit picture. Its
+`manifest.json` is in `goldens/ojplay`'s format and a plain `node run.mjs`
+draws it with the rest, as `sdf/<name>` and `sdf/<name>-distance`. The
+distance is float32, in pixels, positive inside, and is held to one
+half-float step of the value (`halfSteps: 1`): tex stores it in halves, and
+a GPU that truncates a half (D3D) and one that rounds it (SwiftShader)
+differ by exactly that. Measured on 10 Nov 2026 the largest difference was
+0 and 0.008 on this GPU, 0.125 and 0.031 on SwiftShader, every value
+inside its step; `--plant sdf` (every shape 0.2% too large) fails all four
+on both.
+
+The same dump held two more shapes, which are not vendored because tex
+and Magerie's Windows build disagree on them, on both backends alike: a
+rotated ellipse (the distance up to 0.067 px apart at the edge, the picture
+up to 8 levels at 22 pixels; tex differs from itself by as much between
+GPU and SwiftShader, so the ellipse's solver is where it comes from) and a
+192 by 128 vesica (two pixels on the line where Magerie's formula changes
+sign, where the two take opposite sides). The dump is
+`D:/handoff/magerie-win003-sdfshape-ea7b1ae92/chain-dumps/sdf-shapes` on
+the Windows PC; both were reported to magerie-one on 10 Nov 2026.

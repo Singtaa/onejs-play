@@ -17,7 +17,8 @@ const unhex = (s: string) => Uint8Array.from(s.match(/../g)!, (b) => parseInt(b,
 /**
  * A manifest case as the call Magerie's exporter writes: the node's function
  * with its inputs in port order and every parameter, by Magerie's own name,
- * as an option. A multi-output node's record is read by port, less "out-".
+ * as an option. A multi-output node's record is read by tex's name for the
+ * port: the port less "out-", unless tex-nodes.json names it otherwise.
  */
 /** A case for a node tex does not have yet: reported apart from a failure, so set C can land before its nodes. */
 class Pending extends Error {}
@@ -57,7 +58,8 @@ function fromManifest(c: (typeof OJPLAY)[number]): Case[] {
         float: o.float,
         make: () => {
             const r = made()
-            const img = r instanceof TexImage ? r : (r as Record<string, TexImage>)[o.port.replace(/^out-/, "")]
+            // By tex's name for the port, so an image-first node's other outputs (sdfShape's sdf) are not read as its image.
+            const img = pick(r, o.key)
             if (!(img instanceof TexImage)) throw new Error(`${c.node} has no output ${o.port}`)
             return img
         },

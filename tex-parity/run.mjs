@@ -37,6 +37,12 @@
 // --sabotage  with --tex-src: every pass writes fract(value + 0.37), and
 //             the run must FAIL. The override's own check: a pass means the
 //             cart drew something other than the bundle it was handed.
+// --plant <name> with --tex-src: one node drawn a little wrong, and the cases
+//             bounded by it must FAIL. A bound's own check, where --sabotage
+//             is the override's: a bound loose enough to pass this measures
+//             nothing smaller. `warp`: every Warp 5% too strong, which
+//             atlas.json's two mass boards are bounded by. `sdf`: every
+//             sdfShape 0.2% too large, which goldens/sdf is bounded by.
 // --save      a folder to write every drawing's bytes into, as <name>.bin
 // --ojplay    a folder holding a manifest.json in goldens/ojplay's format, to
 //             draw instead of goldens/ojplay: a set Magerie has not vendored
@@ -56,7 +62,8 @@
 //
 // A case passes when every byte is within its tolerance of the golden: 1,
 // Magerie's own (kernel-parity.ts), unless the manifest names another, and
-// when the manifest says whether the output tiles, when tex agrees. Exits 0
+// when the manifest says whether the output tiles, when tex agrees. A float
+// output may add `halfSteps`: that many half-float steps of each value. Exits 0
 // when all pass, 1 when any fails or errors, 3 when nothing was compared.
 import fs from "node:fs"
 import os from "node:os"
@@ -80,6 +87,12 @@ const arg = (name, fallback) => {
 const SOFTWARE = process.argv.includes("--software")
 const NEGATIVE = process.argv.includes("--negative")
 const SABOTAGE = process.argv.includes("--sabotage")
+const PLANT = arg("plant", null)
+// Each plant: the line of src/tex/nodes.ts it changes, what it becomes, and what that draws.
+const PLANTS = {
+    warp: ['strength: num(p.strength, "warp strength", 0), wrap }', 'strength: num(p.strength, "warp strength", 0) * 1.05, wrap }', "every Warp 5% too strong"],
+    sdf: ['const size = num(p.size, "sdfShape size", 0.01, 2)', 'const size = num(p.size, "sdfShape size", 0.01, 2) * 1.002', "every sdfShape 0.2% too large"],
+}
 const ONLY = arg("only", "")
 const say = (m) => process.stderr.write(`[tex-parity] ${m}\n`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -97,6 +110,9 @@ const CHAIN_DIR = arg("chain", null)
 const FLOAT_TOLERANCE = 1 / 8192
 // Another manifest in goldens/ojplay's format: a set Magerie has not vendored yet, or one made from its JS twins.
 const OJPLAY_DIR = path.resolve(arg("ojplay", path.join(here, "goldens", "ojplay")))
+// The manifests a plain run draws, each case named by its set: Magerie's Mac goldens, and with no --ojplay
+// goldens/sdf, sdfShape's signed distance as Magerie's Windows build stores it (SOURCE.md).
+const STANDING = [{ prefix: "ojplay", dir: OJPLAY_DIR }, ...(arg("ojplay", null) === null ? [{ prefix: "sdf", dir: path.join(here, "goldens", "sdf") }] : [])]
 const golden = (name) => base(name).startsWith("ground/")
     ? groundOut.get(base(name)).bytes
     : buildingsOut.has(base(name))
@@ -269,6 +285,13 @@ async function writeDevTex() {
                 if (broken === text) throw new Error("--sabotage: engine.ts no longer has the line it breaks; update run.mjs")
                 return { contents: broken, loader: "ts" }
             })
+            // --plant: one node a little wrong, which a bound must still catch.
+            if (PLANT !== null) b.onLoad({ filter: /[\\/]src[\\/]tex[\\/]nodes\.ts$/ }, (a) => {
+                const text = fs.readFileSync(a.path, "utf8")
+                const planted = text.replace(PLANTS[PLANT][0], PLANTS[PLANT][1])
+                if (planted === text) throw new Error(`--plant ${PLANT}: nodes.ts no longer has the line it changes; update run.mjs`)
+                return { contents: planted, loader: "ts" }
+            })
         } }
         const built = await esbuild.build({
             entryPoints: [path.resolve(here, "../src/tex/index.ts")], bundle: true, format: "iife", globalName: "__devTex",
@@ -277,11 +300,13 @@ async function writeDevTex() {
         const text = built.outputFiles[0].text
         id = `${Date.now().toString(36)}-${text.length}`
         code = `${text}\n__devTex.DEV_ID = ${JSON.stringify(id)}\n`
-        say(`tex from src/tex, bundle ${id}`)
+        say(`tex from src/tex, bundle ${id}${PLANT ? `, with ${PLANTS[PLANT][2]} (--plant ${PLANT})` : ""}`)
     }
     fs.writeFileSync(path.join(root, "devtex.gen.ts"), `// Written by run.mjs --tex-src from src/tex. Do not edit.\nexport const DEV_TEX: string | null = ${JSON.stringify(code)}\n`)
     return id
 }
+if (PLANT !== null && !Object.hasOwn(PLANTS, PLANT)) throw new Error(`--plant ${PLANT}: the plants are ${Object.keys(PLANTS).join(" and ")}`)
+if (PLANT !== null && !process.argv.includes("--tex-src")) throw new Error("--plant changes this checkout's src/tex, so it needs --tex-src")
 const devTexId = await writeDevTex()
 
 /**
@@ -290,9 +315,7 @@ const devTexId = await writeDevTex()
  * multi-output nodes say `outputs`, one entry a port.
  */
 function writeOjplay() {
-    const dir = OJPLAY_DIR
-    const m = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"))
-    const cases = m.cases.map((c) => {
+    const cases = STANDING.flatMap(({ prefix, dir }) => JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8")).cases.map((c) => {
         const outputs = (c.outputs ?? [c.output]).map((o) => ({ ...o, float: o.float === true || o.format === "rgba32f" }))
         const [w, h] = c.size
         // An input is a file, or a node run on its own inputs first (Material under Material Light).
@@ -303,12 +326,12 @@ function writeOjplay() {
         return {
             node: c.node, params: c.params, inputs,
             outputs: outputs.map((o) => ({
-                port: o.port, name: `ojplay/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, float: o.float,
-                tolerance: o.tolerance ?? c.tolerance ?? (o.float ? FLOAT_TOLERANCE : 1),
+                port: o.port, key: outputKey(c.node, o.port), name: `${prefix}/${o.file.replace(/\.bin$/, "")}`, tiles: o.tiles, float: o.float,
+                tolerance: o.tolerance ?? c.tolerance ?? (o.float ? FLOAT_TOLERANCE : 1), halfSteps: o.halfSteps ?? 0,
             })),
         }
-    })
-    fs.writeFileSync(path.join(root, "ojplay.gen.ts"), `// Written by run.mjs from ${path.relative(here, dir)}/manifest.json (magerie-one ${m.magerieCommit}). Do not edit.\nexport const OJPLAY = ${JSON.stringify(cases)}\n`)
+    }))
+    fs.writeFileSync(path.join(root, "ojplay.gen.ts"), `// Written by run.mjs from ${STANDING.map((s) => `${path.relative(here, s.dir)}/manifest.json`).join(" and ")}. Do not edit.\nexport const OJPLAY = ${JSON.stringify(cases)}\n`)
     return new Map(cases.flatMap((c) => c.outputs.map((o) => [o.name, o])))
 }
 const ojplay = writeOjplay()
@@ -345,12 +368,18 @@ async function draw() {
         try {
             await game.ready()
         } catch (e) {
-            // Why it did not start is in the page's console, not in the error.
-            for (const line of game.errors) say(`console error: ${line}`)
-            throw e
+            // A cart that mounted and is already drawing a board holds the page's one thread, so ready's
+            // look at the frame count goes unanswered (SwiftShader on a 1024 board): its drawings are still coming.
+            if (!/^CDP Runtime\.evaluate did not answer/.test(e.message)) {
+                // Why it did not start is in the page's console, not in the error.
+                for (const line of game.errors) say(`console error: ${line}`)
+                throw e
+            }
+            say("the cart mounted and is drawing too hard to answer; waiting on its drawings")
         }
         // A budget per drawing, fused and unfused: SwiftShader compiles slowly, and the set grows.
-        const budget = 60 + 4 * (CHAIN_DIR ? chainOut.size : groundOut.size || 4 * buildingsOut.size || 2 * ojplay.size)
+        // A set's boards are whole textures, which SwiftShader draws about 30 times slower: atlas took 390 s there on 10 Nov 2026.
+        const budget = (SOFTWARE && SET !== null ? 8 : 1) * (60 + 4 * (CHAIN_DIR ? chainOut.size : groundOut.size || 4 * buildingsOut.size || 2 * ojplay.size))
         const until = Date.now() + budget * 1000
         while (!browser.console.some((l) => l.text === "[tex-parity] done")) {
             if (Date.now() > until) {
@@ -383,7 +412,10 @@ async function draw() {
 /** Little-endian float32s, from a golden's or a drawing's bytes. */
 const floats = (b) => Array.from({ length: b.length / 4 }, (_, i) => b.readFloatLE(i * 4))
 
-function compare(got, expected, tolerance, float) {
+/** A half float's step at a value: what one GPU that rounds a stored half and one that truncates it differ by. */
+const halfStep = (v) => 2 ** (Math.max(Math.floor(Math.log2(Math.abs(v))), -14) - 10)
+
+function compare(got, expected, tolerance, float, halfSteps = 0) {
     const bytes = float ? floats(got) : got
 
     if (float) expected = floats(expected)
@@ -392,7 +424,7 @@ function compare(got, expected, tolerance, float) {
     for (let i = 0; i < bytes.length; i++) {
         const d = Math.abs(bytes[i] - expected[i])
         if (d > worst) worst = d
-        if (d > tolerance) off++
+        if (d > tolerance + (halfSteps && halfSteps * halfStep(expected[i]))) off++
         // The mean and the share past 2 are in 8-bit levels for a float too, so the two read alike.
         const levels = float ? d * 255 : d
         if (levels > 2) over2++
@@ -433,15 +465,15 @@ for (const [i, name] of names.entries()) {
     const expect = ojplay.get(base(name)) ?? chainOut.get(base(name)) ?? groundOut.get(base(name)) ?? buildingsOut.get(base(name))
     const tolerance = expect?.tolerance ?? 1
     // A float golden is held as float, and a drawing that came back in bytes against one fails on its length.
-    const r = compare(got.bytes, golden(against), tolerance, expect?.float === true && got.float === true)
+    const r = compare(got.bytes, golden(against), tolerance, expect?.float === true && got.float === true, expect?.halfSteps)
     // Whether it tiles is part of the answer: it decides how every reader's edges go.
     const tilesWrong = !NEGATIVE && typeof expect?.tiles === "boolean" && expect.tiles !== got.tiles
     compared++
     // A Look case (buildings.json says why) passes on its mean and its share of bytes off by more than 2.
     const look = expect?.look
-    const ok = (look ? r.mean <= look.mean && r.over2 <= look.over2 && (look.cutout === undefined || r.cutout / r.pixels <= look.cutout) : r.worst <= tolerance) && !tilesWrong
+    const ok = (look ? r.mean <= look.mean && r.over2 <= look.over2 && (look.cutout === undefined || r.cutout / r.pixels <= look.cutout) : r.off === 0) && !tilesWrong
     if (!ok) failed++
-    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${look ? ` (Look: mean at most ${look.mean}, at most ${100 * look.over2}% off by > 2)` : `${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}`}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${expect?.cutout ? `; cutout ${r.cutout} px (${(100 * r.cutout / r.pixels).toFixed(2)}%) across alpha 0.5` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
+    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${look ? ` (Look: mean at most ${look.mean}, at most ${100 * look.over2}% off by > 2)` : `${tolerance !== 1 || expect?.halfSteps ? ` (tolerance ${tolerance}${expect?.halfSteps ? ` and ${expect.halfSteps} half-float step of the value` : ""})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}`}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${expect?.cutout ? `; cutout ${r.cutout} px (${(100 * r.cutout / r.pixels).toFixed(2)}%) across alpha 0.5` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
 }
 for (const r of rows) console.log(r)
 if (pending.size > 0) say(`not compared, nodes tex does not have yet: ${[...pending].map(([n, k]) => `${n} (${k})`).join(", ")}`)
