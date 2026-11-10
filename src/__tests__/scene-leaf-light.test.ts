@@ -1,6 +1,6 @@
 /**
  * A mesh's leaf light as the calls it makes on OneJS's ModelBridge (drawn in OneJS's
- * LeafLightEditModeTests): `scene.mesh({ wrap, translucency, translucencyColor, translucencyPower,
+ * LeafLightEditModeTests): `scene.mesh({ wrap, backLight, backLightColor, backLightFocus,
  * edgeFade })`, and each settable after it is made.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
@@ -57,13 +57,13 @@ function scene() {
 const SQUARE = { positions: [-1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1, 0], indices: [0, 1, 2, 0, 2, 3] }
 const picture = { texture: {}, width: 4, height: 4 } as any
 
-describe("scene.mesh wrap and translucency", () => {
+describe("scene.mesh wrap and backLight", () => {
     it("ask for nothing when neither is given, or both are 0, as a 1.8 cart's mesh never did", () => {
         const s = scene()
         const m = s.mesh(SQUARE)
-        s.mesh({ ...SQUARE, wrap: 0, translucency: 0 })
+        s.mesh({ ...SQUARE, wrap: 0, backLight: 0 })
         expect(of("SetMeshLeafLight")).toHaveLength(0)
-        expect([m.wrap, m.translucency]).toEqual([0, 0])
+        expect([m.wrap, m.backLight]).toEqual([0, 0])
     })
 
     it("are set before the vertices, the other at 0", () => {
@@ -71,16 +71,16 @@ describe("scene.mesh wrap and translucency", () => {
         const crown = s.mesh({ ...SQUARE, twoSided: true, cutout: 0.5, wrap: 0.5 })
         expect(of("SetMeshLeafLight")).toEqual([["SetMeshLeafLight", crown.id, 0.5, 0, 4, 1, 1, 1]])
         expect(order("CreateMesh", "SetMeshLeafLight", "SetMesh")).toEqual(["CreateMesh", "SetMeshLeafLight", "SetMesh"])
-        const leaf = s.mesh({ ...SQUARE, translucency: 0.7 })
+        const leaf = s.mesh({ ...SQUARE, backLight: 0.7 })
         expect(of("SetMeshLeafLight")[1]).toEqual(["SetMeshLeafLight", leaf.id, 0, 0.7, 4, 1, 1, 1])
-        expect([crown.wrap, crown.translucency, leaf.wrap, leaf.translucency]).toEqual([0.5, 0, 0, 0.7])
+        expect([crown.wrap, crown.backLight, leaf.wrap, leaf.backLight]).toEqual([0.5, 0, 0, 0.7])
     })
 
     it("are refused outside 0 to 1 before making anything", () => {
         const s = scene()
         for (const bad of [-0.1, 1.5, Number.NaN, "0.5" as any]) {
             expect(() => s.mesh({ ...SQUARE, wrap: bad })).toThrow(`scene.mesh: wrap is ${bad}, and runs from 0 to 1`)
-            expect(() => s.mesh({ ...SQUARE, translucency: bad })).toThrow(`scene.mesh: translucency is ${bad}, and runs from 0 to 1`)
+            expect(() => s.mesh({ ...SQUARE, backLight: bad })).toThrow(`scene.mesh: backLight is ${bad}, and runs from 0 to 1`)
         }
         expect(of("CreateMesh")).toHaveLength(0)
     })
@@ -103,7 +103,7 @@ describe("scene.mesh wrap and translucency", () => {
         missing = new Set(["SetMeshLeafLight"])
         const s = scene()
         expect(() => s.mesh({ ...SQUARE, wrap: 0.5 })).toThrow("scene.mesh wrap needs a newer OneJS")
-        expect(() => s.mesh({ ...SQUARE, translucency: 0.5 })).toThrow("scene.mesh translucency needs a newer OneJS")
+        expect(() => s.mesh({ ...SQUARE, backLight: 0.5 })).toThrow("scene.mesh backLight needs a newer OneJS")
         expect(of("CreateMesh")).toHaveLength(0)
         const m = s.mesh(SQUARE)
         expect(of("CreateMesh"), "a mesh without them is made as ever").toHaveLength(1)
@@ -111,54 +111,54 @@ describe("scene.mesh wrap and translucency", () => {
     })
 })
 
-describe("a mesh's wrap and translucency after it is made", () => {
+describe("a mesh's wrap and backLight after it is made", () => {
     it("set the model's material, and read back as given", () => {
         const s = scene()
         const crown = s.mesh({ ...SQUARE, wrap: 0.3 })
-        crown.translucency = 0.6
+        crown.backLight = 0.6
         expect(of("SetMeshLeafLight").at(-1)).toEqual(["SetMeshLeafLight", crown.id, 0.3, 0.6, 4, 1, 1, 1])
         crown.wrap = 0
         expect(of("SetMeshLeafLight").at(-1)).toEqual(["SetMeshLeafLight", crown.id, 0, 0.6, 4, 1, 1, 1])
-        expect([crown.wrap, crown.translucency]).toEqual([0, 0.6])
+        expect([crown.wrap, crown.backLight]).toEqual([0, 0.6])
     })
 
     it("refuse a bad value and keep the old one", () => {
         const s = scene()
         const m = s.mesh(SQUARE)
         expect(() => { m.wrap = 2 }).toThrow("mesh.wrap is 2, and runs from 0 to 1")
-        expect(() => { m.translucency = -1 }).toThrow("mesh.translucency is -1, and runs from 0 to 1")
+        expect(() => { m.backLight = -1 }).toThrow("mesh.backLight is -1, and runs from 0 to 1")
         expect(of("SetMeshLeafLight")).toHaveLength(0)
         answer = "there is no mesh model 41"
         expect(() => { m.wrap = 0.5 }).toThrow("[oj] mesh.wrap: there is no mesh model 41")
-        expect([m.wrap, m.translucency]).toEqual([0, 0])
+        expect([m.wrap, m.backLight]).toEqual([0, 0])
     })
 })
 
-describe("a mesh's translucency colour and power", () => {
-    it("go with the translucency, as sRGB from 0 to 1, and read back as given", () => {
+describe("a mesh's back light colour and focus", () => {
+    it("go with the backLight, as sRGB from 0 to 1, and read back as given", () => {
         const s = scene()
-        const leaf = s.mesh({ ...SQUARE, translucency: 0.8, translucencyColor: "#ff0000", translucencyPower: 8 })
+        const leaf = s.mesh({ ...SQUARE, backLight: 0.8, backLightColor: "#ff0000", backLightFocus: 8 })
         expect(of("SetMeshLeafLight")).toEqual([["SetMeshLeafLight", leaf.id, 0, 0.8, 8, 1, 0, 0]])
-        leaf.translucencyPower = 2
-        leaf.translucencyColor = [0, 0, 1]
+        leaf.backLightFocus = 2
+        leaf.backLightColor = [0, 0, 1]
         expect(of("SetMeshLeafLight").at(-1)).toEqual(["SetMeshLeafLight", leaf.id, 0, 0.8, 2, 0, 0, 1])
-        expect([leaf.translucencyPower, leaf.translucencyColor]).toEqual([2, [0, 0, 1]])
+        expect([leaf.backLightFocus, leaf.backLightColor]).toEqual([2, [0, 0, 1]])
     })
 
-    it("ask for nothing on their own, with no wrap or translucency to colour", () => {
+    it("ask for nothing on their own, with no wrap or back light to colour", () => {
         const s = scene()
-        s.mesh({ ...SQUARE, translucencyColor: "#e6ff33", translucencyPower: 6 })
+        s.mesh({ ...SQUARE, backLightColor: "#e6ff33", backLightFocus: 6 })
         expect(of("SetMeshLeafLight")).toHaveLength(0)
     })
 
-    it("refuse a power outside 1 to 16 or a colour that is none, before making anything", () => {
+    it("refuse a focus outside 1 to 16 or a colour that is none, before making anything", () => {
         const s = scene()
-        expect(() => s.mesh({ ...SQUARE, translucency: 0.5, translucencyPower: 0.5 })).toThrow("scene.mesh: translucencyPower is 0.5, and runs from 1 to 16")
-        expect(() => s.mesh({ ...SQUARE, translucency: 0.5, translucencyColor: "nope" as any })).toThrow("translucencyColor")
+        expect(() => s.mesh({ ...SQUARE, backLight: 0.5, backLightFocus: 0.5 })).toThrow("scene.mesh: backLightFocus is 0.5, and runs from 1 to 16")
+        expect(() => s.mesh({ ...SQUARE, backLight: 0.5, backLightColor: "nope" as any })).toThrow("backLightColor")
         expect(of("CreateMesh")).toHaveLength(0)
         const m = s.mesh(SQUARE)
-        expect(() => { m.translucencyPower = 20 }).toThrow("mesh.translucencyPower is 20, and runs from 1 to 16")
-        expect(m.translucencyPower).toBe(4)
+        expect(() => { m.backLightFocus = 20 }).toThrow("mesh.backLightFocus is 20, and runs from 1 to 16")
+        expect(m.backLightFocus).toBe(4)
     })
 })
 
