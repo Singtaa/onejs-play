@@ -455,9 +455,9 @@ Three things that are not obvious from the code:
   start only where the host has `SetWind`, warning only a cart that asked; the
   wind's clock is the scene's own, sent each frame once a mesh sways and held
   while `paused`.
-  `wrap`, `translucency`, `translucencyPower` and `translucencyColor` are one
-  `SetMeshLeafLight(id, wrap, translucency, power, r, g, b)` among the looks,
-  the colour as sRGB, sent only when wrap or translucency is above 0, and
+  `wrap`, `backLight`, `backLightFocus` and `backLightColor` are one
+  `SetMeshLeafLight(id, wrap, backLight, focus, r, g, b)` among the looks,
+  the colour as sRGB, sent only when wrap or backLight is above 0, and
   again on any of their setters; `edgeFade` is `SetMeshEdgeFade(id, start,
   end)`, sent only when given above `[0, 0]`. A splat is refused before
   anything is made, and so is a host without the call.

@@ -201,21 +201,21 @@ export interface MeshModelOptions extends MeshData {
      * How much of the sun shows through from behind, toward the eye, tinted by
      * the surface's colour, from 0 to 1: 0 by default. A leaf seen against the
      * sun glows; give it with `twoSided` and `cutout` for leaf cards. The sun
-     * only. Not with a splat. URP only. Settable after, as `mesh.translucency`.
+     * only. Not with a splat. URP only. Settable after, as `mesh.backLight`.
      */
-    translucency?: number
+    backLight?: number
     /**
      * The colour the sun shows through in, over the surface's own: white by
      * default. A yellow green such as `"#e6ff33"` is a leaf's. Settable after,
-     * as `mesh.translucencyColor`.
+     * as `mesh.backLightColor`.
      */
-    translucencyColor?: ColorInput
+    backLightColor?: ColorInput
     /**
-     * How tightly the light through gathers round the line to the sun, from 1
+     * How tightly the back light gathers round the line to the sun, from 1
      * to 16: 4 by default, a broad glow; 8 a tight one. Settable after, as
-     * `mesh.translucencyPower`.
+     * `mesh.backLightFocus`.
      */
-    translucencyPower?: number
+    backLightFocus?: number
     /**
      * `[start, end]`: dithers a face away as it turns edge on to the eye, by
      * how squarely the triangle itself meets it (0 edge on, 1 face on), whole
@@ -344,11 +344,11 @@ export interface MeshModel extends Model {
     /** How far the sun's light wraps round it, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
     wrap: number
     /** How much of the sun shows through it from behind, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
-    translucency: number
+    backLight: number
     /** The colour the sun shows through in, as `scene.mesh` took it. */
-    translucencyColor: ColorInput
-    /** How tightly the light through gathers, from 1 to 16, as `scene.mesh` took it. */
-    translucencyPower: number
+    backLightColor: ColorInput
+    /** How tightly the back light gathers, from 1 to 16, as `scene.mesh` took it. */
+    backLightFocus: number
     /** Where its faces fade as they turn edge on, `[0, 0]` for not at all. */
     edgeFade: [number, number]
     /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
@@ -1513,10 +1513,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof v !== "number" || !(v >= 0 && v <= 1)) throw new Error(`[oj] scene.mesh: ${what} is ${v}, and runs from 0 to 1`)
             if (typeof b.SetMeshSurface !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot set it (it came with runtime 1.8).`)
         }
-        for (const what of ["wrap", "translucency", "translucencyColor", "translucencyPower", "edgeFade"] as const) {
+        for (const what of ["wrap", "backLight", "backLightColor", "backLightFocus", "edgeFade"] as const) {
             if (o[what] === undefined) continue
-            if (what === "wrap" || what === "translucency") unitRange(o[what], `scene.mesh: ${what}`)
-            if (what === "translucencyPower") powerRange(o[what], "scene.mesh: translucencyPower")
+            if (what === "wrap" || what === "backLight") unitRange(o[what], `scene.mesh: ${what}`)
+            if (what === "backLightFocus") powerRange(o[what], "scene.mesh: backLightFocus")
             if (what === "edgeFade") edgeRange(o[what], "scene.mesh: edgeFade")
             if (o.splat !== undefined) throw new Error(`[oj] scene.mesh: a splat is lit by its vertex normals, and takes no ${what}`)
             const method = what === "edgeFade" ? "SetMeshEdgeFade" : "SetMeshLeafLight"
@@ -1556,11 +1556,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
         let colorGiven: ColorInput = o.color ?? "#ffffff"
         const surfaceGiven = o.roughness !== undefined || o.metallic !== undefined
-        // The leaf light as the bridge takes it: wrap, translucency, its power, and its colour's sRGB.
-        let leaf = { wrap: o.wrap ?? 0, translucency: o.translucency ?? 0, power: o.translucencyPower ?? 4, color: o.translucencyColor ?? ("#ffffff" as ColorInput) }
-        const leafArgs = (l: typeof leaf, what: string) => [l.wrap, l.translucency, l.power, ...toRGBA(l.color, `[oj] ${what}`).slice(0, 3)] as [number, number, number, number, number, number]
-        leafArgs(leaf, "scene.mesh translucencyColor")
-        const leafGiven = leaf.wrap > 0 || leaf.translucency > 0
+        // The leaf light as the bridge takes it: wrap, backLight, its focus, and its colour's sRGB.
+        let leaf = { wrap: o.wrap ?? 0, backLight: o.backLight ?? 0, focus: o.backLightFocus ?? 4, color: o.backLightColor ?? ("#ffffff" as ColorInput) }
+        const leafArgs = (l: typeof leaf, what: string) => [l.wrap, l.backLight, l.focus, ...toRGBA(l.color, `[oj] ${what}`).slice(0, 3)] as [number, number, number, number, number, number]
+        leafArgs(leaf, "scene.mesh backLightColor")
+        const leafGiven = leaf.wrap > 0 || leaf.backLight > 0
         let edgeFade: [number, number] = o.edgeFade === undefined ? [0, 0] : [o.edgeFade[0], o.edgeFade[1]]
         const edgeGiven = edgeFade[1] > 0
         const madeMetallic = metallic
@@ -1626,7 +1626,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [sways, () => swayLayers ? b.SetMeshSwayLayers(id) : b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
                 [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
-                [leafGiven, () => b.SetMeshLeafLight(id, ...leafArgs(leaf, "scene.mesh translucencyColor")), o.wrap !== undefined ? "wrap" : "translucency"],
+                [leafGiven, () => b.SetMeshLeafLight(id, ...leafArgs(leaf, "scene.mesh backLightColor")), o.wrap !== undefined ? "wrap" : "backLight"],
                 [edgeGiven, () => b.SetMeshEdgeFade(id, ...edgeFade), "edgeFade"],
                 [normalMap !== null, () => b.SetMeshNormalMap(id, ...normalMap!), "normalMap"],
             ]
@@ -1663,8 +1663,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         // The leaf light after creation, as the surface: checked, sent, and kept only once the bridge took it.
         const leafLight = <K extends keyof typeof leaf>(what: K, name: string, v: (typeof leaf)[K]) => {
             live()
-            if (name === "wrap" || name === "translucency") unitRange(v, `mesh.${name}`)
-            if (name === "translucencyPower") powerRange(v, "mesh.translucencyPower")
+            if (name === "wrap" || name === "backLight") unitRange(v, `mesh.${name}`)
+            if (name === "backLightFocus") powerRange(v, "mesh.backLightFocus")
             if (look.splat !== null) throw new Error(`[oj] mesh.${name}: a splat is lit by its vertex normals, and takes no ${name}`)
             if (typeof b.SetMeshLeafLight !== "function") throw new Error(`[oj] mesh.${name} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
             const next = { ...leaf, [what]: v }
@@ -1691,12 +1691,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set metallic(v: number) { surface("metallic", v) },
             get wrap() { return leaf.wrap },
             set wrap(v: number) { leafLight("wrap", "wrap", v) },
-            get translucency() { return leaf.translucency },
-            set translucency(v: number) { leafLight("translucency", "translucency", v) },
-            get translucencyColor() { return leaf.color },
-            set translucencyColor(c: ColorInput) { leafLight("color", "translucencyColor", c) },
-            get translucencyPower() { return leaf.power },
-            set translucencyPower(v: number) { leafLight("power", "translucencyPower", v) },
+            get backLight() { return leaf.backLight },
+            set backLight(v: number) { leafLight("backLight", "backLight", v) },
+            get backLightColor() { return leaf.color },
+            set backLightColor(c: ColorInput) { leafLight("color", "backLightColor", c) },
+            get backLightFocus() { return leaf.focus },
+            set backLightFocus(v: number) { leafLight("focus", "backLightFocus", v) },
             get edgeFade() { return [edgeFade[0], edgeFade[1]] as [number, number] },
             set edgeFade(v: [number, number]) {
                 live()
