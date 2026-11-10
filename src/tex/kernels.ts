@@ -909,6 +909,41 @@ export function slopeBlur(s: Scope, src: TexRead, slope: TexRead, intensity: num
     return mode === "blur" ? acc.div(n) : acc
 }
 
+/**
+ * Magerie's Transform (MetalRenderer.mm transformTexture): each output pixel
+ * mapped back about the centre, flipped, turned by -rotation in aspect-
+ * corrected space, divided by scale and moved by -translate, then read
+ * bilinear with the Metal sampler's clamp-to-zero, so outside is transparent.
+ * `rotation` is in radians.
+ */
+export function transform(s: Scope, src: TexRead, translate: readonly [number, number], scale: number, rotation: number, flip: readonly [boolean, boolean]): Vec4 {
+    const size: S = s.size
+    let uv: S = s.pixel.add(0.5).div(size).sub(0.5)
+    if (flip[0]) uv = sl.vec2(uv.x.neg(), uv.y)
+    if (flip[1]) uv = sl.vec2(uv.x, uv.y.neg())
+    const aspect: S = size.x.div(size.y)
+    const u: S = uv.x.mul(aspect), v: S = uv.y
+    const c: S = sl.cos(s.f(-rotation)), sn: S = sl.sin(s.f(-rotation))
+    const inv: S = s.f(1 / scale)
+    const rx: S = u.mul(c).sub(v.mul(sn)).mul(inv).div(aspect).sub(s.f(translate[0]).div(size.x)).add(0.5)
+    const ry: S = u.mul(sn).add(v.mul(c)).mul(inv).sub(s.f(translate[1]).div(size.y)).add(0.5)
+    // Bilinear by hand: a texel outside reads as zero, as ClampToZero does.
+    const p: S = sl.vec2(rx, ry).mul(src.size).sub(0.5)
+    const i: S = p.floor()
+    const f: S = p.sub(i)
+    const tap = (dx: number, dy: number): S => {
+        const q: S = i.add(sl.vec2(dx, dy))
+        const inside: S = q.x.ge(0).and(q.y.ge(0)).and(q.x.lt(src.size.x)).and(q.y.lt(src.size.y))
+        const t: S = src.fetch(sl.vec2(q.x.clamp(0, src.size.x.sub(1)), q.y.clamp(0, src.size.y.sub(1))))
+        return sl.select(inside, t, sl.vec4(0, 0, 0, 0))
+    }
+    const top: S = sl.mix(tap(0, 0), tap(1, 0), f.x)
+    const bottom: S = sl.mix(tap(0, 1), tap(1, 1), f.x)
+    const out: S = sl.mix(top, bottom, f.y)
+    const within: S = rx.ge(0).and(rx.le(1)).and(ry.ge(0)).and(ry.le(1))
+    return sl.select(within, out, sl.vec4(0, 0, 0, 0)) as Vec4
+}
+
 export type ScatterOutput = "image" | "id" | "random"
 
 /**

@@ -689,6 +689,26 @@ export const SPECS = {
                 [port, makeNode("tileGrid", "generator", [], float ? { values, output, float } : { values, output }, w, h, true)]))
         },
     },
+    transform: {
+        images: 1,
+        positional: [],
+        defaults: { translateX: 0, translateY: 0, scale: 1, rotation: 0, flipX: false, flipY: false },
+        // Magerie's Transform: same size, never tiles, transparent where nothing maps.
+        make(p, [a]) {
+            const flip = (key: string) => {
+                if (typeof p[key] !== "boolean") throw new Error(`[oj] tex: transform ${key} is ${String(p[key])}, true or false`)
+                return p[key] as boolean
+            }
+            return area("transform", {
+                translate: [num(p.translateX, "transform translateX"), num(p.translateY, "transform translateY")],
+                // As the node draws (MetalRenderer ApplyTransform): scale kept from 0.01 up, any
+                // rotation. Its sliders stop at 4 and 180, but a board holds 215 and draws 215.
+                scale: Math.max(0.01, num(p.scale, "transform scale")),
+                rotation: num(p.rotation, "transform rotation") * Math.PI / 180,
+                flip: [flip("flipX"), flip("flipY")],
+            }, [a!], false)
+        },
+    },
     pixelate: {
         images: 1,
         positional: ["blockSize"],
@@ -801,6 +821,7 @@ export const KERNELS: Record<string, Kernel> = {
     scatter: (s, n, i) => k.scatter(s, i.texture(0, false), i.texture(1, false), n.params.count as number, n.params.ranges as number[], n.params.bg as [number, number, number, number], n.params.wrap as boolean, n.params.output as k.ScatterOutput),
     sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
     pixelate: (s, n, i) => k.pixelate(s, i.texture(0, false), n.params.blockSize as number),
+    transform: (s, n, i) => k.transform(s, i.texture(0, false), n.params.translate as [number, number], n.params.scale as number, n.params.rotation as number, n.params.flip as [boolean, boolean]),
     tileGrid: (s, n) => k.tileGrid(s, n.params.values as k.TileGridValues, n.params.output as k.TileGridOutput),
     channelShuffle: (_s, n, i) => k.channelShuffle(i.value(0), n.params.out as k.ChannelSource[]),
     threshold: (s, n, i) => k.threshold(s, i.value(0), n.params.threshold as number, n.params.smoothness as number),

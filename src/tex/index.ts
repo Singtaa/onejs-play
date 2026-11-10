@@ -193,6 +193,19 @@ export interface TileGridOptions extends SizeOptions {
     bitDepth?: "8" | "32"
 }
 
+export interface TransformOptions {
+    /** Pixels right. Default 0. */
+    translateX?: number
+    /** Pixels down. Default 0. */
+    translateY?: number
+    /** About the centre: Magerie's slider runs 0.1 to 4. Default 1. */
+    scale?: number
+    /** Degrees about the centre, any angle (Magerie's slider runs -180 to 180). Default 0. */
+    rotation?: number
+    flipX?: boolean
+    flipY?: boolean
+}
+
 export interface ScatterOptions extends SizeOptions {
     /** "random" places `count` copies anywhere; "grid" one a cell of `gridX` by `gridY`. Default "random". */
     layout?: "random" | "grid"
@@ -386,6 +399,12 @@ interface ImageNodes {
     alpha(color: TexImage, height: TexImage): TexImage
     /** Big square pixels, each block the input read once at its centre: `pixelate(img, 8)`. */
     pixelate(img: TexImage, blockSize?: number | { blockSize?: number }): TexImage
+    /**
+     * Moves, turns, scales or flips a picture within its own frame, as Magerie's
+     * Transform: `transform(leaf, { translateX: -40, rotation: 92 })`. Same size,
+     * transparent where nothing lands, and it never tiles.
+     */
+    transform(img: TexImage, opts?: TransformOptions): TexImage
     /** Rearranges the stored channels: `channelShuffle(leaf, "aaa1")` is its alpha as an opaque grey. */
     channelShuffle(img: TexImage, swizzle?: string | ChannelShuffleOptions, opts?: ChannelShuffleOptions): TexImage
     /** White where the luma reaches `threshold`, black below, the alpha kept. */
