@@ -1053,6 +1053,25 @@ with `--gpu`. It names runtime 1.8, so the sweep waits for that line;
 down sky, a scene that changed after reflections went off, and a black
 screen.
 
+**A crowd nobody sees costs next to nothing.** `cli/fixtures/crowd` spawns
+skinned people (`person.glb`, written by `scripts/make-person.mjs`: 1,600
+triangles, 20 joints, ten clips, a 256 px picture, the size of a low-poly
+villager) before the camera or behind it, as its playtest asks through
+`globalThis.crowd`. The playtest times 400 of them behind the camera by what
+Unity's main thread spends in a frame, which a screen's refresh does not
+round up: an empty scene, the crowd, and the crowd with every mesh made to
+update off screen again, as each did before runtime 1.9 (glTFast's default,
+which OneJS's `ModelBridge.Skin.cs` now turns off). The crowd must cost at
+most a quarter of what it costs made to update, and making it update must
+cost a millisecond or the run could not tell. On runtime 1.8.0 the share read
+1.06 and the run exited 1; on a build with the fix, 0.04 on the GPU and 0.01
+in software. It names runtime 1.9, so the sweep waits for that line;
+`crowd.test.ts` feeds the check a pass, a crowd that costs what an updating
+one does, a cost half way back, a run that cannot tell, a main thread that
+was not read, and a crowd that was not the one asked for. The cart also
+answers `frames()` for a bench: `set({ count, seen, clips, move, shadows })`
+puts `seen` of them in view and the rest behind the camera.
+
 **A see-through sheet's first frame draws what its later ones do.**
 `cli/fixtures/first-frame` makes a sheet softened by the depth behind it,
 scattered over a black floor that is deep under one half and a quarter metre

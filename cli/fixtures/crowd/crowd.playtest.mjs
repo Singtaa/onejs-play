@@ -1,0 +1,45 @@
+// What a crowd nobody sees costs, on a real container: 400 skinned people behind the camera,
+// each looping a clip, timed by what Unity's main thread spends in a frame (which a screen's
+// refresh does not round up, and which drawing nothing keeps the graphics card out of).
+//
+// Three readings in one run: an empty scene, the unseen crowd, and the same crowd with every mesh
+// made to update off screen again, which is what each did before runtime 1.9 (glTFast's default:
+// deformed on the CPU and uploaded every frame). The crowd must cost at most a quarter of what it
+// costs made to update, over the empty scene. The third reading is also the proof that this run
+// could tell: if making them update costs under a millisecond, nothing was compared. Throws, so
+// the run exits non-zero, on either, or on a reading that was not taken.
+export const PEOPLE = 400
+export const SHARE = 0.25
+export const TELLS_MS = 1
+
+const SETUP = { seen: 0, clips: "play", move: false, shadows: false }
+
+async function read(game, what, warmMs, ms) {
+    await game.wait(warmMs)
+    await game.eval("JSON.stringify(globalThis.crowd.frames())")
+    await game.wait(ms)
+    const f = JSON.parse(await game.eval("JSON.stringify(globalThis.crowd.frames())"))
+    if (!(f.mainCount >= 10) || !(f.main >= 0)) throw new Error(`crowd: ${what} read ${f.mainCount} frames of main thread time (${f.main}): nothing was measured`)
+    console.log(`MAIN ${what}: ${f.main.toFixed(3)} ms over ${f.mainCount} frames (frame to frame ${f.mean.toFixed(2)} ms)`)
+    return f.main
+}
+
+export default async function (game) {
+    await game.until(async () => (await game.eval("typeof globalThis.crowd")) === "object", { what: "the crowd cart", timeoutMs: 30000 })
+    const set = async (count) => {
+        const made = Number(await game.eval(`globalThis.crowd.set(${JSON.stringify({ ...SETUP, count })})`))
+        if (made !== count) throw new Error(`crowd: asked for ${count} people and ${made} were made`)
+    }
+    await set(0)
+    const empty = await read(game, "empty", 500, 1500)
+    await set(PEOPLE)
+    const unseen = await read(game, `${PEOPLE} unseen`, 1500, 2000)
+    const changed = Number(await game.eval("globalThis.crowd.updateOffscreen()"))
+    if (changed !== PEOPLE) throw new Error(`crowd: ${changed} of ${PEOPLE} meshes were made to update off screen: the comparison is not the one meant`)
+    const updating = await read(game, `${PEOPLE} unseen, made to update`, 1500, 2000)
+
+    const cost = unseen - empty, most = updating - empty
+    console.log(`COST unseen ${cost.toFixed(3)} ms, made to update ${most.toFixed(3)} ms, share ${(cost / most).toFixed(3)}`)
+    if (!(most >= TELLS_MS)) throw new Error(`crowd: making ${PEOPLE} meshes update off screen cost ${most.toFixed(3)} ms a frame, under ${TELLS_MS}: this run cannot tell an unseen crowd that is skinned from one that is not`)
+    if (!(cost <= most * SHARE)) throw new Error(`crowd: ${PEOPLE} unseen people cost ${cost.toFixed(3)} ms a frame, ${(cost / most * 100).toFixed(0)}% of the ${most.toFixed(3)} ms they cost when made to update off screen (at most ${SHARE * 100}%): an actor nobody sees is being skinned or sampled again`)
+}

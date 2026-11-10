@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.9",
+    "name": "Crowd",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}
