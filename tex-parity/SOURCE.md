@@ -19,3 +19,18 @@ byte for byte as vendored here; set E's float cases are held to 1/8192,
 which an 8-bit or half-float picture fails. An output whose
 `format` is `rgba32f` is little-endian float32 RGBA, `width * height * 16`
 bytes, read back in float, and its tolerance is in stored value, not bytes.
+
+`goldens/buildings/` is eleven of Magerie's building textures as its OJPlay
+exporter writes them: each board's `.ts` and the PNGs Magerie exported from
+the same board, from magerie-one `44d69541b` (handed over on the
+`primoeden-buildings-tex-check` branch at `69f20abf3`; its
+`MAGERIE-README.md` is theirs). `node run.mjs --buildings` draws each file
+through tex and compares every export with its PNG, held to the Look tier
+`buildings.json` states with its reason. The `.ts` files are Magerie's and
+are not edited here: a difference is fixed in tex or reported to Magerie.
+
+A board's per-node dump (`scripts/ojplay-dumps.sh` in magerie-one: a
+`manifest.json` and each node's stored bytes, float32 where the node is
+32-bit) is what `--chain <folder>` reads, to find the node where a texture
+first leaves Magerie's. Dumps are too large to vendor; shingles' and
+thatch's are on that branch at `3e32efec3`.
