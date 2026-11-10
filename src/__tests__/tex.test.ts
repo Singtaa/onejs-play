@@ -502,6 +502,8 @@ describe("tex sdfShape's signed distance", () => {
         expect(shape.image).toBe(shape)
         expect(shape.sdf).toBeInstanceOf(TexImage)
         expect(shape.sdf.node.params).toMatchObject({ output: "distance", half: true })
+        expect(Object.keys(shape)).not.toContain("sdf")
+        expect(Object.keys(shape)).not.toContain("image")
         expect(shape.node.params.output).toBeUndefined()
         // Code written against the image runs as before, the Distance method included.
         expect(blend(shape, shape).width).toBe(64)

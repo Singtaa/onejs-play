@@ -552,7 +552,8 @@ function call(name: SpecName, canvas: Canvas, args: readonly unknown[]): TexImag
         const outputs = made as Readonly<Record<string, Node>>
         const image = new TexImage(outputs.image!)
         for (const [port, n] of Object.entries(outputs)) {
-            Object.defineProperty(image, port, { value: port === "image" ? image : new TexImage(n), enumerable: true })
+            // Not enumerable, as in Magerie's script API: a copy or a JSON of the image stays plain.
+            Object.defineProperty(image, port, { value: port === "image" ? image : new TexImage(n), enumerable: false })
         }
         return image
     }
