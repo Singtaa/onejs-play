@@ -1,7 +1,7 @@
 // Written by Magerie from stone-face.mage. Edits here are replaced on the next export.
 import { tex } from "oj"
 
-const { blend, blur, channelMath, curvature, gradient, gradientMap, hslAdjust, levels, mask, noise, normalMap, warp } = tex.canvas(128)
+const { blend, blur, channelMath, curvature, gradientMap, hslAdjust, levels, mask, noise, normalMap, warp } = tex.canvas(128)
 
 const hewnLumps = noise("perlin", { scale: 2, tile: true, seed: 621, bitDepth: "32" })
 const chiselA = noise("perlin", { scale: 3, fractal: "ridged", tile: true, seed: 622, octaves: 1, bitDepth: "32", scaleY: 22 })
@@ -50,10 +50,11 @@ const edgeLight = gradientMap(edgeMask, { colors: [{ position: 0, color: "#00000
 const wornEdges = blend(paintedCavity, edgeLight, "screen", { opacity: 0.15 })
 const saturate = hslAdjust(wornEdges)
 const normalOpenGL = normalMap(heightSmoothed, { strength: 1.8, flipY: true, smoothRadius: 1, edges: "wrap" })
-const lowOnTheStone = gradient({ colors: [{ position: 0, color: "#737373" }, { position: 0.45, color: "#000000" }, { position: 0.85, color: "#ffffff" }, { position: 1, color: "#737373" }], angle: 90 })
-const lichenNoise = noise("perlin", { scale: 4, tile: true, seed: 632, persistence: 0.6, bitDepth: "32" })
-const lichenLow = blend(lichenNoise, lowOnTheStone, "multiply")
-const lichenWhere = levels(lichenLow, { inputBlack: 0.47, inputWhite: 0.52 })
+const lichenGathers = noise("perlin", { scale: 2, tile: true, seed: 634, octaves: 2, bitDepth: "32" })
+const lichenPatches = levels(lichenGathers, { inputBlack: 0.4, inputWhite: 0.65 })
+const lichenNoise = noise("perlin", { scale: 7, tile: true, seed: 632, persistence: 0.6, bitDepth: "32" })
+const lichenLow = blend(lichenNoise, lichenPatches, "multiply")
+const lichenWhere = levels(lichenLow, { inputBlack: 0.42, inputWhite: 0.47 })
 const lichenTint = noise("perlin", { scale: 12, tile: true, seed: 633, octaves: 2 })
 const lichenColour = gradientMap(lichenTint, { colors: [{ position: 0, color: "#7c8060ff" }, { position: 0.6, color: "#94946eff" }, { position: 1, color: "#aaa688ff" }] })
 const lichenOnStone = blend(lichenColour, saturate, "softLight", { opacity: 0.5 })

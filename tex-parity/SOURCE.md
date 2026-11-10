@@ -33,4 +33,14 @@ A board's per-node dump (`scripts/ojplay-dumps.sh` in magerie-one: a
 `manifest.json` and each node's stored bytes, float32 where the node is
 32-bit) is what `--chain <folder>` reads, to find the node where a texture
 first leaves Magerie's. Dumps are too large to vendor; shingles' and
-thatch's are on that branch at `3e32efec3`.
+thatch's are on that branch at `3e32efec3`. `stone-face` was refreshed from
+`primoeden-leaves-tex-check` `298f0e803`: v1.1's board with the lichen
+drawn from a tiling noise, the same Magerie commit.
+
+`goldens/leaves/` is four of Magerie's PrimoEden leaf atlas cells, one board
+a cell, from magerie-one `44d69541b` (handed over on
+`primoeden-leaves-tex-check` at `298f0e803`; `MAGERIE-README.md` is
+theirs, and says why the delivered atlas boards do not emit whole yet).
+`node run.mjs --set leaves` compares them as `--buildings` does, and also
+counts the pixels whose alpha falls on the other side of 0.5 from Magerie's,
+since a leaf is drawn cut out there; `leaves.json` has the limit and why.

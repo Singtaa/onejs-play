@@ -1,0 +1,12 @@
+{
+    "magerieCommit": "44d69541b",
+    "handedOver": "magerie-one primoeden-leaves-tex-check 298f0e803",
+    "look": { "mean": 0.25, "over2": 0.01, "cutout": 0.0001 },
+    "lookWhy": "As buildings.json, plus the cutout: a leaf is drawn cut out at alpha 0.5, so a pixel on the other side of 0.5 from Magerie's moves the leaf's edge whatever the mean says. At most 0.01% of pixels (105 at 1024) may cross it. Each board thresholds its alpha with Levels from 0.499 to 0.501, a gain of 500, so a texel whose alpha lands within 0.001 of 0.5 flips on float maths alone; those are the max-255 bytes. Measured on 9 Nov 2026: 4 to 16 pixels a board, mean 0.01. Clamping Transform's rotation to Magerie's slider, a bug found on the way, moved 3 to 9% of them.",
+    "textures": [
+        { "file": "oak-leaves-spray", "exports": { "oakLeavesSprayPng": "oak-leaves-spray.png" } },
+        { "file": "oak-leaves-plate", "exports": { "oakLeavesPlatePng": "oak-leaves-plate.png" } },
+        { "file": "birch-leaves-spray", "exports": { "birchLeavesSprayPng": "birch-leaves-spray.png" } },
+        { "file": "birch-leaves-curtain", "exports": { "birchLeavesCurtainPng": "birch-leaves-curtain.png" } }
+    ]
+}
