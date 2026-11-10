@@ -1021,6 +1021,19 @@ with `--gpu`. It names runtime 1.8, so the sweep waits for that line;
 down sky, a scene that changed after reflections went off, and a black
 screen.
 
+**A see-through sheet's first frame draws what its later ones do.**
+`cli/fixtures/first-frame` makes a sheet softened by the depth behind it,
+scattered over a black floor that is deep under one half and a quarter metre
+down under the other, only when its playtest asks, so the first frame to draw
+it is the first to use its pipeline. The playtest reads the canvas in the page
+right after each of the first six frames is drawn (a screenshot would show
+whichever frame the compositor had) and fails a frame more than 3 levels from
+the last, a shallow half not darker than the deep, a black screen, and no
+frames read. It is the Play container's half of a Direct3D 12 editor quirk
+(the first render after a fresh compile drew this sheet over white, OneJS
+`MeshDepthFadeEditModeTests`); `first-frame.test.ts` feeds the check each
+failure.
+
 **A triplanar layer keeps its size on a steep face.** `cli/fixtures/triplanar`
 draws two 70 degree faces 48 m high in red and green bands, one splat read at
 its uvs (laid flat, 4 m a repeat) and one whose layer is `triplanar: 4`, and

@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.8",
+    "name": "First Frame",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}
