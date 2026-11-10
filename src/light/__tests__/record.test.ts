@@ -49,14 +49,26 @@ describe("a light record", () => {
     })
 
     it("compares a scatter's thousands of rows in linear time, since every load of a named file asks", () => {
-        // 20,000 copies: the pairwise comparison this replaced took 19 s here for the two, so the bound fails it by far.
-        const copies = Array.from({ length: 20000 }, (_, i) => actor("grass.glb", i % 200, { position: [i % 200, 0, Math.floor(i / 200)] }))
+        // Counted, not timed: a clock bound failed whenever the machine was loaded. Every read of
+        // an actor row goes through the proxy, so a pairwise compare (what this replaced, 19 s for
+        // 20,000) reads rows times rows, and a keyed one a few passes' worth.
+        let reads = 0
+        const counted = (r: ReturnType<typeof recordOf>) => ({ ...r, actors: new Proxy(r.actors, {
+            get(target, key, receiver) {
+                if (typeof key === "string" && key !== "" && !Number.isNaN(Number(key))) reads++
+                return Reflect.get(target, key, receiver)
+            },
+        }) })
+        const rows = 2000
+        const copies = Array.from({ length: rows }, (_, i) => actor("grass.glb", i % 200, { position: [i % 200, 0, Math.floor(i / 200)] }))
         const saved = recordOf(scene(copies))
         const moved = recordOf(scene([...copies.slice(1), actor("grass.glb", 0, { position: [0, 0, 999] })]))
-        const began = performance.now()
-        expect(difference(saved, recordOf(scene(copies)))).toBe(null)
-        expect(difference(saved, moved)).toBe("grass.glb moved from [0, 0, 0] to [0, 0, 999]")
-        expect(performance.now() - began).toBeLessThan(1000)
+        expect(difference(counted(saved), counted(recordOf(scene(copies))))).toBe(null)
+        expect(difference(counted(saved), counted(moved))).toBe("grass.glb moved from [0, 0, 0] to [0, 0, 999]")
+        // Two comparisons of two records each: keyed reads 18,000 here (4.5 a row a record), the
+        // pairwise compare put back 8,025,989, so 8 a row a record parts the two by far either side.
+        expect(reads).toBeLessThanOrEqual(2 * 2 * rows * 8)
+        expect(reads).toBeGreaterThan(rows)
     })
 
     it("fingerprints every input, so a file that differs only in the sun, the ambient or an option does not match", () => {
