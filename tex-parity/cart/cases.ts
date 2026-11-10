@@ -4,7 +4,7 @@
  * golden that call recorded on a Mac (`../goldens`, from the commit in
  * `../goldens/SOURCE.md`). The fixture builders are that file's, ported.
  */
-import { tex, type TexImage } from "oj"
+import { tex, type TexImage } from "./tex"
 
 type RGBA = [number, number, number, number]
 

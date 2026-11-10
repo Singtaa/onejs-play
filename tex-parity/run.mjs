@@ -22,6 +22,19 @@
 //             grain-textures.mjs's step as tex lines (cart/ground.ts) on each
 //             colour export ground.json pairs with a shipped picture, and
 //             compares with that picture, instead of the cases.
+// --buildings draws goldens/buildings: Magerie's emitted OJPlay code for a
+//             set of textures, each file unchanged, against the PNGs Magerie
+//             exported from the same boards, instead of the cases. Prints the
+//             mean and spread of the difference beside the verdict.
+// --tex-src   draws with this checkout's src/tex instead of the container's:
+//             run.mjs bundles it and the cart evaluates the bundle before any
+//             case (cart/tex.ts), so a tex edit is tried on a built container
+//             in seconds. The run fails unless the cart reports the bundle
+//             it was handed, so it cannot quietly draw the container's tex.
+//             Only tex is swapped; everything else is the container's.
+// --sabotage  with --tex-src: every pass writes fract(value + 0.37), and
+//             the run must FAIL. The override's own check: a pass means the
+//             cart drew something other than the bundle it was handed.
 // --save      a folder to write every drawing's bytes into, as <name>.bin
 // --ojplay    a folder holding a manifest.json in goldens/ojplay's format, to
 //             draw instead of goldens/ojplay: a set Magerie has not vendored
@@ -47,16 +60,16 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import zlib from "node:zlib"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { readPNG } from "./png.mjs"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const cli = path.resolve(here, "../cli")
-const { build } = await import(path.join(cli, "game.mjs"))
-const { ensureRuntime, serve, streamingFetcher, RUNTIME_FILES } = await import(path.join(cli, "local.mjs"))
-const { launch } = await import(path.join(cli, "chrome.mjs"))
-const { Game, stop } = await import(path.join(cli, "run.mjs"))
-const { siteOrigin } = await import(path.join(cli, "site.mjs"))
+const { build } = await import(pathToFileURL(path.join(cli, "game.mjs")))
+const { ensureRuntime, serve, streamingFetcher, RUNTIME_FILES } = await import(pathToFileURL(path.join(cli, "local.mjs")))
+const { launch } = await import(pathToFileURL(path.join(cli, "chrome.mjs")))
+const { Game, stop } = await import(pathToFileURL(path.join(cli, "run.mjs")))
+const { siteOrigin } = await import(pathToFileURL(path.join(cli, "site.mjs")))
 
 const arg = (name, fallback) => {
     const i = process.argv.indexOf(`--${name}`)
@@ -64,6 +77,7 @@ const arg = (name, fallback) => {
 }
 const SOFTWARE = process.argv.includes("--software")
 const NEGATIVE = process.argv.includes("--negative")
+const SABOTAGE = process.argv.includes("--sabotage")
 const ONLY = arg("only", "")
 const say = (m) => process.stderr.write(`[tex-parity] ${m}\n`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -83,6 +97,8 @@ const FLOAT_TOLERANCE = 1 / 8192
 const OJPLAY_DIR = path.resolve(arg("ojplay", path.join(here, "goldens", "ojplay")))
 const golden = (name) => base(name).startsWith("ground/")
     ? groundOut.get(base(name)).bytes
+    : base(name).startsWith("buildings/")
+    ? buildingsOut.get(base(name)).bytes
     : base(name).startsWith("chain/")
     ? fs.readFileSync(path.join(CHAIN_DIR, chainOut.get(base(name)).file))
     : base(name).startsWith("ojplay/")
@@ -162,6 +178,79 @@ function writeGround() {
 const groundOut = writeGround()
 
 /**
+ * goldens/buildings as the cart reads it: each emitted file copied into
+ * cart/buildings/ with its `import { tex } from "oj"` pointed at cart/tex.ts,
+ * the one edit, so --tex-src reaches it; and each export it names compared
+ * with the PNG Magerie wrote for it (buildings.json).
+ */
+function writeBuildings() {
+    const out = new Map()
+    const entries = []
+    const dir = path.join(here, "goldens", "buildings")
+    const genDir = path.join(root, "buildings")
+    fs.rmSync(genDir, { recursive: true, force: true })
+    if (process.argv.includes("--buildings")) {
+        fs.mkdirSync(genDir)
+        const set = JSON.parse(fs.readFileSync(path.join(dir, "buildings.json"), "utf8"))
+        for (const b of set.textures) {
+            const source = fs.readFileSync(path.join(dir, `${b.file}.ts`), "utf8")
+            const pointed = source.replace(/^import \{ tex \} from "oj"$/m, `import { tex } from "../tex"`)
+            if (pointed === source) throw new Error(`goldens/buildings/${b.file}.ts does not import tex from "oj" as Magerie writes it`)
+            fs.writeFileSync(path.join(genDir, `${b.file}.ts`), pointed)
+            const exports = []
+            for (const [name, png] of Object.entries(b.exports)) {
+                const p = readPNG(fs.readFileSync(path.join(dir, png)))
+                out.set(`buildings/${name}`, { bytes: Buffer.from(p.rgba), tolerance: set.tolerance, report: true })
+                exports.push(name)
+            }
+            entries.push({ file: b.file, exports })
+        }
+    }
+    const loads = entries.map((e) => `    { file: ${JSON.stringify(e.file)}, exports: ${JSON.stringify(e.exports)}, load: () => import("./buildings/${e.file}") },`)
+    fs.writeFileSync(path.join(root, "buildings.gen.ts"), `// Written by run.mjs from goldens/buildings/buildings.json. Do not edit.\nexport const BUILDINGS: { file: string, exports: string[], load: () => Promise<Record<string, unknown>> }[] = [\n${loads.join("\n")}\n]\n`)
+    return out
+}
+const buildingsOut = writeBuildings()
+
+/**
+ * The checkout's src/tex as one script for cart/tex.ts to evaluate, or null.
+ * Bundled with this checkout's onejs-unity/sl and onejs-react's pass.ts (tex
+ * draws through createPass, which oj does not export); react comes from the
+ * container's externals, as a cart's does. Its id is printed by the cart.
+ */
+async function writeDevTex() {
+    let code = null, id = null
+    if (process.argv.includes("--tex-src")) {
+        const esbuild = await import("esbuild")
+        const pass = path.resolve(here, "../node_modules/onejs-react/src/pass.ts")
+        const plugin = { name: "dev-tex", setup(b) {
+            b.onResolve({ filter: /^onejs-react$/ }, () => ({ path: pass }))
+            b.onResolve({ filter: /^react(\/jsx-runtime)?$/ }, (a) => ({ path: a.path, namespace: "ext" }))
+            b.onLoad({ filter: /.*/, namespace: "ext" }, (a) => ({ contents: `module.exports = __ojExternals[${JSON.stringify(a.path)}]`, loader: "js" }))
+            // --sabotage: every pass writes fract(value + 0.37), moving every byte,
+            // so a run must fail; one that passes was not drawing this bundle.
+            if (SABOTAGE) b.onLoad({ filter: /[\\/]src[\\/]tex[\\/]engine\.ts$/ }, (a) => {
+                const text = fs.readFileSync(a.path, "utf8")
+                const broken = text.replace(/const v = valueOf\(node, node\)$/m, "const v = valueOf(node, node).add(0.37).fract() as Vec4")
+                if (broken === text) throw new Error("--sabotage: engine.ts no longer has the line it breaks; update run.mjs")
+                return { contents: broken, loader: "ts" }
+            })
+        } }
+        const built = await esbuild.build({
+            entryPoints: [path.resolve(here, "../src/tex/index.ts")], bundle: true, format: "iife", globalName: "__devTex",
+            write: false, plugins: [plugin], target: "es2020", logLevel: "warning",
+        })
+        const text = built.outputFiles[0].text
+        id = `${Date.now().toString(36)}-${text.length}`
+        code = `${text}\n__devTex.DEV_ID = ${JSON.stringify(id)}\n`
+        say(`tex from src/tex, bundle ${id}`)
+    }
+    fs.writeFileSync(path.join(root, "devtex.gen.ts"), `// Written by run.mjs --tex-src from src/tex. Do not edit.\nexport const DEV_TEX: string | null = ${JSON.stringify(code)}\n`)
+    return id
+}
+const devTexId = await writeDevTex()
+
+/**
  * The manifest's cases as the cart reads them: inputs inlined as hex, each
  * output by its port. A one-output case may still say `output`; Magerie's
  * multi-output nodes say `outputs`, one entry a port.
@@ -219,9 +308,15 @@ async function draw() {
     const game = new Game({ root, browser, server, manifest, say })
     try {
         await browser.navigate(server.url)
-        await game.ready()
+        try {
+            await game.ready()
+        } catch (e) {
+            // Why it did not start is in the page's console, not in the error.
+            for (const line of game.errors) say(`console error: ${line}`)
+            throw e
+        }
         // A budget per drawing, fused and unfused: SwiftShader compiles slowly, and the set grows.
-        const budget = 60 + 4 * (CHAIN_DIR ? chainOut.size : groundOut.size || 2 * ojplay.size)
+        const budget = 60 + 4 * (CHAIN_DIR ? chainOut.size : groundOut.size || 4 * buildingsOut.size || 2 * ojplay.size)
         const until = Date.now() + budget * 1000
         while (!browser.console.some((l) => l.text === "[tex-parity] done")) {
             if (Date.now() > until) {
@@ -241,6 +336,10 @@ async function draw() {
             out.set(m[2], { size, tiles: tiles === "tiles", float, bytes: Buffer.from(float ? hex.slice(2) : hex, "hex") })
         }
         for (const e of game.errors) say(`console error: ${e}`)
+        // The cart names the tex it drew with: a --tex-src run must have drawn the bundle built for it.
+        const source = browser.console.map((l) => /^\[tex-parity\] tex (.*)$/.exec(l.text)?.[1]).find((s) => s !== undefined)
+        if (devTexId !== null && source !== `dev ${devTexId}`) throw new Error(`--tex-src built bundle ${devTexId}, and the cart drew with ${source ?? "no tex it named"}`)
+        say(`drew with the ${source === undefined ? "unnamed" : source.startsWith("dev") ? `checkout's src/tex (${source})` : "container's"} tex`)
         return out
     } finally {
         stop(game)
@@ -254,13 +353,15 @@ function compare(got, expected, tolerance, float) {
     const bytes = float ? floats(got) : got
     if (float) expected = floats(expected)
     if (bytes.length !== expected.length) return { worst: Infinity, off: bytes.length, note: `${bytes.length} values against ${expected.length}` }
-    let worst = 0, off = 0
+    let worst = 0, off = 0, sum = 0, over2 = 0
     for (let i = 0; i < bytes.length; i++) {
         const d = Math.abs(bytes[i] - expected[i])
         if (d > worst) worst = d
         if (d > tolerance) off++
+        if (d > 2) over2++
+        sum += d
     }
-    return { worst, off }
+    return { worst, off, mean: sum / bytes.length, over2: over2 / bytes.length }
 }
 
 const drawn = await draw()
@@ -289,16 +390,16 @@ for (const [i, name] of names.entries()) {
         against = [...names.slice(i + 1), ...names.slice(0, i)].find((n) => base(n) !== base(name) && golden(n).length === size && !golden(n).equals(golden(name)))
         if (against === undefined) continue
     }
-    const expect = ojplay.get(base(name)) ?? chainOut.get(base(name)) ?? groundOut.get(base(name))
+    const expect = ojplay.get(base(name)) ?? chainOut.get(base(name)) ?? groundOut.get(base(name)) ?? buildingsOut.get(base(name))
     const tolerance = expect?.tolerance ?? 1
     // A float golden is held as float, and a drawing that came back in bytes against one fails on its length.
     const r = compare(got.bytes, golden(against), tolerance, expect?.float === true && got.float === true)
     // Whether it tiles is part of the answer: it decides how every reader's edges go.
-    const tilesWrong = !NEGATIVE && expect !== undefined && expect.tiles !== got.tiles
+    const tilesWrong = !NEGATIVE && typeof expect?.tiles === "boolean" && expect.tiles !== got.tiles
     compared++
     const ok = r.worst <= tolerance && !tilesWrong
     if (!ok) failed++
-    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}${r.note ? ` (${r.note})` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
+    rows.push(`${ok ? "pass" : "FAIL"}  ${name}${NEGATIVE ? ` vs ${against}` : ""}: max ${r.worst}${tolerance !== 1 ? ` (tolerance ${tolerance})` : ""}${r.off ? `, ${r.off} bytes past it` : ""}${r.note ? ` (${r.note})` : ""}${expect?.report && r.mean !== undefined ? `; mean ${r.mean.toFixed(2)}, ${(100 * r.over2).toFixed(1)}% of bytes off by > 2, ${got.size} ${got.tiles ? "tiles" : "edges"}` : ""}${tilesWrong ? `, tiles ${got.tiles} where Magerie's ${expect.tiles}` : ""}`)
 }
 for (const r of rows) console.log(r)
 if (pending.size > 0) say(`not compared, nodes tex does not have yet: ${[...pending].map(([n, k]) => `${n} (${k})`).join(", ")}`)

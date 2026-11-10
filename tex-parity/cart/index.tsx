@@ -1,11 +1,13 @@
 // Draws every case and prints its stored bytes as hex, one console line a
 // case, for run.mjs. A case that throws prints why instead, so a broken node
 // fails the run by name rather than by a missing line.
-import { mount, View, Label, tex, TexImage } from "oj"
+import { mount, View, Label } from "oj"
+import { tex, TexImage, TEX_SOURCE } from "./tex"
 import { CASES, type Case } from "./cases"
 import { OJPLAY } from "./ojplay.gen"
 import { CHAIN } from "./chain.gen"
 import { GROUND } from "./ground.gen"
+import { BUILDINGS } from "./buildings.gen"
 import { grain } from "./ground"
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
@@ -111,9 +113,38 @@ async function ground() {
     console.log("[tex-parity] done")
 }
 
+/**
+ * Magerie's emitted code for whole textures, each file as Magerie wrote it:
+ * a file that throws (a node or an option tex lacks) fails every export it
+ * names, by the error, so a gap shows as a failure and never as a pass.
+ */
+async function buildings() {
+    for (const b of BUILDINGS) {
+        let m: Record<string, unknown>
+        try {
+            m = await b.load()
+        } catch (e) {
+            for (const name of b.exports) console.log(`[tex-parity] error buildings/${name} ${b.file}.ts: ${e instanceof Error ? e.message : String(e)}`)
+            continue
+        }
+        for (const name of b.exports) {
+            try {
+                const img = m[name]
+                if (!(img instanceof TexImage)) throw new Error(`${b.file}.ts exports no picture ${name}`)
+                console.log(`[tex-parity] case buildings/${name} ${img.width}x${img.height} ${img.tiles ? "tiles" : "edges"} ${hex(await img.pixels())}`)
+            } catch (e) {
+                console.log(`[tex-parity] error buildings/${name} ${e instanceof Error ? e.message : String(e)}`)
+            }
+        }
+    }
+    console.log("[tex-parity] done")
+}
+
 async function main() {
+    console.log(`[tex-parity] tex ${TEX_SOURCE}`)
     if (CHAIN.length > 0) return chain()
     if (GROUND.length > 0) return ground()
+    if (BUILDINGS.length > 0) return buildings()
     for (const c of [...CASES, ...OJPLAY.flatMap(fromManifest)]) {
         // Fused as a bake draws it, then every node a pass of its own: both against the one golden.
         for (const fuse of [true, false]) {

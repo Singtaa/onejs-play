@@ -1,0 +1,84 @@
+{
+    "magerieCommit": "44d69541b",
+    "handedOver": "magerie-one primoeden-buildings-tex-check 69f20abf3",
+    "tolerance": 1,
+    "textures": [
+        {
+            "file": "planks",
+            "exports": {
+                "planks": "planks.png",
+                "planksNormal": "planks-normal.png"
+            }
+        },
+        {
+            "file": "planks-6m",
+            "exports": {
+                "planks6m": "planks-6m.png",
+                "planks6mNormal": "planks-6m-normal.png"
+            }
+        },
+        {
+            "file": "timber",
+            "exports": {
+                "timber": "timber.png",
+                "timberNormal": "timber-normal.png"
+            }
+        },
+        {
+            "file": "timber-6m",
+            "exports": {
+                "timber6m": "timber-6m.png",
+                "timber6mNormal": "timber-6m-normal.png"
+            }
+        },
+        {
+            "file": "plaster",
+            "exports": {
+                "plaster": "plaster.png",
+                "plasterNormal": "plaster-normal.png"
+            }
+        },
+        {
+            "file": "plaster-daub-decal",
+            "exports": {
+                "plasterDaubDecal": "plaster-daub-decal.png",
+                "plasterDaubDecalNormal": "plaster-daub-decal-normal.png"
+            }
+        },
+        {
+            "file": "stone",
+            "exports": {
+                "stone": "stone.png",
+                "stoneNormal": "stone-normal.png"
+            }
+        },
+        {
+            "file": "stone-face",
+            "exports": {
+                "stoneFace": "stone-face.png",
+                "stoneFaceNormal": "stone-face-normal.png"
+            }
+        },
+        {
+            "file": "shingles",
+            "exports": {
+                "shingles": "shingles.png",
+                "shinglesNormal": "shingles-normal.png"
+            }
+        },
+        {
+            "file": "thatch",
+            "exports": {
+                "thatch": "thatch.png",
+                "thatchNormal": "thatch-normal.png"
+            }
+        },
+        {
+            "file": "earth",
+            "exports": {
+                "earth": "earth.png",
+                "earthNormal": "earth-normal.png"
+            }
+        }
+    ]
+}

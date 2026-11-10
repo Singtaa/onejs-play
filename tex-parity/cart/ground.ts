@@ -3,7 +3,7 @@
 // 0.9, as far from it as the picture is from its own mean, times spread, with
 // the height in alpha. The palette owns the colour, so only light and dark
 // are kept. run.mjs --ground holds it to the shipped pictures.
-import { type TexImage } from "oj"
+import { type TexImage } from "./tex"
 
 const MEAN = 0.9
 
