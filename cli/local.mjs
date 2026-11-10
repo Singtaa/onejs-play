@@ -130,6 +130,9 @@ function lightFileSaid(name) {
  * recorder, and the read is null.
  */
 const RECORD_PIPELINES = "globalThis.__ojRecordPipelines = true\n"
+// This server answers /pipelines/, so the container may ask it for the game's set.
+// It asks no host that does not say so: an older one's 404 is a console error.
+const SERVES_PIPELINES = "globalThis.__ojGameSets = true\n"
 
 function hostPage(manifest, { light = false, record = false } = {}) {
     const boot = containerBoot({
@@ -162,7 +165,7 @@ function hostPage(manifest, { light = false, record = false } = {}) {
 <body>
 <canvas id="c" tabindex="1"></canvas>
 <div id="s">loading runtime</div>
-<script>${record ? RECORD_PIPELINES : ""}${boot}
+<script>${SERVES_PIPELINES}${record ? RECORD_PIPELINES : ""}${boot}
 // What the command line calls to swap in a new build without reloading the
 // 14 MB behind it. Reports the way the boot does.
 globalThis.__ojLocal = {

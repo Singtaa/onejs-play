@@ -113,7 +113,11 @@ describe("the local server", () => {
             const page = await (await fetch(server.url)).text()
             expect(page.indexOf("__ojRecordPipelines = true")).toBeGreaterThan(-1)
             expect(page.indexOf("__ojRecordPipelines = true")).toBeLessThan(page.indexOf("PlayContainer.loader.js"))
-            expect(await (await fetch(plain.url)).text()).not.toContain("__ojRecordPipelines")
+            const plainPage = await (await fetch(plain.url)).text()
+            expect(plainPage).not.toContain("__ojRecordPipelines")
+            // Every page says this server serves sets, so the container asks it; it asks no host that does not.
+            expect(plainPage.indexOf("__ojGameSets = true")).toBeGreaterThan(-1)
+            expect(plainPage.indexOf("__ojGameSets = true")).toBeLessThan(plainPage.indexOf("PlayContainer.loader.js"))
         } finally {
             server.close()
             plain.close()
