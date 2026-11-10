@@ -3,6 +3,7 @@ import { tex, TexImage } from "../tex"
 import { plan, materialised } from "../tex/engine"
 import { KERNELS, SPECS, parseStops } from "../tex/nodes"
 import { toneTable } from "../tex/kernels"
+import { SCATTER_TEXELS, instanceColor, scatterPlacements, scatterRanges, scatterTable, scatterUnpack } from "../tex/scatter"
 import toneFixture from "./fixtures/tone-tables.json"
 
 /**
@@ -376,5 +377,61 @@ describe("tex planning", () => {
         const b = passes(noise("perlin", 2).levels(0.7))[0]!
         expect(a.program.hash).toBe(b.program.hash)
         expect(a.uniforms).not.toEqual(b.uniforms)
+    })
+})
+
+describe("tex scatter", () => {
+    // Magerie's computeScatterPlacements (scatter/core.ts at 44d69541b) for these, run beside this port: equal as float32s.
+    const base = { gridX: 8, gridY: 8, positionJitter: 0.5, opacityMax: 1 }
+    it("places copies where Magerie's core.ts places them, random and grid", () => {
+        const random = scatterPlacements({ ...base, layout: "random", count: 40, seed: 904, scaleMin: 0.4, scaleMax: 1, rotationRange: 180, opacityMin: 1 }, 256, 192)
+        expect(random).toHaveLength(40)
+        expect(random[0]).toEqual({ cx: 232.95095831155777, cy: 137.8721607774496, scale: 0.6247039510402829, rotation: 1.3112038513720299, opacity: 1, idx: 0 })
+        const grid = scatterPlacements({ ...base, layout: "grid", count: 20, seed: 7, scaleMin: 0.5, scaleMax: 1, rotationRange: 360, opacityMin: 0.5, gridX: 5, gridY: 3, positionJitter: 0.8 }, 256, 192)
+        expect(grid).toHaveLength(15)
+        expect(grid[0]).toEqual({ cx: 5.599426689147947, cy: 9.572262787818907, scale: 0.988453816389665, rotation: 4.392126893028964, opacity: 0.7607226342661306, idx: 0 })
+        // Rows from the top, each cell's copy near its centre.
+        expect(grid.map((q) => Math.floor(q.cy / 64))).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
+    })
+
+    it("packs each copy into a table the kernel reads back to within a float32's step", () => {
+        const q = scatterPlacements({ ...base, layout: "random", count: 12, seed: 306, scaleMin: 0.8, scaleMax: 1.2, rotationRange: 6, opacityMin: 1 }, 256, 256)
+        const bytes = scatterTable(q, 306, 256, 256)
+        expect(bytes).toHaveLength(12 * SCATTER_TEXELS * 4)
+        const ranges = scatterRanges(256, 256)
+        q.forEach((p, i) => {
+            const at = (k: number) => bytes.slice((i * SCATTER_TEXELS + k) * 4, (i * SCATTER_TEXELS + k) * 4 + 4)
+            const values = [p.cx, p.cy, p.scale, p.rotation, p.opacity]
+            values.forEach((v, k) => {
+                const [r, g, b] = at(k)
+                expect(Math.abs(scatterUnpack(r!, g!, b!, ranges[k]!) - v)).toBeLessThan(ranges[k]! / 16777215)
+            })
+            expect(at(5)).toEqual([...instanceColor(306, p.idx), 255])
+        })
+    })
+
+    it("returns Magerie's three pictures, sized by the canvas, tiling only when its edges wrap", () => {
+        const { sdfShape, scatter } = tex.canvas(256)
+        const knot = sdfShape("circle", { width: 32, height: 32 })
+        const wrapped = scatter(knot, { count: 12, seed: 306, edges: "wrap" })
+        for (const out of [wrapped.image, wrapped.id, wrapped.random]) expect([out.width, out.height, out.tiles]).toEqual([256, 256, true])
+        expect(scatter(knot, { count: 12 }).image.tiles).toBe(false)
+        // A grid places gridX by gridY, whatever the count says, as Magerie.
+        expect(scatter(knot, "grid", 4, { gridX: 4, gridY: 2 }).image.node.params.count).toBe(8)
+        expect(scatter(knot, 5).image.node.params.count).toBe(5)
+        // Each output reads the stamp and one table, and they share the table.
+        expect(wrapped.image.node.inputs[1]).toBe(wrapped.id.node.inputs[1])
+        expect(wrapped.image.node.inputs[1]!.height).toBe(12)
+        expect(passes(wrapped.image).at(-1)!.program.glsl).toMatch(/for|while/)
+    })
+
+    it("refuses what tex cannot draw as Magerie does, and what Magerie has not", () => {
+        const { sdfShape, scatter } = tex.canvas(64)
+        const dot = sdfShape({ width: 8, height: 8 })
+        expect(() => scatter(dot, { softnessMax: 0.3 })).toThrow(/softness reads the stamp's mip chain/)
+        expect(() => scatter(dot, { spread: 2 } as never)).toThrow(/no option "spread"/)
+        expect(() => scatter(dot, "hex" as never)).toThrow(/scatter layout is "hex"/)
+        // Magerie's sliders: a count past 4096 is 4096, a scale under 0.1 is 0.1.
+        expect(scatter(dot, { count: 9000 }).image.node.params.count).toBe(4096)
     })
 })

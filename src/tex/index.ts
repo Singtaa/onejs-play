@@ -193,6 +193,43 @@ export interface TileGridOptions extends SizeOptions {
     bitDepth?: "8" | "32"
 }
 
+export interface ScatterOptions extends SizeOptions {
+    /** "random" places `count` copies anywhere; "grid" one a cell of `gridX` by `gridY`. Default "random". */
+    layout?: "random" | "grid"
+    /** Copies, for "random", 1 to 4096. Default 20. */
+    count?: number
+    gridX?: number
+    gridY?: number
+    /** How far a grid copy strays from its cell's centre, 0 to 1 of half a cell. Default 0.5. */
+    positionJitter?: number
+    seed?: number
+    /** Each copy's size, a random share of the stamp's, 0.1 to 2. Defaults 0.5 and 1. */
+    scaleMin?: number
+    scaleMax?: number
+    /** Each copy turns by a random angle from 0 to this, in degrees. Default 360. */
+    rotationRange?: number
+    /** Defaults 0.5 and 1. */
+    opacityMin?: number
+    opacityMax?: number
+    /** Magerie blurs a copy by its stamp's mip chain, which tex does not build: anything above 0 is refused. */
+    softnessMin?: number
+    softnessMax?: number
+    /** "wrap" carries a copy across each edge to the other side, so the picture tiles. "auto" clamps, as with no mask. */
+    edges?: Edges
+    /** Behind every copy. Default "#00000000". */
+    bgColor?: string
+}
+
+/** Scatter's three pictures. */
+export interface Scatter {
+    /** The copies, straight over `bgColor`, the last on top. */
+    readonly image: TexImage
+    /** One colour a copy wherever its stamp is at least half covered: Flood Fill's IDs. */
+    readonly id: TexImage
+    /** One grey a copy on the same cover: the ID's red. */
+    readonly random: TexImage
+}
+
 export interface ChannelShuffleOptions {
     /** Each output channel's source: a stored channel, or "0" or "1". */
     outR?: ChannelSource
@@ -381,6 +418,12 @@ interface Generators {
      * per piece, `uv` each face's own 0 to 1 coordinates in red and green.
      */
     tileGrid(columns?: number | TileGridOptions, opts?: TileGridOptions): TileGrid
+    /**
+     * Copies of `stamp` across the canvas, each its own size, turn and opacity,
+     * as Magerie's Scatter node: `const { image, id } = scatter(knot, { count: 12, edges: "wrap" })`.
+     * A picture of pictures; `scene.scatter` is the other one, instanced meshes in a scene.
+     */
+    scatter(stamp: TexImage, ...args: [layout?: "random" | "grid" | number | ScatterOptions, count?: number | ScatterOptions, opts?: ScatterOptions]): Scatter
 }
 
 /** Tile Grid's three pictures. */

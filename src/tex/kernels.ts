@@ -909,6 +909,63 @@ export function slopeBlur(s: Scope, src: TexRead, slope: TexRead, intensity: num
     return mode === "blur" ? acc.div(n) : acc
 }
 
+export type ScatterOutput = "image" | "id" | "random"
+
+/**
+ * Magerie's Scatter kernel (MetalRenderer+Scatter.mm applyScatter, blend mode
+ * over, no mask, softness 0): each copy in the table's order, the last on
+ * top, read back from this pixel's centre to the stamp texel it lands on,
+ * unfiltered, and composited straight over. `table` is scatter.ts's: a row a
+ * copy, its values 24-bit fixed point over `ranges`, then its ID colour.
+ * Magerie stores the result in 8 bits whatever the stamp, so it is rounded
+ * to them here too.
+ */
+export function scatter(
+    s: Scope, stamp: TexRead, table: TexRead, count: number, ranges: readonly number[],
+    bg: readonly [number, number, number, number], wrap: boolean, output: ScatterOutput,
+): Vec4 {
+    const W: S = s.size.x, H: S = s.size.y
+    const p: S = s.pixel.add(0.5)
+    const half: S = stamp.size.mul(0.5)
+    const byte = (c: S): S => c.mul(255).add(0.5).floor()
+    const unpack = (t: S, range: number): S => byte(t.x).mul(65536).add(byte(t.y).mul(256)).add(byte(t.z)).div(16777215).mul(s.f(range))
+    const [rgb, a, id] = sl.loop(
+        [sl.vec3(bg[0], bg[1], bg[2]), s.f(bg[3]), sl.vec4(0, 0, 0, 0), 0],
+        (st: S[]) => st[3].lt(s.f(count)),
+        (st: S[]) => {
+            const [outRGB, outA, idColor, i] = st as [S, S, S, S]
+            const row = (k: number): S => table.fetch(sl.vec2(k, i))
+            const cx = unpack(row(0), ranges[0]!), cy = unpack(row(1), ranges[1]!)
+            const scale = unpack(row(2), ranges[2]!), rotation = unpack(row(3), ranges[3]!), opacity = unpack(row(4), ranges[4]!)
+            let dx: S = p.x.sub(cx), dy: S = p.y.sub(cy)
+            if (wrap) {
+                // The copy's nearest periodic image.
+                dx = dx.sub(W.mul(dx.div(W).add(0.5).floor()))
+                dy = dy.sub(H.mul(dy.div(H).add(0.5).floor()))
+            }
+            const c: S = sl.cos(rotation), sn: S = sl.sin(rotation)
+            const halfW: S = stamp.size.x.mul(scale).mul(0.5), halfH: S = stamp.size.y.mul(scale).mul(0.5)
+            const boxW: S = halfW.mul(c.abs()).add(halfH.mul(sn.abs())), boxH: S = halfW.mul(sn.abs()).add(halfH.mul(c.abs()))
+            // Back to the stamp's own texels: cos(-r) = cos(r), sin(-r) = -sin(r).
+            const sx: S = dx.mul(c).add(dy.mul(sn)).div(max(scale, 1e-6)).add(half.x).floor()
+            const sy: S = dx.mul(sn.neg()).add(dy.mul(c)).div(max(scale, 1e-6)).add(half.y).floor()
+            const lands: S = opacity.gt(0).and(scale.gt(0)).and(dx.abs().le(boxW)).and(dy.abs().le(boxH))
+                .and(sx.ge(0)).and(sx.lt(stamp.size.x)).and(sy.ge(0)).and(sy.lt(stamp.size.y))
+            const texel: S = stamp.fetch(sl.vec2(sx.clamp(0, stamp.size.x.sub(1)), sy.clamp(0, stamp.size.y.sub(1))))
+            const raw: S = sl.select(lands, texel.w, 0)
+            const srcA: S = raw.mul(opacity)
+            const newA: S = srcA.add(outA.mul(sl.float(1).sub(srcA)))
+            const over: S = srcA.gt(0).and(newA.gt(0))
+            const mixed: S = texel.xyz.mul(srcA).add(outRGB.mul(outA).mul(sl.float(1).sub(srcA))).div(max(newA, 1e-6))
+            const ident: S = sl.vec4(row(5).xyz, 1)
+            return [sl.select(over, mixed, outRGB), sl.select(over, newA, outA), sl.select(raw.ge(0.5), ident, idColor), i.add(1)]
+        },
+        4096,
+    ) as S[]
+    const picked: S = output === "image" ? sl.vec4(rgb, a) : output === "id" ? id : sl.vec4(id.x, id.x, id.x, id.w)
+    return quantise8(picked)
+}
+
 /** Magerie's Ambient Occlusion: horizon angles in N directions, rotated per pixel by interleaved gradient noise. */
 export function ambientOcclusion(s: Scope, src: TexRead, radius: number, intensity: number, samples: number): Vec4 {
     const PI = 3.14159265

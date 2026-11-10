@@ -11,6 +11,7 @@
 import { isFloat, makeNode, type Edges, type Node, type NodeKind } from "./graph"
 import type { Kernel } from "./engine"
 import * as k from "./kernels"
+import { SCATTER_TEXELS, scatterPlacements, scatterRanges, scatterTable, type ScatterPlacementParams } from "./scatter"
 import type { BlendMode, Fractal, InvertChannels, NoiseType, Stop, VoronoiMode } from "./kernels"
 
 /** Where generators take their size and tiling from when a call does not say. */
@@ -597,6 +598,45 @@ export const SPECS = {
         defaults: {},
         make(_p, [color, height]) { return pointwise("alpha", {}, [color!, height!]) },
     },
+    scatter: {
+        images: 1,
+        kind: "layout",
+        positional: ["count"],
+        defaults: {
+            layout: "random", count: 20, gridX: 8, gridY: 8, positionJitter: 0.5, seed: 42,
+            scaleMin: 0.5, scaleMax: 1, rotationRange: 360, opacityMin: 0.5, opacityMax: 1,
+            softnessMin: 0, softnessMax: 0, edges: "auto", bgColor: "#00000000", ...SIZE,
+        },
+        // Stamps copies of a picture into one, as Magerie's Scatter node; not
+        // scene.scatter, which places instanced meshes in a scene.
+        make(p, [stamp], canvas) {
+            const [w, h] = sizeOf(p, canvas)
+            // Magerie's sliders (scatter/definition.ts), which its script API clamps to.
+            const v: ScatterPlacementParams = {
+                layout: oneOf(p.layout, ["random", "grid"], "scatter layout"),
+                count: Math.min(Math.max(Math.round(num(p.count, "scatter count")), 1), 4096),
+                gridX: Math.min(Math.max(Math.round(num(p.gridX, "scatter gridX")), 1), 64),
+                gridY: Math.min(Math.max(Math.round(num(p.gridY, "scatter gridY")), 1), 64),
+                positionJitter: num(p.positionJitter, "scatter positionJitter", 0, 1),
+                seed: Math.round(num(p.seed, "scatter seed", 0, 99999)),
+                scaleMin: num(p.scaleMin, "scatter scaleMin", 0.1, 2), scaleMax: num(p.scaleMax, "scatter scaleMax", 0.1, 2),
+                rotationRange: num(p.rotationRange, "scatter rotationRange", 0, 360),
+                opacityMin: num(p.opacityMin, "scatter opacityMin", 0, 1), opacityMax: num(p.opacityMax, "scatter opacityMax", 0, 1),
+            }
+            if (num(p.softnessMin, "scatter softnessMin", 0, 1) > 0 || num(p.softnessMax, "scatter softnessMax", 0, 1) > 0) {
+                throw new Error("[oj] tex scatter: softness reads the stamp's mip chain, which tex does not build yet; leave softnessMin and softnessMax at 0")
+            }
+            // Auto wraps when a Mask tiles, and the script API takes no Mask, so Auto clamps.
+            const edges = oneOf(p.edges, ["auto", "clamp", "wrap"], "scatter edges")
+            const wrap = edges === "wrap"
+            const bg = hexRGBA(String(p.bgColor), "scatter bgColor")
+            const placements = scatterPlacements(v, w, h)
+            const tableNode = table(scatterTable(placements, v.seed, w, h), SCATTER_TEXELS, placements.length)
+            const shared = { count: placements.length, ranges: scatterRanges(w, h), bg, wrap }
+            return Object.fromEntries((["image", "id", "random"] as const).map((output) =>
+                [output, makeNode("scatter", "area", [stamp!, tableNode], { ...shared, output }, w, h, wrap)]))
+        },
+    },
     sdfShape: {
         images: 0,
         kind: "shape",
@@ -758,6 +798,7 @@ export const KERNELS: Record<string, Kernel> = {
     warp: (s, n, i) => k.warp(s, i.texture(0, n.params.wrap as boolean), i.texture(1, n.params.wrap as boolean), n.params.strength as number),
     tile: (s, n, i) => k.tile(s, i.texture(0, false), n.params as unknown as k.TileValues),
     alpha: (_s, _n, i) => k.alphaPack(i.value(0), i.value(1)),
+    scatter: (s, n, i) => k.scatter(s, i.texture(0, false), i.texture(1, false), n.params.count as number, n.params.ranges as number[], n.params.bg as [number, number, number, number], n.params.wrap as boolean, n.params.output as k.ScatterOutput),
     sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues),
     pixelate: (s, n, i) => k.pixelate(s, i.texture(0, false), n.params.blockSize as number),
     tileGrid: (s, n) => k.tileGrid(s, n.params.values as k.TileGridValues, n.params.output as k.TileGridOutput),
