@@ -169,6 +169,24 @@ export interface MeshModelOptions extends MeshData {
      */
     twoSided?: boolean
     /**
+     * Draws the mesh in its colour, texture and vertex colours alone, with no
+     * sun, ambient, shadow or point light on it, as a .glb file's unlit
+     * material draws: a glow, a sign, a spell. Fog still falls on it. From
+     * runtime 1.10.
+     */
+    unlit?: boolean
+    /**
+     * How the mesh's colour meets what is behind it: `"alpha"`, the default,
+     * blends by its alpha where that is below 1 and draws it opaque where it
+     * is 1; `"add"` adds it, as light is, so it brightens what is behind and
+     * never darkens it: sparks, beams, the glow round a spell. An added mesh
+     * writes no depth, casts no shadow and is left out of `scene.bake`; its
+     * alpha dims it, and fog fades it out rather than toward the fog's colour.
+     * Usually with `unlit`. Not with a cutout, a splat or depthOnly. From
+     * runtime 1.10.
+     */
+    blend?: "alpha" | "add"
+    /**
      * How far each vertex sways in the scene's wind, one a vertex, in the
      * model's own units at a wind strength of 1: 0 at a trunk's foot, about
      * 0.3 at a crown's rim. Moved on the GPU, so a wood of scattered copies
@@ -234,8 +252,8 @@ export interface MeshModelOptions extends MeshData {
      * Metres over which a see-through mesh fades out where the world behind it
      * comes near: a lake's shore fades per pixel instead of ending on the
      * triangle where the water meets the beach, and mist thins where it lies
-     * on a field. Only on a mesh whose `color` has an alpha below 1, and not
-     * with a cutout or depthOnly. URP only.
+     * on a field. Only on a mesh whose `color` has an alpha below 1 or whose
+     * `blend` is `"add"`, and not with a cutout or depthOnly. URP only.
      */
     soften?: number
     /**
@@ -337,8 +355,8 @@ export interface MeshModel extends Model {
     /**
      * Its colour, as given at creation until set: every actor and scattered
      * copy of it changes at once, for nothing a frame. An alpha that crosses 1
-     * moves it between opaque and see-through; a cutout or depthOnly mesh
-     * draws as it did. A baked light keeps the colour it was baked with.
+     * moves it between opaque and see-through; a cutout, depthOnly or added
+     * mesh draws as it did. A baked light keeps the colour it was baked with.
      */
     color: ColorInput
     /** Its roughness, from 0 to 1, as `scene.mesh` took it. Every copy changes at once. */
@@ -1442,10 +1460,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     // A fade reports each value it reaches through `at`, so an interrupted one turns back
     // from where the actor is rather than from where it was going.
     const fades = new Map<number, { from: number, to: number, t: number, seconds: number, at: (v: number) => void, done: () => void }>()
-    // What scene.bake bakes into: actors spawned static, every live scatter, and not what is drawn as depth alone.
+    // What scene.bake bakes into: actors spawned static, every live scatter, and not what is
+    // drawn as depth alone or added to what is behind it, which neither blocks light nor takes it.
     const statics = new Set<number>()
     const scatters = new Map<number, { model: Model, data: Float32Array, stride: 5 | 10 }>()
-    const depthOnly = new WeakSet<Model>()
+    const unbaked = new WeakSet<Model>()
 
     // Every colour is parsed before anything is built, so a typo fails without a half-made scene.
     let backgroundColor = options.background ?? d.background
@@ -1810,6 +1829,19 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const method = what === "edgeFade" ? "SetMeshEdgeFade" : "SetMeshLeafLight"
             if (typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
         }
+        if (o.unlit !== undefined && typeof o.unlit !== "boolean") throw new Error(`[oj] scene.mesh: unlit is ${o.unlit}, and is true or false`)
+        if (o.blend !== undefined && o.blend !== "alpha" && o.blend !== "add") throw new Error(`[oj] scene.mesh: blend is ${JSON.stringify(o.blend)}, and is "alpha" or "add"`)
+        const unlit = o.unlit === true, additive = o.blend === "add"
+        if (additive) {
+            const why = "[oj] scene.mesh: blend \"add\" adds the mesh's colour to what is behind it, and"
+            if (draw.depthOnly === true) throw new Error(`${why} a depthOnly mesh draws no colour`)
+            if (o.cutout !== undefined) throw new Error(`${why} a cutout draws it opaque`)
+            if (o.splat !== undefined) throw new Error(`${why} a splat is ground, drawn opaque`)
+        }
+        if (unlit && draw.depthOnly === true) throw new Error("[oj] scene.mesh: unlit draws a mesh's colour without light, and a depthOnly mesh draws no colour")
+        for (const [given, method, what] of [[unlit, "SetMeshUnlit", "unlit"], [additive, "SetMeshAdditive", "blend \"add\""]] as const) {
+            if (given && typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.10).`)
+        }
         const fades = o.soften !== undefined || o.deepColor !== undefined
         let fade: [number, number, number, number, number, number] | null = null
         if (fades) {
@@ -1819,7 +1851,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const deep = o.deepColor
             if (deep !== undefined && (typeof deep?.metres !== "number" || !(deep.metres > 0) || deep.metres === Infinity)) throw new Error(`[oj] scene.mesh: deepColor's metres is ${deep?.metres}, and is metres above 0`)
             const deepRGBA = deep === undefined ? [0, 0, 0, 0] : toRGBA(deep.color, "[oj] scene.mesh deepColor color")
-            if (!(color[3]! < 1)) throw new Error(`${why} this one draws opaque (its color's alpha is 1). Give its color an alpha below 1.`)
+            if (!(color[3]! < 1) && !additive) throw new Error(`${why} this one draws opaque (its color's alpha is 1). Give its color an alpha below 1, or blend "add".`)
             if (o.cutout !== undefined) throw new Error(`${why} a cutout draws it opaque`)
             if (draw.depthOnly === true) throw new Error(`${why} a depthOnly mesh draws no colour`)
             if (typeof b.SetMeshDepthFade !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
@@ -1911,6 +1943,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const looks: [boolean, () => unknown, string][] = [
                 [o.cutout !== undefined, () => b.SetMeshCutout(id, o.cutout), "cutout"],
                 [o.twoSided === true, () => b.SetMeshTwoSided(id), "twoSided"],
+                [unlit, () => b.SetMeshUnlit(id), "unlit"],
+                // Before the fades, which take an added mesh whatever its alpha.
+                [additive, () => b.SetMeshAdditive(id), "blend"],
                 [sways, () => swayLayers ? b.SetMeshSwayLayers(id) : b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
                 [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
@@ -2028,7 +2063,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             }
             return out
         })
-        if (draw.depthOnly === true) depthOnly.add(model)
+        if (draw.depthOnly === true || additive) unbaked.add(model)
         // The wind's clock is the scene's: a flowing normal map slides by it as a sway moves by it.
         if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0))) swaying = true
         return model
@@ -2205,12 +2240,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         const still = stillActors()
         const items: BakeItem[] = []
         for (const a of actors) {
-            if ((statics.has(a.id) || still.has(a)) && !depthOnly.has(a.model)) {
+            if ((statics.has(a.id) || still.has(a)) && !unbaked.has(a.model)) {
                 items.push({ model: a.model, position: a.position, rotation: a.rotation, scale: a.scale, actor: a.id })
             }
         }
         for (const [id, s] of scatters) {
-            if (depthOnly.has(s.model)) continue
+            if (unbaked.has(s.model)) continue
             const d = s.data, tilted = s.stride === 10
             for (let i = 0, at = 0; at < d.length; i++, at += s.stride) {
                 const rotation = { yaw: d[at + 3]!, pitch: tilted ? d[at + 4]! : 0, roll: tilted ? d[at + 5]! : 0 }

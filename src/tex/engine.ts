@@ -132,7 +132,8 @@ function recordPass(node: Node, drawn: ReadonlySet<string>, kernels: Readonly<Re
         }
         const values = new Map<string, Vec4>()
         const valueOf = (n: Node, size: Node): Vec4 => {
-            if (n.id !== node.id && drawn.has(n.id)) {
+            // A pass reads every other drawn node as a texture, and a source as one even when it is the pass's own.
+            if ((n.id !== node.id || n.kind === "source") && drawn.has(n.id)) {
                 const t = textureOf(n, n.tiles)
                 const held = n.width === size.width && n.height === size.height
                     ? t.fetch(s.pixel)
@@ -209,7 +210,9 @@ export function plan(root: Node, kernels: Readonly<Record<string, Kernel>>, { de
         let limit: unknown
         try {
             return topological(root)
-                .filter((n) => drawn.has(n.id) && n.kind !== "source")
+                // A source is read as a texture, not drawn, unless it is the root: a picture
+                // made from bytes alone still needs one pass to deliver it.
+                .filter((n) => drawn.has(n.id) && (n.kind !== "source" || n.id === root.id))
                 .map((n) => recordPass(n, drawn, kernels, delivered && n.id === root.id))
         } catch (e) {
             if (!isLimit(e)) throw e

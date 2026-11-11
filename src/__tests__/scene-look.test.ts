@@ -1,7 +1,7 @@
 /**
  * What foliage asks of the scene, as the calls it makes on OneJS's
  * ModelBridge (tested in OneJS's MeshLookEditModeTests and
- * ScatterLookEditModeTests): `scene.mesh`'s cutout, twoSided and sway, a
+ * ScatterLookEditModeTests): `scene.mesh`'s cutout, twoSided, unlit, blend and sway, a
  * scatter's tint, tilt and range, and `scene.wind`.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
@@ -26,7 +26,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "Scatter" || name === "ScatterWith" || name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshCutout" || name === "SetMeshTwoSided" || name === "SetMeshSway" || name === "SetMeshSwayLayers" || name === "SetMeshTexture") return lookAnswer
+                if (name === "SetMeshCutout" || name === "SetMeshTwoSided" || name === "SetMeshUnlit" || name === "SetMeshAdditive" || name === "SetMeshDepthFade" || name === "SetMeshSway" || name === "SetMeshSwayLayers" || name === "SetMeshTexture") return lookAnswer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -102,6 +102,48 @@ describe("scene.mesh cutout and twoSided", () => {
         expect(of("CreateMesh")).toHaveLength(0)
         s.mesh(SQUARE)
         expect(of("CreateMesh"), "a mesh without them is made as ever").toHaveLength(1)
+    })
+})
+
+describe("scene.mesh unlit and blend", () => {
+    it("are set before the vertices, only when asked, the blend before a fade", () => {
+        const s = scene()
+        s.mesh({ ...SQUARE, unlit: false, blend: "alpha" })
+        expect(of("SetMeshUnlit")).toHaveLength(0)
+        expect(of("SetMeshAdditive")).toHaveLength(0)
+        const glow = s.mesh({ ...SQUARE, unlit: true, blend: "add", soften: 0.5 })
+        expect(of("SetMeshUnlit")).toEqual([["SetMeshUnlit", glow.id]])
+        expect(of("SetMeshAdditive")).toEqual([["SetMeshAdditive", glow.id]])
+        expect(order("SetMeshUnlit", "SetMeshAdditive", "SetMeshDepthFade", "SetMesh").slice(-4)).toEqual(["SetMeshUnlit", "SetMeshAdditive", "SetMeshDepthFade", "SetMesh"])
+    })
+
+    it("refuses what it cannot draw before making anything", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, unlit: "yes" as any })).toThrow("unlit is yes, and is true or false")
+        expect(() => s.mesh({ ...SQUARE, blend: "screen" as any })).toThrow(`blend is "screen", and is "alpha" or "add"`)
+        expect(() => s.mesh({ ...SQUARE, blend: "add", cutout: 0.5 })).toThrow("a cutout draws it opaque")
+        expect(() => s.mesh({ ...SQUARE, blend: "add" }, { depthOnly: true })).toThrow("a depthOnly mesh draws no colour")
+        expect(() => s.mesh({ ...SQUARE, unlit: true }, { depthOnly: true })).toThrow("a depthOnly mesh draws no colour")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, blend: "add", splat: { layers: [picture], weights: [1, 1, 1, 1] } })).toThrow("a splat is ground")
+        expect(() => s.mesh({ ...SQUARE, soften: 0.5 }), "an opaque alpha blend still has nothing to fade").toThrow("its color's alpha is 1")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    it("says what the bridge refused, and keeps nothing", () => {
+        const s = scene()
+        lookAnswer = "a splat's ground cannot be added to what is behind it"
+        expect(() => s.mesh({ ...SQUARE, blend: "add" })).toThrow("[oj] scene.mesh blend: a splat's ground")
+        expect(of("Unload")).toHaveLength(1)
+    })
+
+    it("needs a OneJS that has them, and says so before making anything", () => {
+        missing = new Set(["SetMeshUnlit", "SetMeshAdditive"])
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, unlit: true })).toThrow("scene.mesh unlit needs a newer OneJS")
+        expect(() => s.mesh({ ...SQUARE, blend: "add" })).toThrow(`scene.mesh blend "add" needs a newer OneJS`)
+        expect(of("CreateMesh")).toHaveLength(0)
+        s.mesh({ ...SQUARE, blend: "alpha" })
+        expect(of("CreateMesh"), "the default blend asks for nothing").toHaveLength(1)
     })
 })
 

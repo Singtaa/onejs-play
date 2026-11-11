@@ -461,6 +461,11 @@ Three things that are not obvious from the code:
   again on any of their setters; `edgeFade` is `SetMeshEdgeFade(id, start,
   end)`, sent only when given above `[0, 0]`. A splat is refused before
   anything is made, and so is a host without the call.
+- **`unlit` and `blend: "add"` are looks too.** `SetMeshUnlit(id)` and
+  `SetMeshAdditive(id)` run after `twoSided` and before the fades, since a
+  `soften` takes an added mesh whatever its alpha. Additive is refused with
+  a cutout, a splat or depthOnly, unlit with depthOnly, before anything is
+  made; an added mesh is left out of `bakeItems` with the depth-only ones.
 - **`scene.texture` and `scene.depth` are lent, not owned.** Each is onejs-react's `LentTexture`, made by one `lend` in `createScene`:
   each program or pass that reads it acquires it once and releases it when
   it stops, and the scene counts its own readers, so a release after the

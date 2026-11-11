@@ -323,6 +323,12 @@ describe("tex planning", () => {
         expect(Object.keys(p[2]!.reads)).toEqual(["t0"])
     })
 
+    it("draws a picture made from bytes alone as one pass that reads it", () => {
+        const p = passes(tex.pixels(2, 2, new Uint8Array(16).fill(255)))
+        expect(p).toHaveLength(1)
+        expect(Object.values(p[0]!.reads).map((n) => n.kind)).toEqual(["source"])
+    })
+
     it("draws a node read twice once", () => {
         const { noise } = tex.canvas(64)
         const a = noise("perlin", 9)
