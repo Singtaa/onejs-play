@@ -24,6 +24,8 @@ let savedCS: unknown
 let nextId: number
 // Methods this recorder stands in for an older OneJS without.
 let missing: Set<string>
+// Whether the recorder's host has counted a frame's draws yet.
+let counted = true
 
 function recorder(): any {
     return new Proxy({}, {
@@ -42,6 +44,8 @@ function recorder(): any {
                 if (name === "Pick") return 0
                 if (name === "SetSunShadows") return ""
                 if (name === "PanelPoint") return { x: 10, y: 20 }
+                if (name === "DrawCalls") return counted ? 42 : -1
+                if (name === "SetPassCalls") return counted ? 7 : -1
                 return undefined
             }
         },
@@ -64,6 +68,7 @@ const createScene = (options: SceneOptions = {}) => {
 beforeEach(async () => {
     calls = []
     missing = new Set()
+    counted = true
     nextId = 100
     savedCS = (globalThis as any).CS
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: recorder() } } }
@@ -745,6 +750,26 @@ describe("an actor's own texture", () => {
         missing = new Set(["SetTexture"])
         const tom = createScene().scene.spawn(MODEL)
         expect(() => { tom.texture = LOOK }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
+    })
+})
+
+describe("the last frame's draws", () => {
+    it("reads the host's counts, and null until it has counted a frame", () => {
+        const { scene } = createScene()
+        counted = false
+        expect(scene.drawCounts).toBeNull()
+        counted = true
+        expect(scene.drawCounts).toEqual({ draws: 42, setPasses: 7 })
+    })
+
+    it("is null, said once, on a host that counts no draws", () => {
+        missing = new Set(["DrawCalls", "SetPassCalls"])
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        const { scene } = createScene()
+        expect(scene.drawCounts).toBeNull()
+        expect(scene.drawCounts).toBeNull()
+        expect(warn.mock.calls.filter((c) => String(c[0]).includes("scene.drawCounts"))).toHaveLength(1)
+        warn.mockRestore()
     })
 })
 

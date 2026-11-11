@@ -885,6 +885,13 @@ export interface Scene {
     speed: number
     /** The live actors, as a copy: destroying them while iterating it is fine. */
     readonly actors: readonly Actor[]
+    /**
+     * What the last frame drew, for a cart measuring itself: its draw calls and
+     * its set-pass calls (each a change of shader pass), everything on screen
+     * counted, the UI's too. Read-only. The first read starts the count, so it
+     * is null until a frame has been counted, and on a host too old to count.
+     */
+    readonly drawCounts: { readonly draws: number; readonly setPasses: number } | null
 }
 
 /** What a scene is when an option is left out. */
@@ -1162,6 +1169,7 @@ const saidNoLender = new Set<string>()
 let saidNoSky = false
 /** Said once: a host without SetSkyReflect. */
 let saidNoSkyReflect = false
+let saidNoDrawCounts = false
 
 /** `v` if the bridge can draw it; it throws for anything else, before anything changes. */
 function checkReflections(v: unknown): Reflections {
@@ -2316,6 +2324,15 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         },
         // A copy, so `for (const a of scene.actors) a.destroy()` reaches every actor.
         get actors() { return actors.slice() },
+        get drawCounts() {
+            if (typeof b.DrawCalls !== "function") {
+                if (!saidNoDrawCounts) console.warn("[oj] scene.drawCounts needs a newer OneJS: this host's ModelBridge counts no draws.")
+                saidNoDrawCounts = true
+                return null
+            }
+            const draws = Number(b.DrawCalls()), setPasses = Number(b.SetPassCalls())
+            return draws < 0 || setPasses < 0 ? null : { draws, setPasses }
+        },
     }
     let disposed = false
     const dispose = () => {
