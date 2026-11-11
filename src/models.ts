@@ -479,6 +479,8 @@ export interface SpawnOptions {
     receiveShadows?: boolean
     /** A colour the whole of it is multiplied by. White by default, which changes nothing. */
     tint?: ColorInput
+    /** A colour added to it after its light: see `actor.flash`. Black by default, which changes nothing. */
+    flash?: ColorInput
     /** Up to four colours painted through its model's `colorMask`. */
     colors?: readonly ColorInput[]
     /** A texture drawn on it in place of its model's own: see `actor.texture`. */
@@ -555,6 +557,17 @@ export interface Actor {
      * different tints still draw together.
      */
     tint: ColorInput
+    /**
+     * A colour added to it after its light, where a tint can only multiply:
+     * black, the default, adds nothing, and white makes it as bright as it can
+     * be. A body struck flashes white for a frame or two, a cursed one glows a
+     * faint green. Fog falls over it, and actors of one model with different
+     * flashes still draw together. From runtime 1.10.
+     *
+     *     enemy.flash = "#ffffff"
+     *     setTimeout(() => { enemy.flash = "#000000" }, 80)
+     */
+    flash: ColorInput
     /**
      * Up to four colours painted through its model's `colorMask`: the first
      * where the mask is red, then green, blue and its alpha. Each is
@@ -644,6 +657,13 @@ export interface CameraOptions {
     lookAt?: Vec3
     /** Vertical field of view, in degrees. */
     fov?: number
+    /**
+     * Degrees the camera turns about the line it looks along, after it looks
+     * at `lookAt`: anticlockwise as seen from behind it, so the picture turns
+     * clockwise. 0 by default. A shake's twist, or a bank into a turn. From
+     * runtime 1.10.
+     */
+    roll?: number
 }
 
 /** The sun: a directional light shining along `direction`, casting soft shadows unless `shadows` is false. */
@@ -1485,14 +1505,20 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     rgb(ambientNow.sky, "ambient sky")
     rgb(ambientNow.ground, "ambient ground")
 
-    let cam = { position: vec3(d.camera.position), lookAt: vec3(d.camera.lookAt), fov: d.camera.fov as number }
+    let cam = { position: vec3(d.camera.position), lookAt: vec3(d.camera.lookAt), fov: d.camera.fov as number, roll: 0 }
     const camera = (c: CameraOptions) => {
+        const roll = c.roll ?? cam.roll
+        if (typeof roll !== "number" || !Number.isFinite(roll)) throw new Error(`[oj] scene.camera: roll is ${roll}, and is degrees`)
         cam = {
             position: c.position ? vec3(c.position) : cam.position,
             lookAt: c.lookAt ? vec3(c.lookAt) : cam.lookAt,
             fov: c.fov ?? cam.fov,
+            roll,
         }
-        b.SetCamera(...cam.position, ...cam.lookAt, cam.fov)
+        // SetCamera while unrolled, as every OneJS before roll takes it.
+        if (roll === 0) b.SetCamera(...cam.position, ...cam.lookAt, cam.fov)
+        else if (typeof b.SetCameraRolled !== "function") throw new Error("[oj] scene.camera roll needs a newer OneJS: this host's ModelBridge cannot roll the camera (it came with runtime 1.10).")
+        else b.SetCameraRolled(...cam.position, ...cam.lookAt, cam.fov, roll)
     }
     const applySun = () => {
         if (sunNow === null) {
@@ -1661,6 +1687,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         const needColors = (what: string) => {
             if (typeof b.SetTint !== "function") throw new Error(`[oj] an actor's ${what} needs a newer OneJS: this host's ModelBridge cannot colour an actor (it came with runtime 1.9).`)
         }
+        let flash: ColorInput = "#000000"
+        const setFlash = (next: ColorInput) => {
+            const sent = rgb(next, "actor flash")
+            if (typeof b.SetFlash !== "function") throw new Error("[oj] actor.flash needs a newer OneJS: this host's ModelBridge cannot add a colour to an actor (it came with runtime 1.10).")
+            const problem = String(b.SetFlash(id, ...sent) ?? "")
+            if (problem !== "") throw new Error(`[oj] actor.flash: ${problem}`)
+            flash = next
+        }
         const setTint = (next: ColorInput) => {
             const sent = rgb(next, "actor tint")
             needColors("tint")
@@ -1750,6 +1784,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             show(part) { showPart("show", part, true) },
             get tint() { return tint },
             set tint(c: ColorInput) { setTint(c) },
+            get flash() { return flash },
+            set flash(c: ColorInput) { setFlash(c) },
             get texture() { return texture },
             set texture(t: Texture | null) { setTexture(t) },
             get colors() { return colors },
@@ -1794,6 +1830,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         // An actor whose colours, texture or parts are refused is not left in the world.
         try {
             if (o.tint !== undefined) setTint(o.tint)
+            if (o.flash !== undefined) setFlash(o.flash)
             if (o.colors !== undefined) setColors(o.colors)
             if (o.texture !== undefined && o.texture !== null) setTexture(o.texture)
             for (const part of o.hide ?? []) showPart("hide", part, false)

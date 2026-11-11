@@ -466,6 +466,10 @@ Three things that are not obvious from the code:
   `soften` takes an added mesh whatever its alpha. Additive is refused with
   a cutout, a splat or depthOnly, unlit with depthOnly, before anything is
   made; an added mesh is left out of `bakeItems` with the depth-only ones.
+- **`actor.flash` and the camera's `roll`.** A flash is `SetFlash(id, r, g, b)`,
+  sRGB, sent only when given; the bridge keeps it in the actor's colour row
+  with its tint. The camera sends `SetCamera` while its roll is 0, so an older
+  host never sees the roll, and `SetCameraRolled` with it otherwise.
 - **`scene.texture` and `scene.depth` are lent, not owned.** Each is onejs-react's `LentTexture`, made by one `lend` in `createScene`:
   each program or pass that reads it acquires it once and releases it when
   it stops, and the scene counts its own readers, so a release after the

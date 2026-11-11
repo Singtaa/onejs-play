@@ -376,6 +376,26 @@ describe("the handles a cart holds", () => {
         expect(last("SetCamera")).toEqual(["SetCamera", 0, 10, -3, 0, 1, 0, 30])
     })
 
+    it("rolls the camera through SetCameraRolled, keeps the roll, and sends SetCamera once it is 0 again", () => {
+        const scene = createScene({ camera: { position: [0, 10, -3], lookAt: [0, 1, 0] } }).scene
+        scene.camera({ roll: 5 })
+        expect(last("SetCameraRolled")).toEqual(["SetCameraRolled", 0, 10, -3, 0, 1, 0, 50, 5])
+        scene.camera({ position: [1, 10, -3] })
+        expect(last("SetCameraRolled"), "a later call keeps the roll").toEqual(["SetCameraRolled", 1, 10, -3, 0, 1, 0, 50, 5])
+        calls = []
+        scene.camera({ roll: 0 })
+        expect(of("SetCameraRolled")).toHaveLength(0)
+        expect(last("SetCamera")).toEqual(["SetCamera", 1, 10, -3, 0, 1, 0, 50])
+        expect(() => scene.camera({ roll: Number.NaN })).toThrow("roll is NaN, and is degrees")
+    })
+
+    it("needs a OneJS that can roll the camera, and an unrolled one never asks", () => {
+        missing = new Set(["SetCameraRolled"])
+        const scene = createScene().scene
+        scene.camera({ fov: 40, roll: 0 })
+        expect(() => scene.camera({ roll: 10 })).toThrow(/roll needs a newer OneJS.*runtime 1\.10/)
+    })
+
     it("never hands out the position it moves an actor or a light by", () => {
         const scene = createScene({}).scene
         const boo = scene.spawn(MODEL, { position: [1, 2, 3] })
@@ -663,6 +683,27 @@ describe("an actor's colours", () => {
         expect(last("SetTint")).toEqual(["SetTint", boo.id, 1, 1, 1])
         expect(boo.tint).toBe("#ffffff")
         expect(of("SetColors")).toHaveLength(0)
+    })
+
+    it("flashes at spawn and after, as sRGB, and reads back what was given", () => {
+        const { scene } = createScene()
+        const boo = scene.spawn(MODEL, { flash: "#ffffff" })
+        expect(last("SetFlash")).toEqual(["SetFlash", boo.id, 1, 1, 1])
+        boo.flash = "#000000"
+        expect(last("SetFlash")).toEqual(["SetFlash", boo.id, 0, 0, 0])
+        expect(boo.flash).toBe("#000000")
+        expect(of("SetTint"), "a flash is no tint").toHaveLength(0)
+        scene.spawn(MODEL)
+        expect(of("SetFlash")).toHaveLength(2)
+    })
+
+    it("needs a OneJS that can flash an actor", () => {
+        missing = new Set(["SetFlash"])
+        const { scene } = createScene()
+        expect(() => scene.spawn(MODEL, { flash: "#ffffff" })).toThrow(/flash needs a newer OneJS.*runtime 1\.10/)
+        expect(of("Destroy"), "the refused actor is not left in the world").toHaveLength(1)
+        const boo = scene.spawn(MODEL)
+        expect(() => { boo.flash = "#ffffff" }).toThrow(/flash needs a newer OneJS/)
     })
 
     it("gives a model its mask at load, and keeps it apart from the same file without one", async () => {

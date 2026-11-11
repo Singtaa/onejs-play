@@ -28,7 +28,7 @@ const GOOD = {
     unlit: [255, 255, 255],
     pixels: [255, 0, 0],
     floor: [128, 128, 128],
-    added: [192, 192, 192],
+    added: [174, 174, 174],
     "floor in fog": [0, 0, 192],
     "added in fog": [0, 0, 192],
 }
@@ -46,8 +46,9 @@ describe("the mesh-effects playtest", () => {
         await expect(check(fake({ ...GOOD, pixels: GOOD.unlit }) as any)).rejects.toThrow("the picture did not draw")
     })
 
-    it("fails an added quad that covers the floor instead", async () => {
-        await expect(check(fake({ ...GOOD, added: [64, 64, 64] }) as any)).rejects.toThrow("not added")
+    it("fails an added quad that covers the floor instead, or adds in sRGB", async () => {
+        await expect(check(fake({ ...GOOD, added: [128, 128, 128] }) as any)).rejects.toThrow("not added")
+        await expect(check(fake({ ...GOOD, added: [255, 255, 255] }) as any)).rejects.toThrow("not added")
     })
 
     it("fails an added quad that fog turns toward its colour, adding the fog again", async () => {

@@ -2,8 +2,8 @@
 // middle pixel read for each look. Lit, a white quad must be black, or the
 // scene is lit and nothing here measures unlit. Unlit it must be white, and
 // unlit with a red picture made from bytes (tex.pixels) it must be red. Over a
-// grey unlit floor, a dark grey quad made with blend "add" must brighten the
-// floor by about its own colour. Then all of it under a blue fog that is
+// grey unlit floor, a grey quad made with blend "add" must draw the floor and
+// itself summed as light is, in linear values: 128 and 128 make 174, not 255. Then all of it under a blue fog that is
 // whole well before the quad: the floor turns blue, and the added quad must
 // fade out, leaving the floor as it is, rather than add the fog's colour
 // again. Reads the page's own screenshot, decoded by the page. Throws, so the
@@ -11,7 +11,8 @@
 // is off.
 const DARK = 20      // levels under which the lit quad counts as black
 const BRIGHT = 200   // levels an unlit white quad must reach
-const ADDED = 40     // levels an added #404040 must brighten the floor by (64 in sRGB)
+const ADD = 128      // the added quad's grey, as the floor's
+const NEAR = 10      // levels the added quad may differ from the floor and itself summed in linear light
 const SAME = 20      // levels a faded-out added quad may leave on the fogged floor
 
 async function middle(game) {
@@ -29,6 +30,8 @@ async function middle(game) {
 }
 
 const mean = (p) => (p[0] + p[1] + p[2]) / 3
+const linear = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+const srgb = (l) => 255 * (l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055)
 const px = (p) => p.join(", ")
 
 export default async function (game) {
@@ -43,9 +46,9 @@ export default async function (game) {
     await look("unlit", { look: { unlit: true } })
     await look("pixels", { look: { unlit: true }, pixels: true })
     await look("floor", { floor: "#808080", bare: true })
-    await look("added", { floor: "#808080", look: { unlit: true, blend: "add", color: "#404040" } })
+    await look("added", { floor: "#808080", look: { unlit: true, blend: "add", color: "#808080" } })
     await look("floor in fog", { floor: "#808080", bare: true, fog: "#0000c0" })
-    await look("added in fog", { floor: "#808080", look: { unlit: true, blend: "add", color: "#404040" }, fog: "#0000c0" })
+    await look("added in fog", { floor: "#808080", look: { unlit: true, blend: "add", color: "#808080" }, fog: "#0000c0" })
     console.log("PIXELS " + JSON.stringify(seen))
 
     if (!(mean(seen.lit) <= DARK)) throw new Error(`a lit white quad is ${px(seen.lit)} in a scene with no light: the scene is lit, so nothing here measures unlit`)
@@ -55,7 +58,8 @@ export default async function (game) {
     if (!(Math.min(...seen.unlit) >= BRIGHT)) wrong.push(`unlit, a white quad is ${px(seen.unlit)} with no light: still lit`)
     const [r, g, b] = seen.pixels
     if (!(r >= BRIGHT && g <= DARK && b <= DARK)) wrong.push(`unlit under a red picture made from bytes it is ${r}, ${g}, ${b}: the picture did not draw`)
-    if (!(mean(seen.added) - mean(seen.floor) >= ADDED)) wrong.push(`added over the floor it is ${px(seen.added)} where the floor is ${px(seen.floor)}: not added`)
+    const summed = srgb(Math.min(1, linear(mean(seen.floor)) + linear(ADD)))
+    if (!(Math.abs(mean(seen.added) - summed) <= NEAR)) wrong.push(`added over the floor it is ${px(seen.added)} where the floor is ${px(seen.floor)} and the two summed in linear light are ${Math.round(summed)}: not added`)
     const left = Math.max(...seen["added in fog"].map((v, i) => Math.abs(v - seen["floor in fog"][i])))
     if (left > SAME) wrong.push(`added in a whole fog it is ${px(seen["added in fog"])} where the fogged floor is ${px(seen["floor in fog"])}: the fog did not fade it out`)
     if (wrong.length > 0) throw new Error(`mesh effects: ${wrong.join("; ")}`)
