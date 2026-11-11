@@ -33,6 +33,8 @@ interface Setup {
     parts?: number
     /** Each one before the camera carries a quarter-size person on its head. */
     hats?: boolean
+    /** Each wears one of this many pictures of its own (`texture`), in turn. Left out, its model's. */
+    pictures?: number
 }
 
 // Sixteen colours, taken four apart for a person's four, so neighbours differ in every part.
@@ -65,6 +67,20 @@ function Crowd() {
         if (!scene || !person || !painted || !parted) return
         const s = state.current
         const recorders: Record<string, any> = {}
+        // Pictures made in Unity, one solid colour each from the palette, kept across sets.
+        const looks: any[] = []
+        const look = (k: number) => {
+            while (looks.length <= k) {
+                const t = new CS.UnityEngine.Texture2D(4, 4)
+                const hex = PALETTE[looks.length % PALETTE.length]
+                const [r, g, bl] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
+                const colour = new CS.UnityEngine.Color(r, g, bl, 1)
+                for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) t.SetPixel(x, y, colour)
+                t.Apply()
+                looks.push(t)
+            }
+            return looks[k]
+        }
         const api = {
             set(setup: Setup) {
                 for (const a of s.actors) a.destroy()
@@ -76,7 +92,7 @@ function Crowd() {
                         ? scene.spawn(parted, { position: home(i, setup), yaw: 180, hide: parted.parts.slice(1, 1 + setup.parts) })
                         : setup.colors === "paint"
                         ? scene.spawn(painted, { position: home(i, setup), yaw: 180, colors: [0, 1, 2, 3].map((k) => shade(i, k)) })
-                        : scene.spawn(person, { position: home(i, setup), yaw: 180, tint: setup.colors === "tint" ? shade(i, 0) : undefined })
+                        : scene.spawn(person, { position: home(i, setup), yaw: 180, tint: setup.colors === "tint" ? shade(i, 0) : undefined, texture: setup.pictures ? look(i % setup.pictures) : undefined })
                     if (setup.clips !== "none") actor.play("Walk")
                     if (setup.clips === "hold") actor.speed = 0
                     s.actors.push(actor)
@@ -158,7 +174,10 @@ function Crowd() {
         }
         api.record("Internal", MAIN)
         ;(globalThis as any).crowd = api
-        return () => { for (const a of s.actors) a.destroy() }
+        return () => {
+            for (const a of s.actors) a.destroy()
+            for (const t of looks) CS.UnityEngine.Object.Destroy(t)
+        }
     }, [scene, person, painted, parted])
 
     useFrame((dt) => {

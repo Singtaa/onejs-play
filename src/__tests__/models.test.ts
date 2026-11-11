@@ -709,6 +709,45 @@ describe("an actor's colours", () => {
     })
 })
 
+describe("an actor's own picture", () => {
+    const LOOK = { picture: "look" } as any
+
+    it("wears a picture from spawn and after, and its model's own again with null", () => {
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL, { texture: LOOK })
+        expect(last("SetPicture")).toEqual(["SetPicture", tom.id, LOOK])
+        expect(tom.texture).toBe(LOOK)
+        tom.texture = null
+        expect(last("SetPicture")).toEqual(["SetPicture", tom.id, null])
+        expect(tom.texture).toBeNull()
+        const plain = scene.spawn(MODEL)
+        expect(plain.texture).toBeNull()
+        expect(of("SetPicture")).toHaveLength(2)
+    })
+
+    it("refuses what is not a picture, and says what the bridge refused, leaving no actor behind", () => {
+        let refuse = false
+        const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
+            get: (t, name) => name === "SetPicture" && refuse ? () => "a mesh model takes its texture through scene.mesh" : t[name as string],
+        })
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL)
+        expect(() => { tom.texture = "look.png" as any }).toThrow(/actor.texture is a string; give a picture from loadTexture/)
+        refuse = true
+        calls = []
+        expect(() => scene.spawn(MODEL, { texture: LOOK })).toThrow("[oj] actor.texture: a mesh model takes its texture through scene.mesh")
+        expect(of("Destroy")).toHaveLength(1)
+        expect(tom.texture).toBeNull()
+    })
+
+    it("needs a OneJS that can draw a picture on an actor", () => {
+        missing = new Set(["SetPicture"])
+        const tom = createScene().scene.spawn(MODEL)
+        expect(() => { tom.texture = LOOK }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
+    })
+})
+
 describe("an actor on another's joint", () => {
     it("lists a model's joints, and attaches by name at the place given", () => {
         expect(MODEL.joints).toEqual(["hips", "head"])

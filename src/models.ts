@@ -463,6 +463,8 @@ export interface SpawnOptions {
     tint?: ColorInput
     /** Up to four colours painted through its model's `colorMask`. */
     colors?: readonly ColorInput[]
+    /** A picture drawn on it in place of its model's own: see `actor.texture`. */
+    texture?: Texture | null
     /** Parts of its model it starts without, by name: see `actor.hide`. */
     hide?: readonly string[]
     /**
@@ -547,6 +549,19 @@ export interface Actor {
      *     tom.colors = ["#a03020", "#2f4f6f"]
      */
     colors: readonly ColorInput[]
+    /**
+     * A picture drawn on it in place of the one its model's file carries, laid
+     * out as that one is: a look composed at run time, gear painted into the
+     * body's regions. Null, the default, draws the file's own. Actors wearing
+     * the same picture share one copy of it and still draw together; each
+     * picture worn costs its memory. `tint` and `colors` apply over it.
+     * Throws for a mesh model, whose texture `scene.mesh` gives.
+     *
+     *     const look = await loadTexture("looks/smith.png")
+     *     const tom = scene.spawn(villager, { texture: look })
+     *     tom.texture = null                  // back to the file's own
+     */
+    texture: Texture | null
     /**
      * Hangs it on a joint of another actor, which then carries it through
      * every pose: a hat on a head, a tool in a hand. Its `position`,
@@ -1636,6 +1651,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (problem !== "") throw new Error(`[oj] actor.colors: ${problem}`)
             colors = Object.freeze([...next])
         }
+        let texture: Texture | null = null
+        const setTexture = (next: Texture | null) => {
+            if (next !== null) picture(next, "actor.texture")
+            if (typeof b.SetPicture !== "function") throw new Error("[oj] actor.texture needs a newer OneJS: this host's ModelBridge cannot draw a picture on an actor (it came with runtime 1.9).")
+            const problem = String(b.SetPicture(id, next) ?? "")
+            if (problem !== "") throw new Error(`[oj] actor.texture: ${problem}`)
+            texture = next
+        }
         const showPart = (verb: string, part: string, on: boolean) => {
             if (typeof part !== "string" || !model.parts.includes(part)) {
                 throw new Error(`[oj] actor.${verb}: ${typeof part === "string" ? `${part} is not one of this model's parts` : "it takes the name of a part"}: ${model.parts.join(", ")}`)
@@ -1700,6 +1723,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             show(part) { showPart("show", part, true) },
             get tint() { return tint },
             set tint(c: ColorInput) { setTint(c) },
+            get texture() { return texture },
+            set texture(t: Texture | null) { setTexture(t) },
             get colors() { return colors },
             set colors(list: readonly ColorInput[]) { setColors(list) },
             play(clip, po = {}) {
@@ -1739,10 +1764,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (r !== null) { rotation = r; quat = null }
         })
         actors.push(actor)
-        // An actor whose colours or parts are refused is not left in the world.
+        // An actor whose colours, picture or parts are refused is not left in the world.
         try {
             if (o.tint !== undefined) setTint(o.tint)
             if (o.colors !== undefined) setColors(o.colors)
+            if (o.texture !== undefined && o.texture !== null) setTexture(o.texture)
             for (const part of o.hide ?? []) showPart("hide", part, false)
         } catch (error) {
             actor.destroy()
