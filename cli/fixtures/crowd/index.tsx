@@ -40,7 +40,7 @@ function home(i: number, setup: Setup): Vec3 {
 function Crowd() {
     const scene = useScene({ camera: { position: EYE, lookAt: [0, 0, 10], fov: 60 } })
     const person = useModel("person.glb")
-    const state = useRef({ actors: [] as Actor[], setup: null as Setup | null, t: 0, frames: [] as number[], main: [] as number[], last: 0 })
+    const state = useRef({ actors: [] as Actor[], setup: null as Setup | null, t: 0, frames: [] as number[], main: [] as number[], last: 0, readBack: null as null | "asked" | object })
 
     useEffect(() => {
         if (!scene || !person) return
@@ -95,6 +95,13 @@ function Crowd() {
                 const r = recorders[name]
                 return r && r.Valid === true ? Number(r.LastValue) : -1
             },
+            /**
+             * Asks the next frame to move the first person 3 m aside and, in that same frame, read
+             * where Unity says it is: its screen point before and after, and what is picked at
+             * each. `readBack` is null until that frame has run.
+             */
+            askReadBack() { s.readBack = "asked" },
+            get readBack() { return typeof s.readBack === "object" ? s.readBack : null },
             clips: person.clips,
         }
         api.record("Internal", MAIN)
@@ -109,6 +116,19 @@ function Crowd() {
         s.last = now
         const main = (globalThis as any).crowd?.read(MAIN) ?? -1
         if (main >= 0) s.main.push(main / 1e6)
+        if (s.readBack === "asked" && s.actors.length > 0) {
+            const who = s.actors[0]
+            const lift = person.height / 2
+            const before = who.screenPoint(lift)
+            const [x, y, z] = who.position
+            who.position = [x + 3, y, z]
+            const after = who.screenPoint(lift)
+            s.readBack = {
+                before, after,
+                pickedAfter: after !== null && scene?.pick(after.x, after.y) === who,
+                pickedBefore: before !== null && scene?.pick(before.x, before.y) === who,
+            }
+        }
         if (!s.setup || !s.setup.move) return
         s.t += dt
         for (let i = 0; i < s.actors.length; i++) {

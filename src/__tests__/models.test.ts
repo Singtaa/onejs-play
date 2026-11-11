@@ -618,6 +618,89 @@ describe("forgetting a model", () => {
     })
 })
 
+describe("actors moved during a frame", () => {
+    const framed = () => {
+        const r = createRuntime({ root: {}, version: "0.0.0" })
+        made.push(() => r.dispose())
+        return r
+    }
+    const names = () => calls.map((c) => c[0])
+
+    it("cross together when the frame ends, each where it was last put", () => {
+        const r = framed()
+        const { scene } = createScene({})
+        const a = scene.spawn(MODEL), b = scene.spawn(MODEL), still = scene.spawn(MODEL)
+        r.oj.onFrame(() => {
+            a.position = [9, 9, 9]
+            a.position = [1, 2, 3]
+            b.yaw = 90
+            b.scale = 2
+        })
+        // Late is still the frame: a move made there goes with the rest.
+        r.oj.onLateFrame(() => { b.position = [4, 5, 6] })
+        calls = []
+        r.beginFrame(1 / 60)
+        expect(names()).toEqual(["PlaceMany", "ScaleMany"])
+        const data = Array.from(of("PlaceMany")[0]![1] as Float32Array)
+        expect(data.length).toBe(16)
+        expect(data.slice(0, 8)).toEqual([a.id, 1, 2, 3, 0, 0, 0, 1])
+        expect(data.slice(8, 12)).toEqual([b.id, 4, 5, 6])
+        expect(data[13]).toBeCloseTo(Math.SQRT1_2, 5)
+        expect(Array.from(of("ScaleMany")[0]![1] as Float32Array)).toEqual([b.id, 2])
+        expect(still.position).toEqual([0, 0, 0])
+    })
+
+    it("cross before a place is read back in the same frame", () => {
+        const r = framed()
+        const { scene } = createScene({})
+        const a = scene.spawn(MODEL)
+        const stop = r.oj.onFrame(() => {
+            a.position = [1, 2, 3]
+            a.screenPoint()
+            a.position = [4, 5, 6]
+            scene.pick(10, 10)
+        })
+        calls = []
+        r.beginFrame(1 / 60)
+        expect(names()).toEqual(["PlaceMany", "PanelPoint", "PlaceMany", "Pick"])
+        expect(Array.from(of("PlaceMany")[1]![1] as Float32Array).slice(0, 4)).toEqual([a.id, 4, 5, 6])
+        stop()
+        calls = []
+        r.beginFrame(1 / 60)
+        expect(names()).toEqual([])
+    })
+
+    it("cross at once outside a frame, where nothing later would send them", () => {
+        framed()
+        const a = createScene({}).scene.spawn(MODEL)
+        calls = []
+        a.position = [1, 2, 3]
+        a.yaw = 10
+        a.scale = 3
+        expect(names()).toEqual(["Move", "SetRotation", "SetScale"])
+    })
+
+    it("are not sent for an actor destroyed before the frame ends", () => {
+        const r = framed()
+        const { scene } = createScene({})
+        const a = scene.spawn(MODEL)
+        r.oj.onFrame(() => { a.position = [1, 2, 3]; a.scale = 2; a.destroy() })
+        calls = []
+        r.beginFrame(1 / 60)
+        expect(names()).toEqual(["Destroy"])
+    })
+
+    it("cross one call each on a OneJS from before PlaceMany and ScaleMany", () => {
+        missing = new Set(["PlaceMany", "ScaleMany"])
+        const r = framed()
+        const a = createScene({}).scene.spawn(MODEL)
+        r.oj.onFrame(() => { a.position = [1, 2, 3]; a.scale = 2 })
+        calls = []
+        r.beginFrame(1 / 60)
+        expect(names()).toEqual(["Move", "SetScale"])
+    })
+})
+
 describe("actors a physics world moves", () => {
     it("move every actor with one PlaceMany, and read back where they were put", async () => {
         const { placeActors } = await import("../physics3d/actors")

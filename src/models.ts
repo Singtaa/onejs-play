@@ -1410,6 +1410,36 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     applySky()
     applyWind(options.wind !== undefined)
 
+    // Where an actor is, is kept here: a move made during a frame waits and every one of
+    // them crosses to Unity together when the frame ends, or sooner when something is about
+    // to read a place back from Unity (screenPoint, pick, bake). A thousand actors moved
+    // one crossing each cost several ms a frame. Outside a frame nothing later is promised
+    // to send them, so a move crosses as it is made; so does every move on a host with no
+    // frame clock or a OneJS from before PlaceMany, and a scale before ScaleMany.
+    const batchMoves = runtime !== null && typeof b.PlaceMany === "function"
+    const batchScales = runtime !== null && typeof b.ScaleMany === "function"
+    const moved = new Set<(into: Float32Array, at: number) => void>()
+    const resized = new Map<number, number>()
+    let moveBuffer = new Float32Array(0), scaleBuffer = new Float32Array(0)
+    const sendMoves = () => {
+        if (moved.size > 0) {
+            // The same array while the same number move, which a walking crowd does.
+            if (moveBuffer.length !== moved.size * 8) moveBuffer = new Float32Array(moved.size * 8)
+            let at = 0
+            for (const write of moved) { write(moveBuffer, at); at += 8 }
+            moved.clear()
+            b.PlaceMany(moveBuffer)
+        }
+        if (resized.size > 0) {
+            if (scaleBuffer.length !== resized.size * 2) scaleBuffer = new Float32Array(resized.size * 2)
+            let at = 0
+            for (const [id, s] of resized) { scaleBuffer[at] = id; scaleBuffer[at + 1] = s; at += 2 }
+            resized.clear()
+            b.ScaleMany(scaleBuffer)
+        }
+    }
+    const stopFrameEnd = runtime?.onFrameEnd(sendMoves)
+
     // Animation updates itself in play mode; the edit-mode preview has to step it.
     const preview = globalThis.__isPlaying === false
     const stopFrame = runtime?.onFrame((dt: number) => {
@@ -1443,20 +1473,39 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (rotation.pitch !== 0 || rotation.roll !== 0) b.SetRotation(id, rotation.yaw, rotation.pitch, rotation.roll)
         speeds.set(id, o.speed ?? 1)
         if (rateOf(id) !== 1) b.SetSpeed(id, rateOf(id))
+        // The rotation as Unity takes it in a batch, made when a batch first needs it.
+        let quat: ReturnType<typeof toQuat> | null = null
+        const write = (into: Float32Array, at: number) => {
+            quat ??= toQuat(rotation)
+            into[at] = id
+            into[at + 1] = position[0]; into[at + 2] = position[1]; into[at + 3] = position[2]
+            into[at + 4] = quat.x; into[at + 5] = quat.y; into[at + 6] = quat.z; into[at + 7] = quat.w
+        }
+        /** Keeps this actor's place for the frame's one crossing; false where the caller sends it now. */
+        const keep = () => {
+            if (!batchMoves || !runtime.inFrame) return false
+            moved.add(write)
+            return true
+        }
         const turn = (next: Partial<Rotation>) => {
             rotation = Object.freeze({ yaw: next.yaw ?? 0, pitch: next.pitch ?? 0, roll: next.roll ?? 0 })
-            b.SetRotation(id, rotation.yaw, rotation.pitch, rotation.roll)
+            quat = null
+            if (!keep()) b.SetRotation(id, rotation.yaw, rotation.pitch, rotation.roll)
         }
         const actor: Actor = {
             id, model,
             get position() { return position },
-            set position(p: Vec3) { position = vec3(p); b.Move(id, position[0], position[1], position[2]) },
+            set position(p: Vec3) { position = vec3(p); if (!keep()) b.Move(id, position[0], position[1], position[2]) },
             get rotation(): Readonly<Rotation> { return rotation },
             set rotation(r: Partial<Rotation>) { turn(r) },
             get yaw() { return rotation.yaw },
             set yaw(y: number) { turn({ ...rotation, yaw: y }) },
             get scale() { return scale },
-            set scale(s: number) { scale = s; b.SetScale(id, s) },
+            set scale(s: number) {
+                scale = s
+                if (batchScales && runtime.inFrame) resized.set(id, s)
+                else b.SetScale(id, s)
+            },
             get speed() { return speeds.get(id) ?? 1 },
             set speed(s: number) { speeds.set(id, s); b.SetSpeed(id, rateOf(id)) },
             get castShadows() { return cast },
@@ -1475,6 +1524,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 })
             },
             screenPoint(lift = model.height * scale) {
+                sendMoves()
                 const p = b.PanelPoint(rootElement(), id, lift)
                 const x = p.x ?? p[0], y = p.y ?? p[1]
                 return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
@@ -1484,6 +1534,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 fades.delete(id)
                 speeds.delete(id)
                 statics.delete(id)
+                moved.delete(write)
+                resized.delete(id)
                 const i = actors.indexOf(actor)
                 if (i >= 0) actors.splice(i, 1)
                 b.Destroy(id)
@@ -1491,7 +1543,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         placed.set(actor, (p, r) => {
             position = p
-            if (r !== null) rotation = r
+            if (r !== null) { rotation = r; quat = null }
         })
         actors.push(actor)
         if (o.play) actor.play(o.play, { fade: 0 })
@@ -1969,9 +2021,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         texture,
         depth,
         pointLight,
-        bake: baker.bake,
+        bake: ((first?: string | BakeOptions, options?: BakeOptions) => { sendMoves(); return baker.bake(first, options) }) as Scene["bake"],
         clearLight: baker.clearLight,
         pick(x, y) {
+            sendMoves()
             const id = b.Pick(rootElement(), x, y)
             return actors.find((a) => a.id === id) ?? null
         },
@@ -2032,6 +2085,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (disposed) return
         disposed = true
         stopFrame?.()
+        stopFrameEnd?.()
+        moved.clear()
+        resized.clear()
         baker.dispose()
         for (const f of fades.values()) f.done()
         fades.clear()

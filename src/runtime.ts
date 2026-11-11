@@ -17,7 +17,8 @@
  *
  * A frame runs in three phases, each in registration order: the frame
  * (`onFrame`, which is `useFrame`), the step (`onStep`, worlds only), then
- * late (`onLateFrame`, cameras and anything placed from a drawn pose). The
+ * late (`onLateFrame`, cameras and anything placed from a drawn pose). After
+ * them the frame ends (`onFrameEnd`), where a scene sends its actors' moves. The
  * order is the phase's, never when a callback was added, so a camera reads
  * the pose this frame's step drew whether it mounted before the world loaded
  * or after.
@@ -92,6 +93,18 @@ export interface HostRuntime {
      * Not on oj's declarations. Errors as `onFrame`'s.
      */
     onLateFrame(callback: FrameCallback): () => void
+    /**
+     * Runs a callback every frame after every late callback, returning an
+     * unsubscribe: where a scene sends what the frame moved in one crossing.
+     * Not on oj's declarations. Errors as `onFrame`'s.
+     */
+    onFrameEnd(callback: FrameCallback): () => void
+    /**
+     * Whether the frame, the step or late is running now. False in the end
+     * phase and between frames (an event handler, a timer, a paused or held
+     * clock), where nothing later is promised to send what was kept.
+     */
+    readonly inFrame: boolean
     /**
      * The cart's first screen has committed (mount calls it): where the host
      * compiles programs off the frame, the clock holds from here until they
@@ -260,6 +273,8 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
     const callbacks = new Set<FrameCallback>()
     const steps = new Set<FrameCallback>()
     const lates = new Set<FrameCallback>()
+    const ends = new Set<FrameCallback>()
+    let inFrame = false
     /**
      * Each frame callback's errors said so far. A callback that throws keeps
      * running, and each distinct error is said once: one bad line used to
@@ -312,6 +327,13 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             lates.add(callback)
             return () => lates.delete(callback)
         },
+        onFrameEnd(callback) {
+            ends.add(callback)
+            return () => ends.delete(callback)
+        },
+        get inFrame() {
+            return inFrame
+        },
         armFirstDraw() {
             if (hold === "idle") hold = "holding"
         },
@@ -349,9 +371,12 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             time.now += dtSeconds
             time.frame++
             input.beginFrame()
+            inFrame = true
             runPhase(callbacks, dtSeconds, realSeconds, "a frame callback")
             runPhase(steps, dtSeconds, realSeconds, "a world's step")
             runPhase(lates, dtSeconds, realSeconds, "a late frame callback")
+            inFrame = false
+            runPhase(ends, dtSeconds, realSeconds, "a frame's end")
         },
 
         setViewport(width: number, height: number, pixelRatio: number = stage.pixelRatio) {
@@ -367,6 +392,7 @@ export function createRuntime(options: RuntimeOptions): ContainerRuntime {
             callbacks.clear()
             steps.clear()
             lates.clear()
+            ends.clear()
             setInputBackend(null)
             setPressCheck(null)
             setAssetBase(null)

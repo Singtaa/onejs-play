@@ -151,6 +151,19 @@ describe("frame phases", () => {
         expect(read).toEqual([1, 2])
     })
 
+    it("end the frame after late, and say the frame is over by then", () => {
+        const r = make()
+        const ran: string[] = []
+        const note = (what: string) => () => ran.push(`${what} ${r.oj.inFrame}`)
+        r.oj.onFrameEnd(note("end"))
+        r.oj.onLateFrame(note("late"))
+        r.oj.onFrame(note("frame"))
+        expect(r.oj.inFrame).toBe(false)
+        r.beginFrame(0.016)
+        expect(ran).toEqual(["frame true", "late true", "end false"])
+        expect(r.oj.inFrame).toBe(false)
+    })
+
     it("pass each phase the frame's dt", () => {
         const r = make()
         const seen: number[] = []

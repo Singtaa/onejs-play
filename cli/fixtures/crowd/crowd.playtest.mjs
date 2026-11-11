@@ -24,12 +24,30 @@ async function read(game, what, warmMs, ms) {
     return f.main
 }
 
+// A move is kept in JS and sent when the frame ends, so a place read back from Unity in the frame
+// that moved it has to be sent first: one person, moved 3 m aside in a frame callback, whose screen
+// point and pick are asked for before that callback returns.
+async function readBack(game, set) {
+    await set(1, 1)
+    await game.wait(500)
+    await game.eval("globalThis.crowd.askReadBack()")
+    await game.until(async () => (await game.eval("globalThis.crowd.readBack !== null")) === true, { what: "the frame that moves and reads back", timeoutMs: 10000 })
+    const r = JSON.parse(await game.eval("JSON.stringify(globalThis.crowd.readBack)"))
+    console.log(`READ BACK ${JSON.stringify(r)}`)
+    if (r.before === null || r.after === null) throw new Error("crowd: the person was not on screen, so nothing was read back")
+    const shift = Math.abs(r.after.x - r.before.x)
+    if (!(shift >= 40)) throw new Error(`crowd: a person moved 3 m aside read back ${shift.toFixed(1)} px from where it was in the same frame (at least 40): screenPoint saw the old place`)
+    if (!r.pickedAfter) throw new Error("crowd: a pick at the place a person was moved to in the same frame did not find it")
+    if (r.pickedBefore) throw new Error("crowd: a pick at the place a person was moved from in the same frame still found it")
+}
+
 export default async function (game) {
     await game.until(async () => (await game.eval("typeof globalThis.crowd")) === "object", { what: "the crowd cart", timeoutMs: 30000 })
-    const set = async (count) => {
-        const made = Number(await game.eval(`globalThis.crowd.set(${JSON.stringify({ ...SETUP, count })})`))
+    const set = async (count, seen = 0) => {
+        const made = Number(await game.eval(`globalThis.crowd.set(${JSON.stringify({ ...SETUP, count, seen })})`))
         if (made !== count) throw new Error(`crowd: asked for ${count} people and ${made} were made`)
     }
+    await readBack(game, set)
     await set(0)
     const empty = await read(game, "empty", 500, 1500)
     await set(PEOPLE)
