@@ -56,6 +56,10 @@ export interface Model {
     readonly clips: readonly string[]
     /** Height in the model's own units, before any spawn scale. */
     readonly height: number
+    /** The joints its meshes hang on, as the file names them: what `actor.attachTo` takes. Empty for a model with none. */
+    readonly joints: readonly string[]
+    /** Its parts, each a node of the file that carries a mesh, by the node's name: what `actor.hide` and `actor.show` take. */
+    readonly parts: readonly string[]
 }
 
 /** A list of numbers: a typed array, which crosses to Unity as its bytes, or a plain array. */
@@ -459,6 +463,8 @@ export interface SpawnOptions {
     tint?: ColorInput
     /** Up to four colours painted through its model's `colorMask`. */
     colors?: readonly ColorInput[]
+    /** Parts of its model it starts without, by name: see `actor.hide`. */
+    hide?: readonly string[]
     /**
      * Never moves: `scene.bake` bakes light into it, and its shadow and bounce
      * onto the rest. The actor of a physics body that is neither dynamic nor
@@ -541,6 +547,29 @@ export interface Actor {
      *     tom.colors = ["#a03020", "#2f4f6f"]
      */
     colors: readonly ColorInput[]
+    /**
+     * Hangs it on a joint of another actor, which then carries it through
+     * every pose: a hat on a head, a tool in a hand. Its `position`,
+     * `rotation` and `scale` are measured from the joint from then on, and
+     * start at what is given here (the joint itself, unturned, at its own
+     * scale, for what is left out). It is destroyed with the actor that
+     * carries it. Throws for a joint the other's `model.joints` does not have.
+     *
+     *     hat.attachTo(tom, "head", { position: [0, 0.12, 0] })
+     */
+    attachTo(to: Actor, joint: string, at?: { position?: Vec3, rotation?: Partial<Rotation>, scale?: number }): void
+    /** Takes it off the joint it is attached to and leaves it where it stood in the world, its own again. Nothing for one not attached. */
+    detach(): void
+    /**
+     * Stops drawing one of its model's parts on this actor: a sleeve, a
+     * skirt, a tool in the file. The part casts no shadow and costs nothing
+     * until it is shown again. Throws for a name `model.parts` does not have,
+     * and for no name, since an actor has no whole to hide: destroy or
+     * dissolve it instead.
+     */
+    hide(part: string): void
+    /** Draws a part `hide` took away. */
+    show(part: string): void
     /** Plays a clip, crossfading over `fade` seconds (0.15 by default). Loops unless told not to. */
     play(clip: string, options?: { loop?: boolean, fade?: number }): void
     /**
@@ -1266,7 +1295,9 @@ export function loadModel(name: string, options: { colorMask?: string, clips?: M
                 }
             }
             const clips = String(b.Clips(id)).split("\n").filter((c) => c !== "")
-            const model: Model = Object.freeze({ id, clips: Object.freeze(clips), height: Number(b.Height(id)) })
+            const joints = typeof b.Joints === "function" ? String(b.Joints(id)).split("\n").filter((j) => j !== "") : []
+            const parts = typeof b.Parts === "function" ? String(b.Parts(id)).split("\n").filter((p) => p !== "") : []
+            const model: Model = Object.freeze({ id, clips: Object.freeze(clips), height: Number(b.Height(id)), joints: Object.freeze(joints), parts: Object.freeze(parts) })
             generationOf.set(model, born)
             modelUrls.set(model, url)
             modelNames.set(model, name)
@@ -1504,6 +1535,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     // frame clock or a OneJS from before PlaceMany, and a scale before ScaleMany.
     const batchMoves = runtime !== null && typeof b.PlaceMany === "function"
     const batchScales = runtime !== null && typeof b.ScaleMany === "function"
+    // Which actor carries which on a joint (actor.attachTo).
+    const carriedBy = new Map<Actor, Actor>()
     const moved = new Set<(into: Float32Array, at: number) => void>()
     const resized = new Map<number, number>()
     let moveBuffer = new Float32Array(0), scaleBuffer = new Float32Array(0)
@@ -1595,6 +1628,13 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (problem !== "") throw new Error(`[oj] actor.colors: ${problem}`)
             colors = Object.freeze([...next])
         }
+        const showPart = (verb: string, part: string, on: boolean) => {
+            if (typeof part !== "string" || !model.parts.includes(part)) {
+                throw new Error(`[oj] actor.${verb}: ${typeof part === "string" ? `${part} is not one of this model's parts` : "it takes the name of a part"}: ${model.parts.join(", ")}`)
+            }
+            if (typeof b.ShowPart !== "function") throw new Error(`[oj] actor.${verb} needs a newer OneJS: this host's ModelBridge cannot hide a part (it came with runtime 1.9).`)
+            b.ShowPart(id, part, on)
+        }
         const turn = (next: Partial<Rotation>) => {
             rotation = Object.freeze({ yaw: next.yaw ?? 0, pitch: next.pitch ?? 0, roll: next.roll ?? 0 })
             quat = null
@@ -1620,6 +1660,36 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set castShadows(on: boolean) { cast = on; b.SetShadows(id, cast, receive) },
             get receiveShadows() { return receive },
             set receiveShadows(on: boolean) { receive = on; b.SetShadows(id, cast, receive) },
+            attachTo(to, joint, at = {}) {
+                if (typeof b.Attach !== "function") throw new Error("[oj] actor.attachTo needs a newer OneJS: this host's ModelBridge cannot attach an actor (it came with runtime 1.9).")
+                if (!actors.includes(to)) throw new Error("[oj] actor.attachTo: the actor to attach it to is not in this scene, or was destroyed")
+                if (!to.model.joints.includes(joint)) throw new Error(`[oj] actor.attachTo: ${joint} is not one of that model's joints: ${to.model.joints.join(", ")}`)
+                const p = vec3(at.position ?? [0, 0, 0])
+                const r = Object.freeze({ yaw: at.rotation?.yaw ?? 0, pitch: at.rotation?.pitch ?? 0, roll: at.rotation?.roll ?? 0 })
+                const s = at.scale ?? scale
+                // What this frame moved crosses first, so a move kept from before does not land on the joint.
+                sendMoves()
+                const problem = String(b.Attach(id, to.id, joint, p[0], p[1], p[2], r.yaw, r.pitch, r.roll, s) ?? "")
+                if (problem !== "") throw new Error(`[oj] actor.attachTo: ${problem}`)
+                position = p
+                rotation = r
+                quat = null
+                scale = s
+                carriedBy.set(actor, to)
+            },
+            detach() {
+                if (!carriedBy.has(actor)) return
+                sendMoves()
+                const where = b.Detach(id)
+                carriedBy.delete(actor)
+                if (where === null || where === undefined) return
+                position = vec3([where[0], where[1], where[2]])
+                rotation = fromQuat({ x: where[3], y: where[4], z: where[5], w: where[6] })
+                quat = null
+                scale = where[7]
+            },
+            hide(part) { showPart("hide", part, false) },
+            show(part) { showPart("show", part, true) },
             get tint() { return tint },
             set tint(c: ColorInput) { setTint(c) },
             get colors() { return colors },
@@ -1642,6 +1712,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
             },
             destroy() {
+                // What it carries goes with it, as its own destroy would have it go.
+                for (const [carried, by] of [...carriedBy]) if (by === actor) carried.destroy()
+                carriedBy.delete(actor)
                 fades.get(id)?.done()
                 fades.delete(id)
                 speeds.delete(id)
@@ -1658,10 +1731,11 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (r !== null) { rotation = r; quat = null }
         })
         actors.push(actor)
-        // An actor whose colours are refused is not left in the world.
+        // An actor whose colours or parts are refused is not left in the world.
         try {
             if (o.tint !== undefined) setTint(o.tint)
             if (o.colors !== undefined) setColors(o.colors)
+            for (const part of o.hide ?? []) showPart("hide", part, false)
         } catch (error) {
             actor.destroy()
             throw error
@@ -1847,6 +1921,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         const model: MeshModel = Object.freeze({
             id,
             clips: Object.freeze([]) as readonly string[],
+            joints: Object.freeze([]) as readonly string[],
+            parts: Object.freeze([]) as readonly string[],
             get height() { return Number(b.Height(id)) },
             get color() { return colorGiven },
             set color(c: ColorInput) {
@@ -2206,6 +2282,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         disposed = true
         stopFrame?.()
         stopFrameEnd?.()
+        carriedBy.clear()
         moved.clear()
         resized.clear()
         baker.dispose()

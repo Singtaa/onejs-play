@@ -34,6 +34,9 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "Load") return Promise.resolve(7)
                 if (name === "Clips") return "idle"
+                if (name === "Joints") return "hips\nhead"
+                if (name === "Parts") return "body\nskirt"
+                if (name === "Detach") return [1, 2, 3, 0, Math.SQRT1_2, 0, Math.SQRT1_2, 0.5]
                 if (name === "Height") return 1
                 if (name === "Spawn" || name === "AddPointLight") return ++nextId
                 if (name === "Pick") return 0
@@ -680,6 +683,94 @@ describe("an actor's colours", () => {
         const boo = createScene().scene.spawn(MODEL)
         expect(() => { boo.tint = "#ff0000" }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
         await expect(loadModel("other.glb", { colorMask: "m.png" })).rejects.toThrow(/needs a newer OneJS.*runtime 1\.9/)
+    })
+})
+
+describe("an actor on another's joint", () => {
+    it("lists a model's joints, and attaches by name at the place given", () => {
+        expect(MODEL.joints).toEqual(["hips", "head"])
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL), hat = scene.spawn(MODEL, { position: [5, 0, 5], yaw: 30, scale: 2 })
+        hat.attachTo(tom, "head", { position: [0, 0.12, 0] })
+        expect(last("Attach")).toEqual(["Attach", hat.id, tom.id, "head", 0, 0.12, 0, 0, 0, 0, 2])
+        // Measured from the joint now: where it stood in the world is gone.
+        expect(hat.position).toEqual([0, 0.12, 0])
+        expect(hat.yaw).toBe(0)
+        expect(hat.scale).toBe(2)
+    })
+
+    it("refuses a joint the model does not have, with the ones it has", () => {
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL), hat = scene.spawn(MODEL)
+        expect(() => hat.attachTo(tom, "hand.R")).toThrow("hand.R is not one of that model's joints: hips, head")
+        tom.destroy()
+        expect(() => hat.attachTo(tom, "head")).toThrow(/not in this scene, or was destroyed/)
+        expect(of("Attach")).toHaveLength(0)
+    })
+
+    it("comes off where it stood in the world, as the bridge says", () => {
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL), hat = scene.spawn(MODEL)
+        hat.detach()
+        expect(of("Detach")).toHaveLength(0)
+        hat.attachTo(tom, "head")
+        hat.detach()
+        expect(hat.position).toEqual([1, 2, 3])
+        expect(hat.yaw).toBeCloseTo(90, 4)
+        expect(hat.scale).toBe(0.5)
+        hat.detach()
+        expect(of("Detach")).toHaveLength(1)
+    })
+
+    it("is destroyed with what carries it, unless taken off first", () => {
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL), hat = scene.spawn(MODEL), feather = scene.spawn(MODEL), tool = scene.spawn(MODEL)
+        hat.attachTo(tom, "head")
+        feather.attachTo(hat, "head")
+        tool.attachTo(tom, "hips")
+        tool.detach()
+        calls = []
+        tom.destroy()
+        expect(of("Destroy").map((c) => c[1]).sort()).toEqual([tom.id, hat.id, feather.id].sort())
+        expect(() => { tool.position = [0, 0, 0] }).not.toThrow()
+    })
+
+    it("sends a move kept from this frame before it attaches", () => {
+        const r = createRuntime({ root: {}, version: "0.0.0" })
+        made.push(() => r.dispose())
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL), hat = scene.spawn(MODEL)
+        r.oj.onFrame(() => {
+            hat.position = [9, 9, 9]
+            hat.attachTo(tom, "head")
+            hat.position = [0, 1, 0]
+        })
+        calls = []
+        r.beginFrame(1 / 60)
+        expect(calls.map((c) => c[0])).toEqual(["PlaceMany", "Attach", "PlaceMany"])
+        expect(Array.from(of("PlaceMany")[1]![1] as Float32Array).slice(0, 4)).toEqual([hat.id, 0, 1, 0])
+    })
+})
+
+describe("a model's parts", () => {
+    it("are listed, hidden at spawn and shown and hidden after", () => {
+        expect(MODEL.parts).toEqual(["body", "skirt"])
+        const tom = createScene().scene.spawn(MODEL, { hide: ["skirt"] })
+        expect(last("ShowPart")).toEqual(["ShowPart", tom.id, "skirt", false])
+        tom.show("skirt")
+        expect(last("ShowPart")).toEqual(["ShowPart", tom.id, "skirt", true])
+        tom.hide("body")
+        expect(last("ShowPart")).toEqual(["ShowPart", tom.id, "body", false])
+    })
+
+    it("throw with the list for a part the model has not, and for no name at all", () => {
+        const { scene } = createScene()
+        const tom = scene.spawn(MODEL)
+        expect(() => tom.hide("cape")).toThrow("[oj] actor.hide: cape is not one of this model's parts: body, skirt")
+        expect(() => (tom.hide as any)()).toThrow("[oj] actor.hide: it takes the name of a part: body, skirt")
+        expect(() => (tom.show as any)()).toThrow("[oj] actor.show: it takes the name of a part: body, skirt")
+        expect(() => scene.spawn(MODEL, { hide: ["cape"] })).toThrow(/cape is not one/)
+        expect(of("ShowPart")).toHaveLength(0)
     })
 })
 
