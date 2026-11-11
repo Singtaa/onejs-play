@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { assetFile, assetInfo, assetUrl, loadAssetBytes, textureIdentity } from "./asset"
+import { assetFile, assetInfo, assetUrl, loadAssetBytes, loadTexture, textureIdentity } from "./asset"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture, type Texture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
@@ -455,6 +455,10 @@ export interface SpawnOptions {
     castShadows?: boolean
     /** Whether shadows fall on it. On by default. */
     receiveShadows?: boolean
+    /** A colour the whole of it is multiplied by. White by default, which changes nothing. */
+    tint?: ColorInput
+    /** Up to four colours painted through its model's `colorMask`. */
+    colors?: readonly ColorInput[]
     /**
      * Never moves: `scene.bake` bakes light into it, and its shadow and bounce
      * onto the rest. The actor of a physics body that is neither dynamic nor
@@ -519,6 +523,24 @@ export interface Actor {
     speed: number
     castShadows: boolean
     receiveShadows: boolean
+    /**
+     * A colour the whole of it is multiplied by: white, the default, draws it
+     * as its file has it, `"#b3b3b3"` a third darker. Actors of one model with
+     * different tints still draw together.
+     */
+    tint: ColorInput
+    /**
+     * Up to four colours painted through its model's `colorMask`: the first
+     * where the mask is red, then green, blue and its alpha. Each is
+     * multiplied into the model's picture, so paint what a colour will cover
+     * in grey. One left out is white, and an empty list clears them. Throws
+     * for a model loaded without a mask.
+     *
+     *     const villager = await loadModel("villager.glb", { colorMask: "villager.mask.png" })
+     *     const tom = scene.spawn(villager, { colors: ["#7a4b2a", "#2f4f6f"] })
+     *     tom.colors = ["#a03020", "#2f4f6f"]
+     */
+    colors: readonly ColorInput[]
     /** Plays a clip, crossfading over `fade` seconds (0.15 by default). Loops unless told not to. */
     play(clip: string, options?: { loop?: boolean, fade?: number }): void
     /**
@@ -1178,30 +1200,58 @@ function scatterRange(o: ScatterOptions): [from: number, to: number, fade: numbe
 
 // models
 
+/** A model's load, as `loads` keys it: its file, and its mask when it has one. */
+function loadKey(name: string, o: { colorMask?: string }): string {
+    return o.colorMask === undefined ? assetUrl(name) : `${assetUrl(name)}\n${assetUrl(o.colorMask)}`
+}
+
+/** Models loaded with a colour mask, which `colors` needs. */
+const masked = new WeakSet<Model>()
+
 /**
  * Loads one of this game's .glb files by name, or any URL. A file asked for again
  * while its scene lives shares the first load, so ten components each calling
  * `useModel("ghost.glb")` load it once.
+ *
+ * `colorMask` names a picture laid out as the model's own, which says where an
+ * actor's `colors` go: its red, green, blue and alpha are how much of colours
+ * 1 to 4 a texel takes, and where all four are 0 the model's picture shows as
+ * it is. A picture with no alpha channel is all of colour 4. The same file
+ * with another mask, or none, is another model.
  */
-export function loadModel(name: string): Promise<Model> {
+export function loadModel(name: string, options: { colorMask?: string } = {}): Promise<Model> {
     const url = assetUrl(name)
-    let loading = loads.get(url)
+    const key = loadKey(name, options)
+    let loading = loads.get(key)
     if (loading === undefined) {
         const b = bridge()
         const born = generation
+        const { colorMask } = options
+        if (colorMask !== undefined && typeof b.SetColorMask !== "function") {
+            return Promise.reject(new Error("[oj] loadModel colorMask needs a newer OneJS: this host's ModelBridge cannot colour an actor (it came with runtime 1.9)."))
+        }
         loading = (async () => {
-            const id: number = await b.Load(url)
+            // Together, so a mask costs a load no round trip of its own.
+            const [id, picture] = await Promise.all([b.Load(url) as Promise<number>, colorMask === undefined ? null : loadTexture(colorMask)])
+            if (picture !== null) {
+                const problem = generation === born ? String(b.SetColorMask(id, picture) ?? "") : ""
+                if (problem !== "") {
+                    b.Unload?.(id)
+                    throw new Error(`[oj] loadModel("${name}") colorMask: ${problem}`)
+                }
+            }
             const clips = String(b.Clips(id)).split("\n").filter((c) => c !== "")
             const model: Model = Object.freeze({ id, clips: Object.freeze(clips), height: Number(b.Height(id)) })
             generationOf.set(model, born)
             modelUrls.set(model, url)
             modelNames.set(model, name)
+            if (picture !== null) masked.add(model)
             return model
         })()
-        loads.set(url, loading)
+        loads.set(key, loading)
         // Forgotten on failure, so a file added after the first ask still loads.
         const settled = loading
-        settled.catch(() => { if (loads.get(url) === settled) loads.delete(url) })
+        settled.catch(() => { if (loads.get(key) === settled) loads.delete(key) })
     }
     return loading
 }
@@ -1213,27 +1263,28 @@ export function loadModel(name: string): Promise<Model> {
  * host whose bridge cannot free one model keeps it until the scene goes, as
  * every model did before.
  */
-export async function forgetModel(name: string): Promise<void> {
-    const url = assetUrl(name)
-    const loading = loads.get(url)
+export async function forgetModel(name: string, options: { colorMask?: string } = {}): Promise<void> {
+    const key = loadKey(name, options)
+    const loading = loads.get(key)
     if (loading === undefined) return
     const model = await loading.catch(() => null)
-    if (loads.get(url) !== loading) return
+    if (loads.get(key) !== loading) return
     if (model === null || generationOf.get(model) !== generation) {
         // Failed, or its scene already went and took it along.
-        loads.delete(url)
+        loads.delete(key)
         return
     }
     const b = bridge()
     if (typeof b.Unload !== "function") return
-    if (b.Unload(model.id)) loads.delete(url)
+    if (b.Unload(model.id)) loads.delete(key)
     else console.warn(`[oj] ${name} is still in the scene, so it stays loaded. Unload it after its last copy is gone.`)
 }
 
-/** The hook form: null until the file has loaded. */
-export function useModel(name: string): Model | null {
+/** The hook form: null until the file has loaded. `options` as `loadModel`'s. */
+export function useModel(name: string, options: { colorMask?: string } = {}): Model | null {
     const [model, setModel] = useState<Model | null>(null)
-    useEffect(() => watchModel(name, setModel), [name])
+    const { colorMask } = options
+    useEffect(() => watchModel(name, setModel, { colorMask }), [name, colorMask])
     return model
 }
 
@@ -1242,9 +1293,9 @@ export function useModel(name: string): Model | null {
  * stopped load stays quiet when it fails, since pressing Play or a hot reload
  * disposes the scene mid-load and the bridge then cancels it.
  */
-export function watchModel(name: string, loaded: (model: Model) => void): () => void {
+export function watchModel(name: string, loaded: (model: Model) => void, options: { colorMask?: string } = {}): () => void {
     let watching = true
-    loadModel(name).then(
+    loadModel(name, options).then(
         (model) => { if (watching) loaded(model) },
         (error) => { if (watching) console.error(`[oj] could not load ${name}:`, error) },
     )
@@ -1487,6 +1538,28 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             moved.add(write)
             return true
         }
+        let tint: ColorInput = "#ffffff"
+        let colors: readonly ColorInput[] = Object.freeze([])
+        const needColors = (what: string) => {
+            if (typeof b.SetTint !== "function") throw new Error(`[oj] an actor's ${what} needs a newer OneJS: this host's ModelBridge cannot colour an actor (it came with runtime 1.9).`)
+        }
+        const setTint = (next: ColorInput) => {
+            const sent = rgb(next, "actor tint")
+            needColors("tint")
+            const problem = String(b.SetTint(id, ...sent) ?? "")
+            if (problem !== "") throw new Error(`[oj] actor.tint: ${problem}`)
+            tint = next
+        }
+        const setColors = (next: readonly ColorInput[]) => {
+            if (!Array.isArray(next) || next.length > 4) throw new Error(`[oj] actor.colors is a list of up to four colours, and this is ${Array.isArray(next) ? `${next.length}` : typeof next}`)
+            const sent = new Float32Array(next.length * 3)
+            next.forEach((c, i) => sent.set(rgb(c, `actor colors[${i}]`), i * 3))
+            if (next.length > 0 && !masked.has(model)) throw new Error("[oj] actor.colors: this model was loaded without a colorMask, which says where each colour goes. Load it with loadModel(file, { colorMask }).")
+            needColors("colors")
+            const problem = String(b.SetColors(id, sent) ?? "")
+            if (problem !== "") throw new Error(`[oj] actor.colors: ${problem}`)
+            colors = Object.freeze([...next])
+        }
         const turn = (next: Partial<Rotation>) => {
             rotation = Object.freeze({ yaw: next.yaw ?? 0, pitch: next.pitch ?? 0, roll: next.roll ?? 0 })
             quat = null
@@ -1512,6 +1585,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set castShadows(on: boolean) { cast = on; b.SetShadows(id, cast, receive) },
             get receiveShadows() { return receive },
             set receiveShadows(on: boolean) { receive = on; b.SetShadows(id, cast, receive) },
+            get tint() { return tint },
+            set tint(c: ColorInput) { setTint(c) },
+            get colors() { return colors },
+            set colors(list: readonly ColorInput[]) { setColors(list) },
             play(clip, po = {}) {
                 if (!b.Play(id, clip, po.loop ?? true, po.fade ?? 0.15)) {
                     console.warn(`[oj] ${clip} is not one of this model's clips: ${model.clips.join(", ")}`)
@@ -1546,6 +1623,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (r !== null) { rotation = r; quat = null }
         })
         actors.push(actor)
+        // An actor whose colours are refused is not left in the world.
+        try {
+            if (o.tint !== undefined) setTint(o.tint)
+            if (o.colors !== undefined) setColors(o.colors)
+        } catch (error) {
+            actor.destroy()
+            throw error
+        }
         if (o.play) actor.play(o.play, { fade: 0 })
         return actor
     }

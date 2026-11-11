@@ -21,7 +21,17 @@ interface Setup {
     /** Whether the cart walks each one 3 m to and fro from its script. */
     move: boolean
     shadows: boolean
+    /**
+     * "tint" gives each a tint of its own, "paint" four colours of its own through the mask
+     * (trunk, legs, arms, head). Left out, each is as the file has it.
+     */
+    colors?: "tint" | "paint"
 }
+
+// Sixteen colours, taken four apart for a person's four, so neighbours differ in every part.
+const PALETTE = ["#7a4b2a", "#2f4f6f", "#3b2a1a", "#e0b090", "#a03020", "#40603a", "#c8a040", "#8a5a44",
+    "#584a78", "#b06a50", "#2a5a5a", "#d0c0a0", "#703040", "#506080", "#906020", "#c09078"]
+const shade = (i: number, k: number) => PALETTE[(i * 5 + k * 4) % PALETTE.length]
 
 const GAP = 1.2
 const EYE: Vec3 = [0, 14, -6]
@@ -40,10 +50,11 @@ function home(i: number, setup: Setup): Vec3 {
 function Crowd() {
     const scene = useScene({ camera: { position: EYE, lookAt: [0, 0, 10], fov: 60 } })
     const person = useModel("person.glb")
+    const painted = useModel("person.glb", { colorMask: "person.mask.png" })
     const state = useRef({ actors: [] as Actor[], setup: null as Setup | null, t: 0, frames: [] as number[], main: [] as number[], last: 0, readBack: null as null | "asked" | object })
 
     useEffect(() => {
-        if (!scene || !person) return
+        if (!scene || !person || !painted) return
         const s = state.current
         const recorders: Record<string, any> = {}
         const api = {
@@ -53,7 +64,9 @@ function Crowd() {
                 s.setup = setup
                 scene.sun({ shadows: setup.shadows })
                 for (let i = 0; i < setup.count; i++) {
-                    const actor = scene.spawn(person, { position: home(i, setup), yaw: 180 })
+                    const actor = setup.colors === "paint"
+                        ? scene.spawn(painted, { position: home(i, setup), yaw: 180, colors: [0, 1, 2, 3].map((k) => shade(i, k)) })
+                        : scene.spawn(person, { position: home(i, setup), yaw: 180, tint: setup.colors === "tint" ? shade(i, 0) : undefined })
                     if (setup.clips !== "none") actor.play("Walk")
                     if (setup.clips === "hold") actor.speed = 0
                     s.actors.push(actor)
@@ -107,7 +120,7 @@ function Crowd() {
         api.record("Internal", MAIN)
         ;(globalThis as any).crowd = api
         return () => { for (const a of s.actors) a.destroy() }
-    }, [scene, person])
+    }, [scene, person, painted])
 
     useFrame((dt) => {
         const s = state.current

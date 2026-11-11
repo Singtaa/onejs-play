@@ -9,6 +9,7 @@ import path from "node:path"
 import zlib from "node:zlib"
 
 const OUT = path.resolve(import.meta.dirname, "..", "cli", "fixtures", "crowd", "person.glb")
+const MASK = path.resolve(import.meta.dirname, "..", "cli", "fixtures", "crowd", "person.mask.png")
 
 // name, parent, where the joint is, where its tube ends, the tube's radius
 const JOINTS = [
@@ -94,18 +95,13 @@ JOINTS.forEach(([, parent, from, to, radius], j) => {
     }
 })
 
-// The picture: 256 px of banded colour, so the material samples a texture as a villager's does.
-function png(size) {
+// A square PNG whose texel in a joint's band of the uvs, at row y, is `paint(band, y)` as r, g, b, a.
+function png(size, paint) {
     const raw = Buffer.alloc(size * (size * 4 + 1))
     for (let y = 0; y < size; y++) {
         const row = y * (size * 4 + 1)
         for (let x = 0; x < size; x++) {
-            const band = Math.floor(x / size * JOINTS.length)
-            const i = row + 1 + x * 4
-            raw[i] = 90 + (band * 53) % 140
-            raw[i + 1] = 80 + (band * 97) % 120
-            raw[i + 2] = 70 + (band * 31) % 110 + (y >> 3 & 1) * 12
-            raw[i + 3] = 255
+            raw.set(paint(Math.floor(x / size * JOINTS.length), y), row + 1 + x * 4)
         }
     }
     const chunk = (type, data) => {
@@ -187,7 +183,12 @@ const animations = CLIPS.map((name, clip) => {
     return { name, samplers, channels }
 })
 
-const picture = png(256)
+// The picture: 256 px of banded colour, so the material samples a texture as a villager's does.
+const picture = png(256, (band, y) => [90 + (band * 53) % 140, 80 + (band * 97) % 120, 70 + (band * 31) % 110 + (y >> 3 & 1) * 12, 255])
+// Its colour mask, laid out as the picture: the trunk takes colour 1 (red), the legs colour 2
+// (green), the arms colour 3 (blue) and the head colour 4 (alpha). What is held takes none.
+const part = (band) => band <= 2 ? 0 : band <= 4 ? 3 : band <= 12 ? 2 : band <= 18 ? 1 : -1
+const mask = png(256, (band) => [0, 1, 2, 3].map((channel) => part(band) === channel ? 255 : 0))
 const imageView = view(picture)
 
 const nodes = JOINTS.map(([name, parent, at], j) => ({
@@ -224,4 +225,5 @@ header.writeUInt32LE(12 + 8 + json.length + 8 + bin.length, 8)
 const chunkHead = (n, type) => { const b = Buffer.alloc(8); b.writeUInt32LE(n, 0); b.writeUInt32LE(type, 4); return b }
 fs.mkdirSync(path.dirname(OUT), { recursive: true })
 fs.writeFileSync(OUT, Buffer.concat([header, chunkHead(json.length, 0x4e4f534a), json, chunkHead(bin.length, 0x004e4942), bin]))
+fs.writeFileSync(MASK, mask)
 console.log(`${path.relative(process.cwd(), OUT)}: ${indices.length / 3} triangles, ${positions.length / 3} vertices, ${JOINTS.length} joints, ${CLIPS.length} clips, ${(12 + 16 + json.length + bin.length) / 1024 | 0} KB`)

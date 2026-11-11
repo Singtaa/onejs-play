@@ -13,6 +13,10 @@ import { createRuntime } from "../runtime"
 import { setInputBackend } from "onejs-unity/input"
 import { Color } from "../color"
 
+// A colour mask's picture, which loadTexture would ask Unity for.
+const PICTURE = { picture: "mask" }
+vi.mock("onejs-unity/assets", async (actual) => ({ ...(await actual<typeof import("onejs-unity/assets")>()), loadImageAsync: async () => PICTURE }))
+
 type Call = [string, ...unknown[]]
 
 let calls: Call[]
@@ -615,6 +619,67 @@ describe("forgetting a model", () => {
         await forgetModel("ship-c.glb")
         await loadModel("ship-c.glb")
         expect(of("Load")).toHaveLength(1)
+    })
+})
+
+describe("an actor's colours", () => {
+    const maskedModel = () => loadModel("villager.glb", { colorMask: "villager.mask.png" })
+
+    it("tints at spawn and after, as sRGB, and reads back what was given", () => {
+        const boo = createScene().scene.spawn(MODEL, { tint: "#ff8000" })
+        expect(last("SetTint").slice(1).map((v) => +(v as number).toFixed(3))).toEqual([boo.id, 1, 0.502, 0])
+        boo.tint = "#ffffff"
+        expect(last("SetTint")).toEqual(["SetTint", boo.id, 1, 1, 1])
+        expect(boo.tint).toBe("#ffffff")
+        expect(of("SetColors")).toHaveLength(0)
+    })
+
+    it("gives a model its mask at load, and keeps it apart from the same file without one", async () => {
+        const plain = await loadModel("villager.glb")
+        calls = []
+        const model = await maskedModel()
+        expect(model).not.toBe(plain)
+        expect(last("SetColorMask")).toEqual(["SetColorMask", model.id, PICTURE])
+        expect(await maskedModel()).toBe(model)
+        expect(of("Load")).toHaveLength(1)
+    })
+
+    it("paints up to four colours through the mask, three floats each", async () => {
+        const model = await maskedModel()
+        const tom = createScene().scene.spawn(model, { colors: ["#ff0000", "#0000ff"] })
+        expect(Array.from(last("SetColors")[2] as Float32Array)).toEqual([1, 0, 0, 0, 0, 1])
+        tom.colors = []
+        expect((last("SetColors")[2] as Float32Array).length).toBe(0)
+        expect(tom.colors).toEqual([])
+        expect(() => { tom.colors = ["#000", "#000", "#000", "#000", "#000"] }).toThrow(/up to four/)
+    })
+
+    it("refuses colours for a model loaded without a mask, and leaves no actor behind", () => {
+        const { scene } = createScene()
+        expect(() => scene.spawn(MODEL, { colors: ["#ff0000"] })).toThrow(/without a colorMask/)
+        expect(of("Destroy")).toHaveLength(1)
+        const boo = scene.spawn(MODEL)
+        expect(() => { boo.colors = ["#ff0000"] }).toThrow(/without a colorMask/)
+        expect(of("SetColors")).toHaveLength(0)
+    })
+
+    it("says what the bridge refused, and keeps the colour it had", () => {
+        let refuse = false
+        const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
+            get: (t, name) => name === "SetTint" && refuse ? () => "too many" : t[name as string],
+        })
+        const boo = createScene().scene.spawn(MODEL, { tint: "#808080" })
+        refuse = true
+        expect(() => { boo.tint = "#ff0000" }).toThrow("[oj] actor.tint: too many")
+        expect(boo.tint).toBe("#808080")
+    })
+
+    it("needs a OneJS that can colour an actor", async () => {
+        missing = new Set(["SetTint", "SetColorMask"])
+        const boo = createScene().scene.spawn(MODEL)
+        expect(() => { boo.tint = "#ff0000" }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
+        await expect(loadModel("other.glb", { colorMask: "m.png" })).rejects.toThrow(/needs a newer OneJS.*runtime 1\.9/)
     })
 })
 
