@@ -463,7 +463,7 @@ export interface SpawnOptions {
     tint?: ColorInput
     /** Up to four colours painted through its model's `colorMask`. */
     colors?: readonly ColorInput[]
-    /** A picture drawn on it in place of its model's own: see `actor.texture`. */
+    /** A texture drawn on it in place of its model's own: see `actor.texture`. */
     texture?: Texture | null
     /** Parts of its model it starts without, by name: see `actor.hide`. */
     hide?: readonly string[]
@@ -1654,8 +1654,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let texture: Texture | null = null
         const setTexture = (next: Texture | null) => {
             if (next !== null) picture(next, "actor.texture")
-            if (typeof b.SetPicture !== "function") throw new Error("[oj] actor.texture needs a newer OneJS: this host's ModelBridge cannot draw a picture on an actor (it came with runtime 1.9).")
-            const problem = String(b.SetPicture(id, next) ?? "")
+            if (typeof b.SetTexture !== "function") throw new Error("[oj] actor.texture needs a newer OneJS: this host's ModelBridge cannot draw a texture on an actor (it came with runtime 1.9).")
+            const problem = String(b.SetTexture(id, next) ?? "")
             if (problem !== "") throw new Error(`[oj] actor.texture: ${problem}`)
             texture = next
         }
@@ -1764,7 +1764,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (r !== null) { rotation = r; quat = null }
         })
         actors.push(actor)
-        // An actor whose colours, picture or parts are refused is not left in the world.
+        // An actor whose colours, texture or parts are refused is not left in the world.
         try {
             if (o.tint !== undefined) setTint(o.tint)
             if (o.colors !== undefined) setColors(o.colors)

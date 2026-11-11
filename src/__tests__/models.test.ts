@@ -709,27 +709,27 @@ describe("an actor's colours", () => {
     })
 })
 
-describe("an actor's own picture", () => {
+describe("an actor's own texture", () => {
     const LOOK = { picture: "look" } as any
 
-    it("wears a picture from spawn and after, and its model's own again with null", () => {
+    it("wears a texture from spawn and after, and its model's own again with null", () => {
         const { scene } = createScene()
         const tom = scene.spawn(MODEL, { texture: LOOK })
-        expect(last("SetPicture")).toEqual(["SetPicture", tom.id, LOOK])
+        expect(last("SetTexture")).toEqual(["SetTexture", tom.id, LOOK])
         expect(tom.texture).toBe(LOOK)
         tom.texture = null
-        expect(last("SetPicture")).toEqual(["SetPicture", tom.id, null])
+        expect(last("SetTexture")).toEqual(["SetTexture", tom.id, null])
         expect(tom.texture).toBeNull()
         const plain = scene.spawn(MODEL)
         expect(plain.texture).toBeNull()
-        expect(of("SetPicture")).toHaveLength(2)
+        expect(of("SetTexture")).toHaveLength(2)
     })
 
     it("refuses what is not a picture, and says what the bridge refused, leaving no actor behind", () => {
         let refuse = false
         const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
         ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
-            get: (t, name) => name === "SetPicture" && refuse ? () => "a mesh model takes its texture through scene.mesh" : t[name as string],
+            get: (t, name) => name === "SetTexture" && refuse ? () => "a mesh model takes its texture through scene.mesh" : t[name as string],
         })
         const { scene } = createScene()
         const tom = scene.spawn(MODEL)
@@ -741,8 +741,8 @@ describe("an actor's own picture", () => {
         expect(tom.texture).toBeNull()
     })
 
-    it("needs a OneJS that can draw a picture on an actor", () => {
-        missing = new Set(["SetPicture"])
+    it("needs a OneJS that can draw a texture on an actor", () => {
+        missing = new Set(["SetTexture"])
         const tom = createScene().scene.spawn(MODEL)
         expect(() => { tom.texture = LOOK }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
     })
