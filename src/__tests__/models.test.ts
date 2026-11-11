@@ -607,7 +607,7 @@ describe("forgetting a model", () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
         await loadModel("ship-b.glb")
         await forgetModel("ship-b.glb")
-        expect(warn.mock.calls[0]?.[0]).toBe("[oj] ship-b.glb is still in the scene, so it stays loaded. Unload it after its last copy is gone.")
+        expect(warn.mock.calls[0]?.[0]).toBe("[oj] ship-b.glb is still in the scene, or another model plays its clips, so it stays loaded. Unload it after its last copy and those models are gone.")
         await loadModel("ship-b.glb")
         expect(of("Load")).toHaveLength(1)
         warn.mockRestore()
@@ -680,6 +680,36 @@ describe("an actor's colours", () => {
         const boo = createScene().scene.spawn(MODEL)
         expect(() => { boo.tint = "#ff0000" }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
         await expect(loadModel("other.glb", { colorMask: "m.png" })).rejects.toThrow(/needs a newer OneJS.*runtime 1\.9/)
+    })
+})
+
+describe("a model that plays another's clips", () => {
+    it("takes them at load, and is a model of its own for each giver", async () => {
+        const moves = await loadModel("moves.glb")
+        calls = []
+        const tom = await loadModel("tom.glb", { clips: moves })
+        expect(of("TakeClips")).toEqual([["TakeClips", tom.id, moves.id]])
+        // The clips are read after they are taken.
+        expect(calls.map((c) => c[0]).indexOf("TakeClips")).toBeLessThan(calls.map((c) => c[0]).indexOf("Clips"))
+        expect(await loadModel("tom.glb", { clips: moves })).toBe(tom)
+        expect(await loadModel("tom.glb")).not.toBe(tom)
+    })
+
+    it("rejects with what the bridge refused, and lets go of the file", async () => {
+        const moves = await loadModel("moves.glb")
+        const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
+            get: (t, name) => name === "TakeClips" ? () => "this model has no joint arm at root/arm, which the clips move" : t[name as string],
+        })
+        calls = []
+        await expect(loadModel("ann.glb", { clips: moves })).rejects.toThrow('[oj] loadModel("ann.glb") clips: this model has no joint arm')
+        expect(of("Unload")).toHaveLength(1)
+    })
+
+    it("needs a OneJS that can share clips", async () => {
+        const moves = await loadModel("moves.glb")
+        missing = new Set(["TakeClips"])
+        await expect(loadModel("bob.glb", { clips: moves })).rejects.toThrow(/needs a newer OneJS.*runtime 1\.9/)
     })
 })
 

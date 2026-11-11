@@ -1200,9 +1200,11 @@ function scatterRange(o: ScatterOptions): [from: number, to: number, fade: numbe
 
 // models
 
-/** A model's load, as `loads` keys it: its file, and its mask when it has one. */
-function loadKey(name: string, o: { colorMask?: string }): string {
-    return o.colorMask === undefined ? assetUrl(name) : `${assetUrl(name)}\n${assetUrl(o.colorMask)}`
+/** A model's load, as `loads` keys it: its file, its mask when it has one, and the model whose clips it plays. */
+function loadKey(name: string, o: { colorMask?: string, clips?: Model }): string {
+    const mask = o.colorMask === undefined ? "" : `\nmask ${assetUrl(o.colorMask)}`
+    const clips = o.clips === undefined ? "" : `\nclips ${o.clips.id}`
+    return `${assetUrl(name)}${mask}${clips}`
 }
 
 /** Models loaded with a colour mask, which `colors` needs. */
@@ -1218,17 +1220,33 @@ const masked = new WeakSet<Model>()
  * 1 to 4 a texel takes, and where all four are 0 the model's picture shows as
  * it is. A picture with no alpha channel is all of colour 4. The same file
  * with another mask, or none, is another model.
+ *
+ * `clips` is a loaded model whose clips this one plays as if they were in its
+ * own file, so many bodies on one skeleton hold their clips once. Every joint
+ * of the giver must be in this file under the same name and parents, and the
+ * load rejects naming the first that is not. The giver stays loaded while a
+ * model plays its clips.
+ *
+ *     const moves = await loadModel("villager-moves.glb")
+ *     const tom = await loadModel("villager-m1.glb", { clips: moves })
+ *     tom.clips                    // the moves' clips
  */
-export function loadModel(name: string, options: { colorMask?: string } = {}): Promise<Model> {
+export function loadModel(name: string, options: { colorMask?: string, clips?: Model } = {}): Promise<Model> {
     const url = assetUrl(name)
     const key = loadKey(name, options)
     let loading = loads.get(key)
     if (loading === undefined) {
         const b = bridge()
         const born = generation
-        const { colorMask } = options
+        const { colorMask, clips: giver } = options
         if (colorMask !== undefined && typeof b.SetColorMask !== "function") {
             return Promise.reject(new Error("[oj] loadModel colorMask needs a newer OneJS: this host's ModelBridge cannot colour an actor (it came with runtime 1.9)."))
+        }
+        if (giver !== undefined && typeof b.TakeClips !== "function") {
+            return Promise.reject(new Error("[oj] loadModel clips needs a newer OneJS: this host's ModelBridge cannot give a model another's clips (it came with runtime 1.9)."))
+        }
+        if (giver !== undefined && generationOf.get(giver) !== generation) {
+            return Promise.reject(new Error(`[oj] loadModel("${name}") clips: that model was loaded for a scene that is gone. Load it again first.`))
         }
         loading = (async () => {
             // Together, so a mask costs a load no round trip of its own.
@@ -1238,6 +1256,13 @@ export function loadModel(name: string, options: { colorMask?: string } = {}): P
                 if (problem !== "") {
                     b.Unload?.(id)
                     throw new Error(`[oj] loadModel("${name}") colorMask: ${problem}`)
+                }
+            }
+            if (giver !== undefined && generation === born) {
+                const problem = String(b.TakeClips(id, giver.id) ?? "")
+                if (problem !== "") {
+                    b.Unload?.(id)
+                    throw new Error(`[oj] loadModel("${name}") clips: ${problem}`)
                 }
             }
             const clips = String(b.Clips(id)).split("\n").filter((c) => c !== "")
@@ -1263,7 +1288,7 @@ export function loadModel(name: string, options: { colorMask?: string } = {}): P
  * host whose bridge cannot free one model keeps it until the scene goes, as
  * every model did before.
  */
-export async function forgetModel(name: string, options: { colorMask?: string } = {}): Promise<void> {
+export async function forgetModel(name: string, options: { colorMask?: string, clips?: Model } = {}): Promise<void> {
     const key = loadKey(name, options)
     const loading = loads.get(key)
     if (loading === undefined) return
@@ -1277,14 +1302,24 @@ export async function forgetModel(name: string, options: { colorMask?: string } 
     const b = bridge()
     if (typeof b.Unload !== "function") return
     if (b.Unload(model.id)) loads.delete(key)
-    else console.warn(`[oj] ${name} is still in the scene, so it stays loaded. Unload it after its last copy is gone.`)
+    else console.warn(`[oj] ${name} is still in the scene, or another model plays its clips, so it stays loaded. Unload it after its last copy and those models are gone.`)
 }
 
-/** The hook form: null until the file has loaded. `options` as `loadModel`'s. */
-export function useModel(name: string, options: { colorMask?: string } = {}): Model | null {
+/**
+ * The hook form: null until the file has loaded. `options` as `loadModel`'s,
+ * and `clips` may be the null another `useModel` gives while its file loads,
+ * which this one waits for:
+ *
+ *     const moves = useModel("villager-moves.glb")
+ *     const tom = useModel("villager-m1.glb", { clips: moves })
+ */
+export function useModel(name: string, options: { colorMask?: string, clips?: Model | null } = {}): Model | null {
     const [model, setModel] = useState<Model | null>(null)
-    const { colorMask } = options
-    useEffect(() => watchModel(name, setModel, { colorMask }), [name, colorMask])
+    const { colorMask, clips } = options
+    useEffect(() => {
+        if (clips === null) return
+        return watchModel(name, setModel, { colorMask, clips })
+    }, [name, colorMask, clips])
     return model
 }
 
@@ -1293,7 +1328,7 @@ export function useModel(name: string, options: { colorMask?: string } = {}): Mo
  * stopped load stays quiet when it fails, since pressing Play or a hot reload
  * disposes the scene mid-load and the bridge then cancels it.
  */
-export function watchModel(name: string, loaded: (model: Model) => void, options: { colorMask?: string } = {}): () => void {
+export function watchModel(name: string, loaded: (model: Model) => void, options: { colorMask?: string, clips?: Model } = {}): () => void {
     let watching = true
     loadModel(name, options).then(
         (model) => { if (watching) loaded(model) },
