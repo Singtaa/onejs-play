@@ -8,9 +8,16 @@
 // costs made to update, over the empty scene. The third reading is also the proof that this run
 // could tell: if making them update costs under a millisecond, nothing was compared. Throws, so
 // the run exits non-zero, on either, or on a reading that was not taken.
+//
+// A machine that draws in software cannot time this at all: a GitHub runner took 130 to 170 ms
+// a frame drawing nothing, and its main thread read 38 ms empty against 2.5 ms with the crowd.
+// So when the empty scene's frames take longer than SLOW_FRAME_MS, the cost is printed as
+// INCONCLUSIVE and not compared, and only the checks that do not time (parts, joints, clips, the
+// hat, the read back, the counts) decide the run. Anywhere faster, every cost check fails as before.
 export const PEOPLE = 400
 export const SHARE = 0.25
 export const TELLS_MS = 1
+export const SLOW_FRAME_MS = 50
 
 const SETUP = { seen: 0, clips: "play", move: false, shadows: false }
 
@@ -21,7 +28,7 @@ async function read(game, what, warmMs, ms) {
     const f = JSON.parse(await game.eval("JSON.stringify(globalThis.crowd.frames())"))
     if (!(f.mainCount >= 10) || !(f.main >= 0)) throw new Error(`crowd: ${what} read ${f.mainCount} frames of main thread time (${f.main}): nothing was measured`)
     console.log(`MAIN ${what}: ${f.main.toFixed(3)} ms over ${f.mainCount} frames (frame to frame ${f.mean.toFixed(2)} ms)`)
-    return f.main
+    return f
 }
 
 // A move is kept in JS and sent when the frame ends, so a place read back from Unity in the frame
@@ -73,15 +80,20 @@ export default async function (game) {
     await seams(game)
     await readBack(game, set)
     await set(0)
-    const empty = await read(game, "empty", 500, 1500)
+    const blank = await read(game, "empty", 500, 1500)
+    const empty = blank.main
     await set(PEOPLE)
-    const unseen = await read(game, `${PEOPLE} unseen`, 1500, 2000)
+    const unseen = (await read(game, `${PEOPLE} unseen`, 1500, 2000)).main
     const changed = Number(await game.eval("globalThis.crowd.updateOffscreen()"))
     if (changed !== PEOPLE) throw new Error(`crowd: ${changed} of ${PEOPLE} meshes were made to update off screen: the comparison is not the one meant`)
-    const updating = await read(game, `${PEOPLE} unseen, made to update`, 1500, 2000)
+    const updating = (await read(game, `${PEOPLE} unseen, made to update`, 1500, 2000)).main
 
     const cost = unseen - empty, most = updating - empty
     console.log(`COST unseen ${cost.toFixed(3)} ms, made to update ${most.toFixed(3)} ms, share ${(cost / most).toFixed(3)}`)
+    if (!(blank.mean <= SLOW_FRAME_MS)) {
+        console.log(`INCONCLUSIVE COST: an empty scene took ${blank.mean.toFixed(1)} ms a frame (over ${SLOW_FRAME_MS}), so this machine draws too slowly to time a crowd; the cost was not compared, and only the checks above decide this run`)
+        return
+    }
     if (!(most >= TELLS_MS)) throw new Error(`crowd: making ${PEOPLE} meshes update off screen cost ${most.toFixed(3)} ms a frame, under ${TELLS_MS}: this run cannot tell an unseen crowd that is skinned from one that is not`)
     if (!(cost <= most * SHARE)) throw new Error(`crowd: ${PEOPLE} unseen people cost ${cost.toFixed(3)} ms a frame, ${(cost / most * 100).toFixed(0)}% of the ${most.toFixed(3)} ms they cost when made to update off screen (at most ${SHARE * 100}%): an actor nobody sees is being skinned or sampled again`)
 }

@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest"
-import check, { PEOPLE } from "./crowd.playtest.mjs"
+import check, { PEOPLE, SLOW_FRAME_MS } from "./crowd.playtest.mjs"
 
 /** A game whose main thread reads `ms.empty`, `ms.unseen` and `ms.updating` a frame in turn. */
 const BACK = { before: { x: 640, y: 400 }, after: { x: 420, y: 400 }, pickedAfter: true, pickedBefore: false }
 
 const SEAMS = { parts: ["trunk", "legs", "arms", "head"], joints: 20, clips: 10, own: ["person"], on: [0, 0.25, 0], off: [0, 1.78, 6], scale: 0.25, walking: { head: [0.02, 1.49, 6.22], off: [0.02, 1.74, 6.22] } }
 
-function fake(ms: { empty: number, unseen: number, updating: number }, { frames = 100, changed = PEOPLE, made = (n: number) => n, back = BACK as object, seams = SEAMS as object } = {}) {
+function fake(ms: { empty: number, unseen: number, updating: number }, { frames = 100, mean = 16.7, changed = PEOPLE, made = (n: number) => n, back = BACK as object, seams = SEAMS as object } = {}) {
     let now: keyof typeof ms = "empty"
     return {
         wait: async () => {},
@@ -24,7 +24,7 @@ function fake(ms: { empty: number, unseen: number, updating: number }, { frames 
             if (code.includes("crowd.readBack !== null")) return true
             if (code.includes("crowd.readBack")) return JSON.stringify(back)
             if (code.includes("updateOffscreen")) { now = "updating"; return changed }
-            if (code.includes("crowd.frames()")) return JSON.stringify({ count: frames, mean: 16.7, median: 16.7, main: frames === 0 ? -1 : ms[now], mainCount: frames })
+            if (code.includes("crowd.frames()")) return JSON.stringify({ count: frames, mean, median: mean, main: frames === 0 ? -1 : ms[now], mainCount: frames })
             throw new Error(`unexpected eval: ${code.slice(0, 60)}`)
         },
     }
@@ -47,6 +47,28 @@ describe("the crowd playtest", () => {
 
     it("fails a run where making them update costs nothing, which could not tell", async () => {
         await expect(check(fake({ empty: 0.2, unseen: 0.21, updating: 0.25 }) as any)).rejects.toThrow("cannot tell")
+    })
+
+    it("passes a machine that draws too slowly to time, saying the cost was not compared", async () => {
+        const log = vi.mocked(console.log)
+        log.mockClear()
+        // A GitHub runner on 11 Nov 2026: software drawing, the empty scene reading the most.
+        await expect(check(fake({ empty: 38.027, unseen: 2.46, updating: 7.354 }, { mean: 150 }) as any)).resolves.toBeUndefined()
+        expect(log.mock.calls.map((c) => String(c[0])).some((l) => l.startsWith("INCONCLUSIVE COST:"))).toBe(true)
+    })
+
+    it("still fails a slow machine on everything that is not a timing", async () => {
+        const slow = { mean: SLOW_FRAME_MS + 1 }, ms = { empty: 38, unseen: 2.5, updating: 7.4 }
+        await expect(check(fake(ms, { ...slow, seams: { ...SEAMS, joints: 0 } }) as any)).rejects.toThrow("lists 0 joints")
+        await expect(check(fake(ms, { ...slow, back: { ...BACK, pickedAfter: false } }) as any)).rejects.toThrow("did not find it")
+        await expect(check(fake(ms, { ...slow, changed: 3 }) as any)).rejects.toThrow("not the one meant")
+        await expect(check(fake(ms, { ...slow, frames: 0 }) as any)).rejects.toThrow("nothing was measured")
+    })
+
+    it("keeps both cost checks hard on a machine that can time", async () => {
+        const at = { mean: SLOW_FRAME_MS }
+        await expect(check(fake({ empty: 0.2, unseen: 5.1, updating: 5.2 }, at) as any)).rejects.toThrow("is being skinned or sampled again")
+        await expect(check(fake({ empty: 38.027, unseen: 2.46, updating: 7.354 }, at) as any)).rejects.toThrow("cannot tell")
     })
 
     it("fails when the main thread's time was not read", async () => {
