@@ -463,6 +463,7 @@
                 "edgeColor": "#ff6b6b",
                 "backgroundColor": "#000000",
                 "transparentBackground": false,
+                "stretch": false,
                 "bitDepth": null,
                 "width": null,
                 "height": null

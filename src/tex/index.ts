@@ -129,7 +129,7 @@ export interface MaskOptions {
 
 export interface SdfShapeOptions extends SizeOptions {
     shape?: ShapeType
-    /** The shape's size: 2 spans the picture. */
+    /** The shape's size: 2 spans the picture's long side, and a shape keeps its proportions on any canvas. */
     size?: number
     /** Degrees. */
     rotation?: number
@@ -151,6 +151,8 @@ export interface SdfShapeOptions extends SizeOptions {
     transparentBackground?: boolean
     /** "32" holds it in 32-bit floats, and everything reading it. Default: the canvas's. */
     bitDepth?: "8" | "32"
+    /** Kept so shapes drawn before 1.9 keep their pixels: each side spans -1 to 1, so off square a circle is an ellipse. New code leaves it unset. */
+    stretch?: boolean
     // Magerie's parameters for the shapes tex does not draw yet, taken so a
     // board's call compiles whole; the three shapes above ignore them.
     capsuleLength?: number

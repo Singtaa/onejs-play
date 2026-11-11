@@ -20,6 +20,16 @@ which an 8-bit or half-float picture fails. An output whose
 `format` is `rgba32f` is little-endian float32 RGBA, `width * height * 16`
 bytes, read back in float, and its tolerance is in stored value, not bytes.
 
+The set's sdfShape cases are from magerie-one `4f1e3d32c`, which draws a
+shape by one layout rule: each side on -1 to 1 less twice the offset, then
+scaled by the side over the long side, so the long side spans -1 to 1 and a
+unit is half the long side in pixels both ways (antialiasing, distance and
+edge band alike). `iso-*` pin that rule off square, each with its distance
+twin. `vesica-broad-96x64` and `vesica-needle-72x14` carry `stretch: true`,
+the per-axis space every shape was drawn in before it, where a unit is half
+the short side; their pixels did not move. On a square the two are one, and
+every square case is byte for byte as it was.
+
 `goldens/buildings/` is eleven of Magerie's building textures as its OJPlay
 exporter writes them: each board's `.ts` and the PNGs Magerie exported from
 the same board, from magerie-one `44d69541b` (handed over on the

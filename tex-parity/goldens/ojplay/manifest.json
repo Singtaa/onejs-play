@@ -1,5 +1,5 @@
 {
-  "magerieCommit": "5c1564a4a",
+  "magerieCommit": "4f1e3d32c",
   "cases": [
     {
       "name": "normalMap/waves-s4-r0-wrap",
@@ -1054,7 +1054,8 @@
         "centerX": 0.5,
         "centerY": 0.5,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1088,7 +1089,8 @@
         "centerX": 0.5,
         "centerY": 0.5,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1122,7 +1124,8 @@
         "centerX": 0.5,
         "centerY": 0.5,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1156,7 +1159,8 @@
         "centerX": 0.5,
         "centerY": 0.5,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1190,7 +1194,8 @@
         "centerX": 0.5,
         "centerY": 0.5,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1475,7 +1480,8 @@
         "backgroundColor": "#000000",
         "transparentBackground": false,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1521,7 +1527,8 @@
         "backgroundColor": "#000000",
         "transparentBackground": false,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1567,7 +1574,8 @@
         "backgroundColor": "#000000",
         "transparentBackground": false,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1586,6 +1594,197 @@
         64
       ],
       "params": {
+        "bitDepth": "8",
+        "shape": "vesica",
+        "size": 1,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.92,
+        "vesicaHeight": 0.52,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 96,
+        "height": 64,
+        "stretch": true
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/vesica-broad-96x64.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/vesica-needle-72x14",
+      "node": "sdfShape",
+      "size": [
+        72,
+        14
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "vesica",
+        "size": 1,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.95,
+        "vesicaHeight": 0.22,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 72,
+        "height": 14,
+        "stretch": true
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/vesica-needle-72x14.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-circle-s08-96x64",
+      "node": "sdfShape",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "circle",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/iso-circle-s08-96x64.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-circle-s08-96x64-distance",
+      "node": "sdfShape",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "circle",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-distance",
+        "file": "sdfShape/iso-circle-s08-96x64-distance.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-vesica-broad-96x64",
+      "node": "sdfShape",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "bitDepth": "8",
         "shape": "vesica",
         "size": 1,
         "edgeBand": 0,
@@ -1618,20 +1817,68 @@
       "inputs": {},
       "output": {
         "port": "out-image",
-        "file": "sdfShape/vesica-broad-96x64.bin",
+        "file": "sdfShape/iso-vesica-broad-96x64.bin",
         "format": "rgba8",
         "tiles": false
       },
       "tolerance": 1
     },
     {
-      "name": "sdfShape/vesica-needle-72x14",
+      "name": "sdfShape/iso-vesica-broad-96x64-distance",
+      "node": "sdfShape",
+      "size": [
+        96,
+        64
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "vesica",
+        "size": 1,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.92,
+        "vesicaHeight": 0.52,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 96,
+        "height": 64
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-distance",
+        "file": "sdfShape/iso-vesica-broad-96x64-distance.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-vesica-needle-72x14",
       "node": "sdfShape",
       "size": [
         72,
         14
       ],
       "params": {
+        "bitDepth": "8",
         "shape": "vesica",
         "size": 1,
         "edgeBand": 0,
@@ -1664,7 +1911,148 @@
       "inputs": {},
       "output": {
         "port": "out-image",
-        "file": "sdfShape/vesica-needle-72x14.bin",
+        "file": "sdfShape/iso-vesica-needle-72x14.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-vesica-needle-72x14-distance",
+      "node": "sdfShape",
+      "size": [
+        72,
+        14
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "vesica",
+        "size": 1,
+        "edgeBand": 0,
+        "rotation": 0,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 0.5,
+        "shapeHeight": 0.5,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.95,
+        "vesicaHeight": 0.22,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 72,
+        "height": 14
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-distance",
+        "file": "sdfShape/iso-vesica-needle-72x14-distance.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-ellipse-rot30-64x96",
+      "node": "sdfShape",
+      "size": [
+        64,
+        96
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "ellipse",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 30,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 1,
+        "shapeHeight": 0.74,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 64,
+        "height": 96
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-image",
+        "file": "sdfShape/iso-ellipse-rot30-64x96.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "sdfShape/iso-ellipse-rot30-64x96-distance",
+      "node": "sdfShape",
+      "size": [
+        64,
+        96
+      ],
+      "params": {
+        "bitDepth": "8",
+        "shape": "ellipse",
+        "size": 0.8,
+        "edgeBand": 0,
+        "rotation": 30,
+        "offsetX": 0,
+        "offsetY": 0,
+        "shapeWidth": 1,
+        "shapeHeight": 0.74,
+        "capsuleLength": 0.6,
+        "capsuleThickness": 0.3,
+        "cornerRadius": 0.05,
+        "angle": 270,
+        "thickness": 0.05,
+        "eggHeight": 0.45,
+        "eggBottomRadius": 0.3,
+        "eggTopRadius": 0.1,
+        "eggBulge": 0.75,
+        "moonDistance": 0.2,
+        "moonOuterRadius": 0.45,
+        "moonInnerRadius": 0.32,
+        "vesicaWidth": 0.5,
+        "vesicaHeight": 0.8,
+        "fillColor": "#ffffff",
+        "edgeColor": "#ff6b6b",
+        "backgroundColor": "#000000",
+        "transparentBackground": false,
+        "width": 64,
+        "height": 96
+      },
+      "inputs": {},
+      "output": {
+        "port": "out-distance",
+        "file": "sdfShape/iso-ellipse-rot30-64x96-distance.bin",
         "format": "rgba8",
         "tiles": false
       },
@@ -1705,7 +2093,8 @@
         "backgroundColor": "#000000",
         "transparentBackground": false,
         "width": 128,
-        "height": 128
+        "height": 128,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1751,7 +2140,8 @@
         "backgroundColor": "#00000000",
         "transparentBackground": true,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1797,7 +2187,8 @@
         "backgroundColor": "#00000000",
         "transparentBackground": true,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
@@ -1843,7 +2234,8 @@
         "backgroundColor": "#000000",
         "transparentBackground": false,
         "width": 32,
-        "height": 32
+        "height": 32,
+        "bitDepth": "8"
       },
       "inputs": {},
       "output": {
