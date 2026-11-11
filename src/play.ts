@@ -64,6 +64,24 @@ export function socketUrl(path: string): string | null {
 }
 
 /**
+ * The address of this cart's world socket, with the page's play token in it:
+ * `wss://<site>/api/games/<sid>/world?token=<token>`. A world is a server that
+ * every player of the cart shares, run by its author somewhere else, which the
+ * site passes the socket to whole. Null when there is no site, or no token to
+ * prove the page was served by it (the editor, an ejected Unity project).
+ *
+ * The runtime cannot tell whether a cart has a world, so a cart without one
+ * gets an address that answers 404. The token is short-lived: ask again for each
+ * connection rather than keeping the address.
+ */
+export function worldUrl(): string | null {
+    const base = socketUrl("/world")
+    const token = context?.token
+    if (base === null || token === undefined || token === "") return null
+    return `${base}?token=${encodeURIComponent(token)}`
+}
+
+/**
  * Whether the page the game is on is hidden: a locked phone, a tab in the
  * background. Reported by the container's DOM adapter (adapter.ts, the one file
  * here that touches the DOM) and read by rooms, which hand the host to a page

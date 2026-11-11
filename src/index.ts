@@ -215,7 +215,7 @@ export type { ScoreEntry, ScoreWindow, TopOptions, SubmitOptions, Leaderboard } 
 export { useRoom, validRoomName } from "./room"
 export type { Room, RoomOptions, RoomMessage } from "./room"
 
-export { isOnline } from "./play"
+export { isOnline, worldUrl } from "./play"
 
 // Sharing a link and copying text, called in the frame of a press (share.ts).
 export { share, copy } from "./share"

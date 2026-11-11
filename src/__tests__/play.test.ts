@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { setPlayContext, getPlayContext, isOnline, apiUrl, socketUrl } from "../play"
+import { setPlayContext, getPlayContext, isOnline, apiUrl, socketUrl, worldUrl } from "../play"
 import { validRoomName } from "../room"
 import { scores } from "../scores"
 
@@ -42,6 +42,20 @@ describe("the play context", () => {
     it("keeps the token the host gave it", () => {
         setPlayContext({ api: "https://x", sid: "s", token: "t0ken" })
         expect(getPlayContext()?.token).toBe("t0ken")
+    })
+
+    it("gives the world socket's address with the play token, and null without a site or a token", () => {
+        expect(worldUrl()).toBeNull()
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "a+b/c=" })
+        expect(worldUrl()).toBe("wss://play.onejs.com/api/games/abc123/world?token=a%2Bb%2Fc%3D")
+        setPlayContext({ api: "http://127.0.0.1:8787", sid: "abc123", token: "t" })
+        expect(worldUrl()).toBe("ws://127.0.0.1:8787/api/games/abc123/world?token=t")
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123" })
+        expect(worldUrl()).toBeNull()
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "" })
+        expect(worldUrl()).toBeNull()
+        setPlayContext({ api: "", sid: "abc123", token: "t" })
+        expect(worldUrl()).toBeNull()
     })
 
     it("goes offline again when the host clears it, which a swap does", () => {
