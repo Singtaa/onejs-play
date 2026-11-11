@@ -43,7 +43,8 @@ async function readBack(game, set) {
 
 // A part, a joint and a borrowed clip, asked of the container itself: person.parts.glb has four
 // parts, twenty joints and no clips but the ten it takes from person.glb, and a hat put 0.25 m
-// over a head 1.53 m up, then taken off, is left 1.78 m up and 6 m ahead at the size it had.
+// over a head 1.53 m up at rest, then taken off, is left 1.78 m up and 6 m ahead at the size it
+// had. Taken off a head in Walk's pose, it is left 0.25 m from where that head was.
 async function seams(game) {
     const s = JSON.parse(await game.eval("JSON.stringify(globalThis.crowd.seams())"))
     console.log(`SEAMS ${JSON.stringify(s)}`)
@@ -54,6 +55,13 @@ async function seams(game) {
     if (!near(s.on[0], 0) || !near(s.on[1], 0.25) || !near(s.on[2], 0)) throw new Error(`crowd: a hat put 0.25 m over a head reads ${s.on} from the head`)
     if (!near(s.off[0], 0) || !near(s.off[1], 1.78) || !near(s.off[2], 6)) throw new Error(`crowd: a hat taken off a head 1.53 m up and 6 m ahead was left at ${s.off}, not 0, 1.78, 6`)
     if (!near(s.scale, 0.25)) throw new Error(`crowd: a hat a quarter the size came off its head at ${s.scale}`)
+    const w = s.walking
+    if (!w || !Array.isArray(w.head) || !Array.isArray(w.off)) throw new Error("crowd: no reading was taken of hats taken off a walking head")
+    const apart = Math.hypot(w.off[0] - w.head[0], w.off[1] - w.head[1], w.off[2] - w.head[2])
+    if (!near(apart, 0.25)) throw new Error(`crowd: a hat taken off a walking head 0.25 m over it was left ${apart.toFixed(3)} m from the head`)
+    // The proof that Walk's pose was read: its head is not where the rest pose's is.
+    const moved = Math.hypot(w.head[0], w.head[1] - 1.53, w.head[2] - 6)
+    if (!(moved > 0.02)) throw new Error(`crowd: the walking head read ${w.head}, the rest pose's place: no pose was compared`)
 }
 
 export default async function (game) {

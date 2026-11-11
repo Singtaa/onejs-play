@@ -133,17 +133,25 @@ function Crowd() {
              * on the head, where in the world it was left, and what the two models list.
              */
             seams() {
+                // At rest first, where the head's place is known; then in Walk's first pose, where
+                // a hat on the bare joint marks the head and one 0.25 m over it has to stay that far.
                 const body = scene.spawn(parted, { position: [0, 0, 6] })
-                body.play("Walk")
                 const hat = scene.spawn(person, { scale: 0.25 })
                 hat.attachTo(body, "head", { position: [0, 0.25, 0] })
                 const on = hat.position
                 hat.detach()
                 const off = hat.position
+                body.play("Walk")
+                const head = scene.spawn(person, { scale: 0.25 })
+                const over = scene.spawn(person, { scale: 0.25 })
+                head.attachTo(body, "head")
+                over.attachTo(body, "head", { position: [0, 0.25, 0] })
+                head.detach()
+                over.detach()
+                const walking = { head: head.position, off: over.position }
                 body.hide("legs")
-                const out = { parts: parted.parts, joints: parted.joints.length, clips: parted.clips.length, own: person.parts, on, off, scale: hat.scale }
-                hat.destroy()
-                body.destroy()
+                const out = { parts: parted.parts, joints: parted.joints.length, clips: parted.clips.length, own: person.parts, on, off, scale: hat.scale, walking }
+                for (const a of [hat, head, over, body]) a.destroy()
                 return out
             },
             clips: person.clips,

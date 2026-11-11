@@ -4,7 +4,7 @@ import check, { PEOPLE } from "./crowd.playtest.mjs"
 /** A game whose main thread reads `ms.empty`, `ms.unseen` and `ms.updating` a frame in turn. */
 const BACK = { before: { x: 640, y: 400 }, after: { x: 420, y: 400 }, pickedAfter: true, pickedBefore: false }
 
-const SEAMS = { parts: ["trunk", "legs", "arms", "head"], joints: 20, clips: 10, own: ["person"], on: [0, 0.25, 0], off: [0, 1.78, 6], scale: 0.25 }
+const SEAMS = { parts: ["trunk", "legs", "arms", "head"], joints: 20, clips: 10, own: ["person"], on: [0, 0.25, 0], off: [0, 1.78, 6], scale: 0.25, walking: { head: [0.02, 1.49, 6.22], off: [0.02, 1.74, 6.22] } }
 
 function fake(ms: { empty: number, unseen: number, updating: number }, { frames = 100, changed = PEOPLE, made = (n: number) => n, back = BACK as object, seams = SEAMS as object } = {}) {
     let now: keyof typeof ms = "empty"
@@ -61,7 +61,7 @@ describe("the crowd playtest", () => {
         await expect(check(fake(ms, { back: { ...BACK, after: null } }) as any)).rejects.toThrow("nothing was read back")
     })
 
-    it("fails when a part, a joint, a borrowed clip or a hat taken off reads wrong", async () => {
+    it("fails when a part, a joint, a borrowed clip or a hat taken off, at rest or walking, reads wrong", async () => {
         const ms = { empty: 0.2, unseen: 0.6, updating: 5.2 }
         await expect(check(fake(ms, { seams: { ...SEAMS, parts: ["person"] } }) as any)).rejects.toThrow("the models' parts read")
         await expect(check(fake(ms, { seams: { ...SEAMS, joints: 0 } }) as any)).rejects.toThrow("lists 0 joints")
@@ -69,6 +69,9 @@ describe("the crowd playtest", () => {
         await expect(check(fake(ms, { seams: { ...SEAMS, on: [0, 1.78, 6] } }) as any)).rejects.toThrow("from the head")
         await expect(check(fake(ms, { seams: { ...SEAMS, off: [0, 0.25, 0] } }) as any)).rejects.toThrow("was left at")
         await expect(check(fake(ms, { seams: { ...SEAMS, scale: 1 } }) as any)).rejects.toThrow("came off its head at 1")
+        await expect(check(fake(ms, { seams: { ...SEAMS, walking: { head: [0.02, 1.49, 6.22], off: [0.02, 1.49, 6.22] } } }) as any)).rejects.toThrow("was left 0.000 m from the head")
+        await expect(check(fake(ms, { seams: { ...SEAMS, walking: { head: [0, 1.53, 6], off: [0, 1.78, 6] } } }) as any)).rejects.toThrow("no pose was compared")
+        await expect(check(fake(ms, { seams: { ...SEAMS, walking: undefined } }) as any)).rejects.toThrow("no reading was taken")
     })
 
     it("fails when not every mesh was made to update, or not every person was made", async () => {
