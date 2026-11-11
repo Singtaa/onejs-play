@@ -3,8 +3,8 @@ import { mount, useScene, tex, type Scene, type Actor, type MeshModel, type Mesh
 
 // A scene with no light at all: no sun, no ambient, a black background. A flat quad fills the
 // view from straight above, so the middle pixel is what the quad draws. mesh-effects.playtest.mjs
-// makes it lit (black here), unlit, textured with a picture from bytes, and additive over a grey
-// floor, with and without fog, and reads the middle pixel.
+// makes it lit (black here), lit with a flash, unlit, textured with a picture from bytes, and
+// additive over a grey floor, with and without fog, and reads the middle pixel.
 type Shown = {
     look?: Partial<MeshModelOptions>
     // An unlit floor of this colour a metre under the quad.
@@ -15,11 +15,13 @@ type Shown = {
     pixels?: boolean
     // The floor alone, with no quad over it.
     bare?: boolean
+    // A colour added to the quad's actor after its light (actor.flash).
+    flash?: string
 }
 
 let live: { model: MeshModel, actor: Actor }[] = []
 
-function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>) {
+function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>, flash?: string) {
     const h = 40
     const model = scene.mesh({
         positions: new Float32Array([-h, y, -h, h, y, -h, h, y, h, -h, y, h]),
@@ -28,7 +30,7 @@ function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>) {
         uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
         ...look,
     })
-    live.push({ model, actor: scene.spawn(model, { static: true }) })
+    live.push({ model, actor: scene.spawn(model, flash === undefined ? { static: true } : { static: true, flash }) })
 }
 
 function red(): Uint8Array {
@@ -37,14 +39,14 @@ function red(): Uint8Array {
     return bytes
 }
 
-function show(scene: Scene, { look = {}, floor, fog, pixels, bare }: Shown) {
+function show(scene: Scene, { look = {}, floor, fog, pixels, bare, flash }: Shown) {
     for (const l of live) { l.actor.destroy(); l.model.destroy() }
     live = []
     scene.fog(fog === undefined ? false : { color: fog, near: 0, far: 2 })
     if (floor !== undefined) quad(scene, -1, { color: floor, unlit: true })
     if (bare === true) return
     const texture = pixels ? { texture: tex.pixels(64, 64, red()).texture() } : {}
-    quad(scene, 0, { color: "#ffffff", ...texture, ...look })
+    quad(scene, 0, { color: "#ffffff", ...texture, ...look }, flash)
 }
 
 function Effects() {

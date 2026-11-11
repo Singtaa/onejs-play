@@ -370,6 +370,28 @@ describe("the handles a cart holds", () => {
         expect(of("Destroy")).toHaveLength(4)
     })
 
+    it("sends ambient occlusion only once a cart names it: off, the host's, or an intensity and radius", () => {
+        const scene = createScene({ ambient: { occlusion: false } }).scene
+        expect(of("SetAmbientOcclusion")).toEqual([["SetAmbientOcclusion", false, -1, -1]])
+        scene.ambient({ intensity: 0.5 })
+        expect(of("SetAmbientOcclusion"), "a change that does not name it leaves it").toHaveLength(1)
+        scene.ambient({ occlusion: { radius: 0.25 } })
+        expect(last("SetAmbientOcclusion")).toEqual(["SetAmbientOcclusion", true, -1, 0.25])
+        scene.ambient({ occlusion: true })
+        expect(last("SetAmbientOcclusion")).toEqual(["SetAmbientOcclusion", true, -1, -1])
+        expect(() => scene.ambient({ occlusion: { intensity: 5 } })).toThrow("intensity is 5, and runs from 0 to 4")
+        expect(() => scene.ambient({ occlusion: { radius: 0 } })).toThrow("radius is 0, and is metres above 0")
+        expect(() => scene.ambient({ occlusion: "off" as any })).toThrow("is true, false or { intensity, radius }")
+        expect(of("SetAmbientOcclusion"), "a refused value sends nothing").toHaveLength(3)
+    })
+
+    it("leaves occlusion alone on a scene that never names it, and needs a OneJS that has it", () => {
+        missing = new Set(["SetAmbientOcclusion"])
+        const scene = createScene().scene
+        scene.ambient({ intensity: 0.4 })
+        expect(() => scene.ambient({ occlusion: false })).toThrow(/occlusion needs a newer OneJS.*runtime 1\.10/)
+    })
+
     it("keeps the camera's other settings when one is changed", () => {
         const scene = createScene({ camera: { position: [0, 10, -3], lookAt: [0, 1, 0] } }).scene
         scene.camera({ fov: 30 })

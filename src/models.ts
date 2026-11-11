@@ -701,6 +701,24 @@ export interface AmbientOptions {
     sky?: ColorInput
     ground?: ColorInput
     intensity?: number
+    /**
+     * The soft shadow the ambient light leaves in corners and where things
+     * meet, worked out from the screen each frame. `true`, the default, draws
+     * it as the host is set to; `false` draws none, for a scene whose light is
+     * painted or baked in; and `{ intensity, radius }` sets how dark it is (0
+     * to 4) and how far from a corner it reaches, in metres. Each left out of
+     * the object keeps the host's. From runtime 1.10.
+     *
+     *     useScene({ ambient: { occlusion: false } })
+     *     scene.ambient({ occlusion: { intensity: 0.5, radius: 0.25 } })
+     */
+    occlusion?: boolean | AmbientOcclusion
+}
+
+/** How dark the ambient occlusion is, from 0 to 4, and how far it reaches, in metres. */
+export interface AmbientOcclusion {
+    intensity?: number
+    radius?: number
 }
 
 /**
@@ -1533,6 +1551,23 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (problem !== "") throw new Error(`[oj] sun shadows: ${problem}`)
     }
     const applyAmbient = () => b.SetAmbient(...rgb(ambientNow.sky), ...rgb(ambientNow.ground), ambientNow.intensity)
+    // Sent only once a cart names it, so a scene that never does draws the host's, on any host.
+    const occlusionArgs = (o: boolean | AmbientOcclusion): [boolean, number, number] => {
+        const what = "[oj] ambient occlusion"
+        if (typeof o === "boolean") return [o, -1, -1]
+        if (o === null || typeof o !== "object") throw new Error(`${what} is ${o}, and is true, false or { intensity, radius }`)
+        const { intensity, radius } = o
+        if (intensity !== undefined && (typeof intensity !== "number" || !(intensity >= 0 && intensity <= 4))) throw new Error(`${what}: intensity is ${intensity}, and runs from 0 to 4`)
+        if (radius !== undefined && (typeof radius !== "number" || !(radius > 0) || radius === Infinity)) throw new Error(`${what}: radius is ${radius}, and is metres above 0`)
+        return [true, intensity ?? -1, radius ?? -1]
+    }
+    const applyOcclusion = (o: boolean | AmbientOcclusion) => {
+        const args = occlusionArgs(o)
+        if (typeof b.SetAmbientOcclusion !== "function") throw new Error("[oj] ambient occlusion needs a newer OneJS: this host's ModelBridge draws the occlusion it is set to (it came with runtime 1.10).")
+        const problem = String(b.SetAmbientOcclusion(...args) ?? "")
+        if (problem !== "") throw new Error(`[oj] ambient occlusion: ${problem}`)
+    }
+    if (options.ambient?.occlusion !== undefined) occlusionArgs(options.ambient.occlusion)
     // An older host draws linear fog alone: only a cart that asked for more is told, once.
     let saidNoFogLaw = false
     const applyFog = () => {
@@ -1598,6 +1633,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     camera(options.camera ?? {})
     applySun()
     applyAmbient()
+    if (options.ambient?.occlusion !== undefined) applyOcclusion(options.ambient.occlusion)
     b.SetBackground(...rgb(backgroundColor))
     applyFog()
     applySky()
@@ -2352,8 +2388,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const next = { ...ambientNow, ...o }
             rgb(next.sky, "ambient sky")
             rgb(next.ground, "ambient ground")
+            if (o.occlusion !== undefined) occlusionArgs(o.occlusion)
             ambientNow = next
             applyAmbient()
+            if (o.occlusion !== undefined) applyOcclusion(o.occlusion)
         },
         background(color) {
             const parsed = rgb(color, "background")

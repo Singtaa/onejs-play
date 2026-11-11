@@ -14,6 +14,7 @@ function fake(pixels: Record<string, number[]>) {
             if (!code.includes("meshEffects.show(")) throw new Error(`unexpected eval: ${code.slice(0, 60)}`)
             const fog = code.includes("fog")
             if (code.includes("bare")) shown = fog ? "floor in fog" : "floor"
+            else if (code.includes("flash")) shown = "flashed"
             else if (code.includes(`"add"`)) shown = fog ? "added in fog" : "added"
             else if (code.includes("pixels")) shown = "pixels"
             else if (code.includes("unlit")) shown = "unlit"
@@ -25,6 +26,7 @@ function fake(pixels: Record<string, number[]>) {
 
 const GOOD = {
     lit: [0, 0, 0],
+    flashed: [128, 128, 128],
     unlit: [255, 255, 255],
     pixels: [255, 0, 0],
     floor: [128, 128, 128],
@@ -36,6 +38,10 @@ const GOOD = {
 describe("the mesh-effects playtest", () => {
     it("passes a quad drawn unlit, under a picture from bytes, and added over the floor, faded out by fog", async () => {
         await expect(check(fake(GOOD) as any)).resolves.toBeUndefined()
+    })
+
+    it("fails a flash that adds nothing", async () => {
+        await expect(check(fake({ ...GOOD, flashed: GOOD.lit }) as any)).rejects.toThrow("the flash was not added")
     })
 
     it("fails an unlit quad that is still lit, as a mesh drew before unlit", async () => {
