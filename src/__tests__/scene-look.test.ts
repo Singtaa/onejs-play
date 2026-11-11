@@ -345,5 +345,16 @@ describe("scene.wind", () => {
             host.beginFrame(0.1)
             expect(of("SetWindClock").at(-1)![1]).toBeCloseTo(0.6)
         })
+
+        it("runs at the scene's speed, so a film shot slowly sees slow wind", () => {
+            const s = scene()
+            s.mesh({ ...SQUARE, sway: [0, 1, 1, 0] })
+            s.speed = 0.25
+            host.beginFrame(1)
+            expect(of("SetWindClock").at(-1)![1]).toBeCloseTo(0.25)
+            s.speed = 0
+            host.beginFrame(1)
+            expect(of("SetWindClock").at(-1)![1]).toBeCloseTo(0.25)
+        })
     })
 })

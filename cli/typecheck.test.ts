@@ -56,6 +56,20 @@ describe("ojplay typecheck", () => {
         expect(fs.readFileSync(path.join(root, ".oj", "host.d.ts"), "utf8")).toMatch(/declare const console/)
     })
 
+    it("leaves a cart's Node programs in server and tools to tsconfigs of their own", () => {
+        const NODE = "import fs from \"node:fs\"\nprocess.stdout.write(String(fs.existsSync(\".\")))\n"
+        const root = cart(LOOSE)
+        for (const folder of ["server", "tools"]) {
+            fs.mkdirSync(path.join(root, folder))
+            fs.writeFileSync(path.join(root, folder, "main.ts"), NODE)
+        }
+        expect(typecheck(root, { quiet: true })).toBe(0)
+        // The same program anywhere else is cart code, and a cart has no Node.
+        fs.mkdirSync(path.join(root, "scripts"))
+        fs.writeFileSync(path.join(root, "scripts", "main.ts"), NODE)
+        expect(typecheck(root, { quiet: true })).not.toBe(0)
+    })
+
     it("passes what the editor passes", () => {
         expect(typecheck(cart(LOOSE), { quiet: true })).toBe(0)
     }, 60_000)

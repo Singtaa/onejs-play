@@ -525,6 +525,29 @@ describe("speed and pausing", () => {
         expect(slow.speed).toBe(0.5)
     })
 
+    it("runs every actor and every dissolve at the scene's speed, on top of its own", () => {
+        const scene = createScene().scene
+        const slow = scene.spawn(MODEL, { speed: 0.5 }), normal = scene.spawn(MODEL)
+        scene.speed = 0.5
+        expect(of("SetSpeed").slice(-2)).toEqual([["SetSpeed", slow.id, 0.25], ["SetSpeed", normal.id, 0.5]])
+        normal.speed = 2
+        expect(last("SetSpeed")).toEqual(["SetSpeed", normal.id, 1])
+        expect(scene.spawn(MODEL).speed).toBe(1)
+        expect(last("SetSpeed")[2]).toBe(0.5)
+        normal.dissolve({ seconds: 1 })
+        host.beginFrame(0.5)
+        expect(last("SetDissolve")[2]).toBeCloseTo(0.5)
+        scene.paused = true
+        const held = of("SetSpeed").length
+        scene.speed = 1
+        expect(of("SetSpeed"), "a paused scene stays held").toHaveLength(held)
+        scene.paused = false
+        expect(of("SetSpeed").slice(-3).map((c) => c[2])).toEqual([0.5, 2, 1])
+        expect(() => { scene.speed = -1 }).toThrow("[oj] scene.speed takes a number from 0 up, and got -1")
+        expect(() => { scene.speed = NaN }).toThrow(/scene\.speed/)
+        expect(scene.speed).toBe(1)
+    })
+
     it("holds a dissolve while paused, and its promise waits", async () => {
         const scene = createScene().scene
         const boo = scene.spawn(MODEL)

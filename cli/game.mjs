@@ -191,7 +191,7 @@ export function typecheck(root, { quiet = false } = {}) {
     const config = path.join(root, ".oj", "tsconfig.json")
     const extended = fs.existsSync(path.join(root, "tsconfig.json"))
         ? { extends: "../tsconfig.json" }
-        : { include: ["../**/*"], exclude: ["../node_modules", "../.oj"] }
+        : { include: ["../**/*"], exclude: ["../node_modules", "../.oj", "../server", "../tools"] }
     fs.writeFileSync(config, JSON.stringify({
         ...extended,
         compilerOptions: { ...CART_COMPILER_OPTIONS, lib: [...CART_COMPILER_OPTIONS.lib], noEmit: true },

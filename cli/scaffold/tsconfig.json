@@ -23,7 +23,9 @@
         "**/*"
     ],
     "exclude": [
-        "node_modules"
+        "node_modules",
+        "server",
+        "tools"
     ],
     "files": [
         ".oj/host.d.ts"

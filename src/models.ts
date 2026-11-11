@@ -861,6 +861,13 @@ export interface Scene {
      * and lights are not touched.
      */
     paused: boolean
+    /**
+     * How fast everything the scene runs by itself goes: every actor's clips
+     * and dissolves, on top of each actor's own `speed`, and the wind. 1 by
+     * default, 0.25 slow motion, 0 held. `paused` holds the scene without
+     * changing this, and a frame callback still gets real time.
+     */
+    speed: number
     /** The live actors, as a copy: destroying them while iterating it is fine. */
     readonly actors: readonly Actor[]
 }
@@ -1407,7 +1414,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     // How fast each actor plays, and whether the scene holds them all.
     const speeds = new Map<number, number>()
     let paused = false
-    const rateOf = (id: number) => paused ? 0 : speeds.get(id) ?? 1
+    let rate = 1
+    const rateOf = (id: number) => paused ? 0 : rate * (speeds.get(id) ?? 1)
     // A fade reports each value it reaches through `at`, so an interrupted one turns back
     // from where the actor is rather than from where it was going.
     const fades = new Map<number, { from: number, to: number, t: number, seconds: number, at: (v: number) => void, done: () => void }>()
@@ -1564,7 +1572,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     const stopFrame = runtime?.onFrame((dt: number) => {
         if (preview && actors.length > 0) b.Step(dt)
         if (swaying) {
-            if (!paused) windClock += dt
+            if (!paused) windClock += dt * rate
             b.SetWindClock(windClock)
         }
         for (const [id, f] of fades) {
@@ -2272,6 +2280,13 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (on === paused) return
             paused = on
             for (const a of actors) b.SetSpeed(a.id, rateOf(a.id))
+        },
+        get speed() { return rate },
+        set speed(s: number) {
+            if (typeof s !== "number" || !Number.isFinite(s) || s < 0) throw new Error(`[oj] scene.speed takes a number from 0 up, and got ${s}`)
+            if (s === rate) return
+            rate = s
+            if (!paused) for (const a of actors) b.SetSpeed(a.id, rateOf(a.id))
         },
         // A copy, so `for (const a of scene.actors) a.destroy()` reaches every actor.
         get actors() { return actors.slice() },
