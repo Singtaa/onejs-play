@@ -266,6 +266,17 @@ describe("tex shapes and masks", () => {
         expect(() => sdfShape("heart")).toThrow(/circle, ellipse, vesica so far/)
     })
 
+    it("keeps an older shape's per-axis space only when stretch is set, and leaves every other shape's params as they were", () => {
+        const { sdfShape } = tex.canvas(64)
+        expect(sdfShape("circle", 0.8).node.params).not.toHaveProperty("stretch")
+        expect(sdfShape("circle", 0.8, { stretch: false }).node.params).not.toHaveProperty("stretch")
+        const old = sdfShape("vesica", { vesicaWidth: 0.92, stretch: true })
+        expect(old.node.params.stretch).toBe(true)
+        expect(old.sdf.node.params.stretch).toBe(true)
+        // @ts-expect-error: stretch is a boolean.
+        expect(() => sdfShape({ stretch: "yes" })).toThrow(/stretch is "yes", and is true or false/)
+    })
+
     it("shuffles channels by name or by a four-letter swizzle", () => {
         const { noise } = tex.canvas(16)
         expect(noise(1).channelShuffle("aaa1").node.params).toEqual({ out: ["a", "a", "a", "1"] })

@@ -1068,6 +1068,8 @@ export interface ShapeValues {
     fill: number[]
     edge: number[]
     background: number[]
+    /** Each side spans -1 to 1 on its own, as before the layout rule, so a shape drawn before it keeps its pixels. */
+    stretch?: boolean
 }
 
 /** IQ's ellipse as Magerie's Metal has it, both branches drawn and one kept. */
@@ -1113,9 +1115,17 @@ function sdVesica(p: S, w: number, h: number): S {
     return sl.select(q.y.mul(w).lt(q.x.sub(w).mul(d)), tip, arc)
 }
 
-/** Magerie's Shape (generateSDFShape): uv from the pixel's corner, both axes on [-1, 1], 1.5 px of antialiasing, premultiplied. */
+/**
+ * Magerie's Shape (generateSDFShape) and its layout rule: uv from the pixel's
+ * corner, each side on [-1, 1] less the offset, then scaled so the long side
+ * spans -1 to 1 and a unit is half the long side in pixels both ways.
+ * `stretch` keeps the per-axis space, a unit half the short side. 1.5 px of
+ * antialiasing, premultiplied. On a square the two spaces are one.
+ */
 export function sdfShape(s: Scope, v: ShapeValues, output: "image" | "distance" = "image"): Vec4 {
-    const uv: S = s.pixel.div(s.size).sub(0.5).mul(2).sub(sl.vec2(s.f(v.offset[0] * 2), s.f(v.offset[1] * 2)))
+    const side: S = v.stretch ? min(s.size.x, s.size.y) : max(s.size.x, s.size.y)
+    const perAxis: S = s.pixel.div(s.size).sub(0.5).mul(2).sub(sl.vec2(s.f(v.offset[0] * 2), s.f(v.offset[1] * 2)))
+    const uv: S = v.stretch ? perAxis : perAxis.mul(s.size.div(side))
     const c = s.f(v.cos), n = s.f(v.sin)
     const p: S = sl.vec2(uv.x.mul(c).add(uv.y.mul(n)), uv.x.neg().mul(n).add(uv.y.mul(c)))
     const A = s.f(v.a), B = s.f(v.b)
@@ -1124,12 +1134,12 @@ export function sdfShape(s: Scope, v: ShapeValues, output: "image" | "distance" 
     // Magerie's near-circle guard, decided where the sizes are known.
     else if (v.shape === "ellipse") d = Math.abs(v.a - v.b) / Math.max(v.a, v.b, 1e-10) < 0.001 ? p.length().sub(s.f((v.a + v.b) / 2)) : sdEllipse(p, A, B)
     else d = sdVesica(p, v.a, v.b)
-    // Magerie's out-distance (generateSDFShape): d is in UV, negative inside, and a UV unit is min(w, h) / 2 pixels.
+    // Magerie's out-distance (generateSDFShape): d is in shape units, negative inside, and a unit is side / 2 pixels.
     if (output === "distance") {
-        const px: S = d.neg().mul(min(s.size.x, s.size.y).mul(0.5))
+        const px: S = d.neg().mul(side.mul(0.5))
         return sl.vec4(px, px, px, 1)
     }
-    const aa: S = sl.float(3).div(min(s.size.x, s.size.y))
+    const aa: S = sl.float(3).div(side)
     const inside: S = sl.float(1).sub(sl.smoothstep(aa.neg(), aa, d))
     let color: S = sl.mix(s.f4(v.background), s.f4(v.fill), inside)
     if (v.edgeBand > 0) {

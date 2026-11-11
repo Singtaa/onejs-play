@@ -669,10 +669,12 @@ export const SPECS = {
         imageFirst: true,
         // `distance` is every image's Distance method.
         ports: { [SHAPE_SDF]: "out-distance" },
-        defaults: { ...SHAPE_DEFAULTS, bitDepth: null, ...SIZE },
+        // `stretch` is the per-axis space older shapes were drawn in, kept for their pixels.
+        defaults: { ...SHAPE_DEFAULTS, stretch: false, bitDepth: null, ...SIZE },
         make(p, _images, canvas) {
             const [w, h] = sizeOf(p, canvas)
             const float = bitDepthOf(p, canvas, "sdfShape")
+            if (typeof p.stretch !== "boolean") throw new Error(`[oj] tex sdfShape: stretch is ${JSON.stringify(p.stretch)}, and is true or false`)
             const shape = p.shape as k.ShapeType
             if (!SHAPES.includes(shape)) throw new Error(`[oj] tex sdfShape: shape is ${JSON.stringify(p.shape)}; tex draws ${SHAPES.join(", ")} so far`)
             const size = num(p.size, "sdfShape size", 0.01, 2)
@@ -688,6 +690,8 @@ export const SPECS = {
                 offset: [num(p.offsetX, "sdfShape offsetX", -1, 1), num(p.offsetY, "sdfShape offsetY", -1, 1)],
                 edgeBand: num(p.edgeBand, "sdfShape edgeBand", 0, 0.1),
                 fill: hexRGBA(String(p.fillColor), "sdfShape fillColor"), edge: hexRGBA(String(p.edgeColor), "sdfShape edgeColor"), background,
+                // Only when set, so a shape's params (and its cache key) are as they were.
+                ...(p.stretch ? { stretch: true } : {}),
             }
             const image = makeNode("sdfShape", "generator", [], (float ? { ...v, float } : v) as unknown as Record<string, unknown>, w, h, false)
             // Magerie's out-distance: the analytic signed distance in pixels, positive inside, held in half floats whatever the bit depth.
