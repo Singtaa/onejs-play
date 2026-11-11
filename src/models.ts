@@ -1264,7 +1264,7 @@ const masked = new WeakSet<Model>()
  * model plays its clips.
  *
  *     const moves = await loadModel("villager-moves.glb")
- *     const tom = await loadModel("villager-m1.glb", { clips: moves })
+ *     const tom = await loadModel("villager.glb", { clips: moves })
  *     tom.clips                    // the moves' clips
  */
 export function loadModel(name: string, options: { colorMask?: string, clips?: Model } = {}): Promise<Model> {
@@ -1349,7 +1349,7 @@ export async function forgetModel(name: string, options: { colorMask?: string, c
  * which this one waits for:
  *
  *     const moves = useModel("villager-moves.glb")
- *     const tom = useModel("villager-m1.glb", { clips: moves })
+ *     const tom = useModel("villager.glb", { clips: moves })
  */
 export function useModel(name: string, options: { colorMask?: string, clips?: Model | null } = {}): Model | null {
     const [model, setModel] = useState<Model | null>(null)
