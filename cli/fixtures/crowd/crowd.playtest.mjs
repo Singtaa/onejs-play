@@ -26,7 +26,10 @@ async function read(game, what, warmMs, ms) {
     await game.eval("JSON.stringify(globalThis.crowd.frames())")
     await game.wait(ms)
     const f = JSON.parse(await game.eval("JSON.stringify(globalThis.crowd.frames())"))
-    if (!(f.mainCount >= 10) || !(f.main >= 0)) throw new Error(`crowd: ${what} read ${f.mainCount} frames of main thread time (${f.main}): nothing was measured`)
+    // A slow machine's readings are never compared (SLOW_FRAME_MS), and a GitHub runner fits only
+    // 10 of its frames in the empty scene's 1.5 s, so there a reading needs 3.
+    const least = f.mean > SLOW_FRAME_MS ? 3 : 10
+    if (!(f.mainCount >= least) || !(f.main >= 0)) throw new Error(`crowd: ${what} read ${f.mainCount} frames of main thread time (${f.main}): nothing was measured`)
     console.log(`MAIN ${what}: ${f.main.toFixed(3)} ms over ${f.mainCount} frames (frame to frame ${f.mean.toFixed(2)} ms)`)
     return f
 }

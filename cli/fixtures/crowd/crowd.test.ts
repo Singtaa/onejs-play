@@ -63,6 +63,9 @@ describe("the crowd playtest", () => {
         await expect(check(fake(ms, { ...slow, back: { ...BACK, pickedAfter: false } }) as any)).rejects.toThrow("did not find it")
         await expect(check(fake(ms, { ...slow, changed: 3 }) as any)).rejects.toThrow("not the one meant")
         await expect(check(fake(ms, { ...slow, frames: 0 }) as any)).rejects.toThrow("nothing was measured")
+        await expect(check(fake(ms, { ...slow, frames: 2 }) as any)).rejects.toThrow("nothing was measured")
+        await expect(check(fake(ms, { ...slow, frames: 9 }) as any)).resolves.toBeUndefined()
+        await expect(check(fake({ empty: 0.2, unseen: 0.6, updating: 5.2 }, { frames: 9 }) as any)).rejects.toThrow("nothing was measured")
     })
 
     it("keeps both cost checks hard on a machine that can time", async () => {
