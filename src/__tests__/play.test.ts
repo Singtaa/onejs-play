@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { setPlayContext, getPlayContext, isOnline, apiUrl, socketUrl, worldUrl } from "../play"
+import { setPlayContext, getPlayContext, isOnline, apiUrl, socketUrl, worldUrl, playContextFrom } from "../play"
 import { validRoomName } from "../room"
 import { scores } from "../scores"
 
@@ -44,18 +44,43 @@ describe("the play context", () => {
         expect(getPlayContext()?.token).toBe("t0ken")
     })
 
-    it("gives the world socket's address with the play token, and null without a site or a token", () => {
+    it("gives the world socket's address with the play token, and null without a site, a token or a world", () => {
         expect(worldUrl()).toBeNull()
-        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "a+b/c=" })
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "a+b/c=", world: true })
         expect(worldUrl()).toBe("wss://play.onejs.com/api/games/abc123/world?token=a%2Bb%2Fc%3D")
-        setPlayContext({ api: "http://127.0.0.1:8787", sid: "abc123", token: "t" })
+        setPlayContext({ api: "http://127.0.0.1:8787", sid: "abc123", token: "t", world: true })
         expect(worldUrl()).toBe("ws://127.0.0.1:8787/api/games/abc123/world?token=t")
-        setPlayContext({ api: "https://play.onejs.com", sid: "abc123" })
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", world: true })
         expect(worldUrl()).toBeNull()
-        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "" })
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "", world: true })
         expect(worldUrl()).toBeNull()
-        setPlayContext({ api: "", sid: "abc123", token: "t" })
+        setPlayContext({ api: "", sid: "abc123", token: "t", world: true })
         expect(worldUrl()).toBeNull()
+        setPlayContext({ api: "https://play.onejs.com", sid: "abc123", token: "t", world: false })
+        expect(worldUrl()).toBeNull()
+    })
+
+    // A container from before runtime 1.9 copies api, sid, token, room and page out of the
+    // manifest and drops the rest, so a site that says a cart has a world is not heard there.
+    it("gives no world address where the container dropped the flag", () => {
+        const manifest = { api: "https://play.onejs.com", sid: "abc123", token: "t", room: undefined, page: "https://play.onejs.com/x", world: true }
+        const { api, sid, token, room, page } = manifest
+        setPlayContext({ api, sid, token, room, page })
+        expect(worldUrl()).toBeNull()
+        setPlayContext(manifest)
+        expect(worldUrl()).toBe("wss://play.onejs.com/api/games/abc123/world?token=t")
+    })
+
+    it("is read from a manifest's play block, its own fields alone, the world only when it is true", () => {
+        const block = { api: "https://x", sid: "s", token: "t", room: "q.lobby.1", page: "https://x/p", world: true, cookie: "c" }
+        expect(playContextFrom(block)).toEqual({ api: "https://x", sid: "s", token: "t", room: "q.lobby.1", page: "https://x/p", world: true })
+        expect(playContextFrom({ ...block, world: "yes" })).not.toHaveProperty("world")
+        expect(playContextFrom({ api: "https://x", sid: "s", token: 3 })).toEqual({ api: "https://x", sid: "s", token: undefined, room: undefined, page: undefined })
+        expect(playContextFrom({ sid: "s" })).toBeNull()
+        expect(playContextFrom({ api: "https://x" })).toBeNull()
+        expect(playContextFrom(undefined)).toBeNull()
+        setPlayContext(playContextFrom(block))
+        expect(worldUrl()).toBe("wss://x/api/games/s/world?token=t")
     })
 
     it("goes offline again when the host clears it, which a swap does", () => {

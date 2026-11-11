@@ -31,9 +31,35 @@ export interface PlayContext {
     room?: string
     /** The cart's page on the site, which `room.inviteUrl` is made from. */
     page?: string
+    /**
+     * Whether the site has given this cart a world, which `worldUrl` joins.
+     * A container from before runtime 1.9 does not copy it, so there a cart
+     * has none.
+     */
+    world?: boolean
 }
 
 let context: PlayContext | null = null
+
+/**
+ * The play context out of what a manifest's `play` block says, or null when it
+ * names no site: only these fields, each only when it has the right type, so
+ * nothing else the page put there reaches a game. The container calls this.
+ */
+export function playContextFrom(play: unknown): PlayContext | null {
+    if (play === null || typeof play !== "object") return null
+    const p = play as Record<string, unknown>
+    if (typeof p.api !== "string" || typeof p.sid !== "string") return null
+    const text = (v: unknown) => typeof v === "string" ? v : undefined
+    return {
+        api: p.api,
+        sid: p.sid,
+        token: text(p.token),
+        room: text(p.room),
+        page: text(p.page),
+        ...(p.world === true ? { world: true } : {}),
+    }
+}
 
 /** Called by the host. Games have no reason to touch this. */
 export function setPlayContext(next: PlayContext | null): void {
@@ -68,16 +94,14 @@ export function socketUrl(path: string): string | null {
  * `wss://<site>/api/games/<sid>/world?token=<token>`. A world is a server that
  * every player of the cart shares, run by its author somewhere else, which the
  * site passes the socket to whole. Null when there is no site, or no token to
- * prove the page was served by it (the editor, an ejected Unity project).
- *
- * The runtime cannot tell whether a cart has a world, so a cart without one
- * gets an address that answers 404. The token is short-lived: ask again for each
- * connection rather than keeping the address.
+ * prove the page was served by it (an ejected Unity project), or when the
+ * site has given this cart no world. The token is short-lived: ask again for
+ * each connection rather than keeping the address.
  */
 export function worldUrl(): string | null {
     const base = socketUrl("/world")
     const token = context?.token
-    if (base === null || token === undefined || token === "") return null
+    if (base === null || context?.world !== true || token === undefined || token === "") return null
     return `${base}?token=${encodeURIComponent(token)}`
 }
 
