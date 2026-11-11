@@ -41,12 +41,28 @@ async function readBack(game, set) {
     if (r.pickedBefore) throw new Error("crowd: a pick at the place a person was moved from in the same frame still found it")
 }
 
+// A part, a joint and a borrowed clip, asked of the container itself: person.parts.glb has four
+// parts, twenty joints and no clips but the ten it takes from person.glb, and a hat put 0.25 m
+// over a head 1.53 m up, then taken off, is left 1.78 m up and 6 m ahead at the size it had.
+async function seams(game) {
+    const s = JSON.parse(await game.eval("JSON.stringify(globalThis.crowd.seams())"))
+    console.log(`SEAMS ${JSON.stringify(s)}`)
+    const near = (a, b) => Math.abs(a - b) <= 0.02
+    if (s.parts.join() !== "trunk,legs,arms,head" || s.own.join() !== "person") throw new Error(`crowd: the models' parts read ${s.parts} and ${s.own}, not trunk, legs, arms, head and person`)
+    if (s.joints !== 20) throw new Error(`crowd: the four-part person lists ${s.joints} joints, not 20`)
+    if (s.clips !== 10) throw new Error(`crowd: the four-part person, which has no clips, plays ${s.clips} of person.glb's ten`)
+    if (!near(s.on[0], 0) || !near(s.on[1], 0.25) || !near(s.on[2], 0)) throw new Error(`crowd: a hat put 0.25 m over a head reads ${s.on} from the head`)
+    if (!near(s.off[0], 0) || !near(s.off[1], 1.78) || !near(s.off[2], 6)) throw new Error(`crowd: a hat taken off a head 1.53 m up and 6 m ahead was left at ${s.off}, not 0, 1.78, 6`)
+    if (!near(s.scale, 0.25)) throw new Error(`crowd: a hat a quarter the size came off its head at ${s.scale}`)
+}
+
 export default async function (game) {
     await game.until(async () => (await game.eval("typeof globalThis.crowd")) === "object", { what: "the crowd cart", timeoutMs: 30000 })
     const set = async (count, seen = 0) => {
         const made = Number(await game.eval(`globalThis.crowd.set(${JSON.stringify({ ...SETUP, count, seen })})`))
         if (made !== count) throw new Error(`crowd: asked for ${count} people and ${made} were made`)
     }
+    await seams(game)
     await readBack(game, set)
     await set(0)
     const empty = await read(game, "empty", 500, 1500)

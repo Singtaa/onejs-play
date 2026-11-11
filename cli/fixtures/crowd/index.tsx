@@ -26,6 +26,13 @@ interface Setup {
      * (trunk, legs, arms, head). Left out, each is as the file has it.
      */
     colors?: "tint" | "paint"
+    /**
+     * Each is person.parts.glb, the same body as four skinned meshes playing person.glb's clips,
+     * with this many of the four hidden (0 to 3).
+     */
+    parts?: number
+    /** Each one before the camera carries a quarter-size person on its head. */
+    hats?: boolean
 }
 
 // Sixteen colours, taken four apart for a person's four, so neighbours differ in every part.
@@ -51,10 +58,11 @@ function Crowd() {
     const scene = useScene({ camera: { position: EYE, lookAt: [0, 0, 10], fov: 60 } })
     const person = useModel("person.glb")
     const painted = useModel("person.glb", { colorMask: "person.mask.png" })
+    const parted = useModel("person.parts.glb", { clips: person })
     const state = useRef({ actors: [] as Actor[], setup: null as Setup | null, t: 0, frames: [] as number[], main: [] as number[], last: 0, readBack: null as null | "asked" | object })
 
     useEffect(() => {
-        if (!scene || !person || !painted) return
+        if (!scene || !person || !painted || !parted) return
         const s = state.current
         const recorders: Record<string, any> = {}
         const api = {
@@ -64,12 +72,15 @@ function Crowd() {
                 s.setup = setup
                 scene.sun({ shadows: setup.shadows })
                 for (let i = 0; i < setup.count; i++) {
-                    const actor = setup.colors === "paint"
+                    const actor = setup.parts !== undefined
+                        ? scene.spawn(parted, { position: home(i, setup), yaw: 180, hide: parted.parts.slice(1, 1 + setup.parts) })
+                        : setup.colors === "paint"
                         ? scene.spawn(painted, { position: home(i, setup), yaw: 180, colors: [0, 1, 2, 3].map((k) => shade(i, k)) })
                         : scene.spawn(person, { position: home(i, setup), yaw: 180, tint: setup.colors === "tint" ? shade(i, 0) : undefined })
                     if (setup.clips !== "none") actor.play("Walk")
                     if (setup.clips === "hold") actor.speed = 0
                     s.actors.push(actor)
+                    if (setup.hats && i < setup.seen) scene.spawn(person, { scale: 0.25 }).attachTo(actor, "head", { position: [0, 0.25, 0] })
                 }
                 s.frames = []
                 s.main = []
@@ -115,12 +126,32 @@ function Crowd() {
              */
             askReadBack() { s.readBack = "asked" },
             get readBack() { return typeof s.readBack === "object" ? s.readBack : null },
+            /**
+             * What only a real container can say of a part, a joint and another model's clips: a
+             * four-part person 6 m ahead playing a clip that is person.glb's, a small one put on
+             * its head and taken off again, and a part hidden. Says where the small one was while
+             * on the head, where in the world it was left, and what the two models list.
+             */
+            seams() {
+                const body = scene.spawn(parted, { position: [0, 0, 6] })
+                body.play("Walk")
+                const hat = scene.spawn(person, { scale: 0.25 })
+                hat.attachTo(body, "head", { position: [0, 0.25, 0] })
+                const on = hat.position
+                hat.detach()
+                const off = hat.position
+                body.hide("legs")
+                const out = { parts: parted.parts, joints: parted.joints.length, clips: parted.clips.length, own: person.parts, on, off, scale: hat.scale }
+                hat.destroy()
+                body.destroy()
+                return out
+            },
             clips: person.clips,
         }
         api.record("Internal", MAIN)
         ;(globalThis as any).crowd = api
         return () => { for (const a of s.actors) a.destroy() }
-    }, [scene, person, painted])
+    }, [scene, person, painted, parted])
 
     useFrame((dt) => {
         const s = state.current

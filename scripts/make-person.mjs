@@ -2,6 +2,11 @@
 // with a 256 px picture and ten one-second clips, the size of a low-poly villager. Tubes on a
 // stick figure, so the binary in cli/fixtures/crowd has something to rebuild it from.
 //
+//
+// And person.parts.glb beside it: the same body on the same joints as four skinned meshes
+// (trunk, head, arms, legs) and no clips of its own, for what a part costs and for a model that
+// plays another's clips.
+//
 //     node scripts/make-person.mjs
 
 import fs from "node:fs"
@@ -9,6 +14,7 @@ import path from "node:path"
 import zlib from "node:zlib"
 
 const OUT = path.resolve(import.meta.dirname, "..", "cli", "fixtures", "crowd", "person.glb")
+const PARTS = path.resolve(import.meta.dirname, "..", "cli", "fixtures", "crowd", "person.parts.glb")
 const MASK = path.resolve(import.meta.dirname, "..", "cli", "fixtures", "crowd", "person.mask.png")
 
 // name, parent, where the joint is, where its tube ends, the tube's radius
@@ -46,12 +52,15 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const unit = (a) => { const l = Math.hypot(...a); return [a[0] / l, a[1] / l, a[2] / l] }
 
 const positions = [], normals = [], uvs = [], joints = [], weights = [], indices = []
+// Where each joint's tube starts in the vertices and in the indices, and one past the last.
+const tubes = []
 
 JOINTS.forEach(([, parent, from, to, radius], j) => {
     const axis = unit(sub(to, from))
     const u = unit(cross(axis, Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]))
     const v = cross(axis, u)
     const base = positions.length / 3
+    tubes.push({ vertex: base, index: indices.length })
     const put = (p, n, t, s) => {
         positions.push(...p)
         normals.push(...n)
@@ -94,6 +103,7 @@ JOINTS.forEach(([, parent, from, to, radius], j) => {
         tri(start + 1, top + s, top + (s + 1) % SIDES, axis)
     }
 })
+tubes.push({ vertex: positions.length / 3, index: indices.length })
 
 // A square PNG whose texel in a joint's band of the uvs, at row y, is `paint(band, y)` as r, g, b, a.
 function png(size, paint) {
@@ -130,8 +140,8 @@ function turn(clip, j, k) {
     return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(a / 2)]
 }
 
-const buffers = []
-const views = [], accessors = []
+let buffers = []
+let views = [], accessors = []
 let length = 0
 function view(data, target) {
     const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength)
@@ -191,11 +201,12 @@ const part = (band) => band <= 2 ? 0 : band <= 4 ? 3 : band <= 12 ? 2 : band <= 
 const mask = png(256, (band) => [0, 1, 2, 3].map((channel) => part(band) === channel ? 255 : 0))
 const imageView = view(picture)
 
-const nodes = JOINTS.map(([name, parent, at], j) => ({
+const skeleton = () => JOINTS.map(([name, parent, at], j) => ({
     name,
     translation: parent < 0 ? at : sub(at, JOINTS[parent][2]),
     ...(JOINTS.some((o) => o[1] === j) ? { children: JOINTS.flatMap((o, i) => o[1] === j ? [i] : []) } : {}),
 }))
+const nodes = skeleton()
 nodes.push({ name: "person", mesh: 0, skin: 0 })
 
 const gltf = {
@@ -215,15 +226,68 @@ const gltf = {
     buffers: [{ byteLength: length }],
 }
 
-let json = Buffer.from(JSON.stringify(gltf))
-json = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)])
-const bin = Buffer.concat(buffers)
-const header = Buffer.alloc(12)
-header.writeUInt32LE(0x46546c67, 0)
-header.writeUInt32LE(2, 4)
-header.writeUInt32LE(12 + 8 + json.length + 8 + bin.length, 8)
-const chunkHead = (n, type) => { const b = Buffer.alloc(8); b.writeUInt32LE(n, 0); b.writeUInt32LE(type, 4); return b }
-fs.mkdirSync(path.dirname(OUT), { recursive: true })
-fs.writeFileSync(OUT, Buffer.concat([header, chunkHead(json.length, 0x4e4f534a), json, chunkHead(bin.length, 0x004e4942), bin]))
+function write(out, doc) {
+    let json = Buffer.from(JSON.stringify(doc))
+    json = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)])
+    const bin = Buffer.concat(buffers)
+    const header = Buffer.alloc(12)
+    header.writeUInt32LE(0x46546c67, 0)
+    header.writeUInt32LE(2, 4)
+    header.writeUInt32LE(12 + 8 + json.length + 8 + bin.length, 8)
+    const chunkHead = (n, type) => { const b = Buffer.alloc(8); b.writeUInt32LE(n, 0); b.writeUInt32LE(type, 4); return b }
+    fs.mkdirSync(path.dirname(out), { recursive: true })
+    fs.writeFileSync(out, Buffer.concat([header, chunkHead(json.length, 0x4e4f534a), json, chunkHead(bin.length, 0x004e4942), bin]))
+    return (12 + 16 + json.length + bin.length) / 1024 | 0
+}
+const size = write(OUT, gltf)
 fs.writeFileSync(MASK, mask)
-console.log(`${path.relative(process.cwd(), OUT)}: ${indices.length / 3} triangles, ${positions.length / 3} vertices, ${JOINTS.length} joints, ${CLIPS.length} clips, ${(12 + 16 + json.length + bin.length) / 1024 | 0} KB`)
+console.log(`${path.relative(process.cwd(), OUT)}: ${indices.length / 3} triangles, ${positions.length / 3} vertices, ${JOINTS.length} joints, ${CLIPS.length} clips, ${size} KB`)
+
+// The same body as four meshes: each part is the tubes of its joints, with vertices of its own.
+// What is held goes with the arms.
+const PART_NAMES = ["trunk", "legs", "arms", "head"]
+const partOf = (j) => part(j) < 0 ? 2 : part(j)
+buffers = []
+views = []
+accessors = []
+length = 0
+const partMeshes = PART_NAMES.map((name, p) => {
+    const at = new Map()
+    const pick = [], order = []
+    JOINTS.forEach((_, j) => {
+        if (partOf(j) !== p) return
+        for (let v = tubes[j].vertex; v < tubes[j + 1].vertex; v++) { at.set(v, pick.length); pick.push(v) }
+        for (let i = tubes[j].index; i < tubes[j + 1].index; i++) order.push(at.get(indices[i]))
+    })
+    const take = (from, per) => pick.flatMap((v) => from.slice(v * per, v * per + per))
+    const position = take(positions, 3)
+    return {
+        name,
+        primitives: [{
+            attributes: {
+                POSITION: accessor(new Float32Array(position), "VEC3", FLOAT, bounds(position), 34962),
+                NORMAL: accessor(new Float32Array(take(normals, 3)), "VEC3", FLOAT, {}, 34962),
+                TEXCOORD_0: accessor(new Float32Array(take(uvs, 2)), "VEC2", FLOAT, {}, 34962),
+                JOINTS_0: accessor(new Uint8Array(take(joints, 4)), "VEC4", UBYTE, {}, 34962),
+                WEIGHTS_0: accessor(new Float32Array(take(weights, 4)), "VEC4", FLOAT, {}, 34962),
+            },
+            indices: accessor(new Uint16Array(order), "SCALAR", USHORT, {}, 34963),
+            material: 0,
+        }],
+    }
+})
+const partsInverse = accessor(inverse, "MAT4", FLOAT)
+const partsImage = view(picture)
+const partsSize = write(PARTS, {
+    ...gltf,
+    scenes: [{ nodes: [0, ...PART_NAMES.map((_, p) => JOINTS.length + p)] }],
+    nodes: [...skeleton(), ...PART_NAMES.map((name, p) => ({ name, mesh: p, skin: 0 }))],
+    skins: [{ joints: JOINTS.map((_, j) => j), inverseBindMatrices: partsInverse, skeleton: 0 }],
+    meshes: partMeshes,
+    images: [{ bufferView: partsImage, mimeType: "image/png" }],
+    animations: undefined,
+    accessors,
+    bufferViews: views,
+    buffers: [{ byteLength: length }],
+})
+console.log(`${path.relative(process.cwd(), PARTS)}: ${PART_NAMES.join(", ")}, no clips, ${partsSize} KB`)
