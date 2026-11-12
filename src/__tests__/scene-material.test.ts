@@ -24,7 +24,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap" || name === "SetMeshTexture" || name === "SetMeshFlipbook" || name === "SetMeshFlipbookFrame") return answer
+                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap" || name === "SetWaterline" || name === "SetMeshTexture" || name === "SetMeshFlipbook" || name === "SetMeshFlipbookFrame") return answer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -316,5 +316,39 @@ describe("scene.mesh texture frames", () => {
             host.beginFrame(0.25)
             expect(of("SetWindClock").map((c) => c[1])).toEqual([0.25])
         })
+    })
+})
+
+describe("scene.waterline", () => {
+    it("sends its height, colour and strength, 0.5 unless given, and a later call naming only y keeps the rest", () => {
+        const s = scene()
+        s.waterline({ y: 1.3, color: "#ff0000" })
+        s.waterline({ y: 1.8 })
+        expect(of("SetWaterline")).toEqual([["SetWaterline", true, 1.3, 1, 0, 0, 0.5], ["SetWaterline", true, 1.8, 1, 0, 0, 0.5]])
+    })
+
+    it("false takes it away, and the next call starts afresh", () => {
+        const s = scene()
+        s.waterline({ y: 1, color: "#ffffff", strength: 1 })
+        s.waterline(false)
+        expect(of("SetWaterline")[1]).toEqual(["SetWaterline", false, 0, 0, 0, 0, 0])
+        expect(() => s.waterline({ y: 2 })).toThrow("scene.waterline: give the colour below it, color")
+    })
+
+    it("is refused without a height, outside its strength, or on a host without it, sending nothing", () => {
+        const s = scene()
+        expect(() => s.waterline({ color: "#ffffff" })).toThrow("scene.waterline: y is undefined")
+        expect(() => s.waterline({ y: 1, color: "#ffffff", strength: 2 })).toThrow("strength is 2, and runs from 0 to 1")
+        missing = new Set(["SetWaterline"])
+        expect(() => s.waterline({ y: 1, color: "#ffffff" })).toThrow("scene.waterline needs a newer OneJS")
+        expect(of("SetWaterline")).toHaveLength(0)
+    })
+
+    it("says what the bridge refused, and keeps nothing", () => {
+        const s = scene()
+        answer = "no"
+        expect(() => s.waterline({ y: 1, color: "#ffffff" })).toThrow("[oj] scene.waterline: no")
+        answer = ""
+        expect(() => s.waterline({ y: 2 })).toThrow("give the colour below it")
     })
 })

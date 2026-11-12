@@ -476,6 +476,9 @@ Three things that are not obvious from the code:
   (`SetWindClock`, which a flipbook keeps running as a sway does). Told apart
   from a picture by `"frames" in texture`, which a host object answers from
   its own fields.
+- **`scene.waterline` is two globals.** `SetWaterline(on, y, r, g, b,
+  strength)`, sRGB, merged with the last call so `{ y }` alone moves it; the
+  first call needs `y` and `color`. The bridge zeroes it when the scene goes.
 - **`ambient.occlusion` is the host's, set per scene.** `SetAmbientOcclusion(on,
   intensity, radius)`, with -1 for the host's own value, sent only when a
   scene's options or a `scene.ambient` call name it; the bridge puts the

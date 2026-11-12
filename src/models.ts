@@ -306,6 +306,16 @@ export interface MeshFrames {
     seconds: number
 }
 
+/** The scene's waterline: see `scene.waterline`. */
+export interface Waterline {
+    /** The water's height, in metres: what is below it takes the colour. */
+    y?: number
+    /** The colour below it. */
+    color?: ColorInput
+    /** How far below it turns to the colour, from 0 to 1: 0.5 by default. */
+    strength?: number
+}
+
 /** How a mesh model draws, fixed when it is made. */
 export interface MeshDrawOptions {
     /**
@@ -921,6 +931,16 @@ export interface Scene {
     background(color: ColorInput): void
     /** Changes the fog, only what it names, or `false` to clear it. */
     fog(options: FogOptions | false): void
+    /**
+     * Below a height, turns everything the scene draws toward a colour: a clean
+     * line where water meets a body wading in it, whatever the water's alpha,
+     * and the water's colour on what lies under it. Changes only what it
+     * names, so a rising flood is `scene.waterline({ y })` each frame; the
+     * first call gives `y` and `color`. `false` takes it away.
+     *
+     *     scene.waterline({ y: 1.3, color: "#1d4a44", strength: 0.6 })
+     */
+    waterline(options: Waterline | false): void
     /**
      * Changes the wind, only what it names. A mesh made with `sway` moves in
      * it, leaning downwind and swinging about the lean.
@@ -1630,6 +1650,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     }
     // Nothing is sent for a scene that never has a sky, so an older host hears nothing of it.
     let skySent = false
+    // The waterline as last set, which a call naming only `y` keeps the rest of; null for none.
+    let waterlineNow: Waterline | null = null
     let reflectSent = false
     const applySky = () => {
         if (skyNow === null && !skySent) return
@@ -2431,6 +2453,23 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             ambientNow = next
             applyAmbient()
             if (o.occlusion !== undefined) applyOcclusion(o.occlusion)
+        },
+        waterline(o) {
+            if (o === false) {
+                waterlineNow = null
+                if (typeof b.SetWaterline === "function") b.SetWaterline(false, 0, 0, 0, 0, 0)
+                return
+            }
+            if (o === null || typeof o !== "object") throw new Error(`[oj] scene.waterline is ${String(o)}, and is { y, color, strength } or false`)
+            const next = { strength: 0.5, ...waterlineNow, ...o }
+            if (typeof next.y !== "number" || !Number.isFinite(next.y)) throw new Error(`[oj] scene.waterline: y is ${next.y}, the water's height in metres`)
+            if (next.color === undefined) throw new Error("[oj] scene.waterline: give the colour below it, color")
+            const sent = rgb(next.color, "waterline color")
+            if (typeof next.strength !== "number" || !(next.strength >= 0 && next.strength <= 1)) throw new Error(`[oj] scene.waterline: strength is ${next.strength}, and runs from 0 to 1`)
+            if (typeof b.SetWaterline !== "function") throw new Error("[oj] scene.waterline needs a newer OneJS: this host's ModelBridge has no waterline (it came with runtime 1.10).")
+            const problem = String(b.SetWaterline(true, next.y, ...sent, next.strength))
+            if (problem !== "") throw new Error(`[oj] scene.waterline: ${problem}`)
+            waterlineNow = next
         },
         background(color) {
             const parsed = rgb(color, "background")
