@@ -842,6 +842,30 @@ describe("an actor's own texture", () => {
     })
 })
 
+describe("a model's own picture", () => {
+    const OWN = { picture: "own" } as any
+
+    it("hands back the picture its file carries, asked once, and null for none", async () => {
+        let picture: unknown = OWN
+        const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
+            get: (t, name) => name === "ModelTexture" ? (id: number) => { calls.push(["ModelTexture", id]); return picture } : t[name as string],
+        })
+        const body = await loadModel("body.glb")
+        expect(of("ModelTexture")).toHaveLength(0)
+        expect(body.texture).toBe(OWN)
+        expect(body.texture).toBe(OWN)
+        expect(of("ModelTexture")).toEqual([["ModelTexture", body.id]])
+        picture = null
+        expect((await loadModel("plain.glb")).texture).toBeNull()
+    })
+
+    it("needs a OneJS that can hand back a model's picture", () => {
+        missing = new Set(["ModelTexture"])
+        expect(() => MODEL.texture).toThrow(/model.texture needs a newer OneJS/)
+    })
+})
+
 describe("the last frame's draws", () => {
     it("reads the host's counts, and null until it has counted a frame", () => {
         const { scene } = createScene()

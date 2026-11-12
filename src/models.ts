@@ -60,6 +60,14 @@ export interface Model {
     readonly joints: readonly string[]
     /** Its parts, each a node of the file that carries a mesh, by the node's name: what `actor.hide` and `actor.show` take. */
     readonly parts: readonly string[]
+    /**
+     * The picture its file carries (the first of its materials that has
+     * one), null for none: the base for a look composed over it with
+     * `tex.image` and `tex.composite`. The model's own, not a copy, so it
+     * goes when the model is unloaded. A mesh model's is the texture
+     * `scene.mesh` was given.
+     */
+    readonly texture: Texture | null
 }
 
 /** A list of numbers: a typed array, which crosses to Unity as its bytes, or a plain array. */
@@ -1478,7 +1486,16 @@ export function loadModel(name: string, options: { colorMask?: string, clips?: M
             const clips = String(b.Clips(id)).split("\n").filter((c) => c !== "")
             const joints = typeof b.Joints === "function" ? String(b.Joints(id)).split("\n").filter((j) => j !== "") : []
             const parts = typeof b.Parts === "function" ? String(b.Parts(id)).split("\n").filter((p) => p !== "") : []
-            const model: Model = Object.freeze({ id, clips: Object.freeze(clips), height: Number(b.Height(id)), joints: Object.freeze(joints), parts: Object.freeze(parts) })
+            let own: Texture | null | undefined
+            const model: Model = Object.freeze({
+                id, clips: Object.freeze(clips), height: Number(b.Height(id)), joints: Object.freeze(joints), parts: Object.freeze(parts),
+                get texture(): Texture | null {
+                    if (own !== undefined) return own
+                    if (typeof b.ModelTexture !== "function") throw new Error("[oj] model.texture needs a newer OneJS: this host's ModelBridge cannot hand back a model's picture (it came with runtime 1.11).")
+                    own = (b.ModelTexture(id) ?? null) as Texture | null
+                    return own
+                },
+            })
             generationOf.set(model, born)
             modelUrls.set(model, url)
             modelNames.set(model, name)
@@ -2204,6 +2221,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             clips: Object.freeze([]) as readonly string[],
             joints: Object.freeze([]) as readonly string[],
             parts: Object.freeze([]) as readonly string[],
+            get texture() { return look.texture?.texture ?? null },
             get height() { return Number(b.Height(id)) },
             get color() { return colorGiven },
             set color(c: ColorInput) {

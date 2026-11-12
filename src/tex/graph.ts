@@ -34,7 +34,7 @@ export interface Node {
     readonly tiles: boolean
     /** The node's identity: op, parameters and inputs. Equal ids draw equal pixels. */
     readonly id: string
-    /** A `tex.pixels` source's texture. A table has none: it is uploaded from `params.rgba` when drawn. */
+    /** A `tex.pixels` or `tex.image` source's texture. A table has none: it is uploaded from `params.rgba` when drawn. */
     readonly texture?: unknown
 }
 
@@ -58,6 +58,18 @@ function hash32(text: string, seed = 0x811c9dc5): string {
 }
 
 let sourceCount = 0
+/** Each texture a source holds, its key: one texture is one source however often it is handed in. */
+const sourceKeys = new WeakMap<object, string>()
+
+function sourceKey(texture: unknown): string {
+    if (typeof texture !== "object" || texture === null) return `source#${++sourceCount}`
+    let key = sourceKeys.get(texture)
+    if (key === undefined) {
+        key = `source#${++sourceCount}`
+        sourceKeys.set(texture, key)
+    }
+    return key
+}
 
 export function makeNode(
     op: string, kind: NodeKind, inputs: readonly Node[], params: Record<string, unknown>,
@@ -65,10 +77,10 @@ export function makeNode(
 ): Node {
     // Float wins: a node reading a 32-bit picture is 32-bit.
     if (params.float !== true && inputs.some(isFloat)) params = { ...params, float: true }
-    // A source's identity is the texture it holds, which has no stable text,
-    // so each source is its own node.
+    // A source's identity is the texture it holds, which has no stable text:
+    // each texture is its own node, the same one each time it is handed in.
     const key = texture !== undefined
-        ? `source#${++sourceCount}`
+        ? `${sourceKey(texture)}|${op}|${tiles ? 1 : 0}`
         : `${op}|${width}x${height}|${tiles ? 1 : 0}|${JSON.stringify(params)}|${inputs.map((n) => n.id).join(",")}`
     // Two hashes of the key, 64 bits: the planner treats equal ids as one node.
     const id = hash32(key) + hash32(key, 0x01000193)

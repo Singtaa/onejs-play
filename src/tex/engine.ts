@@ -76,9 +76,14 @@ export function materialised(root: Node, fuse = true): Set<string> {
     return out
 }
 
-/** A node's value as its texture holds it: 8 bits, or as drawn for a half or float node. */
+/**
+ * A node's value as its texture holds it: 8 bits, or as drawn for a half or
+ * float node. A loaded texture (`tex.image`'s source) is read as the sampler
+ * hands it over, which for an sRGB one is decoded to linear light: rounding
+ * that to 8 bits would band its darks before `fromTexture` encodes it back.
+ */
 function stored(n: Node, v: Vec4): Vec4 {
-    return n.params.half === true || isFloat(n) ? v : quantise8(v)
+    return n.params.half === true || isFloat(n) || n.op === "texture" ? v : quantise8(v)
 }
 
 /** A texel row or column index past the edge, wrapped or clamped. */

@@ -622,6 +622,44 @@ function pixels(width: number, height: number, rgba: Uint8Array | Float32Array |
     return new TexImage(makeNode("pixels", "source", [], {}, width, height, tile, uploadRGBA(width, height, rgba, tile)))
 }
 
+export interface ImageOptions {
+    /** Whether it repeats seamlessly, so an `edges: "auto"` filter reading it wraps. Default false. */
+    tile?: boolean
+}
+
+/**
+ * A texture as a picture: one `loadTexture` gave, a model's own
+ * (`model.texture`), or any Unity texture. It is read on the GPU as the
+ * texture holds it, its own size, at its full resolution, and stored as
+ * Magerie stores a picture (gamma encoded, premultiplied), so it can be a
+ * base or a layer of `composite` and go through any node:
+ *
+ *     const body = await loadModel("body.glb")
+ *     const helm = await loadTexture("helm-paint.png")
+ *     const look = tex.composite(tex.image(body.texture!), tex.image(helm)).texture()
+ *     scene.spawn(body, { texture: look })
+ *
+ * The same texture is the same picture however often it is handed in, so
+ * looks composed from the same pieces share one baked texture. A texture
+ * drawn into after it was made into a picture is not read again: make the
+ * picture from a texture that is finished. Never cached across loads, since
+ * a texture's pixels are not in the recipe.
+ */
+function image(texture: Texture, options: ImageOptions = {}): TexImage {
+    const t = texture as { width?: unknown, height?: unknown, isDataSRGB?: unknown } | null
+    if (t === null || typeof t !== "object") throw new Error("[oj] tex.image takes a texture: one loadTexture gave, or a model's texture")
+    const width = Number(t.width), height = Number(t.height)
+    if (![width, height].every((v) => Number.isInteger(v) && v >= 1 && v <= 8192)) {
+        throw new Error(`[oj] tex.image: that texture is ${String(t.width)} by ${String(t.height)}, and a picture is whole numbers of pixels from 1 to 8192 (an SVG is no texture)`)
+    }
+    const tile = options.tile === true
+    // An sRGB texture is decoded to linear light where it is read, in a linear project only.
+    const linear = typeof CS !== "undefined" && CS.UnityEngine?.QualitySettings?.activeColorSpace === CS.UnityEngine?.ColorSpace?.Linear
+    const decoded = t.isDataSRGB === true && linear
+    const source = makeNode("texture", "source", [], {}, width, height, tile, texture)
+    return new TexImage(makeNode("fromTexture", "pointwise", [source], { decoded }, width, height, tile))
+}
+
 /** A pass's texels, read back from the GPU, as the bytes C#'s `encode` hands over in one crossing, row 0 at the top. */
 async function readBack(output: unknown, encode: "StoredBytes" | "StoredFloats"): Promise<Uint8Array> {
     const read = CS.OneJS.Lighting.TextureRead.Start(output)
@@ -726,6 +764,7 @@ export const tex = {
     /** Generators sized `width` (by `height`), tiling if asked, with every other node beside them. */
     canvas,
     pixels,
+    image,
     /** The pictures kept across loads (64 MB, least recently used dropped first). */
     cache: {
         /** Drops every kept picture, for a settings screen's "clear cached textures". The next load draws each again. */

@@ -816,6 +816,30 @@ export function tile(s: Scope, src: TexRead, v: TileValues): Vec4 {
  * linear light, so the copy into an sRGB texture stores the bytes Magerie
  * stores. Alpha is data (a height, a mask) and stays as it is.
  */
+/** Linear light to sRGB's encoding, exactly: what the GPU decoded from an sRGB texture, given back. */
+function toSrgb(c: Vec3): Vec3 {
+    const x = c.saturate()
+    const low = x.mul(12.92)
+    const high = x.pow(sl.vec3(1 / 2.4, 1 / 2.4, 1 / 2.4)).mul(1.055).sub(0.055)
+    return sl.vec3(
+        sl.select(x.x.le(0.0031308), low.x, high.x),
+        sl.select(x.y.le(0.0031308), low.y, high.y),
+        sl.select(x.z.le(0.0031308), low.z, high.z),
+    ) as Vec3
+}
+
+/**
+ * A loaded texture's texel as Magerie stores it: gamma encoded and
+ * premultiplied. `decoded` says the sampler handed it over in linear light
+ * (an sRGB texture in a linear project), which is encoded back; a straight
+ * picture's colour is then multiplied by its alpha.
+ */
+export function fromTexture(c: Vec4, decoded: boolean): Vec4 {
+    const rgb: Vec3 = decoded ? toSrgb(c.xyz) : c.xyz.saturate()
+    const a = c.w.saturate()
+    return sl.vec4(rgb.mul(a), a)
+}
+
 export function deliver(c: Vec4, straight: boolean): Vec4 {
     const rgb = straight ? c.xyz : unpremultiply(c)
     return sl.vec4(sl.toLinear(rgb), c.w)

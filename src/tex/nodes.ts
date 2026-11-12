@@ -856,6 +856,8 @@ export const KERNELS: Record<string, Kernel> = {
     scatter: (s, n, i) => k.scatter(s, i.texture(0, false), i.texture(1, false), n.params.count as number, n.params.ranges as number[], n.params.bg as [number, number, number, number], n.params.wrap as boolean, n.params.output as k.ScatterOutput, n.params.masked === true ? i.texture(2, false) : null),
     sdfShape: (s, n) => k.sdfShape(s, n.params as unknown as k.ShapeValues, n.params.output === "distance" ? "distance" : "image"),
     pixelate: (s, n, i) => k.pixelate(s, i.texture(0, false), n.params.blockSize as number),
+    // tex.image: a loaded texture, read at this texel and stored as Magerie stores a picture.
+    fromTexture: (_s, n, i) => k.fromTexture(i.value(0), n.params.decoded === true),
     transform: (s, n, i) => k.transform(s, i.texture(0, false), n.params.translate as [number, number], n.params.scale as number, n.params.rotation as number, n.params.flip as [boolean, boolean]),
     tileGrid: (s, n) => k.tileGrid(s, n.params.values as k.TileGridValues, n.params.output as k.TileGridOutput),
     channelShuffle: (_s, n, i) => k.channelShuffle(i.value(0), n.params.out as k.ChannelSource[]),

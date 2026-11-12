@@ -290,6 +290,12 @@ describe("scene.mesh texture and splat", () => {
         expect(of("SetMesh").every((c) => c.length === 7), "a mesh without a splat sends the six arguments every OneJS takes").toBe(true)
     })
 
+    it("hands back the texture it was given as model.texture, and null for none or a splat", () => {
+        const s = scene()
+        expect(s.mesh({ ...SQUARE, uvs: UVS, texture: grass }).texture).toBe(grass)
+        expect(s.mesh(SQUARE).texture).toBeNull()
+    })
+
     it("paints a splat by weights a vertex, one a layer, and sends new weights with a set", () => {
         const s = scene()
         const weights = new Float32Array(8).fill(0.5)
