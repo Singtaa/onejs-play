@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.11",
+    "name": "Gear",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}
