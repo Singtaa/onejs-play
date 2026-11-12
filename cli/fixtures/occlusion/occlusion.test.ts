@@ -3,11 +3,15 @@ import check from "./occlusion.playtest.mjs"
 
 type Reading = { strip: number, panel: number, spread?: number }
 
-/** A game whose screenshot's strip and panel read `readings[the look last set]`. */
-function fake(readings: Record<string, Reading>) {
+/**
+ * A game whose screenshot's strip and panel read `readings[the look last set]`. With `moving`,
+ * every screenshot's bytes differ, as a host whose occlusion noise moves each frame draws them.
+ */
+function fake(readings: Record<string, Reading>, moving = false) {
     let shown = "host"
+    let shots = 0
     return {
-        browser: { send: async () => ({ data: "" }) },
+        browser: { send: async () => ({ data: moving ? String(shots++) : "" }) },
         wait: async () => {},
         until: async (f: () => Promise<boolean>) => { if (!(await f())) throw new Error("never") },
         eval: async (code: string) => {
@@ -51,5 +55,9 @@ describe("the occlusion playtest", () => {
         await expect(check(fake({ host: flat, off: flat, darker: flat, "host again": flat }) as any)).rejects.toThrow("no occlusion drawn")
         const dark = { strip: 0, panel: 0 }
         await expect(check(fake({ host: dark, off: dark, darker: dark, "host again": dark }) as any)).rejects.toThrow("the wall was not lit")
+    })
+
+    it("fails occlusion that moves from frame to frame on a still scene", async () => {
+        await expect(check(fake(GOOD, true) as any)).rejects.toThrow("a still scene shimmers")
     })
 })
