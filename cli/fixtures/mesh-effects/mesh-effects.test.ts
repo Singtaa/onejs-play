@@ -27,6 +27,7 @@ function fake(pixels: Record<string, number[]>) {
             if (code.includes("premultipliedTexture")) shown = "multiplied half"
             else if (code.includes("halfPixels")) shown = "straight half"
             else if (code.includes("premultiplied")) shown = fog ? "adding in fog" : code.includes("#00ff0000") ? "adding" : code.includes("#00ff0080") ? "halfway" : "covering"
+            else if (code.includes("light")) shown = code.includes("#800000") ? "own ambient" : code.includes("[0,1,0]") ? "own light below" : "own light"
             else if (code.includes("waterline")) shown = code.includes(`"y":-1`) ? "over" : code.includes(`"strength":0.5`) ? "half under" : "under"
             else if (code.includes("bare")) shown = fog ? "floor in fog" : "floor"
             else if (code.includes("flash")) shown = "flashed"
@@ -61,6 +62,10 @@ const GOOD = {
     // Red 0.502 plus half the floor, 0.108, in linear light is 205; red whole plus it is 255.
     "straight half": [205, 92, 92],
     "multiplied half": [255, 92, 92],
+    "own light": [128, 128, 128],
+    // A seventeenth of 128's 0.216 in linear light.
+    "own light below": [30, 30, 30],
+    "own ambient": [128, 0, 0],
     under: [255, 0, 0],
     over: [255, 255, 255],
     "half under": [255, 188, 188],
@@ -105,6 +110,12 @@ describe("the mesh-effects playtest", () => {
         await expect(check(fake({ ...GOOD, "adding in fog": [0, 255, 192] }) as any)).rejects.toThrow("the fog did not fade it out")
         await expect(check(fake({ ...GOOD, "straight half": [255, 92, 92] }) as any)).rejects.toThrow("not its red times its alpha")
         await expect(check(fake({ ...GOOD, "multiplied half": [205, 92, 92] }) as any)).rejects.toThrow("not its red whole")
+    })
+
+    it("fails an actor light that does not light it, lights it from the wrong side, or loses its ambient", async () => {
+        await expect(check(fake({ ...GOOD, "own light": [0, 0, 0] }) as any)).rejects.toThrow("not that grey")
+        await expect(check(fake({ ...GOOD, "own light below": [128, 128, 128] }) as any)).rejects.toThrow("not a seventeenth")
+        await expect(check(fake({ ...GOOD, "own ambient": [0, 0, 0] }) as any)).rejects.toThrow("not that red")
     })
 
     it("fails a waterline that tints nothing, tints above it, mixes in sRGB, or is lost when only y moves", async () => {

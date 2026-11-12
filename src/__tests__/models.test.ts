@@ -728,6 +728,32 @@ describe("an actor's colours", () => {
         expect(() => { boo.flash = "#ffffff" }).toThrow(/flash needs a newer OneJS/)
     })
 
+    it("lights an actor of its own, at spawn and after, as sRGB along the way it shines, and gives it back to the scene with null", () => {
+        const { scene } = createScene()
+        const boo = scene.spawn(MODEL, { light: { ambient: "#808080", color: "#ffffff", direction: [0, -1, 0] } })
+        expect(last("SetActorLight").slice(1).map((v) => +(v as number).toFixed(3))).toEqual([boo.id, 0.502, 0.502, 0.502, 1, 1, 1, 1, 0, -1, 0])
+        boo.light = { ambient: "#000000", color: "#ff0000", intensity: 2, direction: [1, 0, 0] }
+        expect(last("SetActorLight")).toEqual(["SetActorLight", boo.id, 0, 0, 0, 1, 0, 0, 2, 1, 0, 0])
+        expect(boo.light?.intensity).toBe(2)
+        expect(Object.isFrozen(boo.light)).toBe(true)
+        boo.light = null
+        expect(last("ClearActorLight")).toEqual(["ClearActorLight", boo.id])
+        expect(boo.light).toBeNull()
+        scene.spawn(MODEL)
+        expect(of("SetActorLight"), "an actor given none sends none").toHaveLength(2)
+        expect(() => { boo.light = { ambient: "#000", color: "#fff", direction: [0, 0, 0] } }).toThrow("direction is [0,0,0]")
+        expect(() => { boo.light = { ambient: "#000", color: "#fff", intensity: -1, direction: [0, -1, 0] } }).toThrow("intensity is -1")
+        expect(() => { boo.light = { ambient: "nope", color: "#fff", direction: [0, -1, 0] } }).toThrow("actor light ambient")
+        expect(of("SetActorLight"), "nothing refused is sent").toHaveLength(2)
+    })
+
+    it("needs a OneJS that can light an actor of its own", () => {
+        missing = new Set(["SetActorLight"])
+        const { scene } = createScene()
+        expect(() => scene.spawn(MODEL, { light: { ambient: "#000", color: "#fff", direction: [0, -1, 0] } })).toThrow(/light needs a newer OneJS.*runtime 1\.10/)
+        expect(of("Destroy"), "the refused actor is not left in the world").toHaveLength(1)
+    })
+
     it("gives a model its mask at load, and keeps it apart from the same file without one", async () => {
         const plain = await loadModel("villager.glb")
         calls = []

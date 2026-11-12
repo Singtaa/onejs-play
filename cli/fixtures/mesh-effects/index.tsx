@@ -1,12 +1,12 @@
 import { useEffect } from "react"
-import { mount, useScene, tex, type Scene, type Actor, type MeshModel, type MeshModelOptions } from "oj"
+import { mount, useScene, tex, type Scene, type Actor, type ActorLight, type MeshModel, type MeshModelOptions } from "oj"
 
 // A scene with no light at all: no sun, no ambient, a black background. A flat quad fills the
 // view from straight above, so the middle pixel is what the quad draws. mesh-effects.playtest.mjs
 // makes it lit (black here), lit with a flash, unlit, textured with a picture from bytes, playing
 // a red and a blue picture as a flipbook, additive over a grey floor, with and without fog,
-// premultiplied over the floor at three alphas and under a half see-through red picture, and unlit
-// under a red waterline, and reads the middle pixel.
+// premultiplied over the floor at three alphas and under a half see-through red picture, lit by an
+// actor's own light, and unlit under a red waterline, and reads the middle pixel.
 type Shown = {
     look?: Partial<MeshModelOptions>
     // An unlit floor of this colour a metre under the quad.
@@ -23,13 +23,15 @@ type Shown = {
     bare?: boolean
     // A colour added to the quad's actor after its light (actor.flash).
     flash?: string
+    // The quad's actor's own light (actor.light).
+    light?: ActorLight
     // A red waterline at this height and strength (scene.waterline); none when left out.
     waterline?: { y: number, strength: number }
 }
 
 let live: { model: MeshModel, actor: Actor }[] = []
 
-function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>, flash?: string) {
+function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>, flash?: string, light?: ActorLight) {
     const h = 40
     const model = scene.mesh({
         positions: new Float32Array([-h, y, -h, h, y, -h, h, y, h, -h, y, h]),
@@ -38,7 +40,7 @@ function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>, flash?: 
         uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
         ...look,
     })
-    live.push({ model, actor: scene.spawn(model, flash === undefined ? { static: true } : { static: true, flash }) })
+    live.push({ model, actor: scene.spawn(model, { static: true, ...(flash === undefined ? {} : { flash }), ...(light === undefined ? {} : { light }) }) })
 }
 
 // A picture's bytes all of one channel at full, 0 red and 2 blue, at an alpha of `alpha` levels,
@@ -49,7 +51,7 @@ function solid(channel: number, alpha = 255): Uint8Array {
     return bytes
 }
 
-function show(scene: Scene, { look = {}, floor, fog, pixels, halfPixels, flipbook, bare, flash, waterline }: Shown) {
+function show(scene: Scene, { look = {}, floor, fog, pixels, halfPixels, flipbook, bare, flash, light, waterline }: Shown) {
     for (const l of live) { l.actor.destroy(); l.model.destroy() }
     live = []
     scene.fog(fog === undefined ? false : { color: fog, near: 0, far: 2 })
@@ -58,7 +60,7 @@ function show(scene: Scene, { look = {}, floor, fog, pixels, halfPixels, flipboo
     if (bare === true) return
     const picture = (channel: number, alpha?: number) => tex.pixels(64, 64, solid(channel, alpha)).texture()
     const texture = pixels ? { texture: picture(0) } : halfPixels ? { texture: picture(0, 128) } : flipbook ? { texture: { frames: [picture(0), picture(2)], seconds: 2 } } : {}
-    quad(scene, 0, { color: "#ffffff", ...texture, ...look }, flash)
+    quad(scene, 0, { color: "#ffffff", ...texture, ...look }, flash, light)
 }
 
 function Effects() {

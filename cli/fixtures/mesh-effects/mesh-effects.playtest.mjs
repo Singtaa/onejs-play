@@ -17,7 +17,11 @@
 // picture delivers as full red at 0.5, it must multiply the red by the alpha
 // before adding half the floor, and blended "premultipliedTexture" it must
 // take the red whole. (A tex picture cannot carry colour at alpha 0: it is
-// delivered straight, colour over alpha, so its clear texels are black.) Unlit under a red waterline a metre above, the white quad must be
+// delivered straight, colour over alpha, so its clear texels are black.) Lit,
+// in the dark, by an actor light of grey shining straight down on it, the
+// white quad must be that grey; shining straight up from under it, a
+// seventeenth of that grey in linear light, the far side of the light's soft wrap;
+// and by an actor light's red ambient alone, that red. Unlit under a red waterline a metre above, the white quad must be
 // red; with the line a metre below, white; at half strength, its green halfway
 // in linear light. Then that line moved a metre below by `{ y }` alone, the
 // quad must be white again. Reads the page's own screenshot, decoded by the page. Throws, so the
@@ -80,6 +84,9 @@ export default async function (game) {
     await over("#00ff0000", { name: "adding in fog", shown: { fog: "#0000c0" } })
     await look("straight half", { floor: "#808080", look: { unlit: true, blend: "premultiplied" }, halfPixels: true })
     await look("multiplied half", { floor: "#808080", look: { unlit: true, blend: "premultipliedTexture" }, halfPixels: true })
+    await look("own light", { light: { ambient: "#000000", color: "#808080", direction: [0, -1, 0] } })
+    await look("own light below", { light: { ambient: "#000000", color: "#808080", direction: [0, 1, 0] } })
+    await look("own ambient", { light: { ambient: "#800000", color: "#000000", direction: [0, -1, 0] } })
     await look("under", { look: { unlit: true }, waterline: { y: 1, strength: 1 } })
     await look("over", { look: { unlit: true }, waterline: { y: -1, strength: 1 } })
     await look("half under", { look: { unlit: true }, waterline: { y: 1, strength: 0.5 } })
@@ -116,6 +123,10 @@ export default async function (game) {
     const halfRed = srgb(128 / 255 + linear(fl) * (1 - 128 / 255))
     if (!near(seen["straight half"], [halfRed, kept, kept])) wrong.push(`premultiplied under a red picture at half alpha it is ${px(seen["straight half"])}: not its red times its alpha (${Math.round(halfRed)}) over half the floor (${Math.round(kept)})`)
     if (!near(seen["multiplied half"], [255, kept, kept])) wrong.push(`premultipliedTexture under a red picture at half alpha it is ${px(seen["multiplied half"])}: not its red whole over half the floor (${Math.round(kept)})`)
+    if (!near(seen["own light"], [128, 128, 128])) wrong.push(`lit in the dark by its own grey light shining down on it, it is ${px(seen["own light"])}: not that grey`)
+    const farSide = srgb(linear(128) / 17)
+    if (!near(seen["own light below"], [farSide, farSide, farSide])) wrong.push(`lit by its own grey light from below, it is ${px(seen["own light below"])}: not a seventeenth of the grey (${Math.round(farSide)})`)
+    if (!near(seen["own ambient"], [128, 0, 0])) wrong.push(`lit by its own red ambient alone, it is ${px(seen["own ambient"])}: not that red`)
     const [ur, ug, ub] = seen.under
     if (!(ur >= BRIGHT && ug <= DARK && ub <= DARK)) wrong.push(`unlit under a red waterline a metre above it is ${ur}, ${ug}, ${ub}: not red`)
     if (!(Math.min(...seen.over) >= BRIGHT)) wrong.push(`unlit with a red waterline a metre below it is ${px(seen.over)}: not white`)

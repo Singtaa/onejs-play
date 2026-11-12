@@ -468,6 +468,10 @@ Three things that are not obvious from the code:
   mesh whatever its alpha. A blend is refused with a cutout, a splat or
   depthOnly, unlit with depthOnly, before anything is made; a blended mesh
   is left out of `bakeItems` with the depth-only ones.
+- **`actor.light`** is `SetActorLight(id, ambient rgb, color rgb, intensity, x, y, z)`,
+  sRGB, the direction the way it shines, sent at spawn only when given and
+  again on each set; `null` is `ClearActorLight(id)`. A host without the call
+  is refused before anything is sent.
 - **`actor.flash` and the camera's `roll`.** A flash is `SetFlash(id, r, g, b)`,
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older

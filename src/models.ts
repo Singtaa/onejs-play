@@ -523,6 +523,8 @@ export interface SpawnOptions {
     tint?: ColorInput
     /** A colour added to it after its light: see `actor.flash`. Black by default, which changes nothing. */
     flash?: ColorInput
+    /** Its own light, in place of the scene's ambient and baked light: see `actor.light`. */
+    light?: ActorLight | null
     /** Up to four colours painted through its model's `colorMask`. */
     colors?: readonly ColorInput[]
     /** A texture drawn on it in place of its model's own: see `actor.texture`. */
@@ -611,6 +613,20 @@ export interface Actor {
      */
     flash: ColorInput
     /**
+     * Its own light, which lights it alone: an ambient colour from every side
+     * and one directional light, in place of the scene's ambient, its baked
+     * light and its probes. Set it each frame from what is round it, as the
+     * colour of the floor under its feet, and a body walking through a dungeon
+     * is lit as each room is, for one call a frame. The scene's sun and point
+     * lights still fall on it, so a scene lit this way usually has no sun.
+     * The light wraps softly past the side facing it rather than ending on a
+     * line, and gives no shine. `null`, the default, gives it back to the
+     * scene. From runtime 1.10.
+     *
+     *     hero.light = { ambient: "#3a3026", color: "#a88a60", direction: [0.2, -1, 0.1] }
+     */
+    light: ActorLight | null
+    /**
      * Up to four colours painted through its model's `colorMask`: the first
      * where the mask is red, then green, blue and its alpha. Each is
      * multiplied into the model's picture, so paint what a colour will cover
@@ -682,6 +698,18 @@ export interface PointLightOptions {
     intensity?: number
     /** How far it reaches, in world units. */
     range?: number
+}
+
+/** An actor's own light: see `actor.light`. */
+export interface ActorLight {
+    /** The light from every side, as the scene's ambient is. */
+    ambient: ColorInput
+    /** The directional light's colour: a surface facing it is lit this plus the ambient. */
+    color: ColorInput
+    /** Multiplies `color`. 1 by default. */
+    intensity?: number
+    /** The way it shines, as the sun's `direction` is: `[0, -1, 0]` straight down. */
+    direction: Vec3
 }
 
 /** A light shining in every direction from one point. */
@@ -1792,6 +1820,25 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         const needColors = (what: string) => {
             if (typeof b.SetTint !== "function") throw new Error(`[oj] an actor's ${what} needs a newer OneJS: this host's ModelBridge cannot colour an actor (it came with runtime 1.9).`)
         }
+        let light: ActorLight | null = null
+        const setLight = (next: ActorLight | null) => {
+            if (typeof b.SetActorLight !== "function") throw new Error("[oj] actor.light needs a newer OneJS: this host's ModelBridge cannot light an actor of its own (it came with runtime 1.10).")
+            if (next === null) {
+                b.ClearActorLight(id)
+                light = null
+                return
+            }
+            if (typeof next !== "object") throw new Error(`[oj] actor.light is ${JSON.stringify(next)}, and is { ambient, color, direction } or null`)
+            const ambient = rgb(next.ambient, "actor light ambient")
+            const color = rgb(next.color, "actor light color")
+            const intensity = next.intensity ?? 1
+            if (typeof intensity !== "number" || !(intensity >= 0) || intensity === Infinity) throw new Error(`[oj] actor.light: intensity is ${intensity}, and is 0 or more`)
+            const d = next.direction
+            if (!Array.isArray(d) || d.length !== 3 || !d.every((v) => Number.isFinite(v)) || d.every((v) => v === 0)) throw new Error(`[oj] actor.light: direction is ${JSON.stringify(d)}, and is the way it shines as [x, y, z], not all 0`)
+            const problem = String(b.SetActorLight(id, ...ambient, ...color, intensity, d[0], d[1], d[2]) ?? "")
+            if (problem !== "") throw new Error(`[oj] actor.light: ${problem}`)
+            light = Object.freeze({ ...next, direction: Object.freeze([d[0], d[1], d[2]]) as unknown as Vec3 })
+        }
         let flash: ColorInput = "#000000"
         const setFlash = (next: ColorInput) => {
             const sent = rgb(next, "actor flash")
@@ -1891,6 +1938,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set tint(c: ColorInput) { setTint(c) },
             get flash() { return flash },
             set flash(c: ColorInput) { setFlash(c) },
+            get light() { return light },
+            set light(l: ActorLight | null) { setLight(l) },
             get texture() { return texture },
             set texture(t: Texture | null) { setTexture(t) },
             get colors() { return colors },
@@ -1936,6 +1985,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         try {
             if (o.tint !== undefined) setTint(o.tint)
             if (o.flash !== undefined) setFlash(o.flash)
+            if (o.light !== undefined && o.light !== null) setLight(o.light)
             if (o.colors !== undefined) setColors(o.colors)
             if (o.texture !== undefined && o.texture !== null) setTexture(o.texture)
             for (const part of o.hide ?? []) showPart("hide", part, false)
