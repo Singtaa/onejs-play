@@ -461,11 +461,13 @@ Three things that are not obvious from the code:
   again on any of their setters; `edgeFade` is `SetMeshEdgeFade(id, start,
   end)`, sent only when given above `[0, 0]`. A splat is refused before
   anything is made, and so is a host without the call.
-- **`unlit` and `blend: "add"` are looks too.** `SetMeshUnlit(id)` and
-  `SetMeshAdditive(id)` run after `twoSided` and before the fades, since a
-  `soften` takes an added mesh whatever its alpha. Additive is refused with
-  a cutout, a splat or depthOnly, unlit with depthOnly, before anything is
-  made; an added mesh is left out of `bakeItems` with the depth-only ones.
+- **`unlit` and `blend` are looks too.** `SetMeshUnlit(id)`, and
+  `SetMeshAdditive(id)` for `"add"` or `SetMeshPremultiplied(id, texture)`
+  for `"premultiplied"` (false) and `"premultipliedTexture"` (true), run
+  after `twoSided` and before the fades, since a `soften` takes a blended
+  mesh whatever its alpha. A blend is refused with a cutout, a splat or
+  depthOnly, unlit with depthOnly, before anything is made; a blended mesh
+  is left out of `bakeItems` with the depth-only ones.
 - **`actor.flash` and the camera's `roll`.** A flash is `SetFlash(id, r, g, b)`,
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older

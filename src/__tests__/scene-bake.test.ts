@@ -71,7 +71,7 @@ function recorder(): any {
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn" || name === "Scatter") return ++next
-                if (name === "SetMesh" || name === "SetLightUnwrap" || name === "SetMeshTexture" || name === "SetMeshUnlit" || name === "SetMeshAdditive") return ""
+                if (name === "SetMesh" || name === "SetLightUnwrap" || name === "SetMeshTexture" || name === "SetMeshUnlit" || name === "SetMeshAdditive" || name === "SetMeshPremultiplied") return ""
                 if (name === "SetDepthOnly") return true
                 if (name === "Height") return 1
                 if (name === "LightMesh") return refused.has(args[0] as number) ? "" : squareMesh()
@@ -386,11 +386,13 @@ describe("scene.bake", () => {
         expect(of("LightMesh")).toEqual([])
     })
 
-    it("leaves out an added mesh, which neither blocks light nor takes it", async () => {
+    it("leaves out an added or premultiplied mesh, which neither blocks light nor takes it", async () => {
         vi.spyOn(console, "warn").mockImplementation(() => {})
         const s = scene()
         const glow = s.mesh({ ...SQUARE, unlit: true, blend: "add" })
         s.spawn(glow, { static: true })
+        const heart = s.mesh({ ...SQUARE, unlit: true, blend: "premultiplied" })
+        s.spawn(heart, { static: true })
         await s.bake().done
         expect(of("LightMesh")).toEqual([])
     })

@@ -24,7 +24,10 @@ function fake(pixels: Record<string, number[]>) {
             }
             if (!code.includes("meshEffects.show(")) throw new Error(`unexpected eval: ${code.slice(0, 60)}`)
             const fog = code.includes("fog")
-            if (code.includes("waterline")) shown = code.includes(`"y":-1`) ? "over" : code.includes(`"strength":0.5`) ? "half under" : "under"
+            if (code.includes("premultipliedTexture")) shown = "multiplied clear"
+            else if (code.includes("clearPixels")) shown = "straight clear"
+            else if (code.includes("premultiplied")) shown = fog ? "adding in fog" : code.includes("#00ff0000") ? "adding" : code.includes("#00ff0080") ? "halfway" : "covering"
+            else if (code.includes("waterline")) shown = code.includes(`"y":-1`) ? "over" : code.includes(`"strength":0.5`) ? "half under" : "under"
             else if (code.includes("bare")) shown = fog ? "floor in fog" : "floor"
             else if (code.includes("flash")) shown = "flashed"
             else if (code.includes(`"add"`)) shown = fog ? "added in fog" : "added"
@@ -50,6 +53,13 @@ const GOOD = {
     added: [174, 174, 174],
     "floor in fog": [0, 0, 192],
     "added in fog": [0, 0, 192],
+    covering: [0, 255, 0],
+    adding: [128, 255, 128],
+    // The floor's 128 is 0.216 in linear light; half of it is 0.108, or 92.
+    halfway: [92, 255, 92],
+    "adding in fog": [0, 0, 192],
+    "straight clear": [128, 128, 128],
+    "multiplied clear": [255, 128, 128],
     under: [255, 0, 0],
     over: [255, 255, 255],
     "half under": [255, 188, 188],
@@ -85,6 +95,15 @@ describe("the mesh-effects playtest", () => {
 
     it("fails an added quad that fog turns toward its colour, adding the fog again", async () => {
         await expect(check(fake({ ...GOOD, "added in fog": [0, 0, 255] }) as any)).rejects.toThrow("the fog did not fade it out")
+    })
+
+    it("fails a premultiplied quad that blends by its alpha, ignores the alpha, multiplies its colour by it, or fogs its added part", async () => {
+        await expect(check(fake({ ...GOOD, covering: [128, 255, 128] }) as any)).rejects.toThrow("not laid over it")
+        await expect(check(fake({ ...GOOD, adding: [128, 128, 128] }) as any)).rejects.toThrow("not its whole green added")
+        await expect(check(fake({ ...GOOD, halfway: [128, 255, 128] }) as any)).rejects.toThrow("not half the floor's light kept")
+        await expect(check(fake({ ...GOOD, "adding in fog": [0, 255, 192] }) as any)).rejects.toThrow("the fog did not fade it out")
+        await expect(check(fake({ ...GOOD, "straight clear": [255, 128, 128] }) as any)).rejects.toThrow("was not multiplied by its alpha")
+        await expect(check(fake({ ...GOOD, "multiplied clear": [128, 128, 128] }) as any)).rejects.toThrow("its red was not added")
     })
 
     it("fails a waterline that tints nothing, tints above it, mixes in sRGB, or is lost when only y moves", async () => {

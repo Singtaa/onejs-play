@@ -191,8 +191,20 @@ export interface MeshModelOptions extends MeshData {
      * alpha dims it, and fog fades it out rather than toward the fog's colour.
      * Usually with `unlit`. Not with a cutout, a splat or depthOnly. From
      * runtime 1.10.
+     *
+     * `"premultiplied"` adds the mesh's colour and dims what is behind it by
+     * its alpha, so an alpha is a dial: 1 lays the mesh over what is behind
+     * it, 0 adds it as `"add"` does, and between is between, while its colour
+     * alone fades it out (black draws nothing at any alpha). The alphas of
+     * `color` and of `colors` never multiply its colour: premultiply them
+     * yourself. A picture's colour is multiplied by the picture's own alpha;
+     * `"premultipliedTexture"` takes a picture whose colour is multiplied
+     * already, so one picture can carry a dark heart that covers and a halo
+     * that glows. Otherwise as `"add"`: no depth written, no shadow, left out
+     * of `scene.bake`, and fog fades the added part out while it fogs the
+     * covering part. From runtime 1.10.
      */
-    blend?: "alpha" | "add"
+    blend?: "alpha" | "add" | "premultiplied" | "premultipliedTexture"
     /**
      * How far each vertex sways in the scene's wind, one a vertex, in the
      * model's own units at a wind strength of 1: 0 at a trunk's foot, about
@@ -260,7 +272,8 @@ export interface MeshModelOptions extends MeshData {
      * comes near: a lake's shore fades per pixel instead of ending on the
      * triangle where the water meets the beach, and mist thins where it lies
      * on a field. Only on a mesh whose `color` has an alpha below 1 or whose
-     * `blend` is `"add"`, and not with a cutout or depthOnly. URP only.
+     * `blend` is `"add"` or premultiplied, and not with a cutout or depthOnly.
+     * URP only.
      */
     soften?: number
     /**
@@ -1205,6 +1218,8 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
 const FAR_DEFAULTS = { fadeDistance: 60, variation: 0.15 }
 
 const SOFTNESS = ["hard", "low", "medium", "high"] as const
+// How scene.mesh's colour meets what is behind it (MeshOptions' `blend`).
+const BLENDS: readonly string[] = ["alpha", "add", "premultiplied", "premultipliedTexture"]
 const SUN_SHADOW_KEYS = new Set(["distance", "cascades", "softness", "resolution"])
 
 /**
@@ -1957,16 +1972,21 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
         }
         if (o.unlit !== undefined && typeof o.unlit !== "boolean") throw new Error(`[oj] scene.mesh: unlit is ${o.unlit}, and is true or false`)
-        if (o.blend !== undefined && o.blend !== "alpha" && o.blend !== "add") throw new Error(`[oj] scene.mesh: blend is ${JSON.stringify(o.blend)}, and is "alpha" or "add"`)
+        if (o.blend !== undefined && !BLENDS.includes(o.blend)) throw new Error(`[oj] scene.mesh: blend is ${JSON.stringify(o.blend)}, and is ${BLENDS.map((x) => `"${x}"`).join(", ")}`)
         const unlit = o.unlit === true, additive = o.blend === "add"
-        if (additive) {
-            const why = "[oj] scene.mesh: blend \"add\" adds the mesh's colour to what is behind it, and"
+        const premultiplied = o.blend === "premultiplied" || o.blend === "premultipliedTexture"
+        // Added or premultiplied: drawn after the opaques, whatever its alpha, with no depth or shadow.
+        const blended = additive || premultiplied
+        if (blended) {
+            const why = additive
+                ? "[oj] scene.mesh: blend \"add\" adds the mesh's colour to what is behind it, and"
+                : `[oj] scene.mesh: blend "${o.blend}" lays the mesh over what is behind it or adds it, by its alpha, and`
             if (draw.depthOnly === true) throw new Error(`${why} a depthOnly mesh draws no colour`)
             if (o.cutout !== undefined) throw new Error(`${why} a cutout draws it opaque`)
             if (o.splat !== undefined) throw new Error(`${why} a splat is ground, drawn opaque`)
         }
         if (unlit && draw.depthOnly === true) throw new Error("[oj] scene.mesh: unlit draws a mesh's colour without light, and a depthOnly mesh draws no colour")
-        for (const [given, method, what] of [[unlit, "SetMeshUnlit", "unlit"], [additive, "SetMeshAdditive", "blend \"add\""]] as const) {
+        for (const [given, method, what] of [[unlit, "SetMeshUnlit", "unlit"], [additive, "SetMeshAdditive", "blend \"add\""], [premultiplied, "SetMeshPremultiplied", `blend "${o.blend}"`]] as const) {
             if (given && typeof b[method] !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.10).`)
         }
         const fades = o.soften !== undefined || o.deepColor !== undefined
@@ -1978,7 +1998,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             const deep = o.deepColor
             if (deep !== undefined && (typeof deep?.metres !== "number" || !(deep.metres > 0) || deep.metres === Infinity)) throw new Error(`[oj] scene.mesh: deepColor's metres is ${deep?.metres}, and is metres above 0`)
             const deepRGBA = deep === undefined ? [0, 0, 0, 0] : toRGBA(deep.color, "[oj] scene.mesh deepColor color")
-            if (!(color[3]! < 1) && !additive) throw new Error(`${why} this one draws opaque (its color's alpha is 1). Give its color an alpha below 1, or blend "add".`)
+            if (!(color[3]! < 1) && !blended) throw new Error(`${why} this one draws opaque (its color's alpha is 1). Give its color an alpha below 1, or blend "add" or "premultiplied".`)
             if (o.cutout !== undefined) throw new Error(`${why} a cutout draws it opaque`)
             if (draw.depthOnly === true) throw new Error(`${why} a depthOnly mesh draws no colour`)
             if (typeof b.SetMeshDepthFade !== "function") throw new Error(`[oj] scene.mesh ${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
@@ -2077,8 +2097,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [o.cutout !== undefined, () => b.SetMeshCutout(id, o.cutout), "cutout"],
                 [o.twoSided === true, () => b.SetMeshTwoSided(id), "twoSided"],
                 [unlit, () => b.SetMeshUnlit(id), "unlit"],
-                // Before the fades, which take an added mesh whatever its alpha.
+                // Before the fades, which take an added or premultiplied mesh whatever its alpha.
                 [additive, () => b.SetMeshAdditive(id), "blend"],
+                [premultiplied, () => b.SetMeshPremultiplied(id, o.blend === "premultipliedTexture"), "blend"],
                 [sways, () => swayLayers ? b.SetMeshSwayLayers(id) : b.SetMeshSway(id), "sway"],
                 [surfaceGiven, () => b.SetMeshSurface(id, roughness, metallic), o.roughness !== undefined ? "roughness" : "metallic"],
                 [fade !== null, () => b.SetMeshDepthFade(id, ...fade!), o.soften !== undefined ? "soften" : "deepColor"],
@@ -2196,7 +2217,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             }
             return out
         })
-        if (draw.depthOnly === true || additive) unbaked.add(model)
+        if (draw.depthOnly === true || blended) unbaked.add(model)
         // The wind's clock is the scene's: a flowing normal map slides by it as a sway moves by it.
         // A flipbook plays by it too.
         if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0)) || look.flipbook !== null) swaying = true

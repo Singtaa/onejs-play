@@ -26,7 +26,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "Scatter" || name === "ScatterWith" || name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshCutout" || name === "SetMeshTwoSided" || name === "SetMeshUnlit" || name === "SetMeshAdditive" || name === "SetMeshDepthFade" || name === "SetMeshSway" || name === "SetMeshSwayLayers" || name === "SetMeshTexture") return lookAnswer
+                if (name === "SetMeshCutout" || name === "SetMeshTwoSided" || name === "SetMeshUnlit" || name === "SetMeshAdditive" || name === "SetMeshPremultiplied" || name === "SetMeshDepthFade" || name === "SetMeshSway" || name === "SetMeshSwayLayers" || name === "SetMeshTexture") return lookAnswer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -117,10 +117,21 @@ describe("scene.mesh unlit and blend", () => {
         expect(order("SetMeshUnlit", "SetMeshAdditive", "SetMeshDepthFade", "SetMesh").slice(-4)).toEqual(["SetMeshUnlit", "SetMeshAdditive", "SetMeshDepthFade", "SetMesh"])
     })
 
+    it("sends a premultiplied blend with whether its picture comes multiplied, before a fade", () => {
+        const s = scene()
+        const straight = s.mesh({ ...SQUARE, unlit: true, blend: "premultiplied", soften: 0.5 })
+        const multiplied = s.mesh({ ...SQUARE, blend: "premultipliedTexture" })
+        expect(of("SetMeshPremultiplied")).toEqual([["SetMeshPremultiplied", straight.id, false], ["SetMeshPremultiplied", multiplied.id, true]])
+        expect(of("SetMeshAdditive")).toHaveLength(0)
+        expect(order("SetMeshPremultiplied", "SetMeshDepthFade").slice(0, 2)).toEqual(["SetMeshPremultiplied", "SetMeshDepthFade"])
+        expect(() => s.mesh({ ...SQUARE, blend: "premultiplied", cutout: 0.5 })).toThrow(`blend "premultiplied" lays the mesh over what is behind it or adds it, by its alpha, and a cutout draws it opaque`)
+        expect(() => s.mesh({ ...SQUARE, blend: "premultipliedTexture" }, { depthOnly: true })).toThrow("a depthOnly mesh draws no colour")
+    })
+
     it("refuses what it cannot draw before making anything", () => {
         const s = scene()
         expect(() => s.mesh({ ...SQUARE, unlit: "yes" as any })).toThrow("unlit is yes, and is true or false")
-        expect(() => s.mesh({ ...SQUARE, blend: "screen" as any })).toThrow(`blend is "screen", and is "alpha" or "add"`)
+        expect(() => s.mesh({ ...SQUARE, blend: "screen" as any })).toThrow(`blend is "screen", and is "alpha", "add", "premultiplied", "premultipliedTexture"`)
         expect(() => s.mesh({ ...SQUARE, blend: "add", cutout: 0.5 })).toThrow("a cutout draws it opaque")
         expect(() => s.mesh({ ...SQUARE, blend: "add" }, { depthOnly: true })).toThrow("a depthOnly mesh draws no colour")
         expect(() => s.mesh({ ...SQUARE, unlit: true }, { depthOnly: true })).toThrow("a depthOnly mesh draws no colour")
@@ -137,10 +148,11 @@ describe("scene.mesh unlit and blend", () => {
     })
 
     it("needs a OneJS that has them, and says so before making anything", () => {
-        missing = new Set(["SetMeshUnlit", "SetMeshAdditive"])
+        missing = new Set(["SetMeshUnlit", "SetMeshAdditive", "SetMeshPremultiplied"])
         const s = scene()
         expect(() => s.mesh({ ...SQUARE, unlit: true })).toThrow("scene.mesh unlit needs a newer OneJS")
         expect(() => s.mesh({ ...SQUARE, blend: "add" })).toThrow(`scene.mesh blend "add" needs a newer OneJS`)
+        expect(() => s.mesh({ ...SQUARE, blend: "premultipliedTexture" })).toThrow(`scene.mesh blend "premultipliedTexture" needs a newer OneJS`)
         expect(of("CreateMesh")).toHaveLength(0)
         s.mesh({ ...SQUARE, blend: "alpha" })
         expect(of("CreateMesh"), "the default blend asks for nothing").toHaveLength(1)

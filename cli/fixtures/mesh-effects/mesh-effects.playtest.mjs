@@ -10,7 +10,12 @@
 // itself summed as light is, in linear values: 128 and 128 make 174, not 255. Then all of it under a blue fog that is
 // whole well before the quad: the floor turns blue, and the added quad must
 // fade out, leaving the floor as it is, rather than add the fog's colour
-// again. Unlit under a red waterline a metre above, the white quad must be
+// again. Over the floor, a green quad blended "premultiplied" must cover it at
+// alpha 1, add to it at alpha 0 (its green whole, not dimmed by the alpha), and
+// leave half the floor's light at alpha 0.5; at alpha 0 in the fog it must fade
+// out as the added quad does. Under a red picture whose alpha is 0, it must
+// leave the floor as it is, the picture's colour multiplied by its alpha, and
+// blended "premultipliedTexture" it must add the red. Unlit under a red waterline a metre above, the white quad must be
 // red; with the line a metre below, white; at half strength, its green halfway
 // in linear light. Then that line moved a metre below by `{ y }` alone, the
 // quad must be white again. Reads the page's own screenshot, decoded by the page. Throws, so the
@@ -66,6 +71,13 @@ export default async function (game) {
     await look("added", { floor: "#808080", look: { unlit: true, blend: "add", color: "#808080" } })
     await look("floor in fog", { floor: "#808080", bare: true, fog: "#0000c0" })
     await look("added in fog", { floor: "#808080", look: { unlit: true, blend: "add", color: "#808080" }, fog: "#0000c0" })
+    const over = (color, more = {}) => look(more.name ?? color, { floor: "#808080", look: { unlit: true, blend: "premultiplied", color }, ...more.shown })
+    await over("#00ff00", { name: "covering" })
+    await over("#00ff0000", { name: "adding" })
+    await over("#00ff0080", { name: "halfway" })
+    await over("#00ff0000", { name: "adding in fog", shown: { fog: "#0000c0" } })
+    await look("straight clear", { floor: "#808080", look: { unlit: true, blend: "premultiplied" }, clearPixels: true })
+    await look("multiplied clear", { floor: "#808080", look: { unlit: true, blend: "premultipliedTexture" }, clearPixels: true })
     await look("under", { look: { unlit: true }, waterline: { y: 1, strength: 1 } })
     await look("over", { look: { unlit: true }, waterline: { y: -1, strength: 1 } })
     await look("half under", { look: { unlit: true }, waterline: { y: 1, strength: 0.5 } })
@@ -92,6 +104,15 @@ export default async function (game) {
     if (!(Math.abs(mean(seen.added) - summed) <= NEAR)) wrong.push(`added over the floor it is ${px(seen.added)} where the floor is ${px(seen.floor)} and the two summed in linear light are ${Math.round(summed)}: not added`)
     const left = Math.max(...seen["added in fog"].map((v, i) => Math.abs(v - seen["floor in fog"][i])))
     if (left > SAME) wrong.push(`added in a whole fog it is ${px(seen["added in fog"])} where the fogged floor is ${px(seen["floor in fog"])}: the fog did not fade it out`)
+    const near = (p, q) => Math.max(...p.map((v, i) => Math.abs(v - q[i]))) <= NEAR
+    const fl = mean(seen.floor)
+    if (!near(seen.covering, [0, 255, 0])) wrong.push(`premultiplied at alpha 1 over the floor it is ${px(seen.covering)}: not laid over it in green`)
+    if (!near(seen.adding, [fl, 255, fl])) wrong.push(`premultiplied at alpha 0 over the floor it is ${px(seen.adding)} where the floor is ${px(seen.floor)}: not its whole green added`)
+    const kept = srgb(linear(fl) * (1 - 128 / 255))
+    if (!near(seen.halfway, [kept, 255, kept])) wrong.push(`premultiplied at alpha 0.5 over the floor it is ${px(seen.halfway)}: not half the floor's light kept (${Math.round(kept)}) under its green`)
+    if (!near(seen["adding in fog"], seen["floor in fog"])) wrong.push(`premultiplied at alpha 0 in a whole fog it is ${px(seen["adding in fog"])} where the fogged floor is ${px(seen["floor in fog"])}: the fog did not fade it out`)
+    if (!near(seen["straight clear"], seen.floor)) wrong.push(`premultiplied under a red picture at alpha 0 it is ${px(seen["straight clear"])} where the floor is ${px(seen.floor)}: the picture's colour was not multiplied by its alpha`)
+    if (!near(seen["multiplied clear"], [255, fl, fl])) wrong.push(`premultipliedTexture under a red picture at alpha 0 it is ${px(seen["multiplied clear"])}: its red was not added to the floor`)
     const [ur, ug, ub] = seen.under
     if (!(ur >= BRIGHT && ug <= DARK && ub <= DARK)) wrong.push(`unlit under a red waterline a metre above it is ${ur}, ${ug}, ${ub}: not red`)
     if (!(Math.min(...seen.over) >= BRIGHT)) wrong.push(`unlit with a red waterline a metre below it is ${px(seen.over)}: not white`)
