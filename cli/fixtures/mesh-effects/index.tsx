@@ -5,8 +5,8 @@ import { mount, useScene, tex, type Scene, type Actor, type MeshModel, type Mesh
 // view from straight above, so the middle pixel is what the quad draws. mesh-effects.playtest.mjs
 // makes it lit (black here), lit with a flash, unlit, textured with a picture from bytes, playing
 // a red and a blue picture as a flipbook, additive over a grey floor, with and without fog,
-// premultiplied over the floor at three alphas and under a clear red picture, and unlit under a red
-// waterline, and reads the middle pixel.
+// premultiplied over the floor at three alphas and under a half see-through red picture, and unlit
+// under a red waterline, and reads the middle pixel.
 type Shown = {
     look?: Partial<MeshModelOptions>
     // An unlit floor of this colour a metre under the quad.
@@ -15,8 +15,8 @@ type Shown = {
     fog?: string
     // A red picture from bytes, tex.pixels, as the quad's texture.
     pixels?: boolean
-    // The same red at alpha 0: nothing, straight; red light, premultiplied.
-    clearPixels?: boolean
+    // The same red at half alpha, which a tex picture delivers straight: full red at alpha 0.5.
+    halfPixels?: boolean
     // A red and a blue picture from bytes as the quad's texture's frames, over two seconds.
     flipbook?: boolean
     // The floor alone, with no quad over it.
@@ -41,14 +41,15 @@ function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>, flash?: 
     live.push({ model, actor: scene.spawn(model, flash === undefined ? { static: true } : { static: true, flash }) })
 }
 
-// A picture's bytes all of one channel at full, 0 red and 2 blue, at an alpha of `alpha` levels.
+// A picture's bytes all of one channel at full, 0 red and 2 blue, at an alpha of `alpha` levels,
+// premultiplied as tex.pixels takes them.
 function solid(channel: number, alpha = 255): Uint8Array {
     const bytes = new Uint8Array(64 * 64 * 4)
-    for (let i = 0; i < bytes.length; i += 4) { bytes[i + channel] = 255; bytes[i + 3] = alpha }
+    for (let i = 0; i < bytes.length; i += 4) { bytes[i + channel] = alpha; bytes[i + 3] = alpha }
     return bytes
 }
 
-function show(scene: Scene, { look = {}, floor, fog, pixels, clearPixels, flipbook, bare, flash, waterline }: Shown) {
+function show(scene: Scene, { look = {}, floor, fog, pixels, halfPixels, flipbook, bare, flash, waterline }: Shown) {
     for (const l of live) { l.actor.destroy(); l.model.destroy() }
     live = []
     scene.fog(fog === undefined ? false : { color: fog, near: 0, far: 2 })
@@ -56,7 +57,7 @@ function show(scene: Scene, { look = {}, floor, fog, pixels, clearPixels, flipbo
     if (floor !== undefined) quad(scene, -1, { color: floor, unlit: true })
     if (bare === true) return
     const picture = (channel: number, alpha?: number) => tex.pixels(64, 64, solid(channel, alpha)).texture()
-    const texture = pixels ? { texture: picture(0) } : clearPixels ? { texture: picture(0, 0) } : flipbook ? { texture: { frames: [picture(0), picture(2)], seconds: 2 } } : {}
+    const texture = pixels ? { texture: picture(0) } : halfPixels ? { texture: picture(0, 128) } : flipbook ? { texture: { frames: [picture(0), picture(2)], seconds: 2 } } : {}
     quad(scene, 0, { color: "#ffffff", ...texture, ...look }, flash)
 }
 

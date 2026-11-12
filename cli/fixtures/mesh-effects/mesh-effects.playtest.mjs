@@ -13,9 +13,11 @@
 // again. Over the floor, a green quad blended "premultiplied" must cover it at
 // alpha 1, add to it at alpha 0 (its green whole, not dimmed by the alpha), and
 // leave half the floor's light at alpha 0.5; at alpha 0 in the fog it must fade
-// out as the added quad does. Under a red picture whose alpha is 0, it must
-// leave the floor as it is, the picture's colour multiplied by its alpha, and
-// blended "premultipliedTexture" it must add the red. Unlit under a red waterline a metre above, the white quad must be
+// out as the added quad does. Under a red picture at half alpha, which a tex
+// picture delivers as full red at 0.5, it must multiply the red by the alpha
+// before adding half the floor, and blended "premultipliedTexture" it must
+// take the red whole. (A tex picture cannot carry colour at alpha 0: it is
+// delivered straight, colour over alpha, so its clear texels are black.) Unlit under a red waterline a metre above, the white quad must be
 // red; with the line a metre below, white; at half strength, its green halfway
 // in linear light. Then that line moved a metre below by `{ y }` alone, the
 // quad must be white again. Reads the page's own screenshot, decoded by the page. Throws, so the
@@ -76,8 +78,8 @@ export default async function (game) {
     await over("#00ff0000", { name: "adding" })
     await over("#00ff0080", { name: "halfway" })
     await over("#00ff0000", { name: "adding in fog", shown: { fog: "#0000c0" } })
-    await look("straight clear", { floor: "#808080", look: { unlit: true, blend: "premultiplied" }, clearPixels: true })
-    await look("multiplied clear", { floor: "#808080", look: { unlit: true, blend: "premultipliedTexture" }, clearPixels: true })
+    await look("straight half", { floor: "#808080", look: { unlit: true, blend: "premultiplied" }, halfPixels: true })
+    await look("multiplied half", { floor: "#808080", look: { unlit: true, blend: "premultipliedTexture" }, halfPixels: true })
     await look("under", { look: { unlit: true }, waterline: { y: 1, strength: 1 } })
     await look("over", { look: { unlit: true }, waterline: { y: -1, strength: 1 } })
     await look("half under", { look: { unlit: true }, waterline: { y: 1, strength: 0.5 } })
@@ -111,8 +113,9 @@ export default async function (game) {
     const kept = srgb(linear(fl) * (1 - 128 / 255))
     if (!near(seen.halfway, [kept, 255, kept])) wrong.push(`premultiplied at alpha 0.5 over the floor it is ${px(seen.halfway)}: not half the floor's light kept (${Math.round(kept)}) under its green`)
     if (!near(seen["adding in fog"], seen["floor in fog"])) wrong.push(`premultiplied at alpha 0 in a whole fog it is ${px(seen["adding in fog"])} where the fogged floor is ${px(seen["floor in fog"])}: the fog did not fade it out`)
-    if (!near(seen["straight clear"], seen.floor)) wrong.push(`premultiplied under a red picture at alpha 0 it is ${px(seen["straight clear"])} where the floor is ${px(seen.floor)}: the picture's colour was not multiplied by its alpha`)
-    if (!near(seen["multiplied clear"], [255, fl, fl])) wrong.push(`premultipliedTexture under a red picture at alpha 0 it is ${px(seen["multiplied clear"])}: its red was not added to the floor`)
+    const halfRed = srgb(128 / 255 + linear(fl) * (1 - 128 / 255))
+    if (!near(seen["straight half"], [halfRed, kept, kept])) wrong.push(`premultiplied under a red picture at half alpha it is ${px(seen["straight half"])}: not its red times its alpha (${Math.round(halfRed)}) over half the floor (${Math.round(kept)})`)
+    if (!near(seen["multiplied half"], [255, kept, kept])) wrong.push(`premultipliedTexture under a red picture at half alpha it is ${px(seen["multiplied half"])}: not its red whole over half the floor (${Math.round(kept)})`)
     const [ur, ug, ub] = seen.under
     if (!(ur >= BRIGHT && ug <= DARK && ub <= DARK)) wrong.push(`unlit under a red waterline a metre above it is ${ur}, ${ug}, ${ub}: not red`)
     if (!(Math.min(...seen.over) >= BRIGHT)) wrong.push(`unlit with a red waterline a metre below it is ${px(seen.over)}: not white`)
