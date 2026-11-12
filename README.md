@@ -470,6 +470,12 @@ Three things that are not obvious from the code:
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older
   host never sees the roll, and `SetCameraRolled` with it otherwise.
+- **A texture's `frames` are a flipbook.** `SetMeshFlipbook(id, count,
+  seconds, tileU, tileV)` then `SetMeshFlipbookFrame(id, i, picture)` for
+  each, before the vertices; the bridge swaps the frames on the scene's clock
+  (`SetWindClock`, which a flipbook keeps running as a sway does). Told apart
+  from a picture by `"frames" in texture`, which a host object answers from
+  its own fields.
 - **`ambient.occlusion` is the host's, set per scene.** `SetAmbientOcclusion(on,
   intensity, radius)`, with -1 for the host's own value, sent only when a
   scene's options or a `scene.ambient` call name it; the bridge puts the

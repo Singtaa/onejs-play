@@ -149,7 +149,14 @@ export interface MeshModelOptions extends MeshData {
     /** The whole model's colour, white by default. An alpha below 1 draws it see-through. */
     color?: ColorInput
     /** A picture from `loadTexture`, tiled across the uvs under the colours. Needs `uvs`. */
-    texture?: Texture
+    /**
+     * A picture drawn across the mesh at its uvs, or a loop of them played as
+     * a flipbook: `{ frames, seconds }` shows each picture in turn, once
+     * through every `seconds` on the scene's clock, each cross-faded into the
+     * next so the loop never steps. Water's ripples, a lava crust, a banner's
+     * flutter. Needs `uvs`.
+     */
+    texture?: Texture | MeshFrames
     /** How often the texture repeats across a uv of 0 to 1. 1 by default. */
     tiling?: Tiling
     /** Up to four pictures painted by weights a vertex, in place of `texture`. Needs `uvs`. */
@@ -285,6 +292,18 @@ export interface MeshNormalMap {
      * paused. `[0, 0]` by default.
      */
     flow?: [number, number]
+}
+
+/**
+ * A mesh's texture played as a flipbook: `texture: { frames, seconds: 2 }`.
+ * The frames are pictures from `loadTexture` or `tex`, two or more, any
+ * size; each repeats by the mesh's `tiling`. Stands still while the scene is
+ * paused.
+ */
+export interface MeshFrames {
+    frames: readonly Texture[]
+    /** How long one time through all the frames takes. */
+    seconds: number
 }
 
 /** How a mesh model draws, fixed when it is made. */
@@ -1077,6 +1096,7 @@ function floats(list: Numbers | undefined, what: string, width: number): Float32
 /** What a mesh is drawn with besides its colours: one tiled texture, a splat, or neither. Checked before anything is made. */
 interface MeshLook {
     texture: { texture: Texture, tiling: [number, number] } | null
+    flipbook: { frames: readonly Texture[], seconds: number, tiling: [number, number] } | null
     /** `triplanar` is each layer's metres a repeat, 0 for one read at the uvs. */
     splat: { layers: readonly Texture[], triplanar: readonly number[], tiling: [number, number], heightBlend: number, far: { fadeDistance: number, variation: number } | null } | null
     /** Its pictures, tiling and blend in words, for its light's fingerprint; "" with neither. */
@@ -1084,7 +1104,7 @@ interface MeshLook {
 }
 
 function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook {
-    const none: MeshLook = { texture: null, splat: null, fingerprint: "" }
+    const none: MeshLook = { texture: null, flipbook: null, splat: null, fingerprint: "" }
     if (o.texture === undefined && o.splat === undefined) {
         if (o.tiling !== undefined) throw new Error("[oj] scene.mesh: tiling repeats a texture, and this mesh has none. Give texture, or put tiling in the splat.")
         return none
@@ -1093,11 +1113,22 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
     const which = o.texture !== undefined ? "texture" : "splat"
     if (o.uvs === undefined) throw new Error(`[oj] scene.mesh ${which}: a ${which} is read at the mesh's uvs, and it has none. Give uvs, two numbers a vertex.`)
     if (draw.depthOnly === true) throw new Error(`[oj] scene.mesh ${which}: a depthOnly mesh draws no colour, so it has nothing to show a ${which} on.`)
+    // A picture is the host's object, whose proxy answers `in` from its own fields without asking C#.
+    if (o.texture !== null && typeof o.texture === "object" && "frames" in o.texture) {
+        const f = o.texture as MeshFrames
+        const what = "[oj] scene.mesh texture"
+        if (!Array.isArray(f.frames) || f.frames.length < 2 || f.frames.length > 256) throw new Error(`${what}: frames are 2 to 256 pictures, and these are ${Array.isArray(f.frames) ? f.frames.length : typeof f.frames}`)
+        f.frames.forEach((frame, i) => picture(frame, `scene.mesh texture frame ${i}`))
+        if (typeof f.seconds !== "number" || !(f.seconds > 0) || !Number.isFinite(f.seconds)) throw new Error(`${what}: seconds is ${f.seconds}, how long one time through the frames takes, above 0`)
+        if (typeof b.SetMeshFlipbook !== "function") throw new Error(`${what} frames need a newer OneJS: this host's ModelBridge cannot play a flipbook (it came with runtime 1.10).`)
+        const tiling = tilingOf(o.tiling, "scene.mesh tiling")
+        return { texture: null, flipbook: { frames: f.frames.slice(), seconds: f.seconds, tiling }, splat: null, fingerprint: `frames ${f.frames.map(identityOf).join(" ")} ${f.seconds} ${tiling.join(" ")}` }
+    }
     if (o.texture !== undefined) {
         if (typeof b.SetMeshTexture !== "function") throw new Error("[oj] scene.mesh texture needs a newer OneJS: this host's ModelBridge cannot put a texture on a mesh (it came with runtime 1.6).")
         picture(o.texture, "scene.mesh texture")
         const tiling = tilingOf(o.tiling, "scene.mesh tiling")
-        return { texture: { texture: o.texture, tiling }, splat: null, fingerprint: `texture ${identityOf(o.texture)} ${tiling.join(" ")}` }
+        return { texture: { texture: o.texture as Texture, tiling }, flipbook: null, splat: null, fingerprint: `texture ${identityOf(o.texture)} ${tiling.join(" ")}` }
     }
     if (typeof b.SetMeshSplat !== "function") throw new Error("[oj] scene.mesh splat needs a newer OneJS: this host's ModelBridge cannot paint a mesh (it came with runtime 1.6).")
     if (o.tiling !== undefined) throw new Error("[oj] scene.mesh: a splat's tiling goes inside it, splat: { layers, weights, tiling }.")
@@ -1144,6 +1175,7 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
     }
     return {
         texture: null,
+        flipbook: null,
         splat: { layers, triplanar, tiling, heightBlend, far: canFar ? { fadeDistance, variation } : null },
         fingerprint: `splat ${layers.map(identityOf).join(" ")} ${tiling.join(" ")} ${heightBlend}` + (triplanar.some((m) => m > 0) ? ` triplanar ${triplanar.join(" ")}` : ""),
     }
@@ -2012,6 +2044,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 const problem = String(b.SetMeshTexture(id, look.texture.texture, ...look.texture.tiling))
                 if (problem !== "") throw new Error(`[oj] scene.mesh texture: ${problem}`)
             }
+            if (look.flipbook !== null) {
+                const f = look.flipbook
+                let problem = String(b.SetMeshFlipbook(id, f.frames.length, f.seconds, ...f.tiling))
+                for (let i = 0; i < f.frames.length && problem === ""; i++) problem = String(b.SetMeshFlipbookFrame(id, i, f.frames[i]))
+                if (problem !== "") throw new Error(`[oj] scene.mesh texture: ${problem}`)
+            }
             // After the splat, whose material they are set on, and before the vertices: sway adds a stream to them.
             const looks: [boolean, () => unknown, string][] = [
                 [o.cutout !== undefined, () => b.SetMeshCutout(id, o.cutout), "cutout"],
@@ -2138,7 +2176,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
         if (draw.depthOnly === true || additive) unbaked.add(model)
         // The wind's clock is the scene's: a flowing normal map slides by it as a sway moves by it.
-        if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0))) swaying = true
+        // A flipbook plays by it too.
+        if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0)) || look.flipbook !== null) swaying = true
         return model
     }
 

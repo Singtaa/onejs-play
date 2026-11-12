@@ -1,7 +1,7 @@
 /**
  * A mesh's surface as the calls it makes on OneJS's ModelBridge (tested in
  * OneJS's MeshMaterialEditModeTests and MeshDepthFadeEditModeTests):
- * `scene.mesh({ roughness, metallic, soften, deepColor, normalMap })`, and `mesh.color`,
+ * `scene.mesh({ roughness, metallic, soften, deepColor, normalMap })`, a texture's `frames`, and `mesh.color`,
  * `mesh.roughness` and `mesh.metallic` after it is made.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
@@ -24,7 +24,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap") return answer
+                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap" || name === "SetMeshTexture" || name === "SetMeshFlipbook" || name === "SetMeshFlipbookFrame") return answer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -265,5 +265,56 @@ describe("scene.mesh normalMap", () => {
         missing = new Set(["SetMeshNormalMap"])
         expect(() => scene().mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves } })).toThrow("scene.mesh normalMap needs a newer OneJS")
         expect(of("CreateMesh")).toHaveLength(0)
+    })
+})
+
+describe("scene.mesh texture frames", () => {
+    const a = { width: 4, height: 4, name: "a" } as any, b = { width: 4, height: 4, name: "b" } as any, c = { width: 8, height: 8, name: "c" } as any
+
+    it("starts the flipbook with its count, seconds and tiling, then gives each frame in order, before the vertices", () => {
+        const pool = scene().mesh({ ...SQUARE, uvs: UVS, tiling: 1 / 16, texture: { frames: [a, b, c], seconds: 2 } })
+        expect(of("SetMeshTexture")).toHaveLength(0)
+        expect(of("SetMeshFlipbook")).toEqual([["SetMeshFlipbook", pool.id, 3, 2, 1 / 16, 1 / 16]])
+        expect(of("SetMeshFlipbookFrame")).toEqual([["SetMeshFlipbookFrame", pool.id, 0, a], ["SetMeshFlipbookFrame", pool.id, 1, b], ["SetMeshFlipbookFrame", pool.id, 2, c]])
+        expect(order("CreateMesh", "SetMeshFlipbook", "SetMeshFlipbookFrame", "SetMesh")).toEqual(["CreateMesh", "SetMeshFlipbook", "SetMeshFlipbookFrame", "SetMeshFlipbookFrame", "SetMeshFlipbookFrame", "SetMesh"])
+    })
+
+    it("is refused before anything is made without uvs, with a splat, with fewer than two frames or no seconds", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, texture: { frames: [a, b], seconds: 2 } })).toThrow("scene.mesh texture: a texture is read at the mesh's uvs")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a, b], seconds: 2 }, splat: { layers: [a], weights: [1, 1, 1, 1] } })).toThrow("give texture or splat, not both")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a], seconds: 2 } })).toThrow("frames are 2 to 256 pictures, and these are 1")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a, null as any], seconds: 2 } })).toThrow("scene.mesh texture frame 1 is a null")
+        expect(() => s.mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a, b], seconds: 0 } })).toThrow("seconds is 0, how long one time through the frames takes, above 0")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    it("says what the bridge refused, and keeps nothing", () => {
+        answer = "no"
+        expect(() => scene().mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a, b], seconds: 2 } })).toThrow("[oj] scene.mesh texture: no")
+        expect(of("SetMeshFlipbookFrame"), "no frame after a refused start").toHaveLength(0)
+        expect(of("Unload")).toHaveLength(1)
+    })
+
+    it("needs a OneJS that has it", () => {
+        missing = new Set(["SetMeshFlipbook"])
+        expect(() => scene().mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a, b], seconds: 2 } })).toThrow("scene.mesh texture frames need a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    describe("its clock", () => {
+        let host: ReturnType<typeof createRuntime>
+        beforeEach(() => { host = createRuntime({ root: {}, version: "0.0.0" }) })
+        afterEach(() => host.dispose())
+
+        it("runs by the scene's frames once a mesh plays a flipbook", () => {
+            const s = scene()
+            s.mesh({ ...SQUARE, uvs: UVS, texture: a })
+            host.beginFrame(0.5)
+            expect(of("SetWindClock"), "a still texture needs no clock").toHaveLength(0)
+            s.mesh({ ...SQUARE, uvs: UVS, texture: { frames: [a, b], seconds: 2 } })
+            host.beginFrame(0.25)
+            expect(of("SetWindClock").map((c) => c[1])).toEqual([0.25])
+        })
     })
 })

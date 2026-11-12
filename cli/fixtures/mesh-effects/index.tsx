@@ -3,8 +3,8 @@ import { mount, useScene, tex, type Scene, type Actor, type MeshModel, type Mesh
 
 // A scene with no light at all: no sun, no ambient, a black background. A flat quad fills the
 // view from straight above, so the middle pixel is what the quad draws. mesh-effects.playtest.mjs
-// makes it lit (black here), lit with a flash, unlit, textured with a picture from bytes, and
-// additive over a grey floor, with and without fog, and reads the middle pixel.
+// makes it lit (black here), lit with a flash, unlit, textured with a picture from bytes, playing
+// a red and a blue picture as a flipbook, and additive over a grey floor, with and without fog, and reads the middle pixel.
 type Shown = {
     look?: Partial<MeshModelOptions>
     // An unlit floor of this colour a metre under the quad.
@@ -13,6 +13,8 @@ type Shown = {
     fog?: string
     // A red picture from bytes, tex.pixels, as the quad's texture.
     pixels?: boolean
+    // A red and a blue picture from bytes as the quad's texture's frames, over two seconds.
+    flipbook?: boolean
     // The floor alone, with no quad over it.
     bare?: boolean
     // A colour added to the quad's actor after its light (actor.flash).
@@ -33,19 +35,21 @@ function quad(scene: Scene, y: number, look: Partial<MeshModelOptions>, flash?: 
     live.push({ model, actor: scene.spawn(model, flash === undefined ? { static: true } : { static: true, flash }) })
 }
 
-function red(): Uint8Array {
+// A picture's bytes all of one channel at full, 0 red and 2 blue.
+function solid(channel: number): Uint8Array {
     const bytes = new Uint8Array(64 * 64 * 4)
-    for (let i = 0; i < bytes.length; i += 4) { bytes[i] = 255; bytes[i + 3] = 255 }
+    for (let i = 0; i < bytes.length; i += 4) { bytes[i + channel] = 255; bytes[i + 3] = 255 }
     return bytes
 }
 
-function show(scene: Scene, { look = {}, floor, fog, pixels, bare, flash }: Shown) {
+function show(scene: Scene, { look = {}, floor, fog, pixels, flipbook, bare, flash }: Shown) {
     for (const l of live) { l.actor.destroy(); l.model.destroy() }
     live = []
     scene.fog(fog === undefined ? false : { color: fog, near: 0, far: 2 })
     if (floor !== undefined) quad(scene, -1, { color: floor, unlit: true })
     if (bare === true) return
-    const texture = pixels ? { texture: tex.pixels(64, 64, red()).texture() } : {}
+    const picture = (channel: number) => tex.pixels(64, 64, solid(channel)).texture()
+    const texture = pixels ? { texture: picture(0) } : flipbook ? { texture: { frames: [picture(0), picture(2)], seconds: 2 } } : {}
     quad(scene, 0, { color: "#ffffff", ...texture, ...look }, flash)
 }
 

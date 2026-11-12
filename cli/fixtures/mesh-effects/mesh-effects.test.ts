@@ -1,21 +1,29 @@
 import { describe, it, expect } from "vitest"
 import check from "./mesh-effects.playtest.mjs"
 
-/** A game whose screenshots' middle pixel is `pixels[the look last shown]`, told apart by what it shows. */
+/**
+ * A game whose screenshots' middle pixel is `pixels[the look last shown]`, told apart by what it
+ * shows; the flipbook's three reads are `pixels.flipbook`, `"flipbook later"` and `"flipbook last"`.
+ */
 function fake(pixels: Record<string, number[]>) {
     let shown = ""
+    let flipReads = 0
     return {
         browser: { send: async () => ({ data: "" }) },
         wait: async () => {},
         until: async (f: () => Promise<boolean>) => { if (!(await f())) throw new Error("never") },
         eval: async (code: string) => {
             if (code.includes("typeof globalThis.meshEffects")) return "object"
-            if (code.includes("getImageData")) return JSON.stringify(pixels[shown])
+            if (code.includes("getImageData")) {
+                if (shown !== "flipbook") return JSON.stringify(pixels[shown])
+                return JSON.stringify(pixels[["flipbook", "flipbook later", "flipbook last"][flipReads++]!])
+            }
             if (!code.includes("meshEffects.show(")) throw new Error(`unexpected eval: ${code.slice(0, 60)}`)
             const fog = code.includes("fog")
             if (code.includes("bare")) shown = fog ? "floor in fog" : "floor"
             else if (code.includes("flash")) shown = "flashed"
             else if (code.includes(`"add"`)) shown = fog ? "added in fog" : "added"
+            else if (code.includes("flipbook")) shown = "flipbook"
             else if (code.includes("pixels")) shown = "pixels"
             else if (code.includes("unlit")) shown = "unlit"
             else shown = "lit"
@@ -29,6 +37,10 @@ const GOOD = {
     flashed: [128, 128, 128],
     unlit: [255, 255, 255],
     pixels: [255, 0, 0],
+    // Linear 0.6 and 0.4, 0.2 and 0.8, 0.9 and 0.1 of red and blue, in sRGB.
+    flipbook: [203, 0, 170],
+    "flipbook later": [124, 0, 231],
+    "flipbook last": [243, 0, 89],
     floor: [128, 128, 128],
     added: [174, 174, 174],
     "floor in fog": [0, 0, 192],
@@ -50,6 +62,11 @@ describe("the mesh-effects playtest", () => {
 
     it("fails a picture made from bytes that drew nothing, as tex.pixels did alone", async () => {
         await expect(check(fake({ ...GOOD, pixels: GOOD.unlit }) as any)).rejects.toThrow("the picture did not draw")
+    })
+
+    it("fails a flipbook that steps to a colour neither frame has, or does not play", async () => {
+        await expect(check(fake({ ...GOOD, "flipbook later": [255, 0, 255] }) as any)).rejects.toThrow("not the two cross-faded")
+        await expect(check(fake({ ...GOOD, "flipbook later": GOOD.flipbook, "flipbook last": GOOD.flipbook }) as any)).rejects.toThrow("the flipbook did not play")
     })
 
     it("fails an added quad that covers the floor instead, or adds in sRGB", async () => {
