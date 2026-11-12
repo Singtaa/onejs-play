@@ -10,7 +10,10 @@
 // itself summed as light is, in linear values: 128 and 128 make 174, not 255. Then all of it under a blue fog that is
 // whole well before the quad: the floor turns blue, and the added quad must
 // fade out, leaving the floor as it is, rather than add the fog's colour
-// again. Reads the page's own screenshot, decoded by the page. Throws, so the
+// again. Unlit under a red waterline a metre above, the white quad must be
+// red; with the line a metre below, white; at half strength, its green halfway
+// in linear light. Then that line moved a metre below by `{ y }` alone, the
+// quad must be white again. Reads the page's own screenshot, decoded by the page. Throws, so the
 // run exits non-zero, when the scene is lit, the fog is not on, or any check
 // is off.
 const DARK = 20      // levels under which the lit quad counts as black
@@ -21,6 +24,7 @@ const NEAR = 10      // levels the added quad may differ from the floor and itse
 const SAME = 20      // levels a faded-out added quad may leave on the fogged floor
 const FADED = 0.08   // how far a flipbook's red and blue, in linear light, may sum from 1
 const PLAYS = 20     // levels the flipbook's red must change by across three reads
+const HALF = Math.round(255 * (1.055 * 0.5 ** (1 / 2.4) - 0.055)) // the green a white quad keeps halfway to red, in linear light
 
 async function middle(game) {
     const { data } = await game.browser.send("Page.captureScreenshot", { format: "png" })
@@ -62,6 +66,12 @@ export default async function (game) {
     await look("added", { floor: "#808080", look: { unlit: true, blend: "add", color: "#808080" } })
     await look("floor in fog", { floor: "#808080", bare: true, fog: "#0000c0" })
     await look("added in fog", { floor: "#808080", look: { unlit: true, blend: "add", color: "#808080" }, fog: "#0000c0" })
+    await look("under", { look: { unlit: true }, waterline: { y: 1, strength: 1 } })
+    await look("over", { look: { unlit: true }, waterline: { y: -1, strength: 1 } })
+    await look("half under", { look: { unlit: true }, waterline: { y: 1, strength: 0.5 } })
+    await game.eval(`globalThis.meshEffects.lower()`)
+    await game.wait(500)
+    seen["moved over"] = await middle(game)
     console.log("PIXELS " + JSON.stringify(seen))
 
     if (!(mean(seen.lit) <= DARK)) throw new Error(`a lit white quad is ${px(seen.lit)} in a scene with no light: the scene is lit, so nothing here measures unlit`)
@@ -82,5 +92,12 @@ export default async function (game) {
     if (!(Math.abs(mean(seen.added) - summed) <= NEAR)) wrong.push(`added over the floor it is ${px(seen.added)} where the floor is ${px(seen.floor)} and the two summed in linear light are ${Math.round(summed)}: not added`)
     const left = Math.max(...seen["added in fog"].map((v, i) => Math.abs(v - seen["floor in fog"][i])))
     if (left > SAME) wrong.push(`added in a whole fog it is ${px(seen["added in fog"])} where the fogged floor is ${px(seen["floor in fog"])}: the fog did not fade it out`)
+    const [ur, ug, ub] = seen.under
+    if (!(ur >= BRIGHT && ug <= DARK && ub <= DARK)) wrong.push(`unlit under a red waterline a metre above it is ${ur}, ${ug}, ${ub}: not red`)
+    if (!(Math.min(...seen.over) >= BRIGHT)) wrong.push(`unlit with a red waterline a metre below it is ${px(seen.over)}: not white`)
+    const [hr, hg] = seen["half under"]
+    if (!(hr >= BRIGHT && Math.abs(hg - HALF) <= NEAR)) wrong.push(`under a red waterline at half strength it is ${px(seen["half under"])}: its green is not ${HALF}, halfway in linear light`)
+    const [mr, mg] = seen["moved over"]
+    if (!(mr >= BRIGHT && mg >= BRIGHT)) wrong.push(`with the half strength waterline moved below by { y } alone it is ${px(seen["moved over"])}: not white`)
     if (wrong.length > 0) throw new Error(`mesh effects: ${wrong.join("; ")}`)
 }

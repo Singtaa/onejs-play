@@ -4,7 +4,8 @@ import { mount, useScene, tex, type Scene, type Actor, type MeshModel, type Mesh
 // A scene with no light at all: no sun, no ambient, a black background. A flat quad fills the
 // view from straight above, so the middle pixel is what the quad draws. mesh-effects.playtest.mjs
 // makes it lit (black here), lit with a flash, unlit, textured with a picture from bytes, playing
-// a red and a blue picture as a flipbook, and additive over a grey floor, with and without fog, and reads the middle pixel.
+// a red and a blue picture as a flipbook, additive over a grey floor, with and without fog, and
+// unlit under a red waterline, and reads the middle pixel.
 type Shown = {
     look?: Partial<MeshModelOptions>
     // An unlit floor of this colour a metre under the quad.
@@ -19,6 +20,8 @@ type Shown = {
     bare?: boolean
     // A colour added to the quad's actor after its light (actor.flash).
     flash?: string
+    // A red waterline at this height and strength (scene.waterline); none when left out.
+    waterline?: { y: number, strength: number }
 }
 
 let live: { model: MeshModel, actor: Actor }[] = []
@@ -42,10 +45,11 @@ function solid(channel: number): Uint8Array {
     return bytes
 }
 
-function show(scene: Scene, { look = {}, floor, fog, pixels, flipbook, bare, flash }: Shown) {
+function show(scene: Scene, { look = {}, floor, fog, pixels, flipbook, bare, flash, waterline }: Shown) {
     for (const l of live) { l.actor.destroy(); l.model.destroy() }
     live = []
     scene.fog(fog === undefined ? false : { color: fog, near: 0, far: 2 })
+    scene.waterline(waterline === undefined ? false : { color: "#ff0000", ...waterline })
     if (floor !== undefined) quad(scene, -1, { color: floor, unlit: true })
     if (bare === true) return
     const picture = (channel: number) => tex.pixels(64, 64, solid(channel)).texture()
@@ -62,7 +66,11 @@ function Effects() {
     })
     useEffect(() => {
         if (!scene) return
-        ;(globalThis as any).meshEffects = { show: (s: Shown) => show(scene, s) }
+        ;(globalThis as any).meshEffects = {
+            show: (s: Shown) => show(scene, s),
+            // The waterline a metre below, its colour and strength kept.
+            lower: () => scene.waterline({ y: -1 }),
+        }
     }, [scene])
     return null
 }

@@ -18,9 +18,14 @@ function fake(pixels: Record<string, number[]>) {
                 if (shown !== "flipbook") return JSON.stringify(pixels[shown])
                 return JSON.stringify(pixels[["flipbook", "flipbook later", "flipbook last"][flipReads++]!])
             }
+            if (code.includes("meshEffects.lower(")) {
+                shown = "moved over"
+                return undefined
+            }
             if (!code.includes("meshEffects.show(")) throw new Error(`unexpected eval: ${code.slice(0, 60)}`)
             const fog = code.includes("fog")
-            if (code.includes("bare")) shown = fog ? "floor in fog" : "floor"
+            if (code.includes("waterline")) shown = code.includes(`"y":-1`) ? "over" : code.includes(`"strength":0.5`) ? "half under" : "under"
+            else if (code.includes("bare")) shown = fog ? "floor in fog" : "floor"
             else if (code.includes("flash")) shown = "flashed"
             else if (code.includes(`"add"`)) shown = fog ? "added in fog" : "added"
             else if (code.includes("flipbook")) shown = "flipbook"
@@ -45,6 +50,10 @@ const GOOD = {
     added: [174, 174, 174],
     "floor in fog": [0, 0, 192],
     "added in fog": [0, 0, 192],
+    under: [255, 0, 0],
+    over: [255, 255, 255],
+    "half under": [255, 188, 188],
+    "moved over": [255, 255, 255],
 }
 
 describe("the mesh-effects playtest", () => {
@@ -76,6 +85,13 @@ describe("the mesh-effects playtest", () => {
 
     it("fails an added quad that fog turns toward its colour, adding the fog again", async () => {
         await expect(check(fake({ ...GOOD, "added in fog": [0, 0, 255] }) as any)).rejects.toThrow("the fog did not fade it out")
+    })
+
+    it("fails a waterline that tints nothing, tints above it, mixes in sRGB, or is lost when only y moves", async () => {
+        await expect(check(fake({ ...GOOD, under: GOOD.unlit }) as any)).rejects.toThrow("not red")
+        await expect(check(fake({ ...GOOD, over: GOOD.under }) as any)).rejects.toThrow("not white")
+        await expect(check(fake({ ...GOOD, "half under": [255, 128, 128] }) as any)).rejects.toThrow("halfway in linear light")
+        await expect(check(fake({ ...GOOD, "moved over": [255, 188, 188] }) as any)).rejects.toThrow("by { y } alone")
     })
 
     it("fails a lit scene, or a fog that is not on, rather than measuring nothing", async () => {
