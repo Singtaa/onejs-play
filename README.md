@@ -470,6 +470,11 @@ Three things that are not obvious from the code:
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older
   host never sees the roll, and `SetCameraRolled` with it otherwise.
+- **`water` is one call, sent after the normal map.** `SetMeshWater(id, on,
+  skyGiven, sky rgb, foam rgba, foamMetres, swell)`, sRGB, foam's metres 0
+  for none; `mesh.water` sends the same, and `false` sends it off. Refused
+  with a splat, depthOnly or `blend: "add"`, and foam on an opaque mesh,
+  before anything is made. A swell runs the scene's clock as a sway does.
 - **`ambient.occlusion` is the host's, set per scene.** `SetAmbientOcclusion(on,
   intensity, radius)`, with -1 for the host's own value, sent only when a
   scene's options or a `scene.ambient` call name it; the bridge puts the

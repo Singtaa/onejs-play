@@ -265,6 +265,42 @@ export interface MeshModelOptions extends MeshData {
     deepColor?: { color: ColorInput, metres: number }
     /** A picture that bends the light across the mesh: ripples, a road's grain, lava's crust. Needs `uvs`. URP only. */
     normalMap?: MeshNormalMap
+    /**
+     * Draws it as water: it reflects a sky by how steeply you look at it, so
+     * its ripples show without a sun, its `normalMap` is read twice, finer the
+     * second time and crossing the first's flow, and it may foam where it is
+     * shallow and swell. `true` reflects the scene's own sky, or its ambient
+     * light, with no foam and no swell. Its `color`, `deepColor`, `soften`
+     * and `normalMap` keep their meaning. Not with a splat, depthOnly or
+     * `blend: "add"`. URP only. Settable after, as `mesh.water`.
+     *
+     *     scene.mesh({ ...pool, uvs, color: "#336650b8", deepColor: { color: "#0a1712f2", metres: 4 },
+     *         normalMap: { picture: ripples, tiling: 0.2, scale: 0.4, flow: [0.04, 0.015] },
+     *         water: { sky: "#1b2a44", foam: "#cce6d8", swell: 0.08 } })
+     */
+    water?: boolean | MeshWater
+}
+
+/** How a mesh draws as water: each part left out is none, or the scene's own. */
+export interface MeshWater {
+    /**
+     * The colour it reflects: a night's blue, a cave's dark. The scene's sky
+     * where `scene.reflections` is `"sky"`, else its ambient light, by default.
+     */
+    sky?: ColorInput
+    /**
+     * A band of this colour, alpha and all, where the water meets the world
+     * behind it: against a wall, round a pillar, along a shore. A colour is
+     * 0.3 metres of it, measured as `soften` measures; `{ color, metres }`
+     * says how far. Only on a mesh whose `color` has an alpha below 1.
+     */
+    foam?: ColorInput | { color: ColorInput, metres: number }
+    /**
+     * How high long, slow waves lift it, in metres, rolling the way the
+     * scene's wind blows: 0.05 for a pool, 0.3 for a lake in a storm, up to 2.
+     * Moves its vertices on the GPU, and bends its light even between them.
+     */
+    swell?: number
 }
 
 /**
@@ -373,6 +409,8 @@ export interface MeshModel extends Model {
     backLightFocus: number
     /** Where its faces fade as they turn edge on, `[0, 0]` for not at all. */
     edgeFade: [number, number]
+    /** Whether, and how, it draws as water, as `scene.mesh` took it. `false` makes it plain again. Every copy changes at once. */
+    water: boolean | MeshWater
     /** Frees it. One with a copy still in the world stays, and says so: destroy its actors first. */
     destroy(): void
 }
@@ -1255,6 +1293,35 @@ function rgb(c: ColorInput, what = "colour"): [number, number, number] {
     return [r, g, b]
 }
 
+/**
+ * A mesh's `water` as the bridge's SetMeshWater takes it after the model: on,
+ * whether its sky is given, the sky's sRGB, the foam's sRGB and alpha, the
+ * foam's metres (0 for none) and the swell. Throws on what is not water, and
+ * on a host without the call.
+ */
+function waterArgs(w: boolean | MeshWater, what: string): [boolean, boolean, number, number, number, number, number, number, number, number, number] {
+    if (typeof w !== "boolean" && (typeof w !== "object" || w === null)) throw new Error(`[oj] ${what} is ${String(w)}, and is true, false or { sky, foam, swell }`)
+    const b = bridge()
+    if (typeof b.SetMeshWater !== "function") throw new Error(`[oj] ${what} needs a newer OneJS: this host's ModelBridge cannot draw water (it came with runtime 1.10).`)
+    if (w === false) return [false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    const o: MeshWater = w === true ? {} : w
+    for (const k of Object.keys(o)) if (k !== "sky" && k !== "foam" && k !== "swell") throw new Error(`[oj] ${what}: ${k} is not one of its parts, which are sky, foam and swell`)
+    const sky = o.sky === undefined ? [0, 0, 0] : rgb(o.sky, `${what} sky`)
+    let foam: [number, number, number, number] = [1, 1, 1, 1], metres = 0
+    if (o.foam !== undefined) {
+        const given = typeof o.foam === "object" && o.foam !== null && !Array.isArray(o.foam) && "color" in o.foam ? o.foam : { color: o.foam as ColorInput, metres: 0.3 }
+        if (typeof given.metres !== "number" || !(given.metres > 0) || given.metres === Infinity) throw new Error(`[oj] ${what}: foam's metres is ${given.metres}, and is metres above 0`)
+        foam = toRGBA(given.color, `[oj] ${what} foam`) as [number, number, number, number]
+        metres = given.metres
+    }
+    const swell = o.swell ?? 0
+    if (typeof swell !== "number" || !(swell >= 0 && swell <= 2)) throw new Error(`[oj] ${what}: swell is ${swell}, and is metres from 0 to 2`)
+    return [true, o.sky !== undefined, sky[0]!, sky[1]!, sky[2]!, foam[0], foam[1], foam[2], foam[3], metres, swell]
+}
+
+/** Whether a mesh's `water` swells, which moves it by the scene's clock. */
+const swells = (w: boolean | MeshWater) => typeof w === "object" && w !== null && (w.swell ?? 0) > 0
+
 /** What a height fog's parts are when left out: the sea's level, and e every 50 m. */
 const FOG_HEIGHT = { base: 0, thickness: 50 }
 
@@ -1945,6 +2012,15 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (typeof b.SetMeshNormalMap !== "function") throw new Error(`${what} needs a newer OneJS: this host's ModelBridge cannot draw it (it came with runtime 1.8).`)
             normalMap = [n.picture, tiling[0], tiling[1], scale, flow[0], flow[1]]
         }
+        if (o.water !== undefined) {
+            if (o.splat !== undefined) throw new Error("[oj] scene.mesh water: a splat is ground, and cannot be water")
+            if (draw.depthOnly === true) throw new Error("[oj] scene.mesh water: a depthOnly mesh draws no colour to be water")
+            if (additive) throw new Error("[oj] scene.mesh water: blend \"add\" adds light to what is behind it, and water covers what is behind it")
+            const args = waterArgs(o.water, "scene.mesh water")
+            if (args[9] > 0 && !(color[3]! < 1)) throw new Error("[oj] scene.mesh water: foam is found by what is behind the water, and this one draws opaque (its color's alpha is 1). Give its color an alpha below 1.")
+            if (args[9] > 0 && o.cutout !== undefined) throw new Error("[oj] scene.mesh water: foam is found by what is behind the water, and a cutout draws it opaque")
+        }
+        let water: boolean | MeshWater = o.water ?? false
         // Today's values unless given: a rough non-metal.
         let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
         let colorGiven: ColorInput = o.color ?? "#ffffff"
@@ -2025,6 +2101,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [leafGiven, () => b.SetMeshLeafLight(id, ...leafArgs(leaf, "scene.mesh backLightColor")), o.wrap !== undefined ? "wrap" : "backLight"],
                 [edgeGiven, () => b.SetMeshEdgeFade(id, ...edgeFade), "edgeFade"],
                 [normalMap !== null, () => b.SetMeshNormalMap(id, ...normalMap!), "normalMap"],
+                [o.water !== undefined, () => b.SetMeshWater(id, ...waterArgs(o.water!, "scene.mesh water")), "water"],
             ]
             for (const [given, apply, what] of looks) {
                 if (!given) continue
@@ -2095,6 +2172,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set backLightColor(c: ColorInput) { leafLight("color", "backLightColor", c) },
             get backLightFocus() { return leaf.focus },
             set backLightFocus(v: number) { leafLight("focus", "backLightFocus", v) },
+            get water() { return water },
+            set water(v: boolean | MeshWater) {
+                live()
+                const problem = String(b.SetMeshWater(id, ...waterArgs(v, "mesh.water")))
+                if (problem !== "") throw new Error(`[oj] mesh.water: ${problem}`)
+                water = v
+                if (swells(v)) swaying = true
+            },
             get edgeFade() { return [edgeFade[0], edgeFade[1]] as [number, number] },
             set edgeFade(v: [number, number]) {
                 live()
@@ -2137,8 +2222,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             return out
         })
         if (draw.depthOnly === true || additive) unbaked.add(model)
-        // The wind's clock is the scene's: a flowing normal map slides by it as a sway moves by it.
-        if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0))) swaying = true
+        // The wind's clock is the scene's: a flowing normal map slides by it as a sway moves by it,
+        // and water's swell rolls by it.
+        if (sways || (normalMap !== null && (normalMap[4] !== 0 || normalMap[5] !== 0)) || swells(water)) swaying = true
         return model
     }
 

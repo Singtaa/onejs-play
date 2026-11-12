@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.10",
+    "name": "Water",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}

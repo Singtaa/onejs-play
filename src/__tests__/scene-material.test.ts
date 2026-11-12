@@ -1,7 +1,7 @@
 /**
  * A mesh's surface as the calls it makes on OneJS's ModelBridge (tested in
  * OneJS's MeshMaterialEditModeTests and MeshDepthFadeEditModeTests):
- * `scene.mesh({ roughness, metallic, soften, deepColor, normalMap })`, and `mesh.color`,
+ * `scene.mesh({ roughness, metallic, soften, deepColor, normalMap, water })`, and `mesh.color`, `mesh.water`,
  * `mesh.roughness` and `mesh.metallic` after it is made.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
@@ -24,7 +24,7 @@ function recorder(): any {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn") return ++next
                 if (name === "SetMesh") return ""
-                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap") return answer
+                if (name === "SetMeshSurface" || name === "SetMeshColor" || name === "SetMeshDepthFade" || name === "SetMeshNormalMap" || name === "SetMeshWater") return answer
                 if (name === "Height") return 1
                 return undefined
             }
@@ -265,5 +265,85 @@ describe("scene.mesh normalMap", () => {
         missing = new Set(["SetMeshNormalMap"])
         expect(() => scene().mesh({ ...SQUARE, uvs: UVS, normalMap: { picture: waves } })).toThrow("scene.mesh normalMap needs a newer OneJS")
         expect(of("CreateMesh")).toHaveLength(0)
+    })
+})
+
+describe("scene.mesh water", () => {
+    const OFF = [false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    it("asks for nothing when not given, and reads false", () => {
+        const pool = scene().mesh(WATER)
+        expect(of("SetMeshWater")).toHaveLength(0)
+        expect(pool.water).toBe(false)
+    })
+
+    it("true reflects the scene's own, with no foam and no swell, sent before the vertices", () => {
+        const pool = scene().mesh({ ...WATER, water: true })
+        expect(of("SetMeshWater")).toEqual([["SetMeshWater", pool.id, true, false, 0, 0, 0, 1, 1, 1, 1, 0, 0]])
+        expect(order("CreateMesh", "SetMeshWater", "SetMesh")).toEqual(["CreateMesh", "SetMeshWater", "SetMesh"])
+        expect(pool.water).toBe(true)
+    })
+
+    it("sends its sky, its foam at 0.3 m unless given metres, and its swell", () => {
+        const s = scene()
+        const pool = s.mesh({ ...WATER, water: { sky: "#ff0000", foam: "#00ff0080", swell: 0.1 } })
+        const [, id, on, skyGiven, ...rest] = of("SetMeshWater")[0]!
+        expect([id, on, skyGiven]).toEqual([pool.id, true, true])
+        expect(rest.map((v) => Math.round((v as number) * 100) / 100)).toEqual([1, 0, 0, 0, 1, 0, 0.5, 0.3, 0.1])
+        s.mesh({ ...WATER, water: { foam: { color: "#ffffff", metres: 0.8 } } })
+        expect(of("SetMeshWater")[1]!.slice(2)).toEqual([true, false, 0, 0, 0, 1, 1, 1, 1, 0.8, 0])
+    })
+
+    it("is set after, and false makes it plain again", () => {
+        const pool = scene().mesh(WATER)
+        pool.water = { swell: 0.2 }
+        pool.water = false
+        expect(of("SetMeshWater").map((c) => c.slice(2))).toEqual([[true, false, 0, 0, 0, 1, 1, 1, 1, 0, 0.2], OFF])
+        expect(pool.water).toBe(false)
+    })
+
+    it("is refused before anything is made where it cannot be", () => {
+        const s = scene()
+        expect(() => s.mesh({ ...SQUARE, water: { foam: "#ffffff" } })).toThrow("scene.mesh water: foam is found by what is behind the water, and this one draws opaque")
+        expect(() => s.mesh({ ...WATER, blend: "add", water: true })).toThrow("scene.mesh water: blend \"add\" adds light")
+        expect(() => s.mesh({ ...WATER, water: { swell: 3 } })).toThrow("scene.mesh water: swell is 3, and is metres from 0 to 2")
+        expect(() => s.mesh({ ...WATER, water: { waves: 1 } as any })).toThrow("scene.mesh water: waves is not one of its parts, which are sky, foam and swell")
+        expect(() => s.mesh({ ...WATER, water: { foam: { color: "#ffffff", metres: 0 } } })).toThrow("scene.mesh water: foam's metres is 0, and is metres above 0")
+        expect(() => s.mesh({ ...WATER, water: "yes" as any })).toThrow("scene.mesh water is yes, and is true, false or { sky, foam, swell }")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    it("says what the bridge refused, and keeps nothing", () => {
+        const s = scene()
+        answer = "this project's render pipeline is not URP, and OneJS draws water on URP alone"
+        expect(() => s.mesh({ ...WATER, water: true })).toThrow("[oj] scene.mesh water: this project's render pipeline is not URP")
+        expect(of("Unload")).toHaveLength(1)
+        answer = ""
+        const pool = s.mesh(WATER)
+        answer = "no"
+        expect(() => { pool.water = true }).toThrow("[oj] mesh.water: no")
+        expect(pool.water).toBe(false)
+    })
+
+    it("needs a OneJS that has it", () => {
+        missing = new Set(["SetMeshWater"])
+        expect(() => scene().mesh({ ...WATER, water: true })).toThrow("scene.mesh water needs a newer OneJS")
+        expect(of("CreateMesh")).toHaveLength(0)
+    })
+
+    describe("its clock", () => {
+        let host: ReturnType<typeof createRuntime>
+        beforeEach(() => { host = createRuntime({ root: {}, version: "0.0.0" }) })
+        afterEach(() => host.dispose())
+
+        it("runs once a mesh swells, made so or set so, and not for still water", () => {
+            const s = scene()
+            const pool = s.mesh({ ...WATER, water: true })
+            host.beginFrame(0.5)
+            expect(of("SetWindClock"), "still water needs no clock").toHaveLength(0)
+            pool.water = { swell: 0.1 }
+            host.beginFrame(0.25)
+            expect(of("SetWindClock").map((c) => c[1])).toEqual([0.25])
+        })
     })
 })
