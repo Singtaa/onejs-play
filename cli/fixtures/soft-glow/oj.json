@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "runtime": "1.10",
+    "name": "Soft glow",
+    "entry": "index.tsx",
+    "controls": [
+        "pointer"
+    ]
+}

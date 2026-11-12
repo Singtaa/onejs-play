@@ -1069,6 +1069,21 @@ highlight, a metal quad that still scatters, a roughness and a colour set after
 that drew nothing, a shore that does not fade, deep water that keeps its
 colour, a normal map that bends nothing, and a black screen.
 
+**A softened glow fades into the ground in every blend.** `cli/fixtures/soft-glow`
+stands an unlit glow quad upright through a grey floor, seen from 45 degrees
+above, as a spell's glow meets the ground, in each blend a mesh has: `"alpha"`,
+`"add"`, `"premultiplied"` and `"premultipliedTexture"`. Each is read twice,
+the quad just above the line where it meets the floor against the floor just
+below and against the quad's body a metre up. With no `soften` the quad must
+end in a hard line there (the seam at least 0.6 of the body), or nothing in the
+run can see a cut; with `soften: 1` the seam must be at most a quarter of the
+body, and the body must keep 80% of its unsoftened step. On runtime 1.10.1 the
+seam reads 1.00 without and 0.10 to 0.13 with, on WebGPU and WebGL 2 alike; a
+soften too small to fade fails all four blends. It prints `BACKEND`. It names
+runtime 1.10, so the sweep waits for that line; `soft-glow.test.ts` feeds the
+check a pass, a softened glow still cut off at the floor, a soften that fades
+the whole glow, no glow, no cut to see, and an unlit floor.
+
 **A mirror shows the sky, and only when asked.** `cli/fixtures/sky-reflect`
 draws a chrome ball side on under a blue sky with an orange horizon. Not
 asked, it prints the screenshot's SHA-256 as `UNASKED`, so two runtimes can
