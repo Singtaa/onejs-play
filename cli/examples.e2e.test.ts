@@ -196,6 +196,8 @@ function startSummary(): string {
         // A listed page whose renderer is still waiting on the GPU process: how long that took is the windows-latest number to watch.
         `[sweep] renderer answering after: median ${renderers[Math.floor(renderers.length / 2)]?.rendererS?.toFixed(1)} s, worst ${slowRenderer?.rendererS?.toFixed(1)} s (${slowRenderer?.name})`,
         `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${slowest?.runS.toFixed(1)} s (${slowest?.name}); limit ${RUN_MS / 1000} s`,
+        // Every run's length, longest first: whether a run that failed on time is the long end of what it takes when it passes, or one that is short when it passes. The rows above it in the report time the queue, not the run.
+        `[sweep] each run, s: ${[...starts].sort((a, b) => b.runS - a.runS).map((s) => `${s.name.replace(/^.*[\\/]/, "")} ${s.runS.toFixed(0)}`).join(", ")}`,
     ].join("\n")
 }
 
