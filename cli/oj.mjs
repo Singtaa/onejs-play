@@ -25,6 +25,7 @@
  * Every command reads the cart in the current folder, or --root <dir>.
  */
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { build, typecheck } from "./game.mjs"
 import { cloneSource, currentBranch, describeBranchPush, describePush, describeStatus, firstPushOnly, following, git, mine, sidOf, siteOrigin, status, tipOf, token, tokenOf, uncommitted, version } from "./site.mjs"
@@ -336,7 +337,7 @@ async function main() {
                 // A call that never answered: who was working while the page was not.
                 if (/did not answer/.test(error.message)) {
                     const busy = await game.browser.busy?.()
-                    if (busy) say(`chrome's processes ${busy}`)
+                    if (busy) say(`chrome's processes ${busy}; the machine has ${os.cpus().length} cores`)
                 }
                 try { say(`screenshot ${path.relative(root, await game.shot(path.resolve(root, ".oj/failed.png")))}`) } catch { /* the page may be gone */ }
                 return 1
