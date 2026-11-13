@@ -9,10 +9,13 @@ was recorded from, ported from that commit's `js/tests/kernel-parity.test.tsx`.
 
 `goldens/noise/` is from magerie-one main at `1484d0843` (#1251), where
 Noise's lattice hash became pcg3d and all twelve baselines were recorded
-again; tex draws each byte for byte. The exported PNGs under
-`goldens/buildings`, `goldens/leaves` and `goldens/atlas` are older than
-that hash, so `--set` fails every one of them (all 22 of buildings on
-12 Nov 2026) until Magerie exports those boards again.
+again; tex draws each byte for byte. `goldens/buildings`, `goldens/leaves`
+and `goldens/atlas` were exported again at that commit (handed over on
+magerie-one `primoeden-tex-check-pcg3d` at `5c7cc649d`; each folder's
+`MAGERIE-EXPORT.md` is theirs), every `.ts` and PNG replacing the older
+set named below. On 12 Nov 2026 buildings passes 22 of 22; the three birch
+boards fail the cutout (leaves' spray 203 px and curtain 515, atlas's
+birch-leaves 718, against 105) with their means under 0.06, which is open.
 
 To refresh them, copy the same folders from a newer magerie-one, change the
 commit above, and run `node run.mjs`: a golden that moved is a Magerie change

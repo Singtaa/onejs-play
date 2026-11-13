@@ -5,7 +5,7 @@ const { blend, blur, channelShuffle, curvature, gradientMap, hslAdjust, levels, 
 
 const courses = tileGrid({ rows: 7, jointWidth: 0.07, bevel: 0.2, round: 0.35, seed: 21, offsetJitter: 0.6, lengthJitter: 0.5, heightJitter: 0.3, bitDepth: "32" })
 const coursesRandom = channelShuffle(courses.random, { outG: "r", outB: "r", outA: "1" })
-const outlineNoise = noise("perlin", { tile: true, seed: 601, octaves: 2, scaleY: 8 })
+const outlineNoise = noise("perlin", { tile: true, seed: 601, octaves: 2 })
 const raggedOutlines = warp(courses.image, outlineNoise, { strength: 4, edges: "wrap" })
 const stoneFace = levels(raggedOutlines, { gamma: 0.8 })
 const faceLumps = noise("perlin", { scale: 6, tile: true, seed: 602, octaves: 3, persistence: 0.45, bitDepth: "32" })
