@@ -106,6 +106,17 @@ export function chromeArgs({ headless, window, profile, gpu = false, log = null 
         // Linux has the same through the desktop's password store. A throwaway
         // profile needs neither.
         "--use-mock-keychain", "--password-store=basic",
+        // A fresh profile sets Chrome to its first-run chores behind the page:
+        // it updates its components (downloads, then unzips), installs its
+        // default web apps, and fetches models and hints. Idle on about:blank
+        // for 40 s, one browser made 108 requests to the outside and logged
+        // 241 unzip steps; with these it makes 19 and none (a Mac, 12 Nov
+        // 2026). Every run paid that beside a page drawing in software on a
+        // 4-core runner, and windows-latest's pages stopped answering for 30 s.
+        // A throwaway profile wants none of it, headless or headed.
+        "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
+        "--disable-extensions", "--disable-sync",
+        "--disable-features=OptimizationHints,OptimizationGuideModelDownloading,SegmentationPlatform,MediaRouter,Translate",
         // Software rasteriser unless asked for the GPU: the same pixels and the
         // same speed on every machine. A headed window gets whatever the
         // desktop has.

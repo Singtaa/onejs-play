@@ -104,6 +104,14 @@ describe("Chrome's own log", () => {
         expect(chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" }).some((a) => a.startsWith("--log"))).toBe(false)
     })
 
+    it("starts every browser, headless or headed, without a fresh profile's first-run chores", () => {
+        for (const headless of [true, false]) {
+            const args = chromeArgs({ headless, window: [960, 540], profile: "/tmp/p" })
+            expect(args).toEqual(expect.arrayContaining(["--disable-background-networking", "--disable-component-update", "--disable-default-apps", "--disable-extensions", "--disable-sync"]))
+            expect(args.filter((a: string) => a.startsWith("--disable-features="))).toHaveLength(1)
+        }
+    })
+
     it("is kept by keep() for any run that failed, and keep() says null with no log asked for", () => {
         const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
         const log = chromeLog(path.join(folder, "oj-chrome-y"), folder)!
