@@ -498,7 +498,8 @@ export class Browser {
                         const m = JSON.parse(e.data)
                         if (m.id !== mine) return
                         clearTimeout(timer)
-                        m.error ? no(new Error(m.error.message)) : ok(m.result.processInfo)
+                        if (m.error) no(new Error(m.error.message))
+                        else ok(m.result.processInfo)
                     }
                     ws.send(JSON.stringify({ id: mine, method: "SystemInfo.getProcessInfo" }))
                 })
