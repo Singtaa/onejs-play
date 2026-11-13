@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { Browser, CALL_MS, CAPTURE_MS, chromeArgs, chromeLog } from "./chrome.mjs"
+import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog } from "./chrome.mjs"
 
 /** A Browser on a socket that keeps what was sent and answers only when told. */
 function browser() {
@@ -168,5 +168,24 @@ describe("a page in a context of its own", () => {
         const { b, sent } = inContext(null)
         b.call("Browser.grantPermissions", { permissions: ["clipboardReadWrite"] })
         expect(sent[0].params).toEqual({ permissions: ["clipboardReadWrite"] })
+    })
+})
+
+// Chrome creates DevToolsActivePort and then writes it, with no rename between,
+// so a start that reads it early sees part of it (onejs-play #9).
+describe("the port Chrome writes", () => {
+    it("is read only from a whole file: the port, then the browser's path", () => {
+        expect(activePort("54321\n/devtools/browser/0b5d1c8e-1f6a-4d3e-9a2b-7c4e5f6a7b8c")).toBe(54321)
+    })
+
+    it("is no port yet while the file is empty or partway written", () => {
+        // The empty file is the one that cost a sweep: Number("") is 0.
+        for (const text of ["", "5", "543", "54321", "54321\n"]) expect(activePort(text), JSON.stringify(text)).toBeNull()
+    })
+
+    it("is no port for a first line that is not one", () => {
+        for (const text of ["0\n/devtools/browser/x", "65536\n/devtools/browser/x", "54 321\n/devtools/browser/x", "port\n/devtools/browser/x"]) {
+            expect(activePort(text), JSON.stringify(text)).toBeNull()
+        }
     })
 })

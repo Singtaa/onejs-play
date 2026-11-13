@@ -141,6 +141,23 @@ export function chromeLog(profile, folder = process.env.OJ_CHROME_LOG) {
     return { file: path.join(folder, `${name}.log`), netlog: path.join(folder, `${name}.netlog.json`) }
 }
 
+/**
+ * The port in the text of Chrome's DevToolsActivePort, or null while the file
+ * is not yet whole. Chrome creates the file and then writes it, with no rename
+ * between, so a read can land on an empty file or on part of the port. The
+ * first line alone was trusted once, and an empty file read as port 0: under
+ * a sweep's load the start then asked a port nobody listens on for the whole
+ * of STARTUP_MS, "offered no page" on whichever cart it hit (onejs-play #9).
+ * The file is whole once it holds both its lines, the port and the browser's
+ * path, so the port line before the newline is complete.
+ */
+export function activePort(text) {
+    const [first, second] = text.split("\n")
+    if (!second || !/^\d+$/.test(first)) return null
+    const port = Number(first)
+    return port > 0 && port < 65536 ? port : null
+}
+
 export async function launch({ headless = true, gpu = false, window = [960, 540], say = () => {}, profilePrefix = "oj-chrome-" } = {}) {
     // Checked before Chrome starts, so an old Node fails with the fix in hand
     // rather than "WebSocket is not defined" after starting a browser for nothing.
@@ -166,13 +183,16 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     const deadline = Date.now() + STARTUP_MS
     const portFile = path.join(profile, "DevToolsActivePort")
     let port = null
+    let portText = null
     while (port === null && Date.now() < deadline) {
         if (child.exitCode !== null) break
-        try { port = Number(fs.readFileSync(portFile, "utf8").split("\n")[0]) } catch { await sleep(100) }
+        try { portText = fs.readFileSync(portFile, "utf8"); port = activePort(portText) } catch {}
+        if (port === null) await sleep(100)
     }
     if (port === null) {
         discard(child, profile)
-        throw new Error(`Chrome did not start (${binary}):\n${stderr.slice(-600)}`)
+        const file = portText === null ? "no DevToolsActivePort" : `DevToolsActivePort ${JSON.stringify(portText)}, never whole`
+        throw new Error(`Chrome did not start (${binary}; ${file}):\n${stderr.slice(-600)}`)
     }
     const portMs = Date.now() - began
     let page = null
@@ -188,8 +208,10 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
         if (page === null) await sleep(100)
     }
     if (page === null) {
+        let portNow = null
+        try { portNow = fs.readFileSync(portFile, "utf8") } catch {}
         discard(child, profile)
-        throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port after ${seconds(portMs)}; last: ${last})`)
+        throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port ${port} after ${seconds(portMs)}, read from ${JSON.stringify(portText)}, the file now ${JSON.stringify(portNow)}; last: ${last})`)
     }
     const pageMs = Date.now() - began
 
