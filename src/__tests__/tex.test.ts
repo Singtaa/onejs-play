@@ -469,7 +469,9 @@ describe("tex transform", () => {
         // A leaf atlas holds rotation 215 and the PNG Magerie exported draws 215, not 180.
         expect(transform(c, { rotation: 215 }).node.params.rotation).toBeCloseTo(215 * Math.PI / 180)
         expect(transform(c, { scale: 6 }).node.params.scale).toBe(6)
-        expect(transform(c, { scale: 0 }).node.params.scale).toBe(0.01)
+        expect(transform(c, { scale: 0.005 }).node.params.scale).toBe(0.005)
+        expect(transform(c, { scale: -1 }).node.params.scale).toBe(-1)
+        expect(transform(c, { scale: 0 }).node.params.scale).toBe(1)
         expect(() => transform(c, { flipX: 1 as unknown as boolean })).toThrow(/transform flipX is 1, true or false/)
         expect(() => transform(c, { spin: 3 } as never)).toThrow(/no option "spin"/)
     })

@@ -19,6 +19,17 @@ an input black a hair under 0, and while tex still clamped it they failed
 the cutout (leaves' spray 203 px and curtain 515, atlas's birch-leaves 718,
 against 105; 9, 25 and 34 with the values taken as given).
 
+`goldens/past-slider/` is thirteen cases Magerie recorded for tex on Metal
+at `1484d0843` (handed over on `primoeden-tex-check-pcg3d` at `875d36bd8`;
+`MAGERIE-EXPORT.md` and the recorder beside it are theirs): Levels,
+Threshold and Transform with a value past the node's slider, which Metal
+clamped until #1199 and tex clamped after it. Its `manifest.json` is in
+`goldens/ojplay`'s format and a plain `node run.mjs` draws it with the
+rest. Each case is further than its tolerance from what the old clamp
+drew, by the table in `MAGERIE-EXPORT.md`; tex with the clamps failed all
+thirteen by those same numbers. Color Adjust, the fourth node #1199
+touched, is not a tex node.
+
 To refresh them, copy the same folders from a newer magerie-one, change the
 commit above, and run `node run.mjs`: a golden that moved is a Magerie change
 to look at, not a number to accept.

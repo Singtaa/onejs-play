@@ -111,8 +111,9 @@ const FLOAT_TOLERANCE = 1 / 8192
 // Another manifest in goldens/ojplay's format: a set Magerie has not vendored yet, or one made from its JS twins.
 const OJPLAY_DIR = path.resolve(arg("ojplay", path.join(here, "goldens", "ojplay")))
 // The manifests a plain run draws, each case named by its set: Magerie's Mac goldens, and with no --ojplay
-// goldens/sdf, sdfShape's signed distance as Magerie's Windows build stores it (SOURCE.md).
-const STANDING = [{ prefix: "ojplay", dir: OJPLAY_DIR }, ...(arg("ojplay", null) === null ? [{ prefix: "sdf", dir: path.join(here, "goldens", "sdf") }] : [])]
+// goldens/sdf, sdfShape's signed distance as Magerie's Windows build stores it, and goldens/past-slider,
+// Levels, Threshold and Transform past their sliders (SOURCE.md).
+const STANDING = [{ prefix: "ojplay", dir: OJPLAY_DIR }, ...(arg("ojplay", null) === null ? ["sdf", "past-slider"].map((prefix) => ({ prefix, dir: path.join(here, "goldens", prefix) })) : [])]
 const golden = (name) => base(name).startsWith("ground/")
     ? groundOut.get(base(name)).bytes
     : buildingsOut.has(base(name))

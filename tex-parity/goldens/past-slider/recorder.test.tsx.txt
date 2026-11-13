@@ -1,0 +1,136 @@
+// Scratch (not for main): past-slider goldens for OJPlay's tex (#1199), in
+// the ojplay set's manifest format. Each case runs the node's executor as
+// ojplay-goldens.test.tsx does, writes the stored bytes, and measures how far
+// it is from what the pre-#1199 Metal clamp would have drawn.
+
+import { describe, test, expect } from "./framework"
+import { readTexture } from "./framework"
+import { createGPUContext, isGPUAvailable } from "../src/pipeline"
+import type { NodeOutput } from "../src/pipeline"
+import { getNodeRegistry } from "../src/nodes"
+import { createMockContext } from "./test-helpers"
+
+const OUT = "/Users/saitang/.claude/jobs/147f961f/tmp/past-slider"
+const W = 32, H = 32
+type RGBA = [number, number, number, number]
+const byte = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255)
+
+function wavesHeight(u: number, v: number): number {
+    return 0.5
+        + 0.22 * Math.sin(2 * Math.PI * (2 * u)) * Math.cos(2 * Math.PI * (3 * v))
+        + 0.14 * Math.sin(2 * Math.PI * (u + 2 * v) + 0.7)
+        + 0.08 * Math.cos(2 * Math.PI * (5 * u - v))
+}
+
+const INPUTS: Record<string, { tiles: boolean; rgba: (x: number, y: number) => RGBA }> = {
+    // The ojplay set's height-waves, byte for byte.
+    "height-waves": { tiles: true, rgba: (x, y) => { const g = byte(wavesHeight((x + 0.5) / W, (y + 0.5) / H)); return [g, g, g, 255] } },
+    // Greys 0 to 7 of 255, one step every four columns: the birch band's window
+    // (0 to 0.00098) sits inside the first step.
+    "grey-steps-0-7": { tiles: false, rgba: (x) => { const g = Math.floor(x / 4); return [g, g, g, 255] } },
+    // Opaque colour with no symmetry: red rises along x, green along y, blue
+    // on a diagonal, and one bright block off centre.
+    "colour-asym": {
+        tiles: false,
+        rgba: (x, y) => {
+            const block = x >= 20 && x < 27 && y >= 4 && y < 9
+            if (block) return [255, 240, 40, 255]
+            return [byte(0.1 + 0.8 * (x + 0.5) / W), byte(0.15 + 0.7 * ((y + 0.5) / H) ** 2), byte(0.2 + 0.6 * ((x + 2 * y) % 32) / 31), 255]
+        },
+    },
+}
+
+interface Case {
+    node: string
+    name: string
+    params: Record<string, unknown>
+    input: string
+    /** The same params as Metal drew them before #1199. */
+    clamped: Record<string, unknown>
+}
+
+const CASES: Case[] = [
+    { node: "levels", name: "waves-in-black-m05", params: { inputBlack: -0.5 }, input: "height-waves", clamped: { inputBlack: 0 } },
+    { node: "levels", name: "waves-in-white-2", params: { inputWhite: 2 }, input: "height-waves", clamped: { inputWhite: 1 } },
+    { node: "levels", name: "waves-gamma-20", params: { gamma: 20 }, input: "height-waves", clamped: { gamma: 10 } },
+    { node: "levels", name: "waves-gamma-005", params: { gamma: 0.05 }, input: "height-waves", clamped: { gamma: 0.1 } },
+    { node: "levels", name: "waves-out-white-2", params: { outputWhite: 2 }, input: "height-waves", clamped: { outputWhite: 1 } },
+    { node: "levels", name: "waves-out-black-m05", params: { outputBlack: -0.5 }, input: "height-waves", clamped: { outputBlack: 0 } },
+    { node: "levels", name: "steps-birch-band", params: { inputBlack: -0.0000234375, inputWhite: 0.0009765625 }, input: "grey-steps-0-7", clamped: { inputBlack: 0, inputWhite: 0.0009765625 } },
+    { node: "threshold", name: "waves-t12-s04", params: { threshold: 1.2, smooth: true, smoothness: 0.4 }, input: "height-waves", clamped: { threshold: 1, smooth: true, smoothness: 0.4 } },
+    { node: "threshold", name: "waves-tm02-s04", params: { threshold: -0.2, smooth: true, smoothness: 0.4 }, input: "height-waves", clamped: { threshold: 0, smooth: true, smoothness: 0.4 } },
+    { node: "threshold", name: "waves-t05-s08", params: { threshold: 0.5, smooth: true, smoothness: 0.8 }, input: "height-waves", clamped: { threshold: 0.5, smooth: true, smoothness: 0.5 } },
+    { node: "transform", name: "asym-scale-m1", params: { scale: -1 }, input: "colour-asym", clamped: { scale: 0.01 } },
+    { node: "transform", name: "asym-scale-m05", params: { scale: -0.5 }, input: "colour-asym", clamped: { scale: 0.01 } },
+    { node: "transform", name: "asym-scale-0", params: { scale: 0 }, input: "colour-asym", clamped: { scale: 0.01 } },
+]
+
+function inputBytes(name: string): Uint8Array {
+    const bytes = new Uint8Array(W * H * 4)
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) bytes.set(INPUTS[name].rgba(x, y), (y * W + x) * 4)
+    return bytes
+}
+
+function resolved(node: string, params: Record<string, unknown>): Record<string, unknown> {
+    const def = getNodeRegistry().get(node as never)!
+    for (const k of Object.keys(params)) if (!(k in (def.parameters ?? {}))) throw new Error(`${node} has no param ${k}`)
+    return { ...(def.getDefaultParams() as Record<string, unknown>), ...params }
+}
+
+function write(path: string, bytes: Uint8Array): void {
+    const mk = magerie.fs!.mkdir(path.slice(0, path.lastIndexOf("/")), true)
+    if (!mk.ok) throw new Error(mk.error.message)
+    const wr = magerie.fs!.writeFileBuffer(path, bytes.slice().buffer)
+    if (!wr.ok) throw new Error(wr.error.message)
+}
+
+describe("scratch: past-slider goldens (#1199)", () => {
+    test("record", { timeout: 120000 }, async () => {
+        expect(isGPUAvailable()).toBe(true)
+        const gpu = createGPUContext()!
+        const run = async (c: Case, params: Record<string, unknown>): Promise<{ bytes: Uint8Array; tiles: boolean; w: number; h: number }> => {
+            const def = getNodeRegistry().get(c.node as never)!
+            const id = magerie.gpu!.createTextureFromRGBA(inputBytes(c.input), W, H) as unknown as string
+            const handle = { id: `ps-${c.input}`, width: W, height: H, refCount: 1, textureId: id, isGPU: true as const, ...(INPUTS[c.input].tiles ? { tiles: true } : {}) }
+            const ctx = createMockContext({ gpu, outputSize: { width: W, height: H }, getInput: (port: string) => port === "in-image" ? ({ type: "image", handle } as NodeOutput) : null })
+            const outs = await def.execute(resolved(c.node, params) as never, ctx)
+            const o = outs.find(p => p.portId === "out-image")?.output
+            if (!o || o.type !== "image" || !o.handle.isGPU) throw new Error(`${c.node}/${c.name} gave ${o?.type ?? "nothing"}`)
+            const rb = readTexture(o.handle.textureId)
+            const res = { bytes: new Uint8Array(rb.data), tiles: o.handle.tiles ?? (def.keepsTiles === true && INPUTS[c.input].tiles), w: rb.width, h: rb.height }
+            for (const p of outs) if (p.output.type === "image" && p.output.handle.isGPU) gpu.releaseTexture(p.output.handle.textureId)
+            gpu.releaseTexture(id)
+            return res
+        }
+        for (const name of Object.keys(INPUTS)) write(`${OUT}/inputs/${name}.bin`, inputBytes(name))
+        const cases = []
+        const report: string[] = []
+        for (const c of CASES) {
+            const got = await run(c, c.params)
+            const again = await run(c, c.params)
+            const old = await run(c, c.clamped)
+            expect([got.w, got.h]).toEqual([W, H])
+            let max = 0, over = 0, rerun = 0, lo = 255, hi = 0
+            for (let i = 0; i < got.bytes.length; i++) {
+                const d = Math.abs(got.bytes[i] - old.bytes[i])
+                if (d > max) max = d
+                if (d > 1) over++
+                if (got.bytes[i] !== again.bytes[i]) rerun++
+                if (i % 4 === 0) { lo = Math.min(lo, got.bytes[i]); hi = Math.max(hi, got.bytes[i]) }
+            }
+            write(`${OUT}/${c.node}/${c.name}.bin`, got.bytes)
+            report.push(`${c.node}/${c.name}: vs clamp max ${max}, bytes over 1: ${over}; red ${lo}..${hi}; rerun diff ${rerun}`)
+            cases.push({
+                name: `${c.node}/${c.name}`,
+                node: c.node,
+                size: [W, H],
+                params: resolved(c.node, c.params),
+                inputs: { "in-image": { file: `inputs/${c.input}.bin`, tiles: INPUTS[c.input].tiles } },
+                output: { port: "out-image", file: `${c.node}/${c.name}.bin`, format: "rgba8", tiles: got.tiles },
+                tolerance: 1,
+            })
+        }
+        magerie.fs!.writeFile(`${OUT}/manifest.json`, JSON.stringify({ magerieCommit: "1484d0843", cases }, null, 2) + "\n")
+        magerie.fs!.writeFile(`${OUT}/report.txt`, report.join("\n") + "\n")
+    })
+})

@@ -738,9 +738,10 @@ export const SPECS = {
             }
             return area("transform", {
                 translate: [num(p.translateX, "transform translateX"), num(p.translateY, "transform translateY")],
-                // As the node draws (MetalRenderer ApplyTransform): scale kept from 0.01 up, any
-                // rotation. Its sliders stop at 4 and 180, but a board holds 215 and draws 215.
-                scale: Math.max(0.01, num(p.scale, "transform scale")),
+                // As the node draws (MetalRenderer ApplyTransform since magerie-one #1199): any scale
+                // and any rotation, past the sliders' 4 and 180; a negative scale is the picture
+                // turned half round, and 0, which divides, draws as 1.
+                scale: num(p.scale, "transform scale") || 1,
                 rotation: num(p.rotation, "transform rotation") * Math.PI / 180,
                 flip: [flip("flipX"), flip("flipY")],
             }, [a!], false)
@@ -776,8 +777,9 @@ export const SPECS = {
         make(p, [a]) {
             // Magerie keeps a half-float input half (MageriePreserveFloatFormat).
             return pointwise("threshold", {
-                threshold: num(p.threshold, "threshold", 0, 1),
-                smoothness: p.smooth === true ? num(p.smoothness, "threshold smoothness", 0, 0.5) : 0,
+                // As given, past Magerie's sliders (applyThreshold since magerie-one #1199).
+                threshold: num(p.threshold, "threshold"),
+                smoothness: p.smooth === true ? num(p.smoothness, "threshold smoothness") : 0,
                 half: a!.params.half === true,
             }, [a!])
         },

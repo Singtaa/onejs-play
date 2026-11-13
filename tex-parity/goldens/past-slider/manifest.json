@@ -1,0 +1,366 @@
+{
+  "magerieCommit": "1484d0843",
+  "cases": [
+    {
+      "name": "levels/waves-in-black-m05",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": -0.5,
+        "inputWhite": 1,
+        "gamma": 1,
+        "outputBlack": 0,
+        "outputWhite": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/waves-in-black-m05.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "levels/waves-in-white-2",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": 0,
+        "inputWhite": 2,
+        "gamma": 1,
+        "outputBlack": 0,
+        "outputWhite": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/waves-in-white-2.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "levels/waves-gamma-20",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": 0,
+        "inputWhite": 1,
+        "gamma": 20,
+        "outputBlack": 0,
+        "outputWhite": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/waves-gamma-20.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "levels/waves-gamma-005",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": 0,
+        "inputWhite": 1,
+        "gamma": 0.05,
+        "outputBlack": 0,
+        "outputWhite": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/waves-gamma-005.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "levels/waves-out-white-2",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": 0,
+        "inputWhite": 1,
+        "gamma": 1,
+        "outputBlack": 0,
+        "outputWhite": 2
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/waves-out-white-2.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "levels/waves-out-black-m05",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": 0,
+        "inputWhite": 1,
+        "gamma": 1,
+        "outputBlack": -0.5,
+        "outputWhite": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/waves-out-black-m05.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "levels/steps-birch-band",
+      "node": "levels",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "inputBlack": -0.0000234375,
+        "inputWhite": 0.0009765625,
+        "gamma": 1,
+        "outputBlack": 0,
+        "outputWhite": 1
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/grey-steps-0-7.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "levels/steps-birch-band.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/waves-t12-s04",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 1.2,
+        "smooth": true,
+        "smoothness": 0.4
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/waves-t12-s04.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/waves-tm02-s04",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": -0.2,
+        "smooth": true,
+        "smoothness": 0.4
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/waves-tm02-s04.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "threshold/waves-t05-s08",
+      "node": "threshold",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "threshold": 0.5,
+        "smooth": true,
+        "smoothness": 0.8
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/height-waves.bin",
+          "tiles": true
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "threshold/waves-t05-s08.bin",
+        "format": "rgba8",
+        "tiles": true
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "transform/asym-scale-m1",
+      "node": "transform",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "translateX": 0,
+        "translateY": 0,
+        "scale": -1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-asym.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "transform/asym-scale-m1.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "transform/asym-scale-m05",
+      "node": "transform",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "translateX": 0,
+        "translateY": 0,
+        "scale": -0.5,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-asym.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "transform/asym-scale-m05.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    },
+    {
+      "name": "transform/asym-scale-0",
+      "node": "transform",
+      "size": [
+        32,
+        32
+      ],
+      "params": {
+        "translateX": 0,
+        "translateY": 0,
+        "scale": 0,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false
+      },
+      "inputs": {
+        "in-image": {
+          "file": "inputs/colour-asym.bin",
+          "tiles": false
+        }
+      },
+      "output": {
+        "port": "out-image",
+        "file": "transform/asym-scale-0.bin",
+        "format": "rgba8",
+        "tiles": false
+      },
+      "tolerance": 1
+    }
+  ]
+}
