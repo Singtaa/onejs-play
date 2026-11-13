@@ -570,10 +570,15 @@ const NAMED = {
  */
 export function cpuUsed(before, after, seconds) {
     const was = new Map(before.map((p) => [p.id, p.cpuTime]))
-    const used = new Map()
-    for (const p of after) used.set(p.type, (used.get(p.type) ?? 0) + Math.max(0, p.cpuTime - (was.get(p.id) ?? 0)))
+    const used = new Map(), total = new Map()
+    for (const p of after) {
+        used.set(p.type, (used.get(p.type) ?? 0) + Math.max(0, p.cpuTime - (was.get(p.id) ?? 0)))
+        total.set(p.type, (total.get(p.type) ?? 0) + p.cpuTime)
+    }
     const kinds = [...used].sort((a, b) => b[1] - a[1])
-    return `over ${seconds.toFixed(1)} s, CPU used: ${kinds.map(([type, s]) => `${type} ${s.toFixed(2)} s`).join(", ")}`
+    // The total beside each says whether the figure is believable: more
+    // seconds than the cores could give is Chrome's counter, not the work.
+    return `over ${seconds.toFixed(1)} s, CPU used: ${kinds.map(([type, s]) => `${type} ${s.toFixed(2)} s (${total.get(type).toFixed(1)} s since it started)`).join(", ")}`
 }
 
 export function keyOf(code) {

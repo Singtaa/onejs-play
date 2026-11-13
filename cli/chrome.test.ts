@@ -107,7 +107,7 @@ describe("Chrome's own log", () => {
     it("says which kind of process used the CPU between two samples, busiest first", () => {
         const before = [{ type: "browser", id: 1, cpuTime: 3 }, { type: "GPU", id: 2, cpuTime: 10 }, { type: "renderer", id: 3, cpuTime: 4 }, { type: "renderer", id: 4, cpuTime: 1 }]
         const after = [{ type: "browser", id: 1, cpuTime: 3.1 }, { type: "GPU", id: 2, cpuTime: 11.9 }, { type: "renderer", id: 3, cpuTime: 4 }, { type: "renderer", id: 4, cpuTime: 1.25 }, { type: "utility", id: 9, cpuTime: 0.5 }]
-        expect(cpuUsed(before, after, 2.04)).toBe("over 2.0 s, CPU used: GPU 1.90 s, utility 0.50 s, renderer 0.25 s, browser 0.10 s")
+        expect(cpuUsed(before, after, 2.04)).toBe("over 2.0 s, CPU used: GPU 1.90 s (11.9 s since it started), utility 0.50 s (0.5 s since it started), renderer 0.25 s (5.3 s since it started), browser 0.10 s (3.1 s since it started)")
         // An idle GPU process reads as idle, which is the answer that tells a wait from slow drawing.
         expect(cpuUsed(before, before, 2)).toContain("GPU 0.00 s")
     })
