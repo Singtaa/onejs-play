@@ -372,10 +372,12 @@ export const SPECS = {
         positional: ["gamma"],
         defaults: { gamma: 1, inputBlack: 0, inputWhite: 1, outputBlack: 0, outputWhite: 1 },
         make(p, [a]) {
+            // As given, past Magerie's sliders (MetalRenderer applyLevels since magerie-one #1199):
+            // a black a hair under 0 is how a board cuts a band exactly, and only gamma has a floor.
             return pointwise("levels", {
-                gamma: num(p.gamma, "levels gamma", 0.1, 10),
-                inputBlack: num(p.inputBlack, "levels inputBlack", 0, 1), inputWhite: num(p.inputWhite, "levels inputWhite", 0, 1),
-                outputBlack: num(p.outputBlack, "levels outputBlack", 0, 1), outputWhite: num(p.outputWhite, "levels outputWhite", 0, 1),
+                gamma: num(p.gamma, "levels gamma", 0.0001),
+                inputBlack: num(p.inputBlack, "levels inputBlack"), inputWhite: num(p.inputWhite, "levels inputWhite"),
+                outputBlack: num(p.outputBlack, "levels outputBlack"), outputWhite: num(p.outputWhite, "levels outputWhite"),
             }, [a!])
         },
     },
