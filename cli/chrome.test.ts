@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog } from "./chrome.mjs"
+import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuUsed } from "./chrome.mjs"
 
 /** A Browser on a socket that keeps what was sent and answers only when told. */
 function browser() {
@@ -102,6 +102,14 @@ describe("Chrome's own log", () => {
         expect(args).toEqual(expect.arrayContaining(["--enable-logging", `--log-file=${log.file}`, "--v=1", `--log-net-log=${log.netlog}`]))
         expect(args.at(-1)).toBe("about:blank")
         expect(chromeArgs({ headless: true, window: [960, 540], profile: "/tmp/p" }).some((a) => a.startsWith("--log"))).toBe(false)
+    })
+
+    it("says which kind of process used the CPU between two samples, busiest first", () => {
+        const before = [{ type: "browser", id: 1, cpuTime: 3 }, { type: "GPU", id: 2, cpuTime: 10 }, { type: "renderer", id: 3, cpuTime: 4 }, { type: "renderer", id: 4, cpuTime: 1 }]
+        const after = [{ type: "browser", id: 1, cpuTime: 3.1 }, { type: "GPU", id: 2, cpuTime: 11.9 }, { type: "renderer", id: 3, cpuTime: 4 }, { type: "renderer", id: 4, cpuTime: 1.25 }, { type: "utility", id: 9, cpuTime: 0.5 }]
+        expect(cpuUsed(before, after, 2.04)).toBe("over 2.0 s, CPU used: GPU 1.90 s, utility 0.50 s, renderer 0.25 s, browser 0.10 s")
+        // An idle GPU process reads as idle, which is the answer that tells a wait from slow drawing.
+        expect(cpuUsed(before, before, 2)).toContain("GPU 0.00 s")
     })
 
     it("starts every browser, headless or headed, without a fresh profile's first-run chores", () => {
