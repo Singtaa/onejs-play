@@ -475,6 +475,45 @@ export class Browser {
         return said.join("; ")
     }
 
+    /**
+     * Which of Chrome's processes are working, for a page that stopped
+     * answering: the CPU each kind used over `ms`, asked of the browser
+     * rather than the page, since the page is the one that is stuck. A GPU
+     * process at a full core is drawing too slowly to answer; one at nothing
+     * is waiting on something that never comes. Null when the browser does
+     * not answer either.
+     */
+    async busy(ms = 2000) {
+        try {
+            const { port } = new URL(this.page.webSocketDebuggerUrl)
+            const { webSocketDebuggerUrl } = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json())
+            const ws = new WebSocket(webSocketDebuggerUrl)
+            try {
+                await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error("no socket")) })
+                let id = 0
+                const sample = () => new Promise((ok, no) => {
+                    const mine = ++id
+                    const timer = setTimeout(() => no(new Error("no answer")), 5000)
+                    ws.onmessage = (e) => {
+                        const m = JSON.parse(e.data)
+                        if (m.id !== mine) return
+                        clearTimeout(timer)
+                        m.error ? no(new Error(m.error.message)) : ok(m.result.processInfo)
+                    }
+                    ws.send(JSON.stringify({ id: mine, method: "SystemInfo.getProcessInfo" }))
+                })
+                const before = await sample()
+                const began = Date.now()
+                await sleep(ms)
+                return cpuUsed(before, await sample(), (Date.now() - began) / 1000)
+            } finally {
+                ws.close()
+            }
+        } catch {
+            return null
+        }
+    }
+
     /** Keeps Chrome's own log past close, for a run that failed: where it is, or null with none asked for. */
     keep() {
         if (!this.log) return null
@@ -523,6 +562,19 @@ const NAMED = {
  * code Chrome wants beside it, plus the text the key types when it types
  * any: Enter types a carriage return, the way a real keyboard's does.
  */
+/**
+ * The CPU each kind of Chrome process used between two SystemInfo.getProcessInfo
+ * samples `seconds` apart, busiest first, as one line. A process only in the
+ * second sample started in between and counts from nothing.
+ */
+export function cpuUsed(before, after, seconds) {
+    const was = new Map(before.map((p) => [p.id, p.cpuTime]))
+    const used = new Map()
+    for (const p of after) used.set(p.type, (used.get(p.type) ?? 0) + Math.max(0, p.cpuTime - (was.get(p.id) ?? 0)))
+    const kinds = [...used].sort((a, b) => b[1] - a[1])
+    return `over ${seconds.toFixed(1)} s, CPU used: ${kinds.map(([type, s]) => `${type} ${s.toFixed(2)} s`).join(", ")}`
+}
+
 export function keyOf(code) {
     if (NAMED[code]) return NAMED[code][2] === undefined
         ? { key: NAMED[code][0], vk: NAMED[code][1] }

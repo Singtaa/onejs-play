@@ -333,6 +333,11 @@ async function main() {
                 if (said.length > 0) say(`the page's last console lines:\n${said.map((l) => `  ${l.level}: ${l.text.slice(0, 300)}`).join("\n")}`)
                 const kept = game.browser.keep?.()
                 if (kept) say(`chrome's own log is kept at ${kept}`)
+                // A call that never answered: who was working while the page was not.
+                if (/did not answer/.test(error.message)) {
+                    const busy = await game.browser.busy?.()
+                    if (busy) say(`chrome's processes ${busy}`)
+                }
                 try { say(`screenshot ${path.relative(root, await game.shot(path.resolve(root, ".oj/failed.png")))}`) } catch { /* the page may be gone */ }
                 return 1
             } finally {
