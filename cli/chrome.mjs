@@ -506,7 +506,8 @@ export class Browser {
                 const before = await sample()
                 const began = Date.now()
                 await sleep(ms)
-                return cpuUsed(before, await sample(), (Date.now() - began) / 1000)
+                const used = cpuUsed(before, await sample(), (Date.now() - began) / 1000)
+                return `${used}; the machine has ${os.cpus().length} cores and ${chromesOnMachine() ?? "an unknown number of"} Chrome processes in all`
             } finally {
                 ws.close()
             }
@@ -578,7 +579,26 @@ export function cpuUsed(before, after, seconds) {
     const kinds = [...used].sort((a, b) => b[1] - a[1])
     // The total beside each says whether the figure is believable: more
     // seconds than the cores could give is Chrome's counter, not the work.
-    return `over ${seconds.toFixed(1)} s, CPU used: ${kinds.map(([type, s]) => `${type} ${s.toFixed(2)} s (${total.get(type).toFixed(1)} s since it started)`).join(", ")}`
+    return `(${after.length} of them) over ${seconds.toFixed(1)} s, CPU used: ${kinds.map(([type, s]) => `${type} ${s.toFixed(2)} s (${total.get(type).toFixed(1)} s since it started)`).join(", ")}`
+}
+
+/**
+ * How many Chrome processes the whole machine is running, or null where that
+ * cannot be asked. Beside a stalled browser's own count it says whether the
+ * browser had the machine to itself: an earlier run's Chrome that outlived
+ * its kill draws on the same cores.
+ */
+export function chromesOnMachine() {
+    try {
+        if (process.platform === "win32") {
+            const out = spawnSync("tasklist", ["/fi", "imagename eq chrome.exe", "/fo", "csv", "/nh"], { encoding: "utf8", timeout: 10000 }).stdout ?? ""
+            return out.split("\n").filter((line) => line.toLowerCase().startsWith('"chrome.exe"')).length
+        }
+        const out = spawnSync("ps", ["-axo", "comm="], { encoding: "utf8", timeout: 10000 }).stdout ?? ""
+        return out.split("\n").filter((line) => /chrom(e|ium)/i.test(path.basename(line.trim()))).length
+    } catch {
+        return null
+    }
 }
 
 export function keyOf(code) {
