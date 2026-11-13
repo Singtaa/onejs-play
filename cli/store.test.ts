@@ -4,12 +4,14 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { cached, formatPointer, isStored, parsePointer, prePush, setupStore, storeKey, STORE_MIN_BYTES } from "./store.mjs"
+import { cached, formatPointer, isStored, parsePointer, prePush, setupStore, storeKey, STORE_MIN_BYTES, UNSTORE_STEP } from "./store.mjs"
 
 /**
  * Stored files from a terminal, against the real git binary: the filter
  * process git starts, the hook it runs, and a stand-in for the site's LFS
- * batch endpoint that records what it was asked.
+ * batch endpoint that records what it was asked. The stand-in also serves
+ * /c/<sid>.git itself through `git http-backend`, so a real `git push` to the
+ * site's URL runs the whole path.
  */
 
 const SID = "abcdefabcdef"
@@ -57,6 +59,27 @@ const server = http.createServer((req, res) => {
         if (stored && req.method === "PUT") { held.set(stored[1], data); return res.end() }
         if (stored && req.method === "GET") { const b = held.get(stored[1]); res.statusCode = b ? 200 : 404; return res.end(b ?? "") }
         if (req.url === lfs + "/verify") return res.end("{}")
+        const [pathInfo, query = ""] = req.url.split("?")
+        if (pathInfo.startsWith("/c/" + SID + ".git/")) {
+            const cgi = require("node:child_process").spawn("git", ["http-backend"], { env: { ...process.env,
+                GIT_PROJECT_ROOT: process.env.OJ_GIT_ROOT, GIT_HTTP_EXPORT_ALL: "1", REMOTE_USER: "t", REMOTE_ADDR: "127.0.0.1",
+                PATH_INFO: pathInfo, QUERY_STRING: query, REQUEST_METHOD: req.method,
+                CONTENT_TYPE: req.headers["content-type"] ?? "", HTTP_CONTENT_ENCODING: req.headers["content-encoding"] ?? "" } })
+            const out = []
+            cgi.stdout.on("data", (c) => out.push(c))
+            cgi.stdin.end(data)
+            return cgi.on("close", () => {
+                const all = Buffer.concat(out)
+                const end = all.indexOf("\\r\\n\\r\\n")
+                for (const line of all.subarray(0, end).toString().split("\\r\\n")) {
+                    const colon = line.indexOf(":")
+                    const [k, v] = [line.slice(0, colon), line.slice(colon + 1).trim()]
+                    if (k.toLowerCase() === "status") res.statusCode = Number(v.split(" ")[0])
+                    else res.setHeader(k, v)
+                }
+                res.end(all.subarray(end + 4))
+            })
+        }
         res.statusCode = 404
         res.end()
     })
@@ -72,7 +95,7 @@ beforeEach(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-store-"))
     process.env.OJ_HOME = path.join(dir, "home")
     process.env.OJ_TOKEN = "ojp_" + "a".repeat(32)
-    child = spawn(process.execPath, ["-e", STAND_IN], { stdio: ["ignore", "pipe", "inherit"] })
+    child = spawn(process.execPath, ["-e", STAND_IN], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, OJ_GIT_ROOT: dir } })
     site = await new Promise<string>((resolve) => child.stdout!.once("data", (d) => resolve(d.toString().trim())))
 })
 
@@ -122,6 +145,7 @@ describe("git with ojplay as its filter", () => {
         // endings as Windows' does; setting the clone up puts the file there.
         const copy = path.join(dir, "copy")
         git(dir, "clone", "-q", "-c", "core.autocrlf=true", root, copy)
+        git(copy, "remote", "set-url", "origin", `${site}/c/${SID}.git`)
         const plain = fs.readFileSync(path.join(copy, "ship.glb"), "utf8")
         expect(plain).toContain("\r\n")
         expect(parsePointer(plain.replace(/\r\n/g, "\n"))).not.toBeNull()
@@ -193,20 +217,115 @@ describe("the pre-push hook", () => {
         expect(said.join("\n")).toContain("bg.png: bg.png is 120 MB")
     })
 
-    it("leaves a remote that is not the site alone", async () => {
+    it("refuses to push a pointer to a remote that is not the site, naming it", async () => {
         const { root, stdin } = pushed()
-        expect(await prePush(root, "github", "https://github.com/someone/cart.git", stdin)).toBe(0)
+        const said: string[] = []
+        expect(await prePush(root, "github", "https://github.com/someone/cart.git", stdin, { say: (l: string) => said.push(l) })).toBe(1)
+        expect(said.join("\n")).toContain("https://github.com/someone/cart.git is not a play.onejs.com remote")
+        expect(said.join("\n")).toContain("  bg.png")
         expect(await seen()).toEqual([])
     })
 
-    it("runs as git's own pre-push hook", async () => {
-        const { root, big } = pushed()
-        const bare = path.join(dir, "remote.git")
-        git(dir, "init", "-q", "--bare", bare)
-        // Only the site's URLs are the store's business, so a push to a plain path sends nothing and succeeds.
-        expect(git(root, "push", "-q", bare, "main").status).toBe(0)
+    it("tells a clone whose origin is the site to push there, since recommitting would only store the file again", async () => {
+        const { root, stdin } = pushed()
+        git(root, "remote", "add", "origin", `${site}/c/${SID}.git`)
+        const said: string[] = []
+        expect(await prePush(root, "github", "https://github.com/someone/cart.git", stdin, { say: (l: string) => said.push(l) })).toBe(1)
+        expect(said.join("\n")).toContain("push them to the site")
+        expect(said.join("\n")).not.toContain(UNSTORE_STEP)
+    })
+
+    it("lets a push with no pointer at its tip through to any remote", async () => {
+        const root = cart()
+        fs.writeFileSync(path.join(root, "pop.wav"), "small")
+        setupStore(root)
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "one")
+        const head = git(root, "rev-parse", "HEAD").stdout.trim()
+        expect(await prePush(root, "github", "https://github.com/someone/cart.git", `refs/heads/main ${head} refs/heads/main ${"0".repeat(40)}\n`)).toBe(0)
         expect(await seen()).toEqual([])
+    })
+
+    it("sends a push to the site's own URL through git, and a clone of it gets the file (end to end)", async () => {
+        const root = cart()
+        const big = randomBytes(STORE_MIN_BYTES + 5)
+        fs.writeFileSync(path.join(root, "ship.glb"), big)
+        setupStore(root)
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "one")
+        const bare = path.join(dir, "c", `${SID}.git`)
+        fs.mkdirSync(path.dirname(bare))
+        git(dir, "init", "-q", "-b", "main", "--bare", bare)
+        git(root, "remote", "add", "origin", `${site}/c/${SID}.git`)
+
+        const push = git(root, "push", "origin", "main")
+        expect(push.status, push.stderr).toBe(0)
+        expect(push.stderr).toContain("assets: ship.glb 1.0 MB, sent")
+        expect((await held(storeKey(sha(big), "ship.glb"))).equals(big)).toBe(true)
+        expect(parsePointer(git(bare, "cat-file", "-p", "main:ship.glb").stdout)).toEqual({ sha256: sha(big), size: big.length })
+
+        fs.rmSync(path.join(process.env.OJ_HOME!, "store"), { recursive: true })
+        const copy = path.join(dir, "copy")
+        expect(git(dir, "clone", "-q", `${site}/c/${SID}.git`, copy).status).toBe(0)
+        expect(setupStore(copy).join("\n")).toContain("1 of 1 fetched")
+        expect(fs.readFileSync(path.join(copy, "ship.glb")).equals(big)).toBe(true)
+    })
+})
+
+describe("a clone whose origin is not the site's (onejs-play #11)", () => {
+    function elsewhere() {
+        const bare = path.join(dir, "remote.git")
+        git(dir, "init", "-q", "-b", "main", "--bare", bare)
+        const root = cart()
+        git(root, "remote", "add", "origin", bare)
+        return { root, bare }
+    }
+
+    it("commits a big file whole, so the push carries it and a clone gets it", () => {
+        const { root, bare } = elsewhere()
+        expect(setupStore(root).join("\n")).toContain("origin is not a play.onejs.com remote, so files stay whole in git here")
+        const big = randomBytes(2_000_000)
+        fs.writeFileSync(path.join(root, "model.glb"), big)
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "add")
+        expect(parsePointer(git(root, "cat-file", "-p", "HEAD:model.glb").stdout)).toBeNull()
+        expect(git(root, "cat-file", "-s", "HEAD:model.glb").stdout.trim()).toBe(String(big.length))
+        expect(fs.existsSync(cached(sha(big)))).toBe(false)
+        expect(git(root, "status", "--porcelain").stdout).toBe("")
+
+        expect(git(root, "push", "-q", "origin", "main").status).toBe(0)
+        const copy = path.join(dir, "copy")
+        git(dir, "clone", "-q", bare, copy)
+        expect(fs.readFileSync(path.join(copy, "model.glb")).equals(big)).toBe(true)
+    })
+
+    it("refuses a real push of a pointer committed before origin was set, and the named step unsticks it", () => {
+        const root = cart()
+        const big = randomBytes(STORE_MIN_BYTES + 1)
+        fs.writeFileSync(path.join(root, "bg.png"), big)
+        setupStore(root)
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "one")
+        expect(parsePointer(git(root, "cat-file", "-p", "HEAD:bg.png").stdout)).not.toBeNull()
+
+        const bare = path.join(dir, "remote.git")
+        git(dir, "init", "-q", "-b", "main", "--bare", bare)
+        git(root, "remote", "add", "origin", bare)
+        expect(setupStore(root).join("\n")).toContain(`bg.png is committed as a pointer, which a push to origin refuses; commit it whole: ${UNSTORE_STEP}`)
+
+        const refused = git(root, "push", "-q", "origin", "main")
+        expect(refused.status).not.toBe(0)
+        expect(refused.stderr).toContain("  bg.png")
+        expect(refused.stderr).toContain(UNSTORE_STEP)
+        expect(git(bare, "rev-parse", "-q", "--verify", "main").status).not.toBe(0)
+
+        const step = spawnSync("sh", ["-c", UNSTORE_STEP], { cwd: root, encoding: "utf8" })
+        expect(step.status, step.stderr).toBe(0)
+        expect(git(root, "cat-file", "-s", "HEAD:bg.png").stdout.trim()).toBe(String(big.length))
+        expect(git(root, "push", "-q", "origin", "main").status).toBe(0)
+        const copy = path.join(dir, "copy")
+        git(dir, "clone", "-q", bare, copy)
+        expect(fs.readFileSync(path.join(copy, "bg.png")).equals(big)).toBe(true)
         expect(fs.readFileSync(path.join(root, ".git", "hooks", "pre-push"), "utf8")).toContain("pre-push \"$@\"")
-        expect(big.length).toBeGreaterThan(0)
     })
 })

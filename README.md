@@ -371,12 +371,19 @@ one `filter=oj` line per stored type in `.git/info/attributes`, and a
 `pre-push` hook. `cli/store.mjs` is all of it:
 
 - `git add` runs the clean filter: a stored file becomes its pointer, and its
-  bytes go to `~/.onejs-play/store/`.
+  bytes go to `~/.onejs-play/store/`. That happens only while `origin` is one
+  of the site's remotes or not set yet (`ojplay new` before its first push).
+  With any other `origin` (GitHub, Gitea, a path) every file is committed
+  whole, as plain git would, since nothing there can take the bytes.
 - `git push` runs the hook, which lists the pointers the push carries, asks the
   cart's LFS batch endpoint (`/c/<sid>.git/info/lfs`) which bytes the store
   lacks, sends those to the presigned URLs it answers with, and verifies each.
   A refusal (too big, over the account's allowance, taken down) stops the push
-  with the site's sentence, so a pointer never lands without its bytes.
+  with the site's sentence, so a pointer never lands without its bytes. A push
+  to a remote that is not the site's is refused when the tip it pushes holds a
+  pointer, naming each file: a remote added after files were stored, a pointer
+  an older ojplay committed (onejs-play #11). Earlier commits are not checked,
+  since only rewriting history would clear them.
 - A checkout runs the smudge filter: the real file comes back from the cache,
   or from the store through the same endpoint, checked against its hash. One
   that cannot be had stays a pointer, with a line saying so, so an offline
@@ -386,7 +393,21 @@ git runs one filter process per command, over its long-running filter
 protocol, rather than one node per file. What git runs is never handed off to
 the cart's own ojplay, which may predate it. A file committed whole before
 init is still in git, and init names it: the next commit of it stores it
-outside. The rule is the site's, copied, and PlaySite's
+outside.
+
+A clone whose `origin` is not the site's and that already commits pointers
+(init and the push both name them) turns them back into whole files with one
+step, from the working folder's real bytes:
+
+```bash
+git add --renormalize . && git commit -m "Keep stored files whole"
+```
+
+A file whose working copy is itself still a pointer has no bytes on this
+machine to commit, and stays named until its bytes come back (a checkout on
+the machine that stored it).
+
+The rule is the site's, copied, and PlaySite's
 `src/store-rule-parity.test.ts` holds the two to the same answers.
 
 ## 3D models

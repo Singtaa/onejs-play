@@ -8,9 +8,12 @@
  * .git/info/attributes and .git/hooks, so nothing is committed for it:
  *
  *   git add     the clean filter writes the pointer and keeps the bytes in
- *               the cache, ~/.onejs-play/store/
+ *               the cache, ~/.onejs-play/store/, when origin is the site's
+ *               or not set yet; with any other origin the file stays whole
  *   git push    the hook sends the cache's bytes for every pointer the push
- *               carries that the store lacks, then git sends the pointers
+ *               carries that the store lacks, then git sends the pointers;
+ *               to a remote that is not the site's it refuses a push whose
+ *               tip holds a pointer, since nothing can take those bytes
  *   checkout    the smudge filter puts the real bytes back, from the cache or
  *               the store, so the working folder always holds the real file
  *
@@ -116,9 +119,23 @@ function readCached(sha256, size) {
     }
 }
 
-/** What `git add` stores for the file at `name`: its pointer when it leaves git, else the file. */
-export function clean(name, data) {
-    if (parsePointer(data) !== null || !isStored(name, data.byteLength)) return data
+/**
+ * Whether this clone's commits may hold pointers: its origin is one of the
+ * site's remotes, whose store takes the bytes, or it has no origin yet, whose
+ * first push makes one (`ojplay push`). A pointer pushed anywhere else would
+ * carry no bytes at all.
+ */
+export function storesHere(cwd) {
+    const origin = gitOut(["remote", "get-url", "origin"], cwd)?.trim()
+    return !origin || lfsEndpoint(origin) !== null
+}
+
+/**
+ * What `git add` stores for the file at `name`: its pointer when it leaves git,
+ * else the file. `stores` is storesHere for the clone; false keeps every file whole.
+ */
+export function clean(name, data, { stores = true } = {}) {
+    if (!stores || parsePointer(data) !== null || !isStored(name, data.byteLength)) return data
     const sha256 = sha256Of(data)
     keep(sha256, data)
     return Buffer.from(formatPointer({ sha256, size: data.byteLength }))
@@ -281,6 +298,7 @@ export async function filterProcess({ input = process.stdin, output = process.st
     w.flush()
     await w.send()
 
+    const stores = storesHere(cwd)
     for (;;) {
         const headers = await lines(read)
         if (headers === null) return 0
@@ -295,7 +313,7 @@ export async function filterProcess({ input = process.stdin, output = process.st
         const content = Buffer.concat(parts)
         const name = field("pathname") ?? ""
         try {
-            const result = field("command") === "clean" ? clean(name, content) : await smudge(name, content, { cwd })
+            const result = field("command") === "clean" ? clean(name, content, { stores }) : await smudge(name, content, { cwd })
             w.text("status=success"); w.flush()
             w.data(result); w.flush()
             w.flush()
@@ -324,6 +342,11 @@ export function pointersToPush(cwd, updates, remoteName) {
         const space = line.indexOf(" ")
         if (space > 0 && isUploadableAsset(line.slice(space + 1))) names.set(line.slice(0, space), line.slice(space + 1))
     }
+    return pointersAmong(cwd, names)
+}
+
+/** Which of `names` (blob oid to path) are pointers, as { sha256, size, name }, one per stored object. */
+function pointersAmong(cwd, names) {
     if (names.size === 0) return []
     const checked = spawnSync("git", ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"], {
         cwd, input: [...names.keys()].join("\n") + "\n", encoding: "utf8",
@@ -346,7 +369,24 @@ export function pointersToPush(cwd, updates, remoteName) {
     return [...found.values()]
 }
 
+/** The pointers in the trees of the pushed tips: what a clone of the push checks out. */
+export function pointersAtTips(cwd, updates) {
+    const names = new Map()
+    for (const u of updates) {
+        if (/^0+$/.test(u.localSha)) continue
+        const listed = gitOut(["ls-tree", "-r", "-z", u.localSha], cwd) ?? ""
+        for (const entry of listed.split("\0")) {
+            const m = /^\d+ blob ([0-9a-f]+)\t(.+)$/s.exec(entry)
+            if (m !== null && isUploadableAsset(m[2])) names.set(m[1], m[2])
+        }
+    }
+    return pointersAmong(cwd, names)
+}
+
 const megabytes = (n) => `${(n / (1024 * 1024)).toFixed(1)} MB`
+
+/** The one step that turns committed pointers back into whole files, for a clone whose origin is not the site's. */
+export const UNSTORE_STEP = `git add --renormalize . && git commit -m "Keep stored files whole"`
 
 /** Sends what the store lacks of `files` through the cart's LFS endpoint, a line each. Answers how many were sent. */
 export async function sendStored(cwd, endpoint, files, { bearer, say }) {
@@ -402,11 +442,26 @@ function fromWorkingTree(cwd, file) {
 /** `ojplay pre-push <remote> <url>`, which git runs with the refs being pushed on stdin. */
 export async function prePush(cwd, remoteName, url, stdin, { say = (line) => process.stderr.write(`[ojplay] ${line}\n`) } = {}) {
     const endpoint = lfsEndpoint(url)
-    if (endpoint === null) return 0
     const updates = stdin.split("\n").filter((l) => l.trim() !== "").map((l) => {
         const [localRef, localSha, remoteRef, remoteSha] = l.split(" ")
         return { localRef, localSha, remoteRef, remoteSha }
     })
+    if (endpoint === null) {
+        // Nothing here can take a pointer's bytes, so a clone of this push
+        // would get the pointer and never the file. Earlier commits are not
+        // held to it: rewriting history is not ours to ask for.
+        const stuck = pointersAtTips(cwd, updates)
+        if (stuck.length === 0) return 0
+        const names = [...new Set(stuck.map((f) => f.name))].sort()
+        say([
+            `nothing was pushed: ${url} is not a play.onejs.com remote, so it cannot take stored files' bytes, and this push would leave ${names.length === 1 ? "this file" : "these files"} as a pointer there:`,
+            ...names.map((n) => `  ${n}`),
+            storesHere(cwd)
+                ? `This clone's origin is the site's, so its commits store big files outside git: push them to the site (${COMMAND} push), not here.`
+                : `Commit ${names.length === 1 ? "it" : "them"} whole, then push again: ${UNSTORE_STEP}`,
+        ].join("\n"))
+        return 1
+    }
     const files = pointersToPush(cwd, updates, remoteName)
     if (files.length === 0) return 0
     const bearer = tokenOf(cwd)
@@ -472,7 +527,9 @@ export function setupStore(root) {
         fs.writeFileSync(hook, script, { mode: 0o755 })
         fs.chmodSync(hook, 0o755)
     }
-    lines.push(`stored files: files of ${megabytes(STORE_MIN_BYTES)} or more leave git; their bytes are kept in ${storeDir()}`)
+    const stores = storesHere(root)
+    if (stores) lines.push(`stored files: files of ${megabytes(STORE_MIN_BYTES)} or more leave git; their bytes are kept in ${storeDir()}`)
+    else lines.push(`stored files: origin is not a play.onejs.com remote, so files stay whole in git here; a push there refuses a pointer`)
 
     const pointers = pointerFiles(root)
     if (pointers.length > 0) {
@@ -481,7 +538,12 @@ export function setupStore(root) {
         const still = pointerFiles(root)
         lines.push(`stored files: ${pointers.length - still.length} of ${pointers.length} fetched${still.length > 0 ? `; still pointers: ${still.join(", ")}` : ""}`)
     }
-    const raw = rawStoredFiles(root)
+    const committed = stores ? [] : pointersAtTips(root, [{ localSha: "HEAD" }])
+    if (committed.length > 0) {
+        const names = [...new Set(committed.map((f) => f.name))].sort()
+        lines.push(`stored files: ${names.join(", ")} ${names.length === 1 ? "is" : "are"} committed as a pointer, which a push to origin refuses; commit ${names.length === 1 ? "it" : "them"} whole: ${UNSTORE_STEP}`)
+    }
+    const raw = stores ? rawStoredFiles(root) : []
     if (raw.length > 0) {
         lines.push(`stored files: ${raw.join(", ")} ${raw.length === 1 ? "is" : "are"} still in git; the next commit of ${raw.length === 1 ? "it" : "them"} stores ${raw.length === 1 ? "it" : "them"} outside`)
     }
