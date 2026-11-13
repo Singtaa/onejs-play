@@ -7,6 +7,13 @@ of a Metal readback: RGBA, premultiplied, gamma encoded, row 0 at the top,
 `width * height * 4`. `cart/cases.ts` builds the input and the call each one
 was recorded from, ported from that commit's `js/tests/kernel-parity.test.tsx`.
 
+`goldens/noise/` is from magerie-one main at `1484d0843` (#1251), where
+Noise's lattice hash became pcg3d and all twelve baselines were recorded
+again; tex draws each byte for byte. The exported PNGs under
+`goldens/buildings`, `goldens/leaves` and `goldens/atlas` are older than
+that hash, so `--set` fails every one of them (all 22 of buildings on
+12 Nov 2026) until Magerie exports those boards again.
+
 To refresh them, copy the same folders from a newer magerie-one, change the
 commit above, and run `node run.mjs`: a golden that moved is a Magerie change
 to look at, not a number to accept.

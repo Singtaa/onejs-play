@@ -30,7 +30,7 @@ const min = (a: S, b: S): S => val(a).min(b)
  * in any change that moves a kernel's pixels, the change a golden in
  * tex-parity would show, so a newer runtime never reads an older one's drawing.
  */
-export const TEX_KERNELS = 1
+export const TEX_KERNELS = 2
 
 // storage
 
@@ -51,10 +51,19 @@ function luma601(c: Vec3): Float {
 
 // noise (spec 3, "Noise"; MetalRenderer.mm:1109-1404)
 
+/**
+ * Magerie's lattice hash, pcg3d (Jarzynski and Olano, JCGT 2020) on the cell
+ * and the seed as uint32, the top 24 bits as [0, 1). A negative cell goes
+ * through an int, so it wraps as two's complement. The second round keeps
+ * only the x Magerie reads.
+ */
 function hash(p: Vec2, seed: Float): Float {
-    let p3: S = sl.vec3(p.x, p.y, seed).mul(sl.vec3(443.897, 441.423, 437.195)).fract()
-    p3 = p3.add(p3.dot(p3.swz("yzx").add(19.19)))
-    return p3.x.add(p3.y).mul(p3.z).fract()
+    const lcg = (c: S): S => sl.uint(sl.int(c)).mul(1664525).add(1013904223)
+    let x: S = lcg(p.x), y: S = lcg(p.y), z: S = lcg(seed)
+    x = x.add(y.mul(z)); y = y.add(z.mul(x)); z = z.add(x.mul(y))
+    x = x.bxor(x.shr(16)); y = y.bxor(y.shr(16)); z = z.bxor(z.shr(16))
+    x = x.add(y.mul(z))
+    return sl.float(x.shr(8)).div(16777216)
 }
 
 /** Integer modulo with negatives folded up, as wrapCell: a float division under fast maths gives 6 / 6 as 0.99999994. */
