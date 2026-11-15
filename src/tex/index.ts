@@ -15,7 +15,6 @@
 import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
 import { draw, plan } from "./engine"
-import { uploadRGBA, uploadRGBAFloat } from "./upload"
 import { TexCache, cacheKey, hostBackend } from "./cache"
 import { DEFAULT_CANVAS, KERNELS, SPECS, makeMaterial, resolve, type Canvas, type Material, type Spec, type SpecName } from "./nodes"
 import type { AutoLevelsMode, BlendMode, CurvatureMode, CurvesChannel, Fractal, InvertChannels, NoiseType, SlopeBlurMode, VoronoiMode } from "./kernels"
@@ -489,9 +488,17 @@ export interface TextureOptions {
     cache?: boolean
 }
 
-interface Baked { texture: unknown, ready: Promise<Texture> }
+interface Baked {
+    texture: unknown
+    ready: Promise<Texture>
+    /** Settles once nothing of the bake still touches the texture: drawn, stored in the cache, or failed. */
+    done: Promise<void>
+    forgotten: boolean
+}
 
+/** What `.texture()` baked, by graph, and the graph each texture was baked for, until `tex.forget`. */
 const baked = new Map<string, Baked>()
+const bakedFor = new Map<unknown, string>()
 
 /** A picture described by nodes. Every method returns a new one; nothing is drawn until `texture()`. */
 // The methods are installed on the prototype from the node table below, and
@@ -519,6 +526,7 @@ export class TexImage {
      * skips that).
      */
     texture(options?: TextureOptions): Texture {
+        // Kept until tex.forget: see there for what still shows it after.
         return bake(this.node, options).texture as Texture
     }
 
@@ -616,10 +624,12 @@ function canvas(width: number, options: CanvasOptions = {}): TexFunctions {
 function pixels(width: number, height: number, rgba: Uint8Array | Float32Array | readonly number[], options: { tile?: boolean } = {}): TexImage {
     if (rgba.length !== width * height * 4) throw new Error(`[oj] tex.pixels: ${width} by ${height} is ${width * height * 4} values, and these are ${rgba.length}`)
     const tile = options.tile === true
+    // A copy, so bytes changed after the call are not the picture's. It is
+    // uploaded for each draw that reads it, never kept as a texture.
     if (rgba instanceof Float32Array) {
-        return new TexImage(makeNode("pixels", "source", [], { float: true }, width, height, tile, uploadRGBAFloat(width, height, rgba, tile)))
+        return new TexImage(makeNode("pixels", "source", [], { float: true }, width, height, tile, undefined, Float32Array.from(rgba)))
     }
-    return new TexImage(makeNode("pixels", "source", [], {}, width, height, tile, uploadRGBA(width, height, rgba, tile)))
+    return new TexImage(makeNode("pixels", "source", [], {}, width, height, tile, undefined, Uint8Array.from(rgba)))
 }
 
 export interface ImageOptions {
@@ -735,25 +745,60 @@ function bake(node: Node, options: TextureOptions = {}): Baked {
     const into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
     const cache = options.cache === false ? null : texCache()
     const key = cache === null ? undefined : cacheKey(node)
-    const ready = (async () => {
+    let stored: Promise<void> = Promise.resolve()
+    const entry = { texture: into, forgotten: false } as Baked
+    entry.ready = (async () => {
         const hit = key === undefined ? undefined : await cache!.get(key)
+        // A texture forgotten while its bake ran is not drawn into; it is released when the bake is done.
+        if (entry.forgotten) return into as Texture
         if (hit === undefined || !uploaded(kept, hit, into)) {
-            await draw(plan(node, KERNELS), (output) => kept.Fill(output, into))
+            await draw(plan(node, KERNELS), (output) => { if (!entry.forgotten) kept.Fill(output, into) })
             // Kept after the picture is handed over: storing it costs the cart nothing it waits for.
-            if (key !== undefined) void keep(key, into)
+            if (key !== undefined && !entry.forgotten) stored = keep(key, into)
         }
         // A mesh handed the texture before it was drawn copied it empty.
-        CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
+        if (!entry.forgotten) CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
         return into as Texture
     })()
-    const entry: Baked = { texture: into, ready }
+    entry.done = entry.ready.then(() => stored, () => {})
     baked.set(node.id, entry)
+    bakedFor.set(into, node.id)
     // A failed bake is said, and forgotten, so asking again tries again.
-    ready.catch((e) => {
-        baked.delete(node.id)
+    entry.ready.catch((e) => {
+        forget(into)
         console.error(e instanceof Error ? e.message : String(e))
     })
     return entry
+}
+
+/**
+ * Lets go of a texture `.texture()` made, so its memory comes back: for a
+ * look a cart composes at run time (an outfit, a painted sign) once it is no
+ * longer worn. The same graph asked again draws a new texture. True when it
+ * was one tex made and still held; false, and nothing done, for any other.
+ *
+ * Whatever wears it through its own copy keeps showing it until it takes it
+ * off: an actor given it as `actor.texture`, and a `scene.mesh` texture or
+ * splat layer, each hold a mipmapped copy that goes with the last of them.
+ * What reads the texture itself (an `<Image>`, particles, `tex.image`) shows
+ * nothing after. A texture forgotten before it was drawn is never drawn, and
+ * is released once its bake is done. Never throws.
+ */
+function forget(texture: Texture): boolean {
+    const id = bakedFor.get(texture)
+    if (id === undefined) return false
+    const entry = baked.get(id)!
+    bakedFor.delete(texture)
+    baked.delete(id)
+    entry.forgotten = true
+    void entry.done.then(() => {
+        try {
+            CS.OneJS.ShaderFX.KeptTexture.Release(texture)
+        } catch (e) {
+            console.warn(`[oj] tex.forget: the texture was not released (${e instanceof Error ? e.message : String(e)})`)
+        }
+    })
+    return true
 }
 
 const defaults = functions(DEFAULT_CANVAS)
@@ -765,6 +810,7 @@ export const tex = {
     canvas,
     pixels,
     image,
+    forget,
     /** The pictures kept across loads (64 MB, least recently used dropped first). */
     cache: {
         /** Drops every kept picture, for a settings screen's "clear cached textures". The next load draws each again. */

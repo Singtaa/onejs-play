@@ -1,6 +1,7 @@
 /**
  * Bytes to a texture: RGBA, row 0 at the top as Magerie stores them, read
- * linearly so a byte samples as itself over 255 and not sRGB decoded.
+ * linearly so a byte samples as itself over 255 and not sRGB decoded. Each
+ * keeps no CPU copy once uploaded: nothing reads one back.
  */
 declare const CS: any
 
@@ -16,7 +17,7 @@ export function uploadRGBA(width: number, height: number, rgba: ArrayLike<number
         for (let i = 0; i < row; i++) flipped[(height - 1 - y) * row + i] = rgba[y * row + i]!
     }
     texture.LoadRawTextureData(flipped)
-    texture.Apply(false, false)
+    texture.Apply(false, true)
     return texture
 }
 
@@ -33,7 +34,7 @@ export function uploadRGBAFloat(width: number, height: number, rgba: Float32Arra
     const row = width * 4
     for (let y = 0; y < height; y++) flipped.set(rgba.subarray(y * row, (y + 1) * row), (height - 1 - y) * row)
     texture.LoadRawTextureData(new Uint8Array(flipped.buffer))
-    texture.Apply(false, false)
+    texture.Apply(false, true)
     return texture
 }
 

@@ -34,8 +34,14 @@ export interface Node {
     readonly tiles: boolean
     /** The node's identity: op, parameters and inputs. Equal ids draw equal pixels. */
     readonly id: string
-    /** A `tex.pixels` or `tex.image` source's texture. A table has none: it is uploaded from `params.rgba` when drawn. */
+    /** A `tex.image` source's texture. A table has none: it is uploaded from `params.rgba` when drawn. */
     readonly texture?: unknown
+    /**
+     * A `tex.pixels` source's own copy of its bytes, uploaded for each draw that
+     * reads it and freed with that draw's passes, so a picture made from bytes
+     * holds no texture of its own once its look is baked.
+     */
+    readonly bytes?: Uint8Array | Float32Array
 }
 
 /**
@@ -73,18 +79,21 @@ function sourceKey(texture: unknown): string {
 
 export function makeNode(
     op: string, kind: NodeKind, inputs: readonly Node[], params: Record<string, unknown>,
-    width: number, height: number, tiles: boolean, texture?: unknown,
+    width: number, height: number, tiles: boolean, texture?: unknown, bytes?: Uint8Array | Float32Array,
 ): Node {
     // Float wins: a node reading a 32-bit picture is 32-bit.
     if (params.float !== true && inputs.some(isFloat)) params = { ...params, float: true }
-    // A source's identity is the texture it holds, which has no stable text:
-    // each texture is its own node, the same one each time it is handed in.
-    const key = texture !== undefined
-        ? `${sourceKey(texture)}|${op}|${tiles ? 1 : 0}`
+    // A source's identity is the texture or bytes it holds, which have no stable
+    // text: each is its own node, the same one each time it is handed in.
+    const held = texture ?? bytes
+    const key = held !== undefined
+        ? `${sourceKey(held)}|${op}|${tiles ? 1 : 0}`
         : `${op}|${width}x${height}|${tiles ? 1 : 0}|${JSON.stringify(params)}|${inputs.map((n) => n.id).join(",")}`
     // Two hashes of the key, 64 bits: the planner treats equal ids as one node.
     const id = hash32(key) + hash32(key, 0x01000193)
-    return { op, kind, inputs, params, width, height, tiles, id, texture }
+    return bytes === undefined
+        ? { op, kind, inputs, params, width, height, tiles, id, texture }
+        : { op, kind, inputs, params, width, height, tiles, id, texture, bytes }
 }
 
 /** Every node a graph reaches, inputs before readers, each once. */
