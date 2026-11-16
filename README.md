@@ -476,6 +476,16 @@ Three things that are not obvious from the code:
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older
   host never sees the roll, and `SetCameraRolled` with it otherwise.
+- **Shine is two scene globals and a strength.** `scene.shine` is
+  `SetShinePictures(add, multiply)`, null for a picture not given, sent at
+  the scene's start only when given and again on each set; the bridge keeps
+  linear copies of their bytes. `loadModel`'s `shine` is `SetModelShine(id,
+  mode, strength)` after the load and part of the load's key, so the same
+  file at another strength is another model; `scene.mesh`'s is
+  `SetMeshShine(id, mode, strength)` among the looks, refused on a splat.
+  `actor.shine` is `SetActorShine(id, strength)`, which the bridge keeps in
+  the alpha of the actor's tint, so a shining actor still batches. Each is
+  refused before anything is made on a host without the call.
 - **A texture's `frames` are a flipbook.** `SetMeshFlipbook(id, count,
   seconds, tileU, tileV)` then `SetMeshFlipbookFrame(id, i, picture)` for
   each, before the vertices; the bridge swaps the frames on the scene's clock
