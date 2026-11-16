@@ -35,6 +35,11 @@ interface Setup {
     hats?: boolean
     /** Each wears one of this many pictures of its own (`texture`), in turn. Left out, its model's. */
     pictures?: number
+    /**
+     * Whether skins are skinned on the graphics card (OneJS ModelBridge.GpuSkinning), set before
+     * they spawn. Left out, as the runtime has it; a runtime without the switch ignores it.
+     */
+    gpu?: boolean
 }
 
 // Sixteen colours, taken four apart for a person's four, so neighbours differ in every part.
@@ -87,6 +92,8 @@ function Crowd() {
                 s.actors = []
                 s.setup = setup
                 scene.sun({ shadows: setup.shadows })
+                const bridge = CS.OneJS.Models.ModelBridge
+                if (setup.gpu !== undefined && typeof bridge.GpuSkinning === "boolean") bridge.GpuSkinning = setup.gpu
                 for (let i = 0; i < setup.count; i++) {
                     const actor = setup.parts !== undefined
                         ? scene.spawn(parted, { position: home(i, setup), yaw: 180, hide: parted.parts.slice(1, 1 + setup.parts) })
