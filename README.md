@@ -1115,6 +1115,19 @@ runtime 1.10, so the sweep waits for that line; `soft-glow.test.ts` feeds the
 check a pass, a softened glow still cut off at the floor, a soften that fades
 the whole glow, no glow, no cut to see, and an unlit floor.
 
+**A shine follows which way a surface faces.** `cli/fixtures/shine` lights two
+grey squares with a white ambient alone, both given an `"add"` shine: the left
+faces the camera, the right faces up and toward it, and the scene's picture
+(`top.png`) is bright only in its top 40%, where a surface facing up as the
+camera sees it reads. With the picture the right square must gain 40 levels
+and the left move at most 6; at `actor.shine` 0 the right must be back within
+6 of its plain reading. On a local 9.9.234 (the shine branch) the right square
+reads 131, 255 and 131 and the left 131 throughout, on WebGPU and WebGL 2
+alike; 9.9.233, without shine, fails. It prints `BACKEND`. It names runtime
+1.11, so the sweep waits for that line; `shine.test.ts` feeds the check a
+pass, no shine, a shine that ignores the facing, a share of 0 that still
+shines, and squares that are not lit.
+
 **A mirror shows the sky, and only when asked.** `cli/fixtures/sky-reflect`
 draws a chrome ball side on under a blue sky with an orange horizon. Not
 asked, it prints the screenshot's SHA-256 as `UNASKED`, so two runtimes can
