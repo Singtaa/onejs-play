@@ -43,7 +43,8 @@ export default async function (game) {
             const points = []
             for (const count of COUNTS) {
                 await set({ count, seen: count, clips, move: false, shadows: false, gpu: on })
-                const skins = await game.eval("String(CS.OneJS.Models.ModelBridge.GpuSkinCount)")
+                // A host without the counter answers with the member's type wrapper, not a number.
+                const skins = await game.eval("(n => typeof n === 'number' ? String(n) : 'none, this runtime has no counter')(CS.OneJS.Models.ModelBridge.GpuSkinCount)")
                 const f = await read(game, `${count} ${clips}`)
                 const us = (f.main - empty) * 1000 / count
                 points.push([count, f.main])
