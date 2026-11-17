@@ -1481,6 +1481,27 @@ function loadKey(name: string, o: { colorMask?: string, clips?: Model, shine?: S
     return `${assetUrl(name)}${mask}${clips}${shine}`
 }
 
+/**
+ * How many milliseconds of each frame loading models may take, shared by every
+ * load in flight, for a loading screen that keeps its frame rate while the
+ * models arrive. `0`, the default, keeps the engine's own pace, up to about 17
+ * ms a frame on top of the frame's own work. It changes loads already under
+ * way, so a game can load behind its loading screen at 4 ms and set it back to
+ * 0 after; a lower budget makes the loads take more frames. Each frame takes at
+ * least one step of a load, so a step longer than the budget still runs. A new
+ * scene starts at 0.
+ *
+ *     setLoadBudget(4)
+ *     await Promise.all([loadModel("villager.glb"), loadModel("cart.glb")])
+ *     setLoadBudget(0)
+ */
+export function setLoadBudget(ms: number): void {
+    if (!(ms >= 0) || ms === Infinity) throw new Error(`[oj] setLoadBudget(${ms}): a budget is 0 or more milliseconds`)
+    const b = bridge()
+    if (typeof b.LoadBudget !== "number") throw new Error("[oj] setLoadBudget needs a newer OneJS: this host's ModelBridge has no load budget.")
+    b.LoadBudget = ms
+}
+
 /** Models loaded with a colour mask, which `colors` needs. */
 const masked = new WeakSet<Model>()
 
