@@ -324,7 +324,7 @@ async function fontFrom(url: string, name: string): Promise<Font> {
     try {
         loading = globalThis.CS.OneJS.Network.LoadFontFromUrl(url)
     } catch (e) {
-        if (csMissing(e, "OneJS.Network")) throw new Error(`[oj] could not load ${name}: loading a font needs a OneJS newer than 3.9.18`, { cause: e })
+        if (csMissing(e, "OneJS.Network")) throw Object.assign(new Error(`[oj] could not load ${name}: loading a font needs a OneJS newer than 3.9.18`), { cause: e })
         throw e
     }
     const font = await loading

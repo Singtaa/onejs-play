@@ -738,7 +738,7 @@ function bake(node: Node, options: TextureOptions = {}): Baked {
         into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
     } catch (e) {
         // A host without KeptTexture reads it as a path proxy, so only the call tells (cs-host.ts).
-        if (csMissing(e, "OneJS.ShaderFX.KeptTexture")) throw new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7).", { cause: e })
+        if (csMissing(e, "OneJS.ShaderFX.KeptTexture")) throw Object.assign(new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7)."), { cause: e })
         throw e
     }
     const cache = options.cache === false ? null : texCache()
