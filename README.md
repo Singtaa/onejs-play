@@ -1128,6 +1128,16 @@ alike; 9.9.233, without shine, fails. It prints `BACKEND`. It names runtime
 pass, no shine, a shine that ignores the facing, a share of 0 that still
 shines, and squares that are not lit.
 
+**A load budget reaches the engine.** `cli/fixtures/load-budget` calls
+`setLoadBudget(4)`, loads two models under it and sets it back to 0, reading
+OneJS's `ModelBridge.LoadBudget` by its C# name at each step: 4 while they
+load, `setLoadBudget(-1)` refused, both models loaded, 0 after. On a local
+9.9.240 (the 1.11.0 candidate) it passes; 1.10.1, whose `oj` has no
+`setLoadBudget`, fails at the first call. It names runtime 1.11, so the sweep
+waits for that line; `load-budget.test.ts` feeds the check a pass, a runtime
+without the call, a budget the engine never saw, a negative budget taken,
+models that did not load, and a budget left on.
+
 **A mirror shows the sky, and only when asked.** `cli/fixtures/sky-reflect`
 draws a chrome ball side on under a blue sky with an orange horizon. Not
 asked, it prints the screenshot's SHA-256 as `UNASKED`, so two runtimes can
