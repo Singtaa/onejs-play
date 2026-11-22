@@ -54,7 +54,9 @@ describe("a playtest's window", () => {
     const dirs: string[] = []
     afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }) })
     const script = (source: string) => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-playtest-window-"))
+        // The long form of the temp path, as in bake.test.ts: Windows hands out an 8.3
+        // one (RUNNER~1), whose ~ reaches the script's file URL as %7E, which vitest cannot load.
+        const dir = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "oj-playtest-window-"))
         dirs.push(dir)
         fs.writeFileSync(path.join(dir, "t.playtest.mjs"), source)
         return { dir, file: "t.playtest.mjs" }
