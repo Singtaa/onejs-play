@@ -9,8 +9,9 @@ const made: string[] = []
 afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }) })
 const temp = (prefix: string) => { const dir = makeTemp(prefix); made.push(dir); return dir }
 
-/** The 8.3 form Windows gives `p`, as cmd's %~s prints it. */
-const shortForm = (p: string) => execFileSync("cmd", ["/d", "/c", `for %I in ("${p}") do @echo %~sI`], { encoding: "utf8" }).trim()
+/** The 8.3 form Windows gives the folder `p`, as its FileSystemObject reports it. */
+const shortForm = (p: string) => execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command",
+    `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${p.replace(/'/g, "''")}').ShortPath`], { encoding: "utf8" }).trim()
 
 describe("a temp path", () => {
     it.runIf(process.platform === "win32")("given in its 8.3 form, is the long one", () => {
