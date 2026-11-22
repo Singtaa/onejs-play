@@ -247,7 +247,8 @@ function startSummary(): string {
  */
 function overCore(): string {
     const heavy = starts.filter((s) => s.gpu !== null && s.gpu > 1).sort((a, b) => b.gpu! - a.gpu!)
-    const beside = (s: Start) => starts.filter((o) => o !== s && o.beganS < s.beganS + s.runS && s.beganS < o.beganS + o.runS).map((o) => o.name.replace(/^.*[\\/]/, ""))
+    // A run that starts as the last one ends is not beside it: the 1 ms is the rounding of two sums of seconds.
+    const beside = (s: Start) => starts.filter((o) => o !== s && o.beganS < s.beganS + s.runS - 0.001 && s.beganS < o.beganS + o.runS - 0.001).map((o) => o.name.replace(/^.*[\\/]/, ""))
     const uncosted = starts.filter((s) => s.gpu === null).length
     return `[sweep] GPU over one core: ${heavy.length === 0 ? "none" : heavy.map((s) => `${s.name.replace(/^.*[\\/]/, "")} ${s.gpu!.toFixed(2)} (beside ${beside(s).join(", ") || "nothing"})`).join("; ")}; ${uncosted} runs without a cost line`
 }

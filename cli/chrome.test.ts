@@ -3,7 +3,8 @@ import fs from "node:fs"
 import http from "node:http"
 import net from "node:net"
 import path from "node:path"
-import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuCost, cpuUsed } from "./chrome.mjs"
+import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuCost, cpuUsed, lowerDrawing } from "./chrome.mjs"
+import os from "node:os"
 import { makeTemp, tempRoot } from "./temp.mjs"
 
 /** A Browser on a socket that keeps what was sent and answers only when told. */
@@ -127,6 +128,18 @@ describe("Chrome's own log", () => {
         expect(cpuUsed(before, after, 2.04)).toBe("(5 of them) over 2.0 s, CPU used: GPU 1.90 s (11.9 s since it started), utility 0.50 s (0.5 s since it started), renderer 0.25 s (5.3 s since it started), browser 0.10 s (3.1 s since it started)")
         // An idle GPU process reads as idle, which is the answer that tells a wait from slow drawing.
         expect(cpuUsed(before, before, 2)).toContain("GPU 0.00 s")
+    })
+
+    // CI 45008885747, 22 Nov: GPU processes on 3.3 to 3.7 of 4 cores fired
+    // the sweep's timers up to 12.4 s late on windows-latest and 0.0 s late on
+    // ubuntu-latest; Chrome raises its GPU threads on Windows only.
+    it("puts every GPU process below normal priority, and says what it could not", () => {
+        const set: [number, number][] = []
+        const list = [{ id: 1, type: "browser" }, { id: 2, type: "GPU" }, { id: 3, type: "renderer" }]
+        expect(lowerDrawing(list, (pid: number, p: number) => { set.push([pid, p]) })).toBe("drawing below normal priority")
+        expect(set).toEqual([[2, os.constants.priority.PRIORITY_BELOW_NORMAL]])
+        expect(lowerDrawing([{ id: 1, type: "browser" }], () => {})).toBe("drawing at its own priority (no GPU process listed)")
+        expect(lowerDrawing(list, () => { throw Object.assign(new Error("denied"), { code: "EPERM" }) })).toBe("drawing at its own priority (2 GPU: EPERM)")
     })
 
     // Tachi 1cf6bc60: whether software drawing starves a 4-core runner is read

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import os from "node:os"
 import { findChrome, launch } from "./chrome.mjs"
 import { makeTemp } from "./temp.mjs"
 
@@ -20,6 +21,24 @@ import { makeTemp } from "./temp.mjs"
  * Needs Chrome, as `ojplay run` does. The wrapper is a shell script, so not
  * on Windows.
  */
+
+// On every platform, Windows above all: there Chrome raises its GPU threads,
+// and software drawing at that priority starved the runner (lowerDrawing).
+describe("a headless start that draws in software", () => {
+    it("puts its GPU process below normal priority", async () => {
+        const said: string[] = []
+        const browser = await launch({ headless: true, say: (line: string) => said.push(line) })
+        try {
+            expect(said).toContain("drawing below normal priority")
+            const known = await browser.processes()
+            const gpu = (known.list ?? []).filter((p: { type: string }) => p.type === "GPU")
+            expect(gpu.length, `Chrome listed no GPU process: ${JSON.stringify(known)}`).toBeGreaterThan(0)
+            for (const p of gpu) expect(os.getPriority(p.id)).toBe(os.constants.priority.PRIORITY_BELOW_NORMAL)
+        } finally {
+            await browser.close()
+        }
+    }, 120_000)
+})
 
 const PLANTED = ["", "5"]
 

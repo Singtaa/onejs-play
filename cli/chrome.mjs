@@ -280,6 +280,13 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
         }
         const ready = await browser.waitForRenderer(deadline)
         say(`renderer after ${seconds(ready - began)}`)
+        // Software drawing takes every core it is given, so it is given only
+        // what nothing else wants: on windows-latest it fired timers 12.4 s
+        // late while ubuntu-latest, as loaded, fired them on time.
+        if (headless && !gpu) {
+            const known = await browser.processes()
+            say(known.failed ? `drawing at its own priority (${known.failed})` : lowerDrawing(known.list))
+        }
     } catch (e) {
         await browser.close()
         throw e
@@ -698,6 +705,28 @@ const NAMED = {
  * code Chrome wants beside it, plus the text the key types when it types
  * any: Enter types a carriage return, the way a real keyboard's does.
  */
+/**
+ * Puts each GPU process in `list` (Chrome's own, Browser.processes) below
+ * normal priority, and says so, or says what it could not lower. Headless
+ * without --gpu that process is SwiftShader, which draws as fast as the cores
+ * let it: 1.2 to 3.7 of windows-latest's 4 in every run of the 22 Nov sweep
+ * (CI 45008885747). Chrome raises its GPU threads above normal on Windows,
+ * so there the drawing outran Node, the page's own renderer and taskkill,
+ * and the sweep's timers fired up to 12.4 s late, where ubuntu-latest's,
+ * under the same load, fired on time. Below normal, it draws with what is
+ * left once they have had theirs; nothing a playtest reads is slower for it
+ * but the frame rate, which a playtest does not check.
+ */
+export function lowerDrawing(list, setPriority = os.setPriority) {
+    const gpu = list.filter((p) => p.type === "GPU")
+    if (gpu.length === 0) return "drawing at its own priority (no GPU process listed)"
+    const refused = []
+    for (const p of gpu) {
+        try { setPriority(p.id, os.constants.priority.PRIORITY_BELOW_NORMAL) } catch (e) { refused.push(`${p.id} GPU: ${e.code ?? e.message}`) }
+    }
+    return refused.length === 0 ? "drawing below normal priority" : `drawing at its own priority (${refused.join(", ")})`
+}
+
 /**
  * What each kind of Chrome process has used since it started, in CPU seconds
  * and in cores over the browser's `seconds`, busiest first, as one line: a

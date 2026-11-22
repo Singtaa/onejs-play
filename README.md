@@ -1003,7 +1003,10 @@ Every run then says what drawing cost, from Chrome's own list: `chrome's CPU
 over its 9.8 s at 12.4 frames a second: GPU 11.2 s (1.14 cores), ...`. In
 software drawing (headless without `--gpu`) the GPU process's CPU follows the
 frames it draws, about 0.2 cores per frame a second on a Mac's SwiftShader,
-and it draws as fast as it can. The e2e sweep prints the line for every run,
+and it draws as fast as it can, so `oj test` puts it below normal priority
+(`drawing below normal priority` after the renderer line): Chrome raises its
+GPU threads on Windows, and there the drawing held windows-latest's timers up
+to 12.4 s late. The e2e sweep prints the line for every run,
 with how late its own timers fired meanwhile, and lists the runs whose GPU
 process used over one core.
 
