@@ -692,7 +692,7 @@ let store: TexCache | null | undefined
 function texCache(): TexCache | null {
     if (store === undefined) {
         // Upload came with OneJS 3.9.19. An empty one is false on a host that has it and throws on one that does not.
-        const upload = csHas("OneJS.ShaderFX.KeptTexture", () => CS.OneJS.ShaderFX.KeptTexture.Upload("", null))
+        const upload = csHas("OneJS.ShaderFX.KeptTexture", () => CS.OneJS.ShaderFX.KeptTexture.Upload("", null), "Upload")
         const backend = upload ? hostBackend() : undefined
         store = backend === undefined ? null : new TexCache(backend)
     }
@@ -738,7 +738,7 @@ function bake(node: Node, options: TextureOptions = {}): Baked {
         into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
     } catch (e) {
         // A host without KeptTexture reads it as a path proxy, so only the call tells (cs-host.ts).
-        if (csMissing(e, "OneJS.ShaderFX.KeptTexture")) throw Object.assign(new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7)."), { cause: e })
+        if (csMissing(e, "OneJS.ShaderFX.KeptTexture", "Create")) throw Object.assign(new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7)."), { cause: e })
         throw e
     }
     const cache = options.cache === false ? null : texCache()
@@ -755,7 +755,7 @@ function bake(node: Node, options: TextureOptions = {}): Baked {
         try {
             CS.OneJS.Models.ModelBridge.RefreshGroundCopy(into)
         } catch (e) {
-            if (!csMissing(e, "OneJS.Models.ModelBridge")) throw e
+            if (!csMissing(e, "OneJS.Models.ModelBridge", "RefreshGroundCopy")) throw e
         }
         return into as Texture
     })()
