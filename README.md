@@ -999,6 +999,13 @@ kill starts no process of its own (taskkill and PowerShell ran 30 s late on a
 windows-latest runner held by a stalled run, 22 Nov); a hung close names
 that list, what outlived the kill, and the machine's free memory. A process
 list or count that ran out of time says so rather than reading as none.
+Every run then says what drawing cost, from Chrome's own list: `chrome's CPU
+over its 9.8 s at 12.4 frames a second: GPU 11.2 s (1.14 cores), ...`. In
+software drawing (headless without `--gpu`) the GPU process's CPU follows the
+frames it draws, about 0.2 cores per frame a second on a Mac's SwiftShader,
+and it draws as fast as it can. The e2e sweep prints the line for every run,
+with how late its own timers fired meanwhile, and lists the runs whose GPU
+process used over one core.
 
 **`ojplay test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `find(text)` (where

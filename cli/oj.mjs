@@ -146,6 +146,8 @@ async function closeRun(game, { record }) {
     const closing = new Closing()
     if (record) await closing.stepAsync("record", () => keepRecorded(game))
     await stop(game, closing)
+    // What drawing cost, for every run: whether software drawing starves the machine is read from it (Tachi 1cf6bc60).
+    if (game.browser.cost !== null) say(game.browser.cost)
     const line = closing.line()
     if (line !== null) say(line)
 }

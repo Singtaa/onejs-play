@@ -398,6 +398,10 @@ export class Browser {
         this.child = child
         this.profile = profile
         this.page = page
+        /** When this browser was attached to: what a run's CPU is divided by (cpuCost). */
+        this.began = Date.now()
+        /** What Chrome's processes used over its life, said at close (cpuCost), or null when it could not be asked. */
+        this.cost = null
         this.id = 0
         this.pending = new Map()
         /** Every console line, as `{ level, text }`, in order. */
@@ -566,7 +570,7 @@ export class Browser {
         const browser = await this.browserSocket(waitMs)
         if (browser.failed) return { failed: browser.failed }
         try {
-            return { list: (await browser.processes()).map((p) => ({ id: p.id, type: p.type })) }
+            return { list: (await browser.processes()).map((p) => ({ id: p.id, type: p.type, cpuTime: p.cpuTime })) }
         } catch (e) {
             return { failed: `the browser's SystemInfo.getProcessInfo ${e.message}` }
         } finally {
@@ -640,8 +644,30 @@ export class Browser {
         await this.send("Input.dispatchKeyEvent", keyEvent(type, code))
     }
 
+    /**
+     * Counts the page's frames from its start, for the cost line said at
+     * close: in software drawing the GPU process's CPU follows the frames
+     * drawn (on 22 Nov on this Mac's SwiftShader, about 10 cores at 40 frames
+     * a second and 1 at 5.5). Asked before the page is navigated.
+     */
+    async countFrames() {
+        await this.send("Page.addScriptToEvaluateOnNewDocument", { source: "globalThis.__ojFrames = { n: 0, since: performance.now() }; (function frame() { __ojFrames.n++; requestAnimationFrame(frame) })()" })
+    }
+
+    /** How fast the page has drawn since it started, as a phrase, or why it is not known; asked for 3 s at most, so a stalled page does not hold the close. */
+    async frames() {
+        try {
+            const r = await this.send("Runtime.evaluate", { expression: "globalThis.__ojFrames ? __ojFrames.n / ((performance.now() - __ojFrames.since) / 1000) : null", returnByValue: true }, undefined, 3000)
+            const rate = r.result?.value
+            return typeof rate === "number" ? `${rate.toFixed(1)} frames a second` : "uncounted frames (the page has no counter)"
+        } catch (e) {
+            return `uncounted frames (${e.message})`
+        }
+    }
+
     /** Closes Chrome, its steps recorded in `closing` (closing.mjs). */
     async close(closing = new Closing()) {
+        const frames = this.ws ? await this.frames() : null
         try { this.ws?.close() } catch { /* going anyway */ }
         // Chrome's own list, while it can still answer: what the kill ends and watches.
         let known = null
@@ -650,6 +676,7 @@ export class Browser {
             known = await this.processes()
             return known.failed ?? `${known.list.length} processes`
         })
+        if (known.list) this.cost = cpuCost(known.list, (Date.now() - this.began) / 1000, frames)
         await discard(this.child, this.profile, closing, { known })
         if (this.log && !this.keepLog) {
             for (const file of [this.log.file, this.log.netlog]) {
@@ -671,6 +698,19 @@ const NAMED = {
  * code Chrome wants beside it, plus the text the key types when it types
  * any: Enter types a carriage return, the way a real keyboard's does.
  */
+/**
+ * What each kind of Chrome process has used since it started, in CPU seconds
+ * and in cores over the browser's `seconds`, busiest first, as one line: a
+ * process that has ended is not in Chrome's list and is not counted.
+ * `frames` says how fast the page drew (Browser.frames), beside it.
+ */
+export function cpuCost(list, seconds, frames = null) {
+    const used = new Map()
+    for (const p of list) used.set(p.type, (used.get(p.type) ?? 0) + p.cpuTime)
+    const kinds = [...used].sort((a, b) => b[1] - a[1])
+    return `chrome's CPU over its ${seconds.toFixed(1)} s${frames ? ` at ${frames}` : ""}: ${kinds.map(([type, s]) => `${type} ${s.toFixed(1)} s (${(s / seconds).toFixed(2)} cores)`).join(", ")}`
+}
+
 /**
  * The CPU each kind of Chrome process used between two SystemInfo.getProcessInfo
  * samples `seconds` apart, busiest first, as one line. A process only in the

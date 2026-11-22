@@ -10,7 +10,7 @@ import { makeTemp } from "./temp.mjs"
  */
 const fake = vi.hoisted(() => ({
     server: { url: "http://127.0.0.1:1/", close: vi.fn(), pageAskedAt: () => null },
-    browser: { navigate: vi.fn(), close: vi.fn(), listeners: new Set() },
+    browser: { countFrames: vi.fn(), navigate: vi.fn(), close: vi.fn(), listeners: new Set() },
 }))
 
 vi.mock("./local.mjs", async (original) => ({

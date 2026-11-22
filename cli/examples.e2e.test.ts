@@ -10,6 +10,7 @@ import { siteOrigin, version } from "./site.mjs"
 import { makeTemp } from "./temp.mjs"
 import { closingHung } from "./closing.mjs"
 import { stamper } from "./__tests__/stamp"
+import { gpuCores } from "./__tests__/cost"
 
 /**
  * `oj test` over every example, and over the CLI's own fixtures, in the real
@@ -174,20 +175,43 @@ function manifestOf(dir: string): Record<string, unknown> {
  * example written for the next line uses API the live runtime does not have,
  * so it waits for that line, and runs by itself once the line is live.
  */
-async function sweepOne(dir: string): Promise<{ waits: string } | { waits: null, code: number | null, output: string, runS: number }> {
+async function sweepOne(dir: string): Promise<{ waits: string } | { waits: null, code: number | null, output: string, runS: number, beganS: number, lateS: number }> {
     const waits = waitsFor(manifestOf(dir), runtime)
     if (waits !== null) return { waits }
     return slot(async () => {
         const began = Date.now()
-        return { waits: null, ...(await ojTest(dir, runtime)), runS: (Date.now() - began) / 1000 }
+        const result = await ojTest(dir, runtime)
+        const ended = Date.now()
+        return { waits: null, ...result, runS: (ended - began) / 1000, beganS: (began - SWEEP_BEGAN) / 1000, lateS: latestTimer(began, ended) }
     })
+}
+
+/**
+ * How late this process's timers fire, from a ticker every 250 ms for the
+ * whole sweep: a run's latest is the worst tick inside its window. On 22 Nov
+ * a stalled run's machine fired a 20 s timer at 50.8 s (CI 45004068212), and
+ * nothing said whether the runs beside it saw the same (Tachi 1cf6bc60).
+ */
+const TICK_MS = 250
+const ticks: { at: number, late: number }[] = []
+let nextTick = Date.now() + TICK_MS
+setInterval(() => {
+    const now = Date.now()
+    ticks.push({ at: now, late: now - nextTick })
+    nextTick = now + TICK_MS
+}, TICK_MS).unref()
+const SWEEP_BEGAN = Date.now()
+
+/** The latest a tick fired between `from` and `to`, in seconds. */
+function latestTimer(from: number, to: number): number {
+    return ticks.filter((t) => t.at >= from && t.at <= to).reduce((worst, t) => Math.max(worst, t.late), 0) / 1000
 }
 
 /** The carts that waited for a newer runtime line than the live one, and which. */
 const waited: string[] = []
 
 /** One run's browser start, as `oj test` printed it, and the run's own length. */
-type Start = { name: string, portS: number | null, pageS: number | null, rendererS: number | null, runS: number }
+type Start = { name: string, portS: number | null, pageS: number | null, rendererS: number | null, runS: number, beganS: number, gpu: number | null }
 const starts: Start[] = []
 
 /**
@@ -211,8 +235,21 @@ function startSummary(): string {
         `[sweep] renderer answering after: median ${renderers[Math.floor(renderers.length / 2)]?.rendererS?.toFixed(1)} s, worst ${slowRenderer?.rendererS?.toFixed(1)} s (${slowRenderer?.name})`,
         `[sweep] run length: median ${runs[Math.floor(runs.length / 2)]?.toFixed(1)} s, worst ${slowest?.runS.toFixed(1)} s (${slowest?.name}); limit ${RUN_MS / 1000} s`,
         // Every run's length, longest first: whether a run that failed on time is the long end of what it takes when it passes, or one that is short when it passes. The rows above it in the report time the queue, not the run.
+        overCore(),
         `[sweep] each run, s: ${[...starts].sort((a, b) => b.runS - a.runS).map((s) => `${s.name.replace(/^.*[\\/]/, "")} ${s.runS.toFixed(0)}`).join(", ")}`,
     ].join("\n")
+}
+
+/**
+ * The runs whose GPU process used over one core, costliest first, each with
+ * the runs alive beside it: what says whether software drawing on a runner
+ * this size wants the sweep narrower (Tachi 1cf6bc60).
+ */
+function overCore(): string {
+    const heavy = starts.filter((s) => s.gpu !== null && s.gpu > 1).sort((a, b) => b.gpu! - a.gpu!)
+    const beside = (s: Start) => starts.filter((o) => o !== s && o.beganS < s.beganS + s.runS && s.beganS < o.beganS + o.runS).map((o) => o.name.replace(/^.*[\\/]/, ""))
+    const uncosted = starts.filter((s) => s.gpu === null).length
+    return `[sweep] GPU over one core: ${heavy.length === 0 ? "none" : heavy.map((s) => `${s.name.replace(/^.*[\\/]/, "")} ${s.gpu!.toFixed(2)} (beside ${beside(s).join(", ") || "nothing"})`).join("; ")}; ${uncosted} runs without a cost line`
 }
 
 describe("oj test over every example", () => {
@@ -238,11 +275,14 @@ describe("oj test over every example", () => {
                 ctx.skip()
                 return
             }
-            const { code, output, runS } = result
+            const { code, output, runS, beganS, lateS } = result
             const port = /port after ([\d.]+) s/.exec(output)
             const page = /page after ([\d.]+) s/.exec(output)
             const renderer = /renderer after ([\d.]+) s/.exec(output)
-            starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, rendererS: renderer ? Number(renderer[1]) : null, runS })
+            starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, rendererS: renderer ? Number(renderer[1]) : null, runS, beganS, gpu: gpuCores(output) })
+            // Every run, passed or not: when it ran, what its drawing cost and how late this process's timers fired meanwhile.
+            const cost = output.split("\n").find((line) => line.includes("[ojplay] chrome's CPU over its"))
+            console.log(`[sweep] ${name}: from ${beganS.toFixed(0)} s for ${runS.toFixed(1)} s, latest timer ${lateS.toFixed(1)} s late; ${cost ? cost.replace(/^.*\[ojplay\] /, "") : "no cost line"}`)
             // A slow close passes, and a passing run's output is never printed: its closing line is, so CI shows where a close's time goes before one hangs.
             const slow = output.split("\n").find((line) => line.includes("[ojplay] closing:"))
             if (slow) console.log(`[sweep] ${name}: ${slow.trim()}`)

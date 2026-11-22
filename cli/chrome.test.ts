@@ -3,7 +3,7 @@ import fs from "node:fs"
 import http from "node:http"
 import net from "node:net"
 import path from "node:path"
-import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuUsed } from "./chrome.mjs"
+import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuCost, cpuUsed } from "./chrome.mjs"
 import { makeTemp, tempRoot } from "./temp.mjs"
 
 /** A Browser on a socket that keeps what was sent and answers only when told. */
@@ -127,6 +127,15 @@ describe("Chrome's own log", () => {
         expect(cpuUsed(before, after, 2.04)).toBe("(5 of them) over 2.0 s, CPU used: GPU 1.90 s (11.9 s since it started), utility 0.50 s (0.5 s since it started), renderer 0.25 s (5.3 s since it started), browser 0.10 s (3.1 s since it started)")
         // An idle GPU process reads as idle, which is the answer that tells a wait from slow drawing.
         expect(cpuUsed(before, before, 2)).toContain("GPU 0.00 s")
+    })
+
+    // Tachi 1cf6bc60: whether software drawing starves a 4-core runner is read
+    // from what each run's GPU process used, said in cores, for every run.
+    it("says what each kind of process used over the browser's life, in cores, busiest first", () => {
+        const list = [{ type: "browser", id: 1, cpuTime: 2 }, { type: "GPU", id: 2, cpuTime: 24.5 }, { type: "renderer", id: 3, cpuTime: 4 }, { type: "renderer", id: 4, cpuTime: 1 }]
+        expect(cpuCost(list, 10)).toBe("chrome's CPU over its 10.0 s: GPU 24.5 s (2.45 cores), renderer 5.0 s (0.50 cores), browser 2.0 s (0.20 cores)")
+        // The frame rate beside it says whether the cost is drawing: software drawing's cost follows the frames it draws.
+        expect(cpuCost(list, 10, "12.4 frames a second")).toBe("chrome's CPU over its 10.0 s at 12.4 frames a second: GPU 24.5 s (2.45 cores), renderer 5.0 s (0.50 cores), browser 2.0 s (0.20 cores)")
     })
 
     it("starts every browser, headless or headed, without a fresh profile's first-run chores", () => {

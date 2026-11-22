@@ -330,6 +330,7 @@ export async function start(root, { headless = true, gpu = false, window: size, 
     const game = new Game({ root, browser, server, manifest, say })
     const navigated = Date.now()
     try {
+        await browser.countFrames()
         await browser.navigate(server.url)
     } catch (error) {
         const page = await browser.describe?.().catch(() => null)
