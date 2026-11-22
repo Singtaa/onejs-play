@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createServer, type Server } from "node:http"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { firstPush, newCart, starterFiles } from "./new.mjs"
 import { starterWithName } from "../build/starter.mjs"
 import { COMMAND } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * Local-first carts (Sai, 14 Oct 2026): `ojplay new` makes one with no
@@ -35,7 +35,7 @@ const cloneUrl = () => pathToFileURL(bare()).href
 const mainOf = (repo: string) => { const r = git(repo, "rev-parse", "--verify", "-q", "refs/heads/main"); return r.status === 0 ? r.stdout.trim() : null }
 
 beforeEach(async () => {
-    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "oj-new-")))
+    dir = makeTemp("oj-new-")
     taken = false
     privateRefused = false
     created.length = 0

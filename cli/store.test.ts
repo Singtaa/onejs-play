@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createHash, randomBytes } from "node:crypto"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { cached, formatPointer, isStored, parsePointer, prePush, setupStore, storeKey, STORE_MIN_BYTES, UNSTORE_STEP } from "./store.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * Stored files from a terminal, against the real git binary: the filter
@@ -92,7 +92,7 @@ const seen = async (): Promise<Array<{ method: string, url: string, auth?: strin
 const held = async (k: string) => Buffer.from(await (await control(`/_held/${k}`)).arrayBuffer())
 
 beforeEach(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-store-"))
+    dir = makeTemp("oj-store-")
     process.env.OJ_HOME = path.join(dir, "home")
     process.env.OJ_TOKEN = "ojp_" + "a".repeat(32)
     child = spawn(process.execPath, ["-e", STAND_IN], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, OJ_GIT_ROOT: dir } })

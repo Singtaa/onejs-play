@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { findChrome, launch } from "./chrome.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * A start that reads DevToolsActivePort before Chrome has finished writing it
@@ -27,7 +27,7 @@ describe.skipIf(process.platform === "win32")("a start that reads the port file 
     for (const planted of PLANTED) {
         it(`starts well inside the deadline when the file first reads ${JSON.stringify(planted)}`, async () => {
             const real = findChrome()
-            const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-early-port-"))
+            const dir = makeTemp("oj-early-port-")
             const wrapper = path.join(dir, "chrome")
             fs.writeFileSync(wrapper, [
                 "#!/bin/sh",

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { contentTypeOf, isUploadableAsset, resolveAsset, unservableAssets, validAssetName } from "./assets.mjs"
 import { serve } from "./local.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * The site's asset rule, as `oj run` applies it (#3). The name cases are the
@@ -12,7 +12,7 @@ import { serve } from "./local.mjs"
  */
 
 function cart(files: Record<string, string>): string {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-assets-"))
+    const dir = makeTemp("oj-assets-")
     for (const [name, text] of Object.entries(files)) {
         fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true })
         fs.writeFileSync(path.join(dir, name), text)

@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createServer, type Server } from "node:http"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { cloneCart, deviceName, helperFor, installId, login, logout } from "./login.mjs"
 import { mine, storedToken, tokenOf, tokenPaths } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * `ojplay login` against a stand-in for the site's three routes (PlaySite
@@ -25,7 +25,7 @@ let started = 0
 const seen: Array<{ path: string, body: any, auth?: string }> = []
 
 beforeEach(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-login-"))
+    dir = makeTemp("oj-login-")
     decision = "allow"
     decisions.clear()
     started = 0

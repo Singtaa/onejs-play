@@ -9,6 +9,7 @@ import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { makeTemp } from "./temp.mjs"
 
 const CANDIDATES = {
     darwin: [
@@ -185,7 +186,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     // The prefix names this run's browsers and nothing else. A harness that
     // sweeps orphans with `pkill -f <prefix>` gives its own, so the sweep
     // cannot reach another session's Chrome.
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), profilePrefix))
+    const profile = makeTemp(profilePrefix)
     const log = chromeLog(profile)
     const args = chromeArgs({ headless, window, profile, gpu, log })
     const began = Date.now()

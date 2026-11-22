@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { handOff, localCopy, newer, unknownToCopy, updateNotice } from "./global.mjs"
 import { BIN, INSTALL, PACKAGE } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * The global ojplay (Sai, 1 Oct 2026): the hand-off to a cart's own copy, and
@@ -14,7 +14,7 @@ const OWN = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "pac
 const made: string[] = []
 afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }) })
 const scratch = () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-global-"))
+    const dir = makeTemp("ojplay-global-")
     made.push(dir)
     return dir
 }

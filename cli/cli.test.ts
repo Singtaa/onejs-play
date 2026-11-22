@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildGame, formatBuildErrors, normalize } from "../build/game.mjs"
@@ -15,6 +14,7 @@ import { spawnSync } from "node:child_process"
 import { Game } from "./run.mjs"
 import { containerBoot } from "../host/boot.mjs"
 import { PACKAGE } from "../build/command.mjs"
+import { makeTemp, tempRoot } from "./temp.mjs"
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
 
@@ -24,7 +24,7 @@ const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
 const NATIVE = { workingDir: path.parse(process.cwd()).root || "/" }
 
 function scratch(files: Record<string, string>): string {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-test-"))
+    const dir = makeTemp("oj-test-")
     for (const [name, text] of Object.entries(files)) {
         fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true })
         fs.writeFileSync(path.join(dir, name), text)
@@ -163,7 +163,7 @@ describe("the command line", () => {
 
     // `init --help` wrote four files, `build --help` built, and `push --help` pushed.
     it("prints help for <command> --help and runs nothing", () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-help-"))
+        const root = makeTemp("oj-help-")
         try {
             for (const flag of ["--help", "-h"]) {
                 const run = oj(["init", flag, "--root", root])
@@ -375,7 +375,7 @@ describe("the browser", () => {
         } finally {
             vi.unstubAllEnvs()
         }
-        expect(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix))).toEqual([])
+        expect(fs.readdirSync(tempRoot()).filter((name) => name.startsWith(prefix))).toEqual([])
     })
 
     it("caches a container per version under the oj home", () => {
@@ -494,7 +494,7 @@ describe("the tooling a clone writes for itself", () => {
 
     it("finds the exclude file of a clone added as a submodule, whose .git is a file", () => {
         const dir = scratch({ "index.tsx": "" })
-        const store = fs.mkdtempSync(path.join(os.tmpdir(), "oj-gitdir-"))
+        const store = makeTemp("oj-gitdir-")
         expect(spawnSync("git", ["init", "-q", `--separate-git-dir=${store}`, dir]).status).toBe(0)
         expect(fs.statSync(path.join(dir, ".git")).isFile()).toBe(true)
         init(dir)

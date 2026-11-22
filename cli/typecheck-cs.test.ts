@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { init } from "./init.mjs"
 import { NAMES_CS, namesCS, typecheck } from "./game.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * Sai, 14 Oct 2026: CS, Unity's C# API, is allowed in a cart as the one door
@@ -27,7 +27,7 @@ describe("typecheck and CS", () => {
     })
 
     it("says it under typecheck, once, after tsc, and not when asked to be quiet", () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-typecheck-cs-"))
+        const root = makeTemp("oj-typecheck-cs-")
         dirs.push(root)
         init(root)
         fs.symlinkSync(path.resolve(import.meta.dirname, "../node_modules"), path.join(root, "node_modules"), "junction")

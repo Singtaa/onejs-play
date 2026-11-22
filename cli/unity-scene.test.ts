@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { editorOpen, hasPrefab, instanceId, placePrefab, withPrefab } from "./unity-scene.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * Unity 6000.5.2f1's own output, saved from a batchmode run: a new default
@@ -53,7 +53,7 @@ describe("a prefab placed in a scene's text", () => {
 })
 
 describe("placePrefab in a Unity project", () => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-scene-"))
+    const temp = makeTemp("ojplay-scene-")
     afterAll(() => fs.rmSync(temp, { recursive: true, force: true }))
     let n = 0
 

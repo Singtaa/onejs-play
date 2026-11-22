@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import vm from "node:vm"
 import { bake, nameProblem } from "./bake.mjs"
 import { LIGHT_RECORDER, serve } from "./local.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /*
  * `ojplay bake` against a page that is the real one in every part but the
@@ -41,9 +41,7 @@ let parent: string
 let root: string
 let said: string[]
 beforeEach(() => {
-    // The long form of the temp path: Windows hands out an 8.3 one (RUNNER~1),
-    // whose ~ reaches the script's file URL as %7E, which vitest cannot load.
-    parent = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "oj-bake-"))
+    parent = makeTemp("oj-bake-")
     root = path.join(parent, "cart")
     fs.mkdirSync(root)
     said = []
@@ -186,7 +184,7 @@ describe("ojplay bake", () => {
 
 describe("the page ojplay bake serves", () => {
     it("carries the light recorder and hands it to the container only when asked", async () => {
-        const runtime = fs.mkdtempSync(path.join(os.tmpdir(), "oj-runtime-"))
+        const runtime = makeTemp("oj-runtime-")
         const pageOf = async (light: boolean) => {
             const server = await serve({ runtime, root, manifest: { name: "Room" }, bundle: () => "", light })
             try {

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import zlib from "node:zlib"
 import { serve } from "./local.mjs"
 import { cleanCommit, keepRecorded, keepSet, newestSet, sendSets, setsAt, setsDir } from "./pipelines.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * A game's pipeline set between a run here and the site (pipelines.mjs): kept
@@ -21,9 +21,9 @@ let root = ""
 const git = (...args: string[]) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" })
 
 beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-home-"))
+    home = makeTemp("ojplay-home-")
     vi.stubEnv("OJ_HOME", home)
-    root = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-cart-"))
+    root = makeTemp("ojplay-cart-")
     git("init", "-q")
     git("config", "user.email", "t@example.test")
     git("config", "user.name", "t")
@@ -99,7 +99,7 @@ describe("what push sends", () => {
 
 describe("the local server", () => {
     it("serves a game's set where the game's origin does, and turns the recorder on only when asked", async () => {
-        const runtime = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-rt-"))
+        const runtime = makeTemp("ojplay-rt-")
         const bytes = zlib.gzipSync(JSON.stringify(SET))
         const server = await serve({ runtime, root, manifest: { name: "t" }, bundle: () => "", record: true, pipelines: (key: string) => key === KEY ? bytes : null })
         const plain = await serve({ runtime, root, manifest: { name: "t" }, bundle: () => "" })

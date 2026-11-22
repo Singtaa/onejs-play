@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import ts from "typescript"
 import { cartTsconfig, writeHostTypes } from "./init.mjs"
+import { makeTemp } from "./temp.mjs"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const dirs: string[] = []
@@ -20,7 +20,7 @@ function cartDiagnostics(files: string[]): string[] {
     const { paths: _paths, ...compilerOptions } = cartTsconfig().compilerOptions
     const { options, errors } = ts.convertCompilerOptionsFromJson(compilerOptions, ROOT)
     expect(errors.map((e) => ts.flattenDiagnosticMessageText(e.messageText, "\n"))).toEqual([])
-    const host = fs.mkdtempSync(path.join(os.tmpdir(), "oj-cart-types-"))
+    const host = makeTemp("oj-cart-types-")
     dirs.push(host)
     const program = ts.createProgram([...files, writeHostTypes(host)], options)
     return ts.getPreEmitDiagnostics(program).map((d) => {
@@ -35,7 +35,7 @@ describe("oj under a new cart's tsconfig", () => {
     }, 120_000)
 
     it("refuses what the cart's lib lacks, so a clean answer above means something", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-cart-cause-"))
+        const dir = makeTemp("oj-cart-cause-")
         dirs.push(dir)
         const file = path.join(dir, "cause.ts")
         fs.writeFileSync(file, "export const e = new Error(\"x\", { cause: 1 })\n")

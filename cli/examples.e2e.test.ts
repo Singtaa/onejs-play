@@ -7,6 +7,7 @@ import { STARTUP_MS, launch } from "./chrome.mjs"
 import { ensureRuntime } from "./local.mjs"
 import { waitsFor } from "./runtime-line.mjs"
 import { siteOrigin, version } from "./site.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * `oj test` over every example, and over the CLI's own fixtures, in the real
@@ -239,7 +240,7 @@ describe("oj test over every example", () => {
 describe("the sweep's runtime line gate", () => {
     /** A cart that fails on start, needing `line`, in a folder of its own. */
     function broken(line: string): string {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-gate-"))
+        const dir = makeTemp("oj-gate-")
         fs.writeFileSync(path.join(dir, "oj.json"), JSON.stringify({ schema: 1, name: "Broken", entry: "index.tsx", runtime: line }))
         fs.writeFileSync(path.join(dir, "index.tsx"), `throw new Error("broken on purpose")\n`)
         return dir
@@ -293,7 +294,7 @@ describe("the CLI's own browser", () => {
     // browser has its own process group on Mac and Linux, so an oj that just
     // died left it running. Windows has no SIGTERM; a tree kill covers it.
     it.skipIf(process.platform === "win32")("closes its browser when oj test is interrupted", async () => {
-        const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "oj-hang-")), "hang.playtest.mjs")
+        const script = path.join(makeTemp("oj-hang-"), "hang.playtest.mjs")
         fs.writeFileSync(script, [
             "export default async function (game) {",
             "    console.log(`port ${new URL(game.browser.page.webSocketDebuggerUrl).port}`)",

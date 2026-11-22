@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
+import { makeTemp } from "../../cli/temp.mjs"
 
 /**
  * oj is type-checked from source wherever it is used: a OneJS app's tsconfig
@@ -24,7 +24,7 @@ const ONEJS_GLOBALS = path.join(import.meta.dirname, "fixtures", "onejs-3.9.3-gl
 
 /** tsc over src/index.ts, plus `extra` files, with these compiler options. tsc's output, empty when clean. */
 function check(options: Record<string, unknown>, extra: string[] = []): string {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-typecheck-"))
+    const dir = makeTemp("oj-typecheck-")
     try {
         const config = {
             compilerOptions: {

@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
+import { makeTemp } from "./temp.mjs"
 
 const SCRIPT = path.resolve(import.meta.dirname, "../scripts/typecheck-cart.mjs")
 const dirs: string[] = []
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }) })
 
 function run(source: string | null) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-typecheck-cart-"))
+    const dir = makeTemp("oj-typecheck-cart-")
     dirs.push(dir)
     const file = path.join(dir, "cart.ts")
     if (source !== null) fs.writeFileSync(file, source)

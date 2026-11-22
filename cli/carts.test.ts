@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { build, readUsedCarts } from "./game.mjs"
 import { serve } from "./local.mjs"
 import { unservableAssets } from "./assets.mjs"
 import { COMMAND } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * Used carts on a developer's machine (PlaySite docs/carts.md §3, step 4):
@@ -18,7 +18,7 @@ afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: 
 
 /** A cart on disk: `files` relative to its root, text or bytes. */
 const cart = (files: Record<string, string | Uint8Array>) => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-carts-"))
+    const root = makeTemp("oj-carts-")
     made.push(root)
     for (const [name, data] of Object.entries(files)) {
         fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true })

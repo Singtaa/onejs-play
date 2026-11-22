@@ -11,10 +11,10 @@
 // Exit 0 clean, 1 with what the cart's compiler said, 3 when there was no file to compile.
 
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import ts from "typescript"
 import { cartTsconfig, writeHostTypes } from "../cli/init.mjs"
+import { makeTemp } from "../cli/temp.mjs"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const files = process.argv.length > 2 ? process.argv.slice(2).map((f) => path.resolve(f)) : [path.join(ROOT, "src/index.ts")]
@@ -27,7 +27,7 @@ if (missing.length > 0) {
 // The cart reaches oj through `paths`; here the files are given, so its paths would only point back at them.
 const { paths: _paths, ...compilerOptions } = cartTsconfig().compilerOptions
 const { options, errors } = ts.convertCompilerOptionsFromJson(compilerOptions, ROOT)
-const host = fs.mkdtempSync(path.join(os.tmpdir(), "oj-cart-types-"))
+const host = makeTemp("oj-cart-types-")
 let said
 try {
     const program = ts.createProgram([...files, writeHostTypes(host)], options)

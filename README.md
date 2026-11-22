@@ -1221,6 +1221,11 @@ Run together, the e2e files' software-rendered Chrome starved the unit workers
 on a Windows runner: a worker's report to vitest went unanswered for vitest's
 60 s limit, and the run went red with every test passing.
 
+A temp folder comes from `cli/temp.mjs` (`makeTemp`, `tempRoot`), never from
+`os.tmpdir()`, and `cli/temp.test.ts` fails on any other. Windows can name the
+temp folder in its 8.3 form (`RUNNER~1`), whose `~` reaches a file URL as `%7E`,
+and vitest cannot load a script from there; the helper gives the long name.
+
 An example written for the next runtime line, whose API the live runtime does
 not have yet, says so in its oj.json: `"runtime": "1.2"` is the oldest line it
 runs on (`cli/runtime-line.mjs`). Against an older live runtime the sweep skips

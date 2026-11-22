@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import http from "node:http"
 import net from "node:net"
 import path from "node:path"
 import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuUsed } from "./chrome.mjs"
+import { makeTemp, tempRoot } from "./temp.mjs"
 
 /** A Browser on a socket that keeps what was sent and answers only when told. */
 function browser() {
@@ -23,7 +23,7 @@ describe("the CLI's CDP calls", () => {
     it("waits for a screenshot past the time a call gets", async () => {
         vi.useFakeTimers()
         const { b, answer } = browser()
-        const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "oj-shot-")), "shot.png")
+        const file = path.join(makeTemp("oj-shot-"), "shot.png")
         const shot = b.screenshot(file)
         const settled = vi.fn()
         shot.then(settled, settled)
@@ -55,7 +55,7 @@ describe("the CLI's CDP calls", () => {
     it("still gives up on a screenshot that never comes, and on any other call at CALL_MS", async () => {
         vi.useFakeTimers()
         const { b } = browser()
-        const shot = expect(b.screenshot(path.join(os.tmpdir(), "never.png"))).rejects.toThrow(`Page.captureScreenshot did not answer in ${CAPTURE_MS / 1000}s`)
+        const shot = expect(b.screenshot(path.join(tempRoot(), "never.png"))).rejects.toThrow(`Page.captureScreenshot did not answer in ${CAPTURE_MS / 1000}s`)
         const call = expect(b.send("Runtime.evaluate", { expression: "1" })).rejects.toThrow(`Runtime.evaluate did not answer in ${CALL_MS / 1000}s`)
         await vi.advanceTimersByTimeAsync(CALL_MS)
         await call
@@ -111,7 +111,7 @@ describe("the CLI's CDP calls", () => {
 describe("Chrome's own log", () => {
     it("is off unless a folder is named, and names two files after the profile", () => {
         expect(chromeLog("/tmp/oj-chrome-abc", "")).toBeNull()
-        const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
+        const folder = makeTemp("oj-log-")
         const log = chromeLog("/tmp/oj-chrome-abc", folder)!
         expect(log.file).toBe(path.join(folder, "oj-chrome-abc.log"))
         expect(log.netlog).toBe(path.join(folder, "oj-chrome-abc.netlog.json"))
@@ -138,7 +138,7 @@ describe("Chrome's own log", () => {
     })
 
     it("is kept by keep() for any run that failed, and keep() says null with no log asked for", () => {
-        const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
+        const folder = makeTemp("oj-log-")
         const log = chromeLog(path.join(folder, "oj-chrome-y"), folder)!
         fs.writeFileSync(log.file, "log")
         const b = new Browser(null, path.join(folder, "gone"), null, () => "", log)
@@ -149,7 +149,7 @@ describe("Chrome's own log", () => {
     })
 
     async function closed(describeFirst: boolean) {
-        const folder = fs.mkdtempSync(path.join(os.tmpdir(), "oj-log-"))
+        const folder = makeTemp("oj-log-")
         const log = chromeLog(path.join(folder, "oj-chrome-x"), folder)!
         fs.writeFileSync(log.file, "log")
         fs.writeFileSync(log.netlog, "{")

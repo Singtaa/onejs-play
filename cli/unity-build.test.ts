@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import * as esbuild from "esbuild"
 import { buildUnity, filesManifest, OUTPUT, prologue, UsageError } from "./unity-build.mjs"
 import { buildGame, notAvailable } from "../build/game.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * `ojplay build --unity`, held to the contract OneJS cart runners build
@@ -34,7 +34,7 @@ afterEach(() => {
 
 /** A Unity project with a cart at its root, in a folder named `folder`. */
 function rootCart(files: Record<string, string>, folder = "Lightning"): { root: string, project: string } {
-    const project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-unity-build-")))
+    const project = makeTemp("ojplay-unity-build-")
     made.push(project)
     const root = path.join(project, folder)
     for (const [name, text] of Object.entries(files)) {

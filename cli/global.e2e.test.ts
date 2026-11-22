@@ -5,6 +5,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { BIN, PACKAGE } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * ojplay as people get it (Sai, 1 Oct 2026): `npm install -g ojplay`, from this
@@ -19,7 +20,7 @@ import { BIN, PACKAGE } from "../build/command.mjs"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const OWN = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { name: string, version: string }
-const work = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-global-e2e-"))
+const work = makeTemp("ojplay-global-e2e-")
 const prefix = path.join(work, "prefix")
 /**
  * Where npm puts a global install's commands: prefix/bin, except on Windows,

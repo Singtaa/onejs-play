@@ -1,7 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { createServer, type Server } from "node:http"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { add, remove, syncTypes, update } from "./carts.mjs"
@@ -9,6 +8,7 @@ import { folderName } from "./carts-unity.mjs"
 import { GLTFAST_PACKAGE, GLTFAST_VERSION } from "./unity.mjs"
 import { build } from "./game.mjs"
 import { COMMAND, PACKAGE } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * `ojplay add`, `update` and `remove` (PlaySite docs/carts.md §3, step 5)
@@ -104,7 +104,7 @@ afterEach(() => {
 
 /** A folder named `name`, holding `files`, with the stand-in as the site and no login anywhere. */
 function folder(name: string, files: Record<string, string> = {}): string {
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-add-"))
+    const parent = makeTemp("ojplay-add-")
     made.push(parent)
     const root = path.join(parent, name)
     fs.mkdirSync(root)

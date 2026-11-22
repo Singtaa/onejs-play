@@ -2,12 +2,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { createServer, type Server } from "node:http"
 import { createHash } from "node:crypto"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import * as esbuild from "esbuild"
 import { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-assets.mjs"
 import { add, remove, update } from "./carts.mjs"
 import { PACKAGE } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * Used carts in a OneJS app's own build (PlaySite docs/carts.md §4, step 6,
@@ -59,7 +59,7 @@ afterEach(() => {
 
 /** A OneJS app's ~ in a Unity project: its files, and a stand-in oj that says which name it was asked for. */
 function app(files: Record<string, string | Uint8Array>): string {
-    const project = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-unity-carts-"))
+    const project = makeTemp("ojplay-unity-carts-")
     made.push(project)
     fs.mkdirSync(path.join(project, "ProjectSettings"))
     fs.writeFileSync(path.join(project, "ProjectSettings", "ProjectVersion.txt"), "")

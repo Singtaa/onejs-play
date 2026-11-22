@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { describe, it, expect } from "vitest"
 import { currentBranch, describeBranchPush, describePush, describeStatus, firstPushOnly, uncommitted } from "./site.mjs"
 import { COMMAND } from "../build/command.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * `ojplay status` printed the site's raw JSON. It now says it in sentences, and
@@ -112,7 +112,7 @@ describe("ojplay push, read aloud", () => {
 
 describe("what a push leaves behind", () => {
     it("lists changed and new files, and never ignored ones", () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-uncommitted-"))
+        const root = makeTemp("oj-uncommitted-")
         try {
             const git = (...args: string[]) => expect(spawnSync("git", ["-C", root, ...args]).status).toBe(0)
             git("init", "-q")
@@ -177,7 +177,7 @@ describe("ojplay push on a branch, read aloud", () => {
     })
 
     it("knows which branch a clone is on", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-branch-"))
+        const dir = makeTemp("ojplay-branch-")
         spawnSync("git", ["init", "-q", "-b", "night-level", dir])
         expect(currentBranch(dir)).toBe("night-level")
         fs.rmSync(dir, { recursive: true, force: true })

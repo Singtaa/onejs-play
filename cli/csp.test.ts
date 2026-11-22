@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest"
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
 import { gameCsp } from "../host/csp.mjs"
 import { serve } from "./local.mjs"
+import { makeTemp } from "./temp.mjs"
 
 const SITE = "https://play.onejs.com"
 const directive = (csp: string, name: string) => csp.split("; ").find((d) => d.startsWith(`${name} `))!.split(" ").slice(1)
@@ -29,7 +27,7 @@ describe("ojplay's local page", () => {
     // The page `ojplay run` and `ojplay test` open: refused what the site refuses
     // (cli/fixtures/csp/csp.playtest.mjs shows a browser keeping to it).
     it("carries the game origin's policy for the site it talks to", async () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-csp-"))
+        const root = makeTemp("ojplay-csp-")
         const server = await serve({ runtime: root, root, manifest: { name: "t" }, bundle: () => "", site: "https://site.example" })
         try {
             const page = await fetch(server.url)
@@ -40,7 +38,7 @@ describe("ojplay's local page", () => {
     })
     // What a navigate that times out reports: whether Chrome ever asked for the page.
     it("remembers when the page was first asked for", async () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "ojplay-asked-"))
+        const root = makeTemp("ojplay-asked-")
         const server = await serve({ runtime: root, root, manifest: { name: "t" }, bundle: () => "" })
         try {
             expect(server.pageAskedAt()).toBe(null)

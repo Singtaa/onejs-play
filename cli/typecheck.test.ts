@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { init } from "./init.mjs"
 import { typecheck } from "./game.mjs"
 import { CART_COMPILER_OPTIONS } from "../build/cart-types.mjs"
+import { makeTemp } from "./temp.mjs"
 
 /**
  * ojplay typecheck checks a cart by the Play editor's rules. It used the
@@ -15,7 +15,7 @@ const dirs: string[] = []
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }) })
 
 function cart(source: string, { old = false } = {}) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-typecheck-"))
+    const root = makeTemp("oj-typecheck-")
     dirs.push(root)
     if (old) {
         // A clone set up before the rules were shared: strict, with the DOM.
@@ -46,7 +46,7 @@ const DOM = "document.title = \"x\"\nexport {}\n"
 
 describe("ojplay typecheck", () => {
     it("writes the editor's rules into a new clone's tsconfig", () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "oj-init-"))
+        const root = makeTemp("oj-init-")
         dirs.push(root)
         init(root)
         const options = JSON.parse(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8")).compilerOptions
