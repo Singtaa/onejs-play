@@ -45,27 +45,27 @@ export class Closing {
         }
     }
 
-    /** Runs a step that returns a promise, as step() does. */
+    /** Runs a step that returns a promise, as step() does. A string it resolves to is said beside its length when the close is slow. */
     async stepAsync(name, fn) {
         const began = this.now()
         try {
-            await fn()
-            this.done(name, began, null)
+            const note = await fn()
+            this.done(name, began, null, typeof note === "string" ? note : null)
         } catch (error) {
             if (!(error instanceof Hung)) throw error
             this.done(name, began, error.message)
         }
     }
 
-    done(name, began, hung) {
+    done(name, began, hung, note = null) {
         const ms = this.now() - began
         // A synchronous step cannot be stopped from outside, only timed; one that took past the limit hung all the same.
-        this.steps.push({ name, ms, hung: hung ?? (ms > CLOSE_MS ? `took ${(ms / 1000).toFixed(1)} s, past ${CLOSE_MS / 1000} s` : null) })
+        this.steps.push({ name, ms, note, hung: hung ?? (ms > CLOSE_MS ? `took ${(ms / 1000).toFixed(1)} s, past ${CLOSE_MS / 1000} s` : null) })
     }
 
     /** The line to print after a close, or null when every step was quick. */
     line() {
-        const lengths = this.steps.map((s) => `${s.name} ${(s.ms / 1000).toFixed(1)} s`).join(", ")
+        const lengths = this.steps.map((s) => `${s.name} ${(s.ms / 1000).toFixed(1)} s${s.note ? ` (${s.note})` : ""}`).join(", ")
         const hung = this.steps.filter((s) => s.hung !== null)
         if (hung.length > 0) return `${HUNG} ${hung.map((s) => `${s.name}: ${s.hung}`).join("; ")} (${lengths})`
         return this.steps.some((s) => s.ms > SLOW_MS) ? `closing: ${lengths}` : null

@@ -645,7 +645,11 @@ export class Browser {
         try { this.ws?.close() } catch { /* going anyway */ }
         // Chrome's own list, while it can still answer: what the kill ends and watches.
         let known = null
-        await closing.stepAsync("list", async () => { known = await this.processes() })
+        // A list that could not be had says why, beside its length: the close then walks the tree instead.
+        await closing.stepAsync("list", async () => {
+            known = await this.processes()
+            return known.failed ?? `${known.list.length} processes`
+        })
         await discard(this.child, this.profile, closing, { known })
         if (this.log && !this.keepLog) {
             for (const file of [this.log.file, this.log.netlog]) {

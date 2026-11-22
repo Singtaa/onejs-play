@@ -54,6 +54,15 @@ describe("closing a run", () => {
         expect(closingHung(`[ojplay] passed\n[ojplay] ${closing.line()}\n`)).toBe(`[ojplay] ${closing.line()}`)
     })
 
+    // On 22 Nov (CI 45006506698) a close spent 15.0 s asking Chrome for its list and said nothing of why.
+    it("says what a slow step resolved to beside its length", async () => {
+        let t = 0
+        const closing = new Closing(() => t)
+        await closing.stepAsync("list", async () => { t += 15_000; return "the browser's socket did not open in 5 s" })
+        await closing.stepAsync("chrome", async () => { t += 100 })
+        expect(closing.line()).toBe("closing: list 15.0 s (the browser's socket did not open in 5 s), chrome 0.1 s")
+    })
+
     it("counts a synchronous step that took past the limit as hung, since it could not be stopped", () => {
         let t = 0
         const closing = new Closing(() => t)
