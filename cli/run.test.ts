@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 
 /*
@@ -22,7 +24,7 @@ vi.mock("./chrome.mjs", async (original) => ({
     launch: vi.fn(async () => fake.browser),
 }))
 
-const { start } = await import("./run.mjs")
+const { start, loadScript } = await import("./run.mjs")
 
 const STARTER = path.resolve(import.meta.dirname, "../examples/starter")
 
@@ -42,5 +44,33 @@ describe("a navigate that failed", () => {
         const { pageRequestSaid } = await import("./run.mjs")
         expect(pageRequestSaid(null, 1000)).toBe("Chrome never asked the local server for the page")
         expect(pageRequestSaid(1400, 1000)).toBe("the local server answered the page 0.4 s after the navigate, and Chrome did not commit it")
+    })
+})
+
+// A capture costs about eleven of the cart's frames, and a frame on software
+// drawing costs its pixels: on windows-latest the occlusion fixture took 38 to
+// 164 s at 960x540 against the sweep's 180 s. A playtest can ask for less.
+describe("a playtest's window", () => {
+    const dirs: string[] = []
+    afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }) })
+    const script = (source: string) => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oj-playtest-window-"))
+        dirs.push(dir)
+        fs.writeFileSync(path.join(dir, "t.playtest.mjs"), source)
+        return { dir, file: "t.playtest.mjs" }
+    }
+
+    it("is the [width, height] its script exports, and none when it exports none", async () => {
+        const asked = script("export const window = [480, 270]\nexport default async function () {}\n")
+        expect((await loadScript(asked.file, asked.dir)).window).toEqual([480, 270])
+        const plain = script("export default async function () {}\n")
+        expect((await loadScript(plain.file, plain.dir)).window).toBeUndefined()
+    })
+
+    it("refuses a window that is not two whole sizes above 0, before a browser starts", async () => {
+        for (const bad of ["[480]", "[480, 0]", "[480.5, 270]", "\"480,270\""]) {
+            const s = script(`export const window = ${bad}\nexport default async function () {}\n`)
+            await expect(loadScript(s.file, s.dir)).rejects.toThrow("t.playtest.mjs's window must be [width, height] in CSS pixels")
+        }
     })
 })

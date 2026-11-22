@@ -27,6 +27,11 @@
 // quad must be white again. Reads the page's own screenshot, decoded by the page. Throws, so the
 // run exits non-zero, when the scene is lit, the fog is not on, or any check
 // is off.
+// A quarter of the default's pixels, since only the middle one is read: each
+// look's screenshot costs about eleven frames, and on windows-latest's software
+// drawing a 960 by 540 run took 120 to 147 s against the sweep's 180 (22 Nov).
+export const window = [480, 270]
+
 const DARK = 20      // levels under which the lit quad counts as black
 const BRIGHT = 200   // levels an unlit white quad must reach
 const ADD = 128      // the added quad's grey, as the floor's

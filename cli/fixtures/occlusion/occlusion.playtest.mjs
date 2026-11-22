@@ -7,27 +7,35 @@
 // darker it must be darker than as the host draws it; and set back it must be
 // as it was. Also prints the grain, the spread of the strip's brightness, for
 // comparing the noise between settings. Then holds still: two screenshots of
-// the unchanged scene, as the host draws it, must be the same bytes, since
-// occlusion whose noise moves each frame makes every still 3D scene shimmer
-// (runtime 1.10.0's blue noise did). Throws, so the run exits non-zero, when
-// any check is off.
+// the unchanged scene as the host draws it, the last look's and one more, must
+// be the same bytes, since occlusion whose noise moves each frame makes every
+// still 3D scene shimmer (runtime 1.10.0's blue noise did). Throws, so the run
+// exits non-zero, when any check is off.
 const SHADED = 0.95  // the strip over the panel, at most, with the host's occlusion
 const CLEAR = 0.97   // the strip over the panel, at least, with none
 const DARKER = 0.03  // how much further the strip must fall at intensity 2
 const SAME = 0.02    // how far set back may sit from the first reading
 const APART = 300    // ms between the two screenshots of the still scene, many frames
 
-// The screen is 960 by 540: 167.9 pixels a metre on the wall, centre 480, 270.
-const PX = 540 / (2 * 6 * Math.tan(Math.PI / 12))
+// A quarter of the default's pixels: each of the five screenshots costs about
+// eleven frames, and on windows-latest's software drawing a 960 by 540 run took
+// 38 to 164 s against the sweep's 180 (22 Nov). A third of the time here.
+export const window = [480, 270]
+
+// The wall seen 6 m off through a 30 degree field: a metre is the picture's
+// height over 2 * 6 * tan 15 degrees, from its centre, at any size.
+const METRE = 1 / (2 * 6 * Math.tan(Math.PI / 12))
 // Wall x in metres: a strip just right of the timber at 0.5 (its edge, seen 0.15 m nearer, is at
 // 0.615), and the middle of the panel between it and the next.
 const STRIP = [0.63, 0.73]
 const PANEL = [0.9, 1.1]
-const ROWS = [200, 340]
+// The rows read, as fractions of the picture's height (200 to 340 of 540).
+const ROWS = [200 / 540, 340 / 540]
 
-async function regions(game, rects) {
+/** The screenshot, and each wall span's mean brightness and spread in it, placed by the picture's own size. */
+async function regions(game, spans) {
     const { data } = await game.browser.send("Page.captureScreenshot", { format: "png" })
-    return JSON.parse(await game.eval(`(async () => {
+    const read = JSON.parse(await game.eval(`(async () => {
         const img = new Image()
         img.src = "data:image/png;base64,${data}"
         await img.decode()
@@ -35,7 +43,9 @@ async function regions(game, rects) {
         c.width = img.width; c.height = img.height
         const g = c.getContext("2d")
         g.drawImage(img, 0, 0)
-        return JSON.stringify(${JSON.stringify(rects)}.map(([x0, y0, x1, y1]) => {
+        const px = img.height * ${METRE}, y0 = Math.round(img.height * ${ROWS[0]}), y1 = Math.round(img.height * ${ROWS[1]})
+        return JSON.stringify(${JSON.stringify(spans)}.map(([a, b]) => {
+            const x0 = Math.round(img.width / 2 + a * px), x1 = Math.round(img.width / 2 + b * px)
             const d = g.getImageData(x0, y0, x1 - x0, y1 - y0).data
             const v = []
             for (let i = 0; i < d.length; i += 4) v.push((d[i] + d[i + 1] + d[i + 2]) / 3)
@@ -44,9 +54,8 @@ async function regions(game, rects) {
             return { mean, spread }
         }))
     })()`))
+    return { data, read }
 }
-
-const rect = ([a, b]) => [Math.round(480 + a * PX), ROWS[0], Math.round(480 + b * PX), ROWS[1]]
 
 async function screenshot(game) {
     const { data } = await game.browser.send("Page.captureScreenshot", { format: "png" })
@@ -56,11 +65,13 @@ async function screenshot(game) {
 export default async function (game) {
     await game.until(async () => (await game.eval("typeof globalThis.occlusion")) === "object", { what: "the occlusion cart", timeoutMs: 30000 })
     const seen = {}
+    let last = null
     const look = async (name, code) => {
         if (code !== null) await game.eval(code)
         await game.wait(500)
-        const [strip, panel] = await regions(game, [rect(STRIP), rect(PANEL)])
+        const { data, read: [strip, panel] } = await regions(game, [STRIP, PANEL])
         seen[name] = { ratio: strip.mean / panel.mean, strip: strip.mean, panel: panel.mean, grain: strip.spread }
+        last = data
     }
     await look("host", null)
     await look("off", "globalThis.occlusion.set(false)")
@@ -68,9 +79,9 @@ export default async function (game) {
     await look("host again", "globalThis.occlusion.set(true)")
     console.log("OCCLUSION " + JSON.stringify(seen))
     // Chrome encodes the same pixels the same way, so equal bytes are equal pixels.
-    const first = await screenshot(game)
+    // The first of the two is the last look's, as the host draws it again.
     await game.wait(APART)
-    const still = first === await screenshot(game)
+    const still = last === await screenshot(game)
     console.log("STILL " + still)
 
     if (!(seen.host.panel > 40)) throw new Error(`the panel reads ${seen.host.panel}: the wall was not lit, so nothing here measures occlusion`)

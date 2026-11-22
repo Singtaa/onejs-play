@@ -383,10 +383,24 @@ export function watch(root, game, say) {
     return () => watcher.close()
 }
 
+/**
+ * Loads a test script: its default export, and the browser size it asks for
+ * as `export const window = [width, height]`, or undefined. A screenshot costs
+ * about eleven of the cart's frames, and a frame drawn in software costs its
+ * pixels, so a script that reads few pixels can ask for few.
+ */
+export async function loadScript(file, root) {
+    const mod = await import(pathToFileURL(path.resolve(root, file)).href)
+    if (typeof mod.default !== "function") throw new Error(`${file} must export a default async function (cart) { ... }`)
+    const asked = mod.window
+    if (asked !== undefined && !(Array.isArray(asked) && asked.length === 2 && asked.every((n) => Number.isInteger(n) && n > 0))) {
+        throw new Error(`${file}'s window must be [width, height] in CSS pixels, two whole numbers above 0, as --window takes them`)
+    }
+    return { play: mod.default, window: asked }
+}
+
 /** Loads a test script and runs its default export against the game. */
 export async function runScript(file, game) {
-    const mod = await import(pathToFileURL(path.resolve(game.root, file)).href)
-    const fn = mod.default
-    if (typeof fn !== "function") throw new Error(`${file} must export a default async function (cart) { ... }`)
-    await fn(game)
+    const { play } = await loadScript(file, game.root)
+    await play(game)
 }

@@ -31,7 +31,7 @@ import { cloneSource, currentBranch, describeBranchPush, describePush, describeS
 import { cloneCart, login, logout } from "./login.mjs"
 import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
-import { start, stop, watch, runScript } from "./run.mjs"
+import { start, stop, watch, runScript, loadScript } from "./run.mjs"
 import { keepRecorded, sendSets } from "./pipelines.mjs"
 import { bake } from "./bake.mjs"
 import { describeRowProblems } from "./rows.mjs"
@@ -81,7 +81,8 @@ const HELP = `usage: ${COMMAND} <command> [options]
                           script, let it run --for seconds, default 2); fails on a console error,
                           an asset the site would not serve, or a row whose controls are out of
                           line or crowded
-                          --headed, --window, --for, --gpu as above
+                          --headed, --window, --for, --gpu as above; with no --window, the
+                          size the script exports as export const window = [w, h]
   bake [script.mjs]     run the cart on this machine's GPU (with a script, drive it first, as test
                           does), wait for every scene.bake(name) to end, and write each light file
                           baked here into the cart; print each name, its size and how long it took.
@@ -283,6 +284,8 @@ async function main() {
             const script = args[0]
             // Found before a browser starts, not after.
             if (script && !fs.existsSync(path.resolve(root, script))) throw new Error(`no test script at ${path.resolve(root, script)}`)
+            // The size the script asks for, unless --window names one.
+            const window = size ?? (script ? (await loadScript(script, root)).window : undefined)
             // A signal (Ctrl-C, or a harness giving up on a run) ends the run
             // through the same cleanup as a finish. The browser sits in its
             // own process group on Mac and Linux, so an oj that simply died
@@ -293,7 +296,7 @@ async function main() {
                 process.once("SIGINT", on)
                 process.once("SIGTERM", on)
             })
-            const game = await start(root, { headless: flags.headed !== true, gpu: flags.gpu === true, window: size, runtime: flags.runtime && String(flags.runtime), say })
+            const game = await start(root, { headless: flags.headed !== true, gpu: flags.gpu === true, window, runtime: flags.runtime && String(flags.runtime), say })
             try {
                 const play = (async () => {
                     const ms = await game.ready()

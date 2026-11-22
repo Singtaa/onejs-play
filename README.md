@@ -899,7 +899,7 @@ ojplay build           # bundle the cart the way the site does; errors as file:l
 ojplay build --unity --out <dir>   # for OneJS, a cart at a Unity project's root (--watch, --production)
 ojplay typecheck       # tsc --noEmit
 ojplay run             # the cart in the site's real container, in a local headless Chrome
-ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run)
+ojplay test playtest.mjs   # run, then drive the cart from a script (no script: a smoke run); the page is the size the script exports as export const window = [w, h], else 960 by 540 (--window overrides)
 ojplay bake [script.mjs]   # run on the GPU and write each light file scene.bake(name) baked here into the cart
 ojplay status          # main's build, why the tip differs, and each cart with what it runs and who can play it (--json for scripts)
 ojplay list            # every cart on the account, a repo's carts each on a line
