@@ -243,6 +243,9 @@ describe("oj test over every example", () => {
             const page = /page after ([\d.]+) s/.exec(output)
             const renderer = /renderer after ([\d.]+) s/.exec(output)
             starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, rendererS: renderer ? Number(renderer[1]) : null, runS })
+            // A slow close passes, and a passing run's output is never printed: its closing line is, so CI shows where a close's time goes before one hangs.
+            const slow = output.split("\n").find((line) => line.includes("[ojplay] closing:"))
+            if (slow) console.log(`[sweep] ${name}: ${slow.trim()}`)
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
             // Its own failure, though the exit code is the playtest's verdict: a run that passed and then could not close (closing.mjs).
             expect(closingHung(output), `oj test in ${name} did not close:\n${output}`).toBe(null)
