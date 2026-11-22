@@ -8,6 +8,7 @@ import { ensureRuntime } from "./local.mjs"
 import { waitsFor } from "./runtime-line.mjs"
 import { siteOrigin, version } from "./site.mjs"
 import { makeTemp } from "./temp.mjs"
+import { stamper } from "./__tests__/stamp"
 
 /**
  * `oj test` over every example, and over the CLI's own fixtures, in the real
@@ -63,25 +64,34 @@ function interrupt(pid: number) {
 }
 
 /**
- * Runs `oj test` and resolves to its exit code and everything it printed. A
- * run past RUN_MS is interrupted and fails with what it printed so far,
- * rather than holding the suite until vitest's own timeout, which would
- * leave it running.
+ * Runs `oj test` and resolves to its exit code and everything it printed,
+ * each line stamped with the seconds since the run began, and a last line for
+ * when the process exited. A run past RUN_MS is interrupted and fails with
+ * what it printed so far, rather than holding the suite until vitest's own
+ * timeout, which would leave it running.
  */
 function ojTest(dir: string, runtime: string, script = playtestOf(dir), onOutput = (_text: string, _child: ReturnType<typeof spawn>) => {}): Promise<{ code: number | null, output: string }> {
     const args = [OJ, "test", ...(script ? [script] : []), "--root", dir, "--runtime", runtime]
     return new Promise((resolve) => {
         const child = spawn(process.execPath, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] })
+        const began = Date.now()
+        const own = stamper(began)
         let output = ""
-        const take = (d: Buffer) => { output += d; onOutput(output, child) }
-        child.stdout.on("data", take)
-        child.stderr.on("data", take)
+        /** One line of the sweep's own, on a line of its own after whatever the run printed last. */
+        const say = (line: string) => { output += (output === "" || output.endsWith("\n") ? "" : "\n") + own(`${line}\n`) }
+        const taker = () => {
+            const stamp = stamper(began)
+            return (d: Buffer) => { output += stamp(String(d)); onOutput(output, child) }
+        }
+        child.stdout.on("data", taker())
+        child.stderr.on("data", taker())
         const deadline = setTimeout(() => {
-            output += `\n[sweep] no result after ${RUN_MS / 1000}s; interrupted\n`
+            say(`[sweep] no result after ${RUN_MS / 1000}s; interrupted`)
             interrupt(child.pid!)
         }, RUN_MS)
         child.on("close", (code) => {
             clearTimeout(deadline)
+            say(`[sweep] exited ${code}`)
             resolve({ code, output })
         })
     })
