@@ -189,7 +189,7 @@ describe("sun shadows", () => {
     })
 
     it("on a OneJS without them, a cart that asks is told, and one that does not is not", () => {
-        readsUndefined.add("SetSunShadows")
+        missing.add("SetSunShadows")
         lived({ sun: { shadows: true } })
         expect(last("SetSun")[9]).toBe(true)
         expect(() => createScene({ sun: { shadows: { distance: 200 } } })).toThrow(/need a newer OneJS.*runtime 1\.7/)
@@ -308,7 +308,7 @@ describe("fog", () => {
     })
 
     it("on an older host draws linear fog, telling a cart that asked for more once", () => {
-        readsUndefined.add("SetFogLaw")
+        missing.add("SetFogLaw")
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
         try {
             const scene = createScene({ fog: { near: 5, far: 30 } }).scene
@@ -680,7 +680,7 @@ describe("forgetting a model", () => {
         ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy({}, {
             get(_t, name: string) {
                 if (name !== "Unload") return inner[name]
-                return answer === null ? undefined : (id: number) => { calls.push(["Unload", id]); return answer }
+                return answer === null ? missingMember("OneJS.Models.ModelBridge", "Unload") : (id: number) => { calls.push(["Unload", id]); return answer }
             },
         })
     }
@@ -895,7 +895,7 @@ describe("the last frame's draws", () => {
     })
 
     it("is null, said once, on a host that counts no draws", () => {
-        readsUndefined = new Set(["DrawCalls", "SetPassCalls"])
+        missing = new Set(["DrawCalls", "SetPassCalls"])
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
         const { scene } = createScene()
         expect(scene.drawCounts).toBeNull()
@@ -972,6 +972,13 @@ describe("an actor on another's joint", () => {
 })
 
 describe("a model's parts", () => {
+    it("are none, as its joints are, on a OneJS from before them", async () => {
+        missing = new Set(["Joints", "Parts"])
+        const model = await loadModel("before-parts.glb")
+        expect(model.joints).toEqual([])
+        expect(model.parts).toEqual([])
+    })
+
     it("are listed, hidden at spawn and shown and hidden after", () => {
         expect(MODEL.parts).toEqual(["body", "skirt"])
         const tom = createScene().scene.spawn(MODEL, { hide: ["skirt"] })
@@ -1096,7 +1103,7 @@ describe("actors moved during a frame", () => {
     })
 
     it("cross one call each on a OneJS from before PlaceMany and ScaleMany", () => {
-        readsUndefined = new Set(["PlaceMany", "ScaleMany"])
+        missing = new Set(["PlaceMany", "ScaleMany"])
         const r = framed()
         const a = createScene({}).scene.spawn(MODEL)
         r.oj.onFrame(() => { a.position = [1, 2, 3]; a.scale = 2 })
@@ -1134,7 +1141,7 @@ describe("actors a physics world moves", () => {
         const a = scene.spawn(MODEL)
         const bridge = (globalThis as any).CS.OneJS.Models.ModelBridge
         ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy(bridge, {
-            get: (t, name) => name === "PlaceMany" ? undefined : t[name as string],
+            get: (t, name) => name === "PlaceMany" ? missingMember("OneJS.Models.ModelBridge", "PlaceMany") : t[name as string],
         })
         calls = []
         placeActors([{ actor: a, at: [1, 2, 3], rotation: { x: 0, y: 0, z: 0, w: 1 } }])

@@ -4,8 +4,9 @@
  * ScatterLookEditModeTests): `scene.mesh`'s cutout, twoSided, unlit, blend and sway, a
  * scatter's tint, tilt and range, and `scene.wind`.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createScene, SCENE_DEFAULTS } from "../models"
+import { missingMember } from "./fake-cs"
 import { createRuntime } from "../runtime"
 
 type Call = [string, ...unknown[]]
@@ -32,6 +33,15 @@ function recorder(): any {
             }
         },
     })
+}
+
+/**
+ * A bridge without `name`, read as a released OneJS reads a member it lacks: a path proxy whose
+ * call throws. `missing` reads one as undefined instead, the shape the error-only guards are tested in.
+ */
+function lacking(name: string): void {
+    const inner = recorder()
+    ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy({}, { get: (_t, n: string) => n === name ? missingMember("OneJS.Models.ModelBridge", n) : inner[n] })
 }
 
 const of = (name: string) => calls.filter((c) => c[0] === name)
@@ -348,6 +358,22 @@ describe("scene.wind", () => {
         expect(of("SetWind")).toEqual([["SetWind", 1, 0, 2, 0.3]])
         s.wind({ direction: [0, -1] })
         expect(of("SetWind").at(-1)).toEqual(["SetWind", 0, -1, 2, 0.3])
+    })
+
+    it("tells a cart that asks for wind on an older OneJS it has none, and one that never asks nothing", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        lacking("SetWind")
+        scene()
+        expect(warn).not.toHaveBeenCalled()
+        dispose!()
+        lacking("SetWind")
+        const s = scene({ wind: { strength: 2 } })
+        s.wind({ strength: 3 })
+        expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+            "[oj] scene.wind needs a newer OneJS: this host's ModelBridge has no wind (it came with runtime 1.7), so nothing sways.",
+            "[oj] scene.wind needs a newer OneJS: this host's ModelBridge has no wind (it came with runtime 1.7), so nothing sways.",
+        ])
+        warn.mockRestore()
     })
 
     it("refuses what is no wind, changing nothing", () => {

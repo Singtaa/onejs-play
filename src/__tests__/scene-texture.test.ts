@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { isLentTexture } from "onejs-react"
 import { createScene } from "../models"
+import { missingMember } from "./fake-cs"
 
 type Call = [string, ...unknown[]]
 
@@ -22,7 +23,7 @@ const DEPTH = { name: "OneJS Scene Depth" }
 function bridge(without: string[] = []): any {
     return new Proxy({}, {
         get(_t, name: string) {
-            if (without.includes(name)) return undefined
+            if (without.includes(name)) return missingMember("OneJS.Models.ModelBridge", name)
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "AcquireSceneTexture") return TEXTURE

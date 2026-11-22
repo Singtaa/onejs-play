@@ -10,6 +10,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { createScene, type BakeOptions } from "../models"
+import { missingMember } from "./fake-cs"
 import { preload, unload } from "../preload"
 import { createRuntime } from "../runtime"
 import { setWasmModule } from "../wasm"
@@ -64,10 +65,18 @@ function squareMesh(): string {
     return buffer.toString("base64")
 }
 
+/** What came with the baker (OneJS 3.9.19), so a host before it lacks every one. */
+const BAKER = ["Baking", "BeginBake", "StepBake", "BakePhase", "BakePage", "BakeProblem", "ClearLight", "LightMesh", "SetLightUnwrap", "LightFile", "LoadLight", "FileSha256", "Sha256", "ProbeGridFloats"]
+
+/** Members this host lacks, read as a released OneJS reads them: a path proxy whose call throws. */
+let lacks: Set<string>
+
 function recorder(): any {
     let next = 40
     return new Proxy({}, {
         get(_t, name: string) {
+            if (lacks.has(name)) return missingMember("OneJS.Models.ModelBridge", name)
+            if (name === "Baking") return false
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "CreateMesh" || name === "Spawn" || name === "Scatter") return ++next
@@ -105,6 +114,7 @@ let runtime: ReturnType<typeof createRuntime>
 let dispose: () => void
 beforeEach(() => {
     calls = []
+    lacks = new Set()
     refused = new Set()
     beginAnswer = ""
     steps = [1]
@@ -198,7 +208,7 @@ describe("scene.bake", () => {
     })
 
     it("gives a OneJS before 1.5.0, which takes one probe spacing, seven floats a metre apart every way", async () => {
-        gridFloats = undefined
+        lacks.add("ProbeGridFloats")
         const s = scene()
         s.spawn(s.mesh(SQUARE), { static: true, scale: 3 })
         s.bake()
@@ -515,6 +525,20 @@ describe("scene.bake", () => {
         expect(warn.mock.calls.map((c) => String(c[0]))).toEqual(["[oj] scene.bake: the bake's probes could not be read. The scene keeps its ambient light."])
     })
 
+    it("fails a bake the bridge says failed on a host that cannot say why, with the GPU's line", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        lacks.add("BakeProblem")
+        const s = scene()
+        s.spawn(s.mesh(SQUARE), { static: true })
+        steps = [0.2, -2]
+        const light = s.bake()
+        await started()
+        frame()
+        frame()
+        expect(await light.done).toBe("failed")
+        expect(warn.mock.calls.map((c) => String(c[0]))).toEqual(["[oj] scene.bake: the bake stopped on the GPU. The scene keeps its ambient light."])
+    })
+
     it("still reads -1 from StepBake as a bake another took, with no line", async () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
         const s = scene()
@@ -545,12 +569,13 @@ describe("scene.bake", () => {
 
     it("tells a host without the baker once, and resolves", async () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-        const older = recorder()
-        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "BeginBake" ? undefined : older[name] }) } } }
+        // Everything that came with the baker.
+        lacks = new Set(BAKER)
         const s = scene()
         await s.bake().done
         await s.bake().done
         expect(warn.mock.calls.filter((c) => /needs a newer OneJS/.test(String(c[0]))).length).toBe(1)
+        expect(() => s.clearLight(), "with no light to clear").not.toThrow()
     })
 })
 
@@ -1118,8 +1143,7 @@ describe("scene.bake for a host that waits on it", () => {
     })
 
     it("fails a named bake on a host without the baker", async () => {
-        const older = recorder()
-        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "BeginBake" ? undefined : older[name] }) } } }
+        lacks = new Set(BAKER)
         await scene().bake(NAME).done
         expect(told).toEqual([`begun ${NAME}`, `ended ${NAME} failed: this host's ModelBridge cannot bake light`])
     })

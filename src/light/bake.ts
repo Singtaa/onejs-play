@@ -18,6 +18,7 @@
 
 import type { Model, Rotation, Vec3 } from "../models"
 import type { Triangles } from "../physics3d/gltf"
+import { bridgeCall } from "../bridge-call"
 import { rotate, toQuat } from "../physics3d/rotation"
 import { modelUrls } from "../physics3d/sources"
 import { AUTO_DETAIL, MAX_PAGES, MIN_DETAIL } from "./atlas"
@@ -233,7 +234,7 @@ export async function planLight(bridge: any, items: readonly BakeItem[], cache: 
         }
     })
     // A OneJS before 1.5.0 takes one spacing for every axis, as seven floats.
-    const perAxis = typeof bridge.ProbeGridFloats === "function" && Number(bridge.ProbeGridFloats()) >= 9
+    const perAxis = bridgeCall(bridge, "ProbeGridFloats", () => Number(bridge.ProbeGridFloats()) >= 9, () => false)
     const g = probeGrid(min, max, perAxis ? PROBE_RISE : 1)
     const grid = perAxis ? gridFloats(g) : [...g.origin, g.spacing[0], ...g.counts]
     return {

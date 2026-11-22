@@ -8,6 +8,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { createScene } from "../models"
+import { missingMember } from "./fake-cs"
 import { setWasmModule } from "../wasm"
 import { RAPIER_VERSION } from "../physics3d/rapier.version"
 import { createWorld } from "../physics3d/world"
@@ -334,11 +335,12 @@ describe("scene.mesh texture and splat", () => {
     it("fades a splat past 60 m and varies it by 0.15 unless the cart says otherwise, after the splat and before the vertices", () => {
         const s = scene()
         const model = s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass, { picture: rock, triplanar: 8 }], weights: new Float32Array(8) } })
-        expect(of("SetMeshSplatFar")).toEqual([["SetMeshSplatFar", model.id, 60, 0.15]])
+        // Asked first, once a bridge, with an id no model has: a released OneJS without it reads it as a path proxy.
+        expect(of("SetMeshSplatFar")).toEqual([["SetMeshSplatFar", -1, 0, 0], ["SetMeshSplatFar", model.id, 60, 0.15]])
         const order = calls.map((c) => c[0]).filter((n) => n === "SetMeshSplat" || n === "SetMeshSplatTriplanar" || n === "SetMeshSplatFar" || n === "SetMesh")
-        expect(order).toEqual(["SetMeshSplat", "SetMeshSplatTriplanar", "SetMeshSplatFar", "SetMesh"])
+        expect(order).toEqual(["SetMeshSplatFar", "SetMeshSplat", "SetMeshSplatTriplanar", "SetMeshSplatFar", "SetMesh"])
         const other = s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], fadeDistance: 0, variation: 0 } })
-        expect(of("SetMeshSplatFar")[1]).toEqual(["SetMeshSplatFar", other.id, 0, 0])
+        expect(of("SetMeshSplatFar")[2]).toEqual(["SetMeshSplatFar", other.id, 0, 0])
         for (const bad of [-1, Infinity, Number.NaN, "60" as any]) {
             expect(() => s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1], fadeDistance: bad } })).toThrow(`scene.mesh splat: fadeDistance is ${bad}`)
         }
@@ -352,7 +354,7 @@ describe("scene.mesh texture and splat", () => {
 
     it("draws a splat on a OneJS that cannot fade one as it always has, and refuses fadeDistance or variation asked for by name", () => {
         const older = recorder()
-        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "SetMeshSplatFar" ? undefined : older[name] }) } } }
+        ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: new Proxy({}, { get: (_t, name: string) => name === "SetMeshSplatFar" ? missingMember("OneJS.Models.ModelBridge", name) : older[name] }) } } }
         const s = scene()
         s.mesh({ ...SQUARE, uvs: UVS, splat: { layers: [grass], weights: [1, 1, 1, 1] } })
         expect(of("CreateMesh")).toHaveLength(1)

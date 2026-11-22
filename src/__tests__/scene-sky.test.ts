@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createScene, SCENE_DEFAULTS } from "../models"
+import { missingMember } from "./fake-cs"
 
 type Call = [string, ...unknown[]]
 
@@ -14,7 +15,7 @@ let savedCS: unknown
 function bridge(without: string[] = []): any {
     return new Proxy({}, {
         get(_t, name: string) {
-            if (without.includes(name)) return undefined
+            if (without.includes(name)) return missingMember("OneJS.Models.ModelBridge", name)
             return (...args: unknown[]) => { calls.push([name, ...args]) }
         },
     })

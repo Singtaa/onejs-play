@@ -12,6 +12,7 @@
 
 import type { Bake, BakeOptions, BakeResult, Model } from "../models"
 import { assetShipped, keptAssetBytes, loadAssetBytes } from "../asset"
+import { bridgeCall } from "../bridge-call"
 import { AUTO_DETAIL, DETAIL_FLOOR, MAX_PAGES } from "./atlas"
 import { bakeOptions, beginBake, ChartCache, FILE_READ_FRAMES, lightFile, loadLight, planLight, readSaved, recordItems, whyBakeHere, type BakeItem, type SavedFile } from "./bake"
 import { TILE_BUDGET, tileBudget } from "./budget"
@@ -94,7 +95,8 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
         const done = new Promise<BakeResult>((resolve) => { finish = resolve })
         const handle: Bake = Object.freeze({ get progress() { return progress }, done })
         if (name !== undefined) lightBegun(name)
-        if (typeof b.BeginBake !== "function") {
+        // Baking came with BeginBake (OneJS 3.9.19); an older host reads it as a path proxy, never a boolean.
+        if (typeof b.Baking !== "boolean") {
             if (!saidNoBake) console.warn("[oj] scene.bake needs a newer OneJS: this host's ModelBridge cannot bake light, so the scene keeps its ambient light.")
             saidNoBake = true
             progress = 1
@@ -120,7 +122,7 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
         const give = (why: string) => {
             // As the line says: a bake this one replaced, still on the bridge with its draft showing, or a
             // model already given its new unwrap against the old light's rectangles, would say otherwise.
-            if (typeof b.ClearLight === "function") b.ClearLight()
+            bridgeCall(b, "ClearLight", () => b.ClearLight(), () => {})
             console.warn(`[oj] scene.bake: ${why}. The scene keeps its ambient light.`)
             progress = 1
             me.stop({ how: "failed", why })
@@ -178,7 +180,7 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
                 page = onPage
                 const tiles = budget.frame(intervalMs)
                 const p = Number(b.StepBake(now === PHASE_PROBES ? Math.min(tiles, TILE_BUDGET.probes) : tiles))
-                if (p === STEP_FAILED) return give(typeof b.BakeProblem === "function" ? String(b.BakeProblem()) : "the bake stopped on the GPU")
+                if (p === STEP_FAILED) return give(bridgeCall(b, "BakeProblem", () => String(b.BakeProblem()), () => "the bake stopped on the GPU"))
                 // Below 0 otherwise: the bridge's bake went, cleared by a later one or by the scene.
                 if (p < 0) return me.stop()
                 progress = p
@@ -229,7 +231,8 @@ export function sceneBaker(scene: SceneReads): SceneBaker {
         },
         clearLight() {
             baking?.stop()
-            if (typeof b.ClearLight === "function") b.ClearLight()
+            // A OneJS from before baking has no light to clear.
+            bridgeCall(b, "ClearLight", () => b.ClearLight(), () => {})
         },
         forget(model) {
             charts.forget(model)

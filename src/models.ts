@@ -23,6 +23,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetFile, assetInfo, assetUrl, loadAssetBytes, loadTexture, textureIdentity } from "./asset"
+import { bridgeCall, bridgeHas } from "./bridge-call"
 import { csHas } from "./cs-host"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture, type Texture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
@@ -1134,17 +1135,20 @@ setActorPlacer((list) => {
         n++
     }
     if (n === 0) return
-    if (typeof b.PlaceMany === "function") {
-        b.PlaceMany(n * 8 === buffer.length ? buffer : buffer.slice(0, n * 8))
-        return
-    }
-    // A OneJS from before PlaceMany: one actor at a time, the same result.
-    for (let i = 0; i < n * 8; i += 8) {
-        b.Move(buffer[i], buffer[i + 1], buffer[i + 2], buffer[i + 3])
-        const r = fromQuat({ x: buffer[i + 4]!, y: buffer[i + 5]!, z: buffer[i + 6]!, w: buffer[i + 7]! })
-        b.SetRotation(buffer[i], r.yaw, r.pitch, r.roll)
-    }
+    bridgeCall(b, "PlaceMany", () => b.PlaceMany(n * 8 === buffer.length ? buffer : buffer.slice(0, n * 8)), () => {
+        // A OneJS from before PlaceMany: one actor at a time, the same result.
+        for (let i = 0; i < n * 8; i += 8) {
+            b.Move(buffer[i], buffer[i + 1], buffer[i + 2], buffer[i + 3])
+            const r = fromQuat({ x: buffer[i + 4]!, y: buffer[i + 5]!, z: buffer[i + 6]!, w: buffer[i + 7]! })
+            b.SetRotation(buffer[i], r.yaw, r.pitch, r.roll)
+        }
+    })
 })
+
+/** What an empty PlaceMany or ScaleMany is sent, to ask whether the host has it: both skip it. */
+const NO_FLOATS = new Float32Array(0)
+/** An id no model has, which a method taking one answers with its refusal and nothing else. */
+const NO_MODEL = -1
 
 /** The CS whose ModelBridge was found, so a host is asked once. */
 let bridgeIn: unknown
@@ -1246,7 +1250,7 @@ function meshLook(o: MeshModelOptions, draw: MeshDrawOptions, b: any): MeshLook 
     const variation = s.variation ?? FAR_DEFAULTS.variation
     if (typeof variation !== "number" || !(variation >= 0 && variation <= 1)) throw new Error(`[oj] scene.mesh splat: variation is ${variation}, and runs from 0 (an even shade) to 1`)
     // A OneJS from before them draws the ground as it always has, unless the cart asked for them by name.
-    const canFar = typeof b.SetMeshSplatFar === "function"
+    const canFar = bridgeHas(b, "SetMeshSplatFar", () => b.SetMeshSplatFar(NO_MODEL, 0, 0))
     if (!canFar && (s.fadeDistance !== undefined || s.variation !== undefined)) {
         throw new Error("[oj] scene.mesh splat fadeDistance and variation need a newer OneJS: this host's ModelBridge cannot fade a splat (it came with runtime 1.8).")
     }
@@ -1292,11 +1296,11 @@ function sunShadowsOf(shadows: boolean | SunShadows | undefined, b: any): [numbe
         throw new Error(`[oj] sun shadows resolution is ${resolution}: 1024, 2048 or 4096`)
     }
     const out: [number, number, number, number] = [distance ?? -1, cascades ?? -1, soft, resolution ?? -1]
-    if (out.some((v) => v >= 0) && typeof b.SetSunShadows !== "function") {
-        throw new Error("[oj] sun shadows distance, cascades, softness and resolution need a newer OneJS: this host's ModelBridge casts the sun's shadows as it ships them (they came with runtime 1.7).")
-    }
+    if (out.some((v) => v >= 0) && typeof b.SetSunShadows !== "function") throw new Error(NO_SUN_SHADOWS)
     return out
 }
+
+const NO_SUN_SHADOWS = "[oj] sun shadows distance, cascades, softness and resolution need a newer OneJS: this host's ModelBridge casts the sun's shadows as it ships them (they came with runtime 1.7)."
 
 function picture(texture: unknown, what: string): void {
     if (texture === null || typeof texture !== "object") throw new Error(`[oj] ${what} is a ${texture === null ? "null" : typeof texture}; give a picture from loadTexture`)
@@ -1492,8 +1496,8 @@ export function loadModel(name: string, options: { colorMask?: string, clips?: M
                 }
             }
             const clips = String(b.Clips(id)).split("\n").filter((c) => c !== "")
-            const joints = typeof b.Joints === "function" ? String(b.Joints(id)).split("\n").filter((j) => j !== "") : []
-            const parts = typeof b.Parts === "function" ? String(b.Parts(id)).split("\n").filter((p) => p !== "") : []
+            const joints = bridgeCall(b, "Joints", () => String(b.Joints(id)).split("\n").filter((j) => j !== ""), () => [])
+            const parts = bridgeCall(b, "Parts", () => String(b.Parts(id)).split("\n").filter((p) => p !== ""), () => [])
             let own: Texture | null | undefined
             const model: Model = Object.freeze({
                 id, clips: Object.freeze(clips), height: Number(b.Height(id)), joints: Object.freeze(joints), parts: Object.freeze(parts),
@@ -1537,9 +1541,10 @@ export async function forgetModel(name: string, options: { colorMask?: string, c
         return
     }
     const b = bridge()
-    if (typeof b.Unload !== "function") return
-    if (b.Unload(model.id)) loads.delete(key)
-    else console.warn(`[oj] ${name} is still in the scene, or another model plays its clips, so it stays loaded. Unload it after its last copy and those models are gone.`)
+    // A OneJS from before Unload keeps every model it loaded.
+    const unloaded = bridgeCall(b, "Unload", () => b.Unload(model.id) === true, () => null)
+    if (unloaded === true) loads.delete(key)
+    else if (unloaded === false) console.warn(`[oj] ${name} is still in the scene, or another model plays its clips, so it stays loaded. Unload it after its last copy and those models are gone.`)
 }
 
 /**
@@ -1665,9 +1670,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         }
         const shadows = sunShadowsOf(sunNow.shadows, b)
         b.SetSun(true, ...sunNow.direction, ...rgb(sunNow.color), sunNow.intensity, shadows !== null)
-        // A host before runtime 1.7 casts them as it ships them, which is what -1 asks for.
-        if (shadows === null || typeof b.SetSunShadows !== "function") return
-        const problem = String(b.SetSunShadows(...shadows) ?? "")
+        if (shadows === null) return
+        // A host before runtime 1.7 casts them as it ships them, which is what -1 asks for, so only a cart that asked for more is told.
+        const problem = bridgeCall(b, "SetSunShadows", () => String(b.SetSunShadows(...shadows) ?? ""), () => {
+            if (shadows.some((v) => v >= 0)) throw new Error(NO_SUN_SHADOWS)
+            return ""
+        })
         if (problem !== "") throw new Error(`[oj] sun shadows: ${problem}`)
     }
     const applyAmbient = () => b.SetAmbient(...rgb(ambientNow.sky), ...rgb(ambientNow.ground), ambientNow.intensity)
@@ -1696,25 +1704,22 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             return
         }
         b.SetFog(true, ...rgb(fogNow.color ?? skyNow?.horizon ?? backgroundColor), fogNow.near, fogNow.far)
-        if (typeof b.SetFogLaw !== "function") {
-            if ((fogNow.mode !== "linear" || fogNow.height !== null) && !saidNoFogLaw) {
+        const fog = fogNow, h = fog.height
+        const problem = bridgeCall(b, "SetFogLaw", () => String(b.SetFogLaw(fog.mode, fogDensity(fog), h?.base ?? 0, h?.thickness ?? 0) ?? ""), () => {
+            if ((fog.mode !== "linear" || h !== null) && !saidNoFogLaw) {
                 saidNoFogLaw = true
                 console.warn("[oj] scene.fog mode and height need a newer OneJS: this host's ModelBridge draws linear fog alone (they came with runtime 1.8), so the fog ramps from near to far.")
             }
-            return
-        }
-        const h = fogNow.height
-        const problem = String(b.SetFogLaw(fogNow.mode, fogDensity(fogNow), h?.base ?? 0, h?.thickness ?? 0) ?? "")
+            return ""
+        })
         if (problem !== "") throw new Error(`[oj] scene.fog: ${problem}`)
     }
     // An older host has no wind, and nothing that sways in it: only a cart that asked is told.
     const applyWind = (asked: boolean) => {
-        if (typeof b.SetWind !== "function") {
-            if (asked) console.warn("[oj] scene.wind needs a newer OneJS: this host's ModelBridge has no wind (it came with runtime 1.7), so nothing sways.")
-            return
-        }
         // nextWind refused all the bridge would, so what it answers is "".
-        b.SetWind(windNow.direction[0], windNow.direction[1], windNow.strength, windNow.gust)
+        bridgeCall(b, "SetWind", () => b.SetWind(windNow.direction[0], windNow.direction[1], windNow.strength, windNow.gust), () => {
+            if (asked) console.warn("[oj] scene.wind needs a newer OneJS: this host's ModelBridge has no wind (it came with runtime 1.7), so nothing sways.")
+        })
     }
     // Nothing is sent for a scene that never has a sky, so an older host hears nothing of it.
     let skySent = false
@@ -1723,17 +1728,19 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     let reflectSent = false
     const applySky = () => {
         if (skyNow === null && !skySent) return
-        if (typeof b.SetSky !== "function") {
+        const sky = skyNow
+        // Every colour parsed first, so a typo throws before the host is asked.
+        const args = sky === null ? [false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            : [true, ...rgb(sky.top), ...rgb(sky.horizon), ...rgb(sky.bottom ?? sky.horizon), sky.sun ? sky.sun.size : 0, sky.sun ? sky.sun.glow : 0, sky.stars]
+        const sent = bridgeCall(b, "SetSky", () => { b.SetSky(...args); return true }, () => {
             if (!saidNoSky) console.warn("[oj] scene.sky needs a newer OneJS: this host's ModelBridge has no sky (it came after 3.9.18), so the scene keeps its background colour.")
             saidNoSky = true
-            return
-        }
+            return false
+        })
+        if (!sent) return
         skySent = true
         // The bridge stops reflecting with the sky, so nothing is owed after a sky(false).
-        if (skyNow === null) { b.SetSky(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); reflectSent = false; return }
-        const sun = skyNow.sun
-        b.SetSky(true, ...rgb(skyNow.top), ...rgb(skyNow.horizon), ...rgb(skyNow.bottom ?? skyNow.horizon),
-            sun ? sun.size : 0, sun ? sun.glow : 0, skyNow.stars)
+        if (sky === null) { reflectSent = false; return }
         applyReflections()
     }
     // Nothing is sent for a scene never asked to reflect, so its calls are a 1.7 scene's, and
@@ -1742,13 +1749,10 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         if (skyNow === null || !skySent) return
         const on = reflectionsNow === "sky"
         if (!on && !reflectSent) return
-        if (typeof b.SetSkyReflect !== "function") {
+        bridgeCall(b, "SetSkyReflect", () => { b.SetSkyReflect(on); reflectSent = on }, () => {
             if (!saidNoSkyReflect) console.warn("[oj] scene.reflections needs a newer OneJS: this host's ModelBridge has no sky reflections (they came with runtime 1.8), so shiny surfaces keep their flat look.")
             saidNoSkyReflect = true
-            return
-        }
-        b.SetSkyReflect(on)
-        reflectSent = on
+        })
     }
 
     b.BeginScene()
@@ -1767,8 +1771,9 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     // one crossing each cost several ms a frame. Outside a frame nothing later is promised
     // to send them, so a move crosses as it is made; so does every move on a host with no
     // frame clock or a OneJS from before PlaceMany, and a scale before ScaleMany.
-    const batchMoves = runtime !== null && typeof b.PlaceMany === "function"
-    const batchScales = runtime !== null && typeof b.ScaleMany === "function"
+    // Asked with an empty array, which both skip: a missing one reads as "function" on every released OneJS.
+    const batchMoves = runtime !== null && bridgeHas(b, "PlaceMany", () => b.PlaceMany(NO_FLOATS))
+    const batchScales = runtime !== null && bridgeHas(b, "ScaleMany", () => b.ScaleMany(NO_FLOATS))
     // Which actor carries which on a joint (actor.attachTo).
     const carriedBy = new Map<Actor, Actor>()
     const moved = new Set<(into: Float32Array, at: number) => void>()
@@ -2409,13 +2414,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             [LENT_TEXTURE]: true as const,
             acquire() {
                 if (disposed) return null
-                if (typeof b[`Acquire${name}`] !== "function") {
+                const lent = bridgeCall(b, `Acquire${name}`, () => b[`Acquire${name}`](), () => {
                     if (!saidNoLender.has(name)) console.warn(`[oj] ${what} needs a newer OneJS: this host's ModelBridge cannot ${missing}, so the program reads nothing.`)
                     saidNoLender.add(name)
-                    return null
-                }
+                    return undefined
+                })
+                if (lent === undefined) return null
                 readers++
-                return b[`Acquire${name}`]()
+                return lent
             },
             release() {
                 if (disposed || readers === 0) return
@@ -2554,7 +2560,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         waterline(o) {
             if (o === false) {
                 waterlineNow = null
-                if (typeof b.SetWaterline === "function") b.SetWaterline(false, 0, 0, 0, 0, 0)
+                bridgeCall(b, "SetWaterline", () => b.SetWaterline(false, 0, 0, 0, 0, 0), () => "")
                 return
             }
             if (o === null || typeof o !== "object") throw new Error(`[oj] scene.waterline is ${String(o)}, and is { y, color, strength } or false`)
@@ -2610,12 +2616,13 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         // A copy, so `for (const a of scene.actors) a.destroy()` reaches every actor.
         get actors() { return actors.slice() },
         get drawCounts() {
-            if (typeof b.DrawCalls !== "function") {
+            const draws = bridgeCall(b, "DrawCalls", () => Number(b.DrawCalls()), () => {
                 if (!saidNoDrawCounts) console.warn("[oj] scene.drawCounts needs a newer OneJS: this host's ModelBridge counts no draws.")
                 saidNoDrawCounts = true
                 return null
-            }
-            const draws = Number(b.DrawCalls()), setPasses = Number(b.SetPassCalls())
+            })
+            if (draws === null) return null
+            const setPasses = Number(b.SetPassCalls())
             return draws < 0 || setPasses < 0 ? null : { draws, setPasses }
         },
     }

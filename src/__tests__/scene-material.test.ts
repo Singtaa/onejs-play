@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createScene } from "../models"
+import { missingMember } from "./fake-cs"
 import { createRuntime } from "../runtime"
 
 type Call = [string, ...unknown[]]
@@ -30,6 +31,15 @@ function recorder(): any {
             }
         },
     })
+}
+
+/**
+ * A bridge without `name`, read as a released OneJS reads a member it lacks: a path proxy whose
+ * call throws. `missing` reads one as undefined instead, the shape the error-only guards are tested in.
+ */
+function lacking(name: string): void {
+    const inner = recorder()
+    ;(globalThis as any).CS.OneJS.Models.ModelBridge = new Proxy({}, { get: (_t, n: string) => n === name ? missingMember("OneJS.Models.ModelBridge", n) : inner[n] })
 }
 
 const of = (name: string) => calls.filter((c) => c[0] === name)
@@ -342,6 +352,11 @@ describe("scene.waterline", () => {
         missing = new Set(["SetWaterline"])
         expect(() => s.waterline({ y: 1, color: "#ffffff" })).toThrow("scene.waterline needs a newer OneJS")
         expect(of("SetWaterline")).toHaveLength(0)
+    })
+
+    it("has none to clear on an older OneJS", () => {
+        lacking("SetWaterline")
+        expect(() => scene().waterline(false)).not.toThrow()
     })
 
     it("says what the bridge refused, and keeps nothing", () => {
