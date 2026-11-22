@@ -35,6 +35,21 @@ describe("the CLI's CDP calls", () => {
         expect(fs.readFileSync(file, "utf8")).toBe("png")
     })
 
+    // A playtest asks for its pixels itself, as eight fixtures do, so the
+    // capture's time is the call's own: the occlusion fixture's at 30 s
+    // failed windows-latest on 22 Nov, and the failed.png after it answered.
+    it("waits as long for a screenshot a playtest asks for itself", async () => {
+        vi.useFakeTimers()
+        const { b, answer } = browser()
+        const shot = b.send("Page.captureScreenshot", { format: "png" })
+        const settled = vi.fn()
+        shot.then(settled, settled)
+        await vi.advanceTimersByTimeAsync(CALL_MS + 15000)
+        expect(settled).not.toHaveBeenCalled()
+        answer("Page.captureScreenshot", { data: "cG5n" })
+        await expect(shot).resolves.toEqual({ data: "cG5n" })
+    })
+
     it("still gives up on a screenshot that never comes, and on any other call at CALL_MS", async () => {
         vi.useFakeTimers()
         const { b } = browser()

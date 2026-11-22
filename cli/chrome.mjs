@@ -63,8 +63,14 @@ export const CALL_MS = 30000
  * 57 fps and 1.2 s at 12 fps on a Mac's SwiftShader, and 15 to 26 s on
  * windows-latest, whose SwiftShader (Subzero, no GPU) draws a 3x phone at
  * 0.7 fps (6 Nov 2026). CALL_MS refused the font fixture's phone shot there.
+ * Every Page.captureScreenshot gets it unless its caller names another time,
+ * a playtest's own included: the occlusion fixture's at 30 s failed there on
+ * 22 Nov, and the failed.png taken after it answered.
  */
 export const CAPTURE_MS = 120000
+
+/** The time a call gets when its caller names none. */
+const timeFor = (method) => method === "Page.captureScreenshot" ? CAPTURE_MS : CALL_MS
 
 /**
  * Launches a browser and attaches to its first page.
@@ -394,7 +400,7 @@ export class Browser {
      * target) can pass a sessionId and read what came back. `send` is the
      * unwrapped form for the common case.
      */
-    call(method, params = {}, sessionId, timeoutMs = CALL_MS) {
+    call(method, params = {}, sessionId, timeoutMs = timeFor(method)) {
         // A permission granted from the page is for the page: in its own
         // context, unless the caller named another. A playtest script written
         // before the page had a context of its own keeps working unchanged.
@@ -409,7 +415,7 @@ export class Browser {
         })
     }
 
-    async send(method, params = {}, sessionId, timeoutMs = CALL_MS) {
+    async send(method, params = {}, sessionId, timeoutMs = timeFor(method)) {
         const m = await this.call(method, params, sessionId, timeoutMs)
         if (m.error) throw new Error(`${method}: ${m.error.message}`)
         return m.result
@@ -524,7 +530,7 @@ export class Browser {
     }
 
     async screenshot(file) {
-        const s = await this.send("Page.captureScreenshot", { format: "png" }, undefined, CAPTURE_MS)
+        const s = await this.send("Page.captureScreenshot", { format: "png" })
         fs.mkdirSync(path.dirname(file), { recursive: true })
         fs.writeFileSync(file, Buffer.from(s.data, "base64"))
         return file
