@@ -2,8 +2,8 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { discard } from "./chrome.mjs"
-import { CLOSE_MS, Closing, HUNG, Hung, closingHung, removeWithin } from "./closing.mjs"
+import { chromesOnMachine, discard } from "./chrome.mjs"
+import { CLOSE_MS, Closing, HUNG, Hung, alive, closingHung, left, removeWithin } from "./closing.mjs"
 import { makeTemp } from "./temp.mjs"
 import { cleanCommit } from "./pipelines.mjs"
 
@@ -12,8 +12,15 @@ function neverDies(profile: string) {
     return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "--", `--user-data-dir=${profile}`], { stdio: "ignore", detached: process.platform !== "win32" })
 }
 
-/** A kill command that never returns, as taskkill did not on windows-latest (22 Nov). */
-const KILL_HANGS: [string, string[]] = [process.execPath, ["-e", "setInterval(() => {}, 1000)"]]
+/** A command that never returns, as taskkill, tasklist and PowerShell did not while a stalled Chrome held windows-latest (22 Nov). */
+const NEVER_RETURNS: [string, string[]] = [process.execPath, ["-e", "setInterval(() => {}, 1000)"]]
+
+/** Resolves once `child` is running, failing the test if it has already gone, so a test of what outlives a kill never measures nothing. */
+async function running(child: ReturnType<typeof neverDies>) {
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(child.exitCode, "the child that never dies has died, so this test would measure nothing").toBe(null)
+    return child.pid!
+}
 
 const started: { kill: () => void }[] = []
 afterEach(() => {
@@ -97,21 +104,53 @@ describe("closing a run", () => {
         }
     })
 
-    it("returns with the verdict when Chrome does not die, naming what it left", async () => {
+    // On 22 Nov (onejs-play CI 45004068212) both hung closes said "left:
+    // nothing" from a PowerShell that had run out of its time, and a stalled
+    // run's tasklist counted 0 Chrome processes beside Chrome's own 13.
+    it("says a process list that did not answer as not listed, never as nothing left", () => {
+        expect(left("oj-chrome-anything", { lister: NEVER_RETURNS, timeoutMs: 300 })).toMatch(/^could not be listed \(node(\.exe)? did not answer in 0\.3 s\)$/)
+        expect(chromesOnMachine({ lister: NEVER_RETURNS, timeoutMs: 300 })).toMatch(/^uncounted Chrome processes \(node(\.exe)? did not answer in 0\.3 s\)$/)
+    })
+
+    it("ends each process Chrome listed itself, and says nothing when they are all gone", async () => {
+        const profile = makeTemp("oj-close-profile-")
+        const browser = neverDies(profile), gpu = neverDies(profile)
+        started.push(browser, gpu)
+        const tree = [{ id: await running(browser), type: "browser" }, { id: await running(gpu), type: "gpu-process" }]
+        const closing = new Closing()
+        await discard(browser, profile, closing, { known: { list: tree }, timeoutMs: 5000 })
+        expect(closing.steps.map((s) => s.hung)).toEqual([null, null])
+        expect(alive(browser.pid!) || alive(gpu.pid!), "a process Chrome listed outlived the close").toBe(false)
+    }, 30_000)
+
+    it("returns with the verdict when a process outlives its kill, listing Chrome's tree before and what is left after", async () => {
+        const profile = makeTemp("oj-close-profile-")
+        const browser = neverDies(profile), gpu = neverDies(profile)
+        started.push(browser, gpu)
+        const tree = [{ id: await running(browser), type: "browser" }, { id: await running(gpu), type: "gpu-process" }]
+        // A kill that lands on the browser and not on its GPU process.
+        const end = (pid: number) => { if (pid === browser.pid) process.kill(pid, "SIGKILL") }
+        const began = Date.now()
+        const closing = new Closing()
+        await discard(browser, profile, closing, { known: { list: tree }, end, timeoutMs: 1500 })
+        expect(Date.now() - began, "the close waited on a process that does not die").toBeLessThan(10_000)
+        const line = closing.line()!
+        expect(line).toContain(`${HUNG} chrome: 1 of Chrome's 2 processes outlived the kill by 1.5 s: ${gpu.pid} gpu-process; before it, Chrome listed ${browser.pid} browser, ${gpu.pid} gpu-process; by its profile, left: ${gpu.pid} main; `)
+        expect(line).toMatch(/ GB free/)
+        expect(closingHung(`[ojplay] ${line}`)).not.toBe(null)
+    }, 30_000)
+
+    it("walks the tree when Chrome could not list it, and returns when that walk never does", async () => {
         const profile = makeTemp("oj-close-profile-")
         const child = neverDies(profile)
         started.push(child)
-        await new Promise((resolve) => setTimeout(resolve, 300))
-        expect(child.exitCode, "the child that never dies has died, so this test would measure nothing").toBe(null)
+        await running(child)
         const began = Date.now()
         const closing = new Closing()
-        await discard(child, profile, closing, { killWith: KILL_HANGS, timeoutMs: 1500 })
-        const took = Date.now() - began
-        expect(took, "the close waited on a kill that never returns").toBeLessThan(10_000)
-        const line = closing.line()
-        expect(line).toMatch(new RegExp(`^${HUNG} chrome: chrome did not exit in 1.5 s \\(node(\\.exe)? of ${child.pid} did not return\\); left: `))
-        expect(line).toContain(`${child.pid} main`)
-        expect(closingHung(`[ojplay] ${line}`)).not.toBe(null)
-        expect(fs.existsSync(path.join(profile)), "the profile is still deleted after a hung kill").toBe(false)
+        await discard(child, profile, closing, { known: { failed: "the browser's socket did not open in 5 s" }, killWith: NEVER_RETURNS, timeoutMs: 1500 })
+        expect(Date.now() - began, "the close waited on a kill that never returns").toBeLessThan(10_000)
+        const line = closing.line()!
+        expect(line).toMatch(new RegExp(`^${HUNG} chrome: node(\\.exe)? of ${child.pid} did not return in 1\\.5 s; before it, Chrome's own list could not be asked \\(the browser's socket did not open in 5 s\\); by its profile, left: `))
+        expect(fs.existsSync(profile), "the profile is still deleted after a hung kill").toBe(false)
     }, 30_000)
 })

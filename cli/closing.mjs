@@ -10,6 +10,8 @@
  */
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 
 /** A close with a step slower than this is said, step by step. */
 export const SLOW_MS = 2000
@@ -91,29 +93,54 @@ export async function removeWithin(dir, timeoutMs = CLOSE_MS) {
     if (late) throw new Hung(`not deleted in ${timeoutMs / 1000} s; left at ${dir}`)
 }
 
+/** Whether process `pid` is still running. Asked of the OS directly, so it answers on a machine too busy to start a process. */
+export function alive(pid) {
+    try {
+        process.kill(pid, 0)
+        return true
+    } catch (error) {
+        return error.code === "EPERM"
+    }
+}
+
+/** The machine's free memory, as a phrase: beside a hang, it says whether the machine was paging. */
+export function memory() {
+    return `${(os.freemem() / 2 ** 30).toFixed(1)} of ${(os.totalmem() / 2 ** 30).toFixed(1)} GB free`
+}
+
+/**
+ * Runs a lister for at most `timeoutMs`: its output, or why it gave none. A
+ * lister that ran out of time answered nothing, which is not the same as
+ * answering that there was nothing: on 22 Nov two hung closes on
+ * windows-latest said "left: nothing" from a PowerShell that never finished.
+ */
+export function listed([command, args], timeoutMs) {
+    const result = bounded(command, args, { encoding: "utf8" }, timeoutMs)
+    const name = path.basename(command)
+    if (result.timedOut) return { failed: `${name} did not answer in ${timeoutMs / 1000} s` }
+    if (result.error) return { failed: `${name} failed (${result.error.code ?? result.error.message})` }
+    if (result.status !== 0) return { failed: `${name} exited ${result.status}` }
+    return { out: result.stdout ?? "" }
+}
+
+/** What lists every process with its command line, one `pid command line` a row. */
+function processLister(marker) {
+    if (process.platform !== "win32") return ["ps", ["-axww", "-o", "pid=,args="]]
+    const quoted = marker.replace(/'/g, "''")
+    return ["powershell", ["-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains('${quoted}') } | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }`]]
+}
+
 /**
  * The processes still running whose command line names `marker`, a run's
  * profile folder, which every process of its Chrome is given: what a kill
  * left. Each is its pid and its kind (Chrome's --type, "main" for the
- * browser process itself).
+ * browser process itself). `lister` and `timeoutMs` stand in for the
+ * platform's own in tests.
  */
-export function left(marker) {
-    try {
-        let rows
-        if (process.platform === "win32") {
-            const quoted = marker.replace(/'/g, "''")
-            const script = `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains('${quoted}') } | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }`
-            rows = bounded("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" }, 15_000).stdout ?? ""
-        } else {
-            rows = bounded("ps", ["-axww", "-o", "pid=,args="], { encoding: "utf8" }, 10_000).stdout ?? ""
-        }
-        const found = rows.split("\n").map((row) => row.trim()).filter((row) => row !== "" && row.includes(marker))
-            .map((row) => {
-                const pid = row.split(/\s+/, 1)[0]
-                return `${pid} ${/--type=(\S+)/.exec(row)?.[1] ?? "main"}`
-            })
-        return found.length === 0 ? "nothing" : found.join(", ")
-    } catch {
-        return "could not be listed"
-    }
+export function left(marker, { lister = processLister(marker), timeoutMs = process.platform === "win32" ? 15_000 : 10_000 } = {}) {
+    const rows = listed(lister, timeoutMs)
+    if (rows.failed) return `could not be listed (${rows.failed})`
+    const found = rows.out.split("\n").map((row) => row.trim()).filter((row) => row !== "" && row.includes(marker))
+        .map((row) => `${row.split(/\s+/, 1)[0]} ${/--type=(\S+)/.exec(row)?.[1] ?? "main"}`)
+    return found.length === 0 ? "nothing" : found.join(", ")
 }

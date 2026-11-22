@@ -993,7 +993,12 @@ the git calls that keep a recorded pipeline set) takes over 2 s, the run says
 each step's length. A step that has not finished in 20 s is given up on and
 said as `closing hung:`, with the Chrome processes still running, so the
 prompt comes back with the verdict. The e2e sweep fails a run that says so,
-under that name.
+under that name. Chrome is asked for its own list of processes first, and
+each one it names is ended directly and watched until it has gone, so the
+kill starts no process of its own (taskkill and PowerShell ran 30 s late on a
+windows-latest runner held by a stalled run, 22 Nov); a hung close names
+that list, what outlived the kill, and the machine's free memory. A process
+list or count that ran out of time says so rather than reading as none.
 
 **`ojplay test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `find(text)` (where

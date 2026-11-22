@@ -9,7 +9,7 @@ import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { CLOSE_MS, Closing, Hung, bounded, left, removeWithin } from "./closing.mjs"
+import { CLOSE_MS, Closing, Hung, alive, bounded, left, listed, memory, removeWithin } from "./closing.mjs"
 import { makeTemp } from "./temp.mjs"
 
 const CANDIDATES = {
@@ -330,24 +330,59 @@ const CONTEXT_CALLS = new Set(["Browser.grantPermissions", "Browser.resetPermiss
  * Stops Chrome and deletes its profile: every way out of a run, failed or
  * not. Each is a step of `closing`, so a run says which was slow, and neither
  * may hold the run past CLOSE_MS: one that does not finish is said as hung,
- * with what is still running, and the run exits with its verdict. `killWith`
- * stands in for taskkill or SIGKILL, and `timeoutMs` for CLOSE_MS, in tests.
+ * with what is still running, and the run exits with its verdict.
+ *
+ * `known` is Chrome's own list of its processes, asked before the kill
+ * (Browser.processes), or why it could not be had. With it, each listed
+ * process is ended from here, one call to the OS each, and each is watched
+ * until it has gone: on 22 Nov a stalled run held windows-latest so hard that
+ * taskkill, which has to be started as a process, did not return in 20 s,
+ * and the run's processes could not be listed after it either (onejs-play CI
+ * 45004068212). Without the list, the browser's tree is walked as before:
+ * taskkill /T /F on Windows, the process group elsewhere.
+ *
+ * In tests, `end` stands in for ending one process, `killWith` for taskkill,
+ * and `timeoutMs` for CLOSE_MS.
  */
-export async function discard(child, profile, closing = new Closing(), { killWith = null, timeoutMs = CLOSE_MS } = {}) {
-    closing.step("chrome", () => kill(child, profile, killWith, timeoutMs))
+export async function discard(child, profile, closing = new Closing(), { known = null, end = endProcess, killWith = null, timeoutMs = CLOSE_MS } = {}) {
+    await closing.stepAsync("chrome", () => kill(child, profile, { known, end, killWith, timeoutMs }))
     await closing.stepAsync("profile", () => removeWithin(profile, timeoutMs))
 }
 
-function kill(child, profile, killWith, timeoutMs) {
+/** Ends one process, ignoring one that has already gone. */
+function endProcess(pid) {
+    try { process.kill(pid, "SIGKILL") } catch (error) { if (error.code !== "ESRCH") throw error }
+}
+
+async function kill(child, profile, { known, end, killWith, timeoutMs }) {
     if (!child?.pid) return
-    if (killWith === null && process.platform !== "win32") {
-        try { process.kill(-child.pid, "SIGKILL") } catch { /* already gone */ }
-        return
+    const list = known?.list ?? null
+    const tree = [{ id: child.pid, type: "browser" }, ...(list ?? []).filter((p) => p.id !== child.pid)]
+    const said = []
+    if (list === null || killWith !== null) {
+        if (killWith === null && process.platform !== "win32") {
+            try { process.kill(-child.pid, "SIGKILL") } catch { /* already gone */ }
+        } else {
+            // Walked before the browser is ended: the walk starts from it.
+            const [command, args] = killWith ?? ["taskkill", ["/pid", String(child.pid), "/T", "/F"]]
+            if (bounded(command, args, { stdio: "ignore" }, timeoutMs).timedOut) said.push(`${path.basename(command)} of ${child.pid} did not return in ${timeoutMs / 1000} s`)
+        }
     }
-    const [command, args] = killWith ?? ["taskkill", ["/pid", String(child.pid), "/T", "/F"]]
-    if (bounded(command, args, { stdio: "ignore" }, timeoutMs).timedOut) {
-        throw new Hung(`chrome did not exit in ${timeoutMs / 1000} s (${path.basename(command)} of ${child.pid} did not return); left: ${left(profile)}`)
+    for (const p of tree) {
+        try { end(p.id) } catch (error) { p.refused = error.code ?? error.message }
     }
+    // Watched from the kill itself, so a walk that ran out of time does not count against what it ended.
+    const ended = Date.now()
+    let outlived = tree.filter((p) => alive(p.id))
+    while (outlived.length > 0 && Date.now() - ended < timeoutMs) {
+        await sleep(100)
+        outlived = outlived.filter((p) => alive(p.id))
+    }
+    if (outlived.length === 0 && said.length === 0) return
+    const named = (ps) => ps.map((p) => `${p.id} ${p.type}${p.refused ? ` (its kill: ${p.refused})` : ""}`).join(", ")
+    if (outlived.length > 0) said.push(`${outlived.length} of ${list === null ? "the" : "Chrome's"} ${tree.length} processes outlived the kill by ${timeoutMs / 1000} s: ${named(outlived)}`)
+    said.push(list === null ? `before it, Chrome's own list could not be asked (${known?.failed ?? "no browser to ask"})` : `before it, Chrome listed ${named(tree)}`)
+    throw new Hung(`${said.join("; ")}; by its profile, left: ${left(profile)}; ${memory()}`)
 }
 
 /** A CDP session on one page, with the console kept. */
@@ -505,8 +540,44 @@ export class Browser {
      * answer. Twice on windows-latest (13 and 22 Nov) it said nothing instead.
      */
     async busy(ms = 2000, waitMs = 5000) {
+        const browser = await this.browserSocket(waitMs)
+        if (browser.failed) return `chrome's processes could not be asked: ${browser.failed}`
+        try {
+            let before, after
+            try { before = await browser.processes() } catch (e) { return `chrome's processes could not be asked: the browser's first SystemInfo.getProcessInfo ${e.message}` }
+            const began = Date.now()
+            await sleep(ms)
+            try { after = await browser.processes() } catch (e) { return `chrome's processes could not be asked: the browser answered once, then its second SystemInfo.getProcessInfo ${e.message}` }
+            const used = cpuUsed(before, after, (Date.now() - began) / 1000)
+            return `chrome's processes ${used}; the machine has ${os.cpus().length} cores, ${memory()} and ${chromesOnMachine()}`
+        } catch (e) {
+            return `chrome's processes could not be asked: asking the browser threw (${e.message})`
+        } finally {
+            browser.ws.close()
+        }
+    }
+
+    /**
+     * Chrome's processes as it lists them itself, `[{ id, type }]`, or
+     * `{ failed }` saying why it could not be asked within `waitMs` each step.
+     * Asked of the browser, not the page, so a stalled page does not stop it.
+     */
+    async processes(waitMs = 5000) {
+        const browser = await this.browserSocket(waitMs)
+        if (browser.failed) return { failed: browser.failed }
+        try {
+            return { list: (await browser.processes()).map((p) => ({ id: p.id, type: p.type })) }
+        } catch (e) {
+            return { failed: `the browser's SystemInfo.getProcessInfo ${e.message}` }
+        } finally {
+            browser.ws.close()
+        }
+    }
+
+    /** A socket on the browser itself, with `processes()` to ask it SystemInfo.getProcessInfo; or `{ failed }` saying which step did not answer in `waitMs`. */
+    async browserSocket(waitMs) {
         const wait = `${waitMs / 1000} s`
-        const failed = (step) => `chrome's processes could not be asked: ${step}`
+        if (!this.page?.webSocketDebuggerUrl) return { failed: "there is no page to find the browser by" }
         const { port } = new URL(this.page.webSocketDebuggerUrl)
         const version = `http://127.0.0.1:${port}/json/version`
         let socketUrl
@@ -514,43 +585,34 @@ export class Browser {
             const r = await fetch(version, { signal: AbortSignal.timeout(waitMs) })
             const text = await r.text()
             try { socketUrl = JSON.parse(text).webSocketDebuggerUrl } catch { /* said below */ }
-            if (typeof socketUrl !== "string") return failed(`the browser's ${version} answered with no socket (HTTP ${r.status}: ${text.slice(0, 80)})`)
+            if (typeof socketUrl !== "string") return { failed: `the browser's ${version} answered with no socket (HTTP ${r.status}: ${text.slice(0, 80)})` }
         } catch (e) {
-            return failed(e.name === "TimeoutError" ? `the browser's ${version} did not answer in ${wait}` : `the browser's ${version} failed (${e.cause?.code ?? e.message})`)
+            return { failed: e.name === "TimeoutError" ? `the browser's ${version} did not answer in ${wait}` : `the browser's ${version} failed (${e.cause?.code ?? e.message})` }
         }
         const ws = new WebSocket(socketUrl)
-        try {
-            const opened = await new Promise((ok) => {
-                const timer = setTimeout(() => ok(`did not open in ${wait}`), waitMs)
-                ws.onopen = () => { clearTimeout(timer); ok(null) }
-                ws.onerror = (e) => { clearTimeout(timer); ok(`did not open (${e.message ?? e.error?.message ?? "a socket error"})`) }
-            })
-            if (opened !== null) return failed(`the browser's socket ${socketUrl} ${opened}`)
-            let id = 0
-            const sample = () => new Promise((ok, no) => {
-                const mine = ++id
-                const timer = setTimeout(() => no(new Error(`did not answer in ${wait}`)), waitMs)
-                ws.onmessage = (e) => {
-                    const m = JSON.parse(e.data)
-                    if (m.id !== mine) return
-                    clearTimeout(timer)
-                    if (m.error) no(new Error(`failed (${m.error.message})`))
-                    else ok(m.result.processInfo)
-                }
-                ws.send(JSON.stringify({ id: mine, method: "SystemInfo.getProcessInfo" }))
-            })
-            let before, after
-            try { before = await sample() } catch (e) { return failed(`the browser's first SystemInfo.getProcessInfo ${e.message}`) }
-            const began = Date.now()
-            await sleep(ms)
-            try { after = await sample() } catch (e) { return failed(`the browser answered once, then its second SystemInfo.getProcessInfo ${e.message}`) }
-            const used = cpuUsed(before, after, (Date.now() - began) / 1000)
-            return `chrome's processes ${used}; the machine has ${os.cpus().length} cores and ${chromesOnMachine() ?? "an unknown number of"} Chrome processes in all`
-        } catch (e) {
-            return failed(`asking the browser threw (${e.message})`)
-        } finally {
+        const opened = await new Promise((ok) => {
+            const timer = setTimeout(() => ok(`did not open in ${wait}`), waitMs)
+            ws.onopen = () => { clearTimeout(timer); ok(null) }
+            ws.onerror = (e) => { clearTimeout(timer); ok(`did not open (${e.message ?? e.error?.message ?? "a socket error"})`) }
+        })
+        if (opened !== null) {
             ws.close()
+            return { failed: `the browser's socket ${socketUrl} ${opened}` }
         }
+        let id = 0
+        const processes = () => new Promise((ok, no) => {
+            const mine = ++id
+            const timer = setTimeout(() => no(new Error(`did not answer in ${wait}`)), waitMs)
+            ws.onmessage = (e) => {
+                const m = JSON.parse(e.data)
+                if (m.id !== mine) return
+                clearTimeout(timer)
+                if (m.error) no(new Error(`failed (${m.error.message})`))
+                else ok(m.result.processInfo)
+            }
+            ws.send(JSON.stringify({ id: mine, method: "SystemInfo.getProcessInfo" }))
+        })
+        return { ws, processes }
     }
 
     /** Keeps Chrome's own log past close, for a run that failed: where it is, or null with none asked for. */
@@ -581,7 +643,10 @@ export class Browser {
     /** Closes Chrome, its steps recorded in `closing` (closing.mjs). */
     async close(closing = new Closing()) {
         try { this.ws?.close() } catch { /* going anyway */ }
-        await discard(this.child, this.profile, closing)
+        // Chrome's own list, while it can still answer: what the kill ends and watches.
+        let known = null
+        await closing.stepAsync("list", async () => { known = await this.processes() })
+        await discard(this.child, this.profile, closing, { known })
         if (this.log && !this.keepLog) {
             for (const file of [this.log.file, this.log.netlog]) {
                 try { fs.rmSync(file, { force: true, maxRetries: 3, retryDelay: 100 }) } catch { /* a locked log is not worth failing over */ }
@@ -621,22 +686,20 @@ export function cpuUsed(before, after, seconds) {
 }
 
 /**
- * How many Chrome processes the whole machine is running, or null where that
- * cannot be asked. Beside a stalled browser's own count it says whether the
- * browser had the machine to itself: an earlier run's Chrome that outlived
- * its kill draws on the same cores.
+ * How many Chrome processes the whole machine is running, as a phrase, or
+ * why they went uncounted. Beside a stalled browser's own count it says
+ * whether the browser had the machine to itself: an earlier run's Chrome that
+ * outlived its kill draws on the same cores. A count that ran out of time is
+ * said as uncounted: on 22 Nov one said 0 beside Chrome's own 13.
+ * `lister` and `timeoutMs` stand in for the platform's own in tests.
  */
-export function chromesOnMachine() {
-    try {
-        if (process.platform === "win32") {
-            const out = spawnSync("tasklist", ["/fi", "imagename eq chrome.exe", "/fo", "csv", "/nh"], { encoding: "utf8", timeout: 10000 }).stdout ?? ""
-            return out.split("\n").filter((line) => line.toLowerCase().startsWith('"chrome.exe"')).length
-        }
-        const out = spawnSync("ps", ["-axo", "comm="], { encoding: "utf8", timeout: 10000 }).stdout ?? ""
-        return out.split("\n").filter((line) => /chrom(e|ium)/i.test(path.basename(line.trim()))).length
-    } catch {
-        return null
-    }
+export function chromesOnMachine({ lister = process.platform === "win32" ? ["tasklist", ["/fi", "imagename eq chrome.exe", "/fo", "csv", "/nh"]] : ["ps", ["-axo", "comm="]], timeoutMs = 10_000 } = {}) {
+    const rows = listed(lister, timeoutMs)
+    if (rows.failed) return `uncounted Chrome processes (${rows.failed})`
+    const count = process.platform === "win32"
+        ? rows.out.split("\n").filter((line) => line.toLowerCase().startsWith('"chrome.exe"')).length
+        : rows.out.split("\n").filter((line) => /chrom(e|ium)/i.test(path.basename(line.trim()))).length
+    return `${count} Chrome processes in all`
 }
 
 export function keyOf(code) {
