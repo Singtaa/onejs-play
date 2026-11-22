@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { csHas, csMissing } from "../cs-host"
-import { fakeCS } from "./fake-cs"
+import { fakeCS, HOSTS } from "./fake-cs"
 
 afterEach(() => { delete (globalThis as any).CS })
 
@@ -15,6 +15,11 @@ describe("csHas", () => {
         const read = () => (globalThis as any).CS.OneJS.Physics2DBridge.LiveWorldCount
         expect(typeof read()).toBe("function")
         expect(csHas("OneJS.Physics2DBridge", read)).toBe(false)
+    })
+
+    it.each(HOSTS)("is false for a member the type lacks, which reads as a %s", (host) => {
+        ;(globalThis as any).CS = fakeCS({ "OneJS.Physics2DBridge": {} }, { host })
+        expect(csHas("OneJS.Physics2DBridge", () => (globalThis as any).CS.OneJS.Physics2DBridge.LiveWorldCount)).toBe(false)
     })
 
     it("takes QuickJS's not-found for the type as missing, and lets any other throw through", () => {
@@ -35,5 +40,21 @@ describe("csMissing", () => {
         expect(csMissing(new Error("[QuickJS] Type not found: OneJS.Audio.AudioBridgeX"), "OneJS.Audio.AudioBridge")).toBe(false)
         expect(csMissing(new Error("[QuickJS] Method not found: OneJS.Audio.Other.Play"), "OneJS.Audio.AudioBridge")).toBe(false)
         expect(csMissing(new Error("NullReferenceException"), "OneJS.Audio.AudioBridge")).toBe(false)
+    })
+
+    it.each(HOSTS)("takes the call of a member the type lacks for missing, when told the member, where it reads as a %s", (host) => {
+        ;(globalThis as any).CS = fakeCS({ "OneJS.Network": { Here: () => { throw new TypeError("not a function") } } }, { host })
+        let thrown: unknown
+        try { (globalThis as any).CS.OneJS.Network.LoadFontFromUrl("x") } catch (e) { thrown = e }
+        expect(csMissing(thrown, "OneJS.Network", "LoadFontFromUrl")).toBe(true)
+        // A TypeError from a member that is there is its own fault, not a missing one.
+        let own: unknown
+        try { (globalThis as any).CS.OneJS.Network.Here() } catch (e) { own = e }
+        expect(csMissing(own, "OneJS.Network", "Here")).toBe(false)
+    })
+
+    it("does not take a bare TypeError for missing without the member it came from", () => {
+        ;(globalThis as any).CS = fakeCS({ "OneJS.Network": {} }, { host: "undefined" })
+        expect(csMissing(new TypeError("not a function"), "OneJS.Network")).toBe(false)
     })
 })

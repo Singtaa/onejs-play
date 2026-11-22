@@ -11,15 +11,16 @@ const lackedBy = new WeakMap<object, Set<string>>()
 /**
  * `call()`, which calls ModelBridge's `method`, or `older()` on a OneJS whose ModelBridge lacks it.
  * Every released OneJS reads a missing method as a path proxy, so `typeof` says "function" there and
- * only the call's "Method not found" tells (cs-host.ts); a member that reads as undefined is the
- * other shape a host can lack one in. Make one call of `method` in `call`, and nothing else on b.
+ * only the call's "Method not found" tells (cs-host.ts); a OneJS that reads a missing static as
+ * undefined is the other shape, which `typeof` answers before any call. Make one call of `method`
+ * in `call`, and nothing else on b.
  */
 export function bridgeCall<T>(b: any, method: string, call: () => T, older: () => T): T {
     if (typeof b[method] !== "function" || lackedBy.get(b)?.has(method) === true) return older()
     try {
         return call()
     } catch (e) {
-        if (!csMissing(e, "OneJS.Models.ModelBridge")) throw e
+        if (!csMissing(e, "OneJS.Models.ModelBridge", method)) throw e
         let lacked = lackedBy.get(b)
         if (lacked === undefined) lackedBy.set(b, lacked = new Set())
         lacked.add(method)

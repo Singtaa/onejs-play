@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { fakeCS } from "./fake-cs"
+import { fakeCS, HOSTS } from "./fake-cs"
 
 /**
  * A game's fonts: `loadFont(name)` hands back what `fontFamily` takes, built
@@ -49,9 +49,10 @@ describe("loadFont", () => {
         expect(asked).toHaveLength(2)
     })
 
-    // OneJS 3.9.18 has Network without LoadFontFromUrl, which reads as a path proxy and throws "Method not found" when called.
-    it("says what it needs on a OneJS without the loader", async () => {
-        ;(globalThis as any).CS = fakeCS({ "OneJS.Network": {} })
+    // OneJS 3.9.18 has Network without LoadFontFromUrl, which reads as a path proxy and throws "Method not found" when called;
+    // a OneJS that reads a missing static as undefined throws JS's own TypeError instead.
+    it.each(HOSTS)("says what it needs on a OneJS without the loader, whose missing statics read as a %s", async (host) => {
+        ;(globalThis as any).CS = fakeCS({ "OneJS.Network": {} }, { host })
         await expect(loadFont("fonts/Display.ttf")).rejects.toThrow("needs a OneJS newer than 3.9.18")
         ;(globalThis as any).CS = fakeCS({})
         await expect(loadFont("fonts/Body.otf")).rejects.toThrow("needs a OneJS newer than 3.9.18")

@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest"
 import { bridgeCall, bridgeHas } from "../bridge-call"
-import { fakeCS } from "./fake-cs"
+import { fakeCS, HOSTS, type Host } from "./fake-cs"
 
-const bridgeOf = (members: Record<string, unknown>) => fakeCS({ "OneJS.Models.ModelBridge": members }).OneJS.Models.ModelBridge
+const bridgeOf = (members: Record<string, unknown>, host: Host = "proxy") => fakeCS({ "OneJS.Models.ModelBridge": members }, { host }).OneJS.Models.ModelBridge
 
 describe("bridgeCall", () => {
-    it("calls a method the host has, and takes the older way for one it lacks, asking it once", () => {
+    it.each(HOSTS)("calls a method the host has, and takes the older way for one it lacks, asking it once, where a missing static reads as a %s", (host) => {
         let asked = 0
-        const b = bridgeOf({ Here: () => "here" })
+        const b = bridgeOf({ Here: () => "here" }, host)
         expect(bridgeCall(b, "Here", () => b.Here(), () => "older")).toBe("here")
         const gone = () => { asked++; return b.Gone() }
         expect(bridgeCall(b, "Gone", gone, () => "older")).toBe("older")
         expect(bridgeCall(b, "Gone", gone, () => "older")).toBe("older")
-        expect(asked).toBe(1)
+        // A host that reads Gone as undefined is answered by typeof, before any call.
+        expect(asked).toBe(host === "proxy" ? 1 : 0)
     })
 
     it("throws what the method itself throws, and what another type's miss throws", () => {

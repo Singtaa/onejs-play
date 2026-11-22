@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { fakeCS } from "./fake-cs"
+import { fakeCS, HOSTS, type Host } from "./fake-cs"
 
 /**
  * `.texture()` through the cache, on a fake host: a miss draws and keeps the
@@ -19,7 +19,7 @@ vi.mock("../tex/engine", () => ({
 
 const files = new Map<string, string>()
 
-function host({ upload = true, kept = true } = {}) {
+function host({ upload = true, kept = true, bridge = false, on = "proxy" as Host } = {}) {
     const KeptTexture: Record<string, unknown> = {
         Create: (w: number, h: number) => ({ w, h, bytes: "" }),
         Fill: (output: string, into: { bytes: string }) => { into.bytes = output },
@@ -31,6 +31,8 @@ function host({ upload = true, kept = true } = {}) {
     // As a real host answers: a member KeptTexture lacks (Upload before OneJS 3.9.19) is a path proxy that throws when called.
     return fakeCS({
         ...kept ? { "OneJS.ShaderFX.KeptTexture": KeptTexture } : {},
+        // A ModelBridge from before RefreshGroundCopy (3.9.19); without `bridge`, a host with no glTFast.
+        ...bridge ? { "OneJS.Models.ModelBridge": {} } : {},
         "OneJS.Lighting.TextureRead": { Start: (rt: unknown) => ({ Done: true, Error: null, rt }) },
         "UnityEngine.Application": { persistentDataPath: "/data" },
         "System.IO.File": {
@@ -41,11 +43,11 @@ function host({ upload = true, kept = true } = {}) {
             Exists: dir, CreateDirectory: () => {},
             Delete: (p: string) => { for (const k of [...files.keys()]) if (k.startsWith(`${p}/`)) files.delete(k) },
         },
-    })
+    }, { host: on })
 }
 
 /** A fresh tex, as a cart loading again gets. */
-async function load(options = {}) {
+async function load(options: Parameters<typeof host>[0] = {}) {
     vi.resetModules()
     ;(globalThis as any).CS = host(options)
     return (await import("../tex")).tex
@@ -94,8 +96,13 @@ describe("tex .texture() across loads", () => {
         await expect((async () => grass(tex).ready())()).rejects.toThrow("this host has no OneJS.ShaderFX.KeptTexture")
     })
 
-    it("keeps nothing on a OneJS without KeptTexture.Upload", async () => {
-        let tex = await load({ upload: false })
+    it.each(HOSTS)("draws on a ModelBridge without RefreshGroundCopy, whose missing statics read as a %s", async (on) => {
+        const tex = await load({ bridge: true, on })
+        await expect(grass(tex).ready()).resolves.toMatchObject({ bytes: "drawn #1" })
+    })
+
+    it.each(HOSTS)("keeps nothing on a OneJS without KeptTexture.Upload, whose missing statics read as a %s", async (on) => {
+        let tex = await load({ upload: false, on })
         await grass(tex).ready()
         await settle()
         expect(files.size).toBe(0)
