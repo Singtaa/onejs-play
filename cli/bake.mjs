@@ -65,7 +65,8 @@ export async function bake(root, { script, seconds = 60, say = () => {}, start =
     } finally {
         process.off("SIGINT", onSignal)
         process.off("SIGTERM", onSignal)
-        stop(game)
+        const line = (await stop(game)).line()
+        if (line !== null) say(line)
     }
 }
 

@@ -15,6 +15,7 @@ import { launch } from "./chrome.mjs"
 import { siteOrigin, version } from "./site.mjs"
 import { rowProblemsExpression } from "./rows.mjs"
 import { newestSet } from "./pipelines.mjs"
+import { Closing } from "./closing.mjs"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -332,7 +333,7 @@ export async function start(root, { headless = true, gpu = false, window: size, 
         await browser.navigate(server.url)
     } catch (error) {
         const page = await browser.describe?.().catch(() => null)
-        stop(game)
+        await stop(game)
         throw new Error(`${error.message}; ${pageRequestSaid(server.pageAskedAt?.() ?? null, navigated)}${page ? `; ${page}` : ""}`, { cause: error })
     }
     return game
@@ -348,9 +349,14 @@ export function pageRequestSaid(askedAt, navigated) {
     return `the local server answered the page ${((askedAt - navigated) / 1000).toFixed(1)} s after the navigate, and Chrome did not commit it`
 }
 
-export function stop(game) {
-    game.browser.close()
+/**
+ * Closes a run: Chrome, then the server, each step recorded in `closing`,
+ * whose line() says which was slow or did not finish (closing.mjs).
+ */
+export async function stop(game, closing = new Closing()) {
+    await game.browser.close(closing)
     game.server.close()
+    return closing
 }
 
 /**

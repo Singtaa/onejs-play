@@ -7,6 +7,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { home } from "./local.mjs"
 import { COMMAND } from "../build/command.mjs"
+import { Hung, bounded } from "./closing.mjs"
 
 export const DEFAULT_SITE = "https://play.onejs.com"
 
@@ -182,9 +183,20 @@ export function currentBranch(root) {
     return result.status === 0 ? result.stdout.trim() : null
 }
 
+/**
+ * git under spawnSync. Given `timeoutMs`, a git that runs past it is stopped
+ * and throws a Hung naming it, as a step of closing a run does (closing.mjs).
+ */
+function gitSync(root, args, timeoutMs) {
+    if (timeoutMs === undefined) return spawnSync("git", ["-C", root, ...args], { encoding: "utf8" })
+    const result = bounded("git", ["-C", root, ...args], { encoding: "utf8" }, timeoutMs)
+    if (result.timedOut) throw new Hung(`git ${args[0]} did not answer in ${timeoutMs / 1000} s`)
+    return result
+}
+
 /** The commit a clone's HEAD is at, or null. */
-export function tipOf(root) {
-    const result = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" })
+export function tipOf(root, { timeoutMs } = {}) {
+    const result = gitSync(root, ["rev-parse", "HEAD"], timeoutMs)
     return result.status === 0 ? result.stdout.trim() : null
 }
 
@@ -243,8 +255,8 @@ function leftLines(left) {
  * names them. Ignored files are not changes, so what `init` writes never
  * shows up here.
  */
-export function uncommitted(root) {
-    const result = spawnSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" })
+export function uncommitted(root, { timeoutMs } = {}) {
+    const result = gitSync(root, ["status", "--porcelain"], timeoutMs)
     if (result.status !== 0) return []
     return result.stdout.split("\n").filter((line) => line !== "").map((line) => line.slice(3))
 }

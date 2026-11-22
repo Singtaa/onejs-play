@@ -41,7 +41,7 @@ describe.skipIf(process.platform === "win32")("a start that reads the port file 
             const began = Date.now()
             try {
                 const browser = await launch({ profilePrefix: "oj-chrome-early-port-" })
-                browser.close()
+                await browser.close()
                 expect(Date.now() - began).toBeLessThan(30_000)
             } finally {
                 if (before === undefined) delete process.env.OJ_CHROME

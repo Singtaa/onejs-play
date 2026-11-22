@@ -8,6 +8,7 @@ import { ensureRuntime } from "./local.mjs"
 import { waitsFor } from "./runtime-line.mjs"
 import { siteOrigin, version } from "./site.mjs"
 import { makeTemp } from "./temp.mjs"
+import { closingHung } from "./closing.mjs"
 import { stamper } from "./__tests__/stamp"
 
 /**
@@ -86,7 +87,9 @@ function ojTest(dir: string, runtime: string, script = playtestOf(dir), onOutput
         child.stdout.on("data", taker())
         child.stderr.on("data", taker())
         const deadline = setTimeout(() => {
-            say(`[sweep] no result after ${RUN_MS / 1000}s; interrupted`)
+            // How late the timer fired says how long this process's own loop was held, which nothing else here measures.
+            const late = (Date.now() - began - RUN_MS) / 1000
+            say(`[sweep] no result after ${RUN_MS / 1000}s; interrupted${late >= 1 ? ` (the timer fired ${late.toFixed(1)} s late)` : ""}`)
             interrupt(child.pid!)
         }, RUN_MS)
         child.on("close", (code) => {
@@ -241,6 +244,8 @@ describe("oj test over every example", () => {
             const renderer = /renderer after ([\d.]+) s/.exec(output)
             starts.push({ name, portS: port ? Number(port[1]) : null, pageS: page ? Number(page[1]) : null, rendererS: renderer ? Number(renderer[1]) : null, runS })
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
+            // Its own failure, though the exit code is the playtest's verdict: a run that passed and then could not close (closing.mjs).
+            expect(closingHung(output), `oj test in ${name} did not close:\n${output}`).toBe(null)
         // The deadline that matters is RUN_MS, per run; this one also counts
         // the wait for a slot, so it allows for every run ahead in the queue.
         }, (RUN_MS + 30_000) * Math.ceil(CARTS.length / LIMIT))

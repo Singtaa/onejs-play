@@ -137,13 +137,13 @@ describe("Chrome's own log", () => {
         }
     })
 
-    it("is kept by keep() for any run that failed, and keep() says null with no log asked for", () => {
+    it("is kept by keep() for any run that failed, and keep() says null with no log asked for", async () => {
         const folder = makeTemp("oj-log-")
         const log = chromeLog(path.join(folder, "oj-chrome-y"), folder)!
         fs.writeFileSync(log.file, "log")
         const b = new Browser(null, path.join(folder, "gone"), null, () => "", log)
         expect(b.keep()).toContain(log.file)
-        b.close()
+        await b.close()
         expect(fs.existsSync(log.file)).toBe(true)
         expect(new Browser(null, null, null).keep()).toBeNull()
     })
@@ -159,7 +159,7 @@ describe("Chrome's own log", () => {
         b.send = () => Promise.reject(new Error("no answer")) as any
         let said = ""
         if (describeFirst) said = await b.describe()
-        b.close()
+        await b.close()
         return { log, said }
     }
 

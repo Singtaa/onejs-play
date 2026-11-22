@@ -33,6 +33,7 @@ import { firstPush, newCart } from "./new.mjs"
 import { ensureRuntime, runtimeDir } from "./local.mjs"
 import { start, stop, watch, runScript, loadScript } from "./run.mjs"
 import { keepRecorded, sendSets } from "./pipelines.mjs"
+import { Closing } from "./closing.mjs"
 import { bake } from "./bake.mjs"
 import { describeRowProblems } from "./rows.mjs"
 import { init } from "./init.mjs"
@@ -135,6 +136,19 @@ const GIT_RUNS = ["filter-process", "pre-push"]
 const COMMANDS = ["init", "add", "update", "remove", "build", "typecheck", "run", "test", "bake", "list", "status", "push", "new", "clone", "login", "logout", "runtime", "help", ...GIT_RUNS]
 
 const say = (line) => console.error(`[${BIN}] ${line}`)
+
+/**
+ * Closes a run: keeps the pipelines it recorded, then Chrome and the server,
+ * and says the closing line when a step was slow or did not finish. The exit
+ * code stays the run's own verdict; the sweep fails a run whose close hung.
+ */
+async function closeRun(game, { record }) {
+    const closing = new Closing()
+    if (record) await closing.stepAsync("record", () => keepRecorded(game))
+    await stop(game, closing)
+    const line = closing.line()
+    if (line !== null) say(line)
+}
 
 async function main() {
     const { command, args, flags } = parse(process.argv.slice(2))
@@ -273,8 +287,7 @@ async function main() {
                 }
                 return 0
             } finally {
-                await keepRecorded(game)
-                stop(game)
+                await closeRun(game, { record: true })
             }
         }
         case "test": {
@@ -344,8 +357,7 @@ async function main() {
                 try { say(`screenshot ${path.relative(root, await game.shot(path.resolve(root, ".oj/failed.png")))}`) } catch { /* the page may be gone */ }
                 return 1
             } finally {
-                if (signalled === null) await keepRecorded(game)
-                stop(game)
+                await closeRun(game, { record: signalled === null })
             }
         }
         case "bake":

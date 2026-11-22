@@ -9,6 +9,7 @@ import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { CLOSE_MS, Closing, Hung, bounded, left, removeWithin } from "./closing.mjs"
 import { makeTemp } from "./temp.mjs"
 
 const CANDIDATES = {
@@ -208,7 +209,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
         if (port === null) await sleep(100)
     }
     if (port === null) {
-        discard(child, profile)
+        await discard(child, profile)
         const file = portText === null ? "no DevToolsActivePort" : `DevToolsActivePort ${JSON.stringify(portText)}, never whole`
         throw new Error(`Chrome did not start (${binary}; ${file}):\n${stderr.slice(-600)}`)
     }
@@ -228,7 +229,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
     if (page === null) {
         let portNow = null
         try { portNow = fs.readFileSync(portFile, "utf8") } catch {}
-        discard(child, profile)
+        await discard(child, profile)
         throw new Error(`Chrome started but offered no page to attach to within ${STARTUP_MS / 1000}s (port ${port} after ${seconds(portMs)}, read from ${JSON.stringify(portText)}, the file now ${JSON.stringify(portNow)}; last: ${last})`)
     }
     const pageMs = Date.now() - began
@@ -248,7 +249,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
         try {
             ({ page, context } = await offTheRecordPage(port, deadline))
         } catch (error) {
-            discard(child, profile)
+            await discard(child, profile)
             throw new Error(`Chrome started but opened no page of its own within ${STARTUP_MS / 1000}s: ${error.message}`, { cause: error })
         }
     }
@@ -280,7 +281,7 @@ export async function launch({ headless = true, gpu = false, window = [960, 540]
         const ready = await browser.waitForRenderer(deadline)
         say(`renderer after ${seconds(ready - began)}`)
     } catch (e) {
-        browser.close()
+        await browser.close()
         throw e
     }
     return browser
@@ -325,17 +326,28 @@ async function offTheRecordPage(port, deadline) {
 /** The Browser-domain calls that name a context: sent from a page, they mean the page's. */
 const CONTEXT_CALLS = new Set(["Browser.grantPermissions", "Browser.resetPermissions", "Browser.setPermission", "Browser.setDownloadBehavior"])
 
-/** Stops Chrome and deletes its profile: every way out of a run, failed or not. */
-function discard(child, profile) {
-    kill(child)
-    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) } catch { /* a locked profile is not worth failing over */ }
+/**
+ * Stops Chrome and deletes its profile: every way out of a run, failed or
+ * not. Each is a step of `closing`, so a run says which was slow, and neither
+ * may hold the run past CLOSE_MS: one that does not finish is said as hung,
+ * with what is still running, and the run exits with its verdict. `killWith`
+ * stands in for taskkill or SIGKILL, and `timeoutMs` for CLOSE_MS, in tests.
+ */
+export async function discard(child, profile, closing = new Closing(), { killWith = null, timeoutMs = CLOSE_MS } = {}) {
+    closing.step("chrome", () => kill(child, profile, killWith, timeoutMs))
+    await closing.stepAsync("profile", () => removeWithin(profile, timeoutMs))
 }
 
-function kill(child) {
-    try {
-        if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" })
-        else process.kill(-child.pid, "SIGKILL")
-    } catch { /* already gone */ }
+function kill(child, profile, killWith, timeoutMs) {
+    if (!child?.pid) return
+    if (killWith === null && process.platform !== "win32") {
+        try { process.kill(-child.pid, "SIGKILL") } catch { /* already gone */ }
+        return
+    }
+    const [command, args] = killWith ?? ["taskkill", ["/pid", String(child.pid), "/T", "/F"]]
+    if (bounded(command, args, { stdio: "ignore" }, timeoutMs).timedOut) {
+        throw new Hung(`chrome did not exit in ${timeoutMs / 1000} s (${path.basename(command)} of ${child.pid} did not return); left: ${left(profile)}`)
+    }
 }
 
 /** A CDP session on one page, with the console kept. */
@@ -566,9 +578,10 @@ export class Browser {
         await this.send("Input.dispatchKeyEvent", keyEvent(type, code))
     }
 
-    close() {
+    /** Closes Chrome, its steps recorded in `closing` (closing.mjs). */
+    async close(closing = new Closing()) {
         try { this.ws?.close() } catch { /* going anyway */ }
-        discard(this.child, this.profile)
+        await discard(this.child, this.profile, closing)
         if (this.log && !this.keepLog) {
             for (const file of [this.log.file, this.log.netlog]) {
                 try { fs.rmSync(file, { force: true, maxRetries: 3, retryDelay: 100 }) } catch { /* a locked log is not worth failing over */ }

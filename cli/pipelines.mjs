@@ -22,6 +22,7 @@ import path from "node:path"
 import zlib from "node:zlib"
 import { home } from "./local.mjs"
 import { readFromSite, tipOf, uncommitted } from "./site.mjs"
+import { CLOSE_MS } from "./closing.mjs"
 
 const KEY = /^[0-9a-f]{32}$/
 const SHA = /^[0-9a-f]{40}$/
@@ -34,10 +35,10 @@ export function setsDir(root) {
 }
 
 /** The commit the folder is exactly, or null: changes outside `.oj/`, which is ojplay's own, mean it is not one. */
-export function cleanCommit(root) {
-    const tip = tipOf(root)
+export function cleanCommit(root, { timeoutMs } = {}) {
+    const tip = tipOf(root, { timeoutMs })
     if (tip === null || !SHA.test(tip)) return null
-    return uncommitted(root).some((p) => !p.startsWith(".oj/")) ? null : tip
+    return uncommitted(root, { timeoutMs }).some((p) => !p.startsWith(".oj/")) ? null : tip
 }
 
 /** Keeps `set` as the one recorded at `commit`. Ignores anything not shaped like a set. */
@@ -79,7 +80,8 @@ export function setsAt(root, commit) {
  */
 export async function keepRecorded(game, { waitMs = 3000 } = {}) {
     if (!game?.server?.record) return null
-    const commit = cleanCommit(game.root)
+    // Run as a run closes, so its git calls may not hold the exit (closing.mjs).
+    const commit = cleanCommit(game.root, { timeoutMs: CLOSE_MS })
     if (commit === null) return null
     try {
         const said = await Promise.race([

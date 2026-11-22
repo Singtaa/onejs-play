@@ -987,6 +987,14 @@ inside that call (`flushSync`), so the old picture stays until the new one
 replaces it; the Play editor's Run swaps the same way. It exits 1 if the cart logged a console error, `Property not
 found` included.
 
+Closing a run, `ojplay run` or `ojplay test`, comes after its verdict and never
+changes it (`cli/closing.mjs`). When a step of the close (Chrome, its profile,
+the git calls that keep a recorded pipeline set) takes over 2 s, the run says
+each step's length. A step that has not finished in 20 s is given up on and
+said as `closing hung:`, with the Chrome processes still running, so the
+prompt comes back with the verdict. The e2e sweep fails a run that says so,
+under that name.
+
 **`ojplay test` hands a script the running game.** The script's default export
 gets a `Game`: `read()` (the text on screen, top to bottom), `find(text)` (where
 it is, `{ x, y, width, height }`, once laid out), `click(x, y)`,
