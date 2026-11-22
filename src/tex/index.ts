@@ -14,6 +14,7 @@
  */
 import type { Texture } from "onejs-react"
 import { makeNode, type Node } from "./graph"
+import { csHas, csMissing } from "../cs-host"
 import { draw, plan } from "./engine"
 import { uploadRGBA, uploadRGBAFloat } from "./upload"
 import { TexCache, cacheKey, hostBackend } from "./cache"
@@ -690,8 +691,9 @@ let store: TexCache | null | undefined
 /** The cache across loads, or null on a host that cannot keep one (a OneJS before `KeptTexture.Upload`, or no storage). */
 function texCache(): TexCache | null {
     if (store === undefined) {
-        const upload = typeof CS === "undefined" ? undefined : CS.OneJS?.ShaderFX?.KeptTexture?.Upload
-        const backend = typeof upload === "function" ? hostBackend() : undefined
+        // Upload came with OneJS 3.9.19. An empty one is false on a host that has it and throws on one that does not.
+        const upload = csHas("OneJS.ShaderFX.KeptTexture", () => CS.OneJS.ShaderFX.KeptTexture.Upload("", null))
+        const backend = upload ? hostBackend() : undefined
         store = backend === undefined ? null : new TexCache(backend)
     }
     return store
@@ -730,9 +732,15 @@ function uploaded(kept: any, bytes: string, into: unknown): boolean {
 function bake(node: Node, options: TextureOptions = {}): Baked {
     const known = baked.get(node.id)
     if (known !== undefined) return known
-    const kept = CS.OneJS?.ShaderFX?.KeptTexture
-    if (kept === undefined || kept === null) throw new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7).")
-    const into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
+    const kept = CS.OneJS.ShaderFX.KeptTexture
+    let into: unknown
+    try {
+        into = kept.Create(node.width, node.height, node.tiles, `tex ${node.op} ${node.id}`)
+    } catch (e) {
+        // A host without KeptTexture reads it as a path proxy, so only the call tells (cs-host.ts).
+        if (csMissing(e, "OneJS.ShaderFX.KeptTexture")) throw new Error("[oj] tex needs a newer OneJS: this host has no OneJS.ShaderFX.KeptTexture (it came with runtime 1.7).", { cause: e })
+        throw e
+    }
     const cache = options.cache === false ? null : texCache()
     const key = cache === null ? undefined : cacheKey(node)
     const ready = (async () => {
@@ -743,7 +751,12 @@ function bake(node: Node, options: TextureOptions = {}): Baked {
             if (key !== undefined) void keep(key, into)
         }
         // A mesh handed the texture before it was drawn copied it empty.
-        CS.OneJS?.Models?.ModelBridge?.RefreshGroundCopy?.(into)
+        // Not on a host without glTFast, or a OneJS from before RefreshGroundCopy (3.9.19), where it throws.
+        try {
+            CS.OneJS.Models.ModelBridge.RefreshGroundCopy(into)
+        } catch (e) {
+            if (!csMissing(e, "OneJS.Models.ModelBridge")) throw e
+        }
         return into as Texture
     })()
     const entry: Baked = { texture: into, ready }

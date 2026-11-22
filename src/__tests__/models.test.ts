@@ -12,6 +12,7 @@ import { createScene as createSceneRaw, forgetModel, loadModel, watchModel, SCEN
 import { createRuntime } from "../runtime"
 import { setInputBackend } from "onejs-unity/input"
 import { Color } from "../color"
+import { fakeCS, missingMember } from "./fake-cs"
 
 // A colour mask's picture, which loadTexture would ask Unity for.
 const PICTURE = { picture: "mask" }
@@ -22,8 +23,13 @@ type Call = [string, ...unknown[]]
 let calls: Call[]
 let savedCS: unknown
 let nextId: number
-// Methods this recorder stands in for an older OneJS without.
+// Methods this recorder stands in for an older OneJS without, as a real host lacks them: the name
+// reads as a path proxy and calling it throws QuickJS's "Method not found" (fake-cs.ts).
 let missing: Set<string>
+// Methods lacking as a host lacks them once OneJS's bootstrap reads a missing member of a known
+// type as undefined (Tachi 2437df5d, 22 Nov, on a OneJS branch). No released host does: today the
+// guards these tests reach cannot fire, and a real host throws "Method not found" in their place.
+let readsUndefined: Set<string>
 // Whether the recorder's host has counted a frame's draws yet.
 let counted = true
 
@@ -31,7 +37,8 @@ function recorder(): any {
     return new Proxy({}, {
         get(_t, name: string) {
             if (name === "ActorCount") return 0
-            if (missing.has(name)) return undefined
+            if (missing.has(name)) return missingMember("OneJS.Models.ModelBridge", name)
+            if (readsUndefined.has(name)) return undefined
             return (...args: unknown[]) => {
                 calls.push([name, ...args])
                 if (name === "Load") return Promise.resolve(7)
@@ -68,6 +75,7 @@ const createScene = (options: SceneOptions = {}) => {
 beforeEach(async () => {
     calls = []
     missing = new Set()
+    readsUndefined = new Set()
     counted = true
     nextId = 100
     savedCS = (globalThis as any).CS
@@ -79,6 +87,17 @@ beforeEach(async () => {
 afterEach(() => {
     for (const dispose of made.splice(0)) dispose()
     ;(globalThis as any).CS = savedCS
+})
+
+describe("a host without ModelBridge", () => {
+    // A Unity project without glTFast has no ModelBridge, which reads as a path proxy, never undefined.
+    it("is told it needs glTFast", async () => {
+        ;(globalThis as any).CS = fakeCS({
+            "UnityEngine.Application": { isEditor: false, streamingAssetsPath: "/assets", persistentDataPath: "/data" },
+            "System.IO.Path": { Combine: (...parts: string[]) => parts.join("/") },
+        })
+        await expect((async () => loadModel("other.glb"))()).rejects.toThrow("3D models need glTFast")
+    })
 })
 
 describe("a scene with no options", () => {
@@ -170,7 +189,7 @@ describe("sun shadows", () => {
     })
 
     it("on a OneJS without them, a cart that asks is told, and one that does not is not", () => {
-        missing.add("SetSunShadows")
+        readsUndefined.add("SetSunShadows")
         lived({ sun: { shadows: true } })
         expect(last("SetSun")[9]).toBe(true)
         expect(() => createScene({ sun: { shadows: { distance: 200 } } })).toThrow(/need a newer OneJS.*runtime 1\.7/)
@@ -289,7 +308,7 @@ describe("fog", () => {
     })
 
     it("on an older host draws linear fog, telling a cart that asked for more once", () => {
-        missing.add("SetFogLaw")
+        readsUndefined.add("SetFogLaw")
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
         try {
             const scene = createScene({ fog: { near: 5, far: 30 } }).scene
@@ -339,7 +358,7 @@ describe("teardown", () => {
 describe("a model that loads after its component is gone", () => {
     // Pressing Play or a hot reload disposes the scene mid-load, and the bridge cancels the load.
     it("is dropped without an error", async () => {
-        ;(globalThis as any).CS.OneJS.Models.ModelBridge = { Load: () => Promise.reject(new Error("the scene was disposed while the model loaded")) }
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = { ActorCount: 0, Load: () => Promise.reject(new Error("the scene was disposed while the model loaded")) }
         const error = vi.spyOn(console, "error").mockImplementation(() => {})
         const got = vi.fn()
         const stop = watchModel("ghost.glb", got)
@@ -351,7 +370,7 @@ describe("a model that loads after its component is gone", () => {
     })
 
     it("still says so while the component is there", async () => {
-        ;(globalThis as any).CS.OneJS.Models.ModelBridge = { Load: () => Promise.reject(new Error("no such file")) }
+        ;(globalThis as any).CS.OneJS.Models.ModelBridge = { ActorCount: 0, Load: () => Promise.reject(new Error("no such file")) }
         const error = vi.spyOn(console, "error").mockImplementation(() => {})
         watchModel("ghost.glb", () => {})
         await new Promise((r) => setTimeout(r, 0))
@@ -386,7 +405,7 @@ describe("the handles a cart holds", () => {
     })
 
     it("leaves occlusion alone on a scene that never names it, and needs a OneJS that has it", () => {
-        missing = new Set(["SetAmbientOcclusion"])
+        readsUndefined = new Set(["SetAmbientOcclusion"])
         const scene = createScene().scene
         scene.ambient({ intensity: 0.4 })
         expect(() => scene.ambient({ occlusion: false })).toThrow(/occlusion needs a newer OneJS.*runtime 1\.10/)
@@ -412,7 +431,7 @@ describe("the handles a cart holds", () => {
     })
 
     it("needs a OneJS that can roll the camera, and an unrolled one never asks", () => {
-        missing = new Set(["SetCameraRolled"])
+        readsUndefined = new Set(["SetCameraRolled"])
         const scene = createScene().scene
         scene.camera({ fov: 40, roll: 0 })
         expect(() => scene.camera({ roll: 10 })).toThrow(/roll needs a newer OneJS.*runtime 1\.10/)
@@ -720,7 +739,7 @@ describe("an actor's colours", () => {
     })
 
     it("needs a OneJS that can flash an actor", () => {
-        missing = new Set(["SetFlash"])
+        readsUndefined = new Set(["SetFlash"])
         const { scene } = createScene()
         expect(() => scene.spawn(MODEL, { flash: "#ffffff" })).toThrow(/flash needs a newer OneJS.*runtime 1\.10/)
         expect(of("Destroy"), "the refused actor is not left in the world").toHaveLength(1)
@@ -748,7 +767,7 @@ describe("an actor's colours", () => {
     })
 
     it("needs a OneJS that can light an actor of its own", () => {
-        missing = new Set(["SetActorLight"])
+        readsUndefined = new Set(["SetActorLight"])
         const { scene } = createScene()
         expect(() => scene.spawn(MODEL, { light: { ambient: "#000", color: "#fff", direction: [0, -1, 0] } })).toThrow(/light needs a newer OneJS.*runtime 1\.10/)
         expect(of("Destroy"), "the refused actor is not left in the world").toHaveLength(1)
@@ -796,7 +815,7 @@ describe("an actor's colours", () => {
     })
 
     it("needs a OneJS that can colour an actor", async () => {
-        missing = new Set(["SetTint", "SetColorMask"])
+        readsUndefined = new Set(["SetTint", "SetColorMask"])
         const boo = createScene().scene.spawn(MODEL)
         expect(() => { boo.tint = "#ff0000" }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
         await expect(loadModel("other.glb", { colorMask: "m.png" })).rejects.toThrow(/needs a newer OneJS.*runtime 1\.9/)
@@ -836,7 +855,7 @@ describe("an actor's own texture", () => {
     })
 
     it("needs a OneJS that can draw a texture on an actor", () => {
-        missing = new Set(["SetTexture"])
+        readsUndefined = new Set(["SetTexture"])
         const tom = createScene().scene.spawn(MODEL)
         expect(() => { tom.texture = LOOK }).toThrow(/needs a newer OneJS.*runtime 1\.9/)
     })
@@ -861,7 +880,7 @@ describe("a model's own picture", () => {
     })
 
     it("needs a OneJS that can hand back a model's picture", () => {
-        missing = new Set(["ModelTexture"])
+        readsUndefined = new Set(["ModelTexture"])
         expect(() => MODEL.texture).toThrow(/model.texture needs a newer OneJS/)
     })
 })
@@ -876,7 +895,7 @@ describe("the last frame's draws", () => {
     })
 
     it("is null, said once, on a host that counts no draws", () => {
-        missing = new Set(["DrawCalls", "SetPassCalls"])
+        readsUndefined = new Set(["DrawCalls", "SetPassCalls"])
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
         const { scene } = createScene()
         expect(scene.drawCounts).toBeNull()
@@ -999,7 +1018,7 @@ describe("a model that plays another's clips", () => {
 
     it("needs a OneJS that can share clips", async () => {
         const moves = await loadModel("moves.glb")
-        missing = new Set(["TakeClips"])
+        readsUndefined = new Set(["TakeClips"])
         await expect(loadModel("bob.glb", { clips: moves })).rejects.toThrow(/needs a newer OneJS.*runtime 1\.9/)
     })
 })
@@ -1077,7 +1096,7 @@ describe("actors moved during a frame", () => {
     })
 
     it("cross one call each on a OneJS from before PlaceMany and ScaleMany", () => {
-        missing = new Set(["PlaceMany", "ScaleMany"])
+        readsUndefined = new Set(["PlaceMany", "ScaleMany"])
         const r = framed()
         const a = createScene({}).scene.spawn(MODEL)
         r.oj.onFrame(() => { a.position = [1, 2, 3]; a.scale = 2 })

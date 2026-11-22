@@ -22,6 +22,7 @@
 
 import { useEffect, useState } from "react"
 import { loadImageAsync, loadTextAsync } from "onejs-unity/assets"
+import { csMissing } from "./cs-host"
 import type { Font, SheetConfig, Texture } from "onejs-react"
 import { setFileLoader } from "./physics3d/sources"
 
@@ -318,9 +319,15 @@ export function loadFont(name: string): Promise<Font> {
 }
 
 async function fontFrom(url: string, name: string): Promise<Font> {
-    const load = globalThis.CS?.OneJS?.Network?.LoadFontFromUrl
-    if (typeof load !== "function") throw new Error(`[oj] could not load ${name}: loading a font needs a OneJS newer than 3.9.18`)
-    const font = await load(url)
+    // LoadFontFromUrl came after 3.9.18. An older host reads the name as a path proxy, so only the call tells (cs-host.ts).
+    let loading: unknown
+    try {
+        loading = globalThis.CS.OneJS.Network.LoadFontFromUrl(url)
+    } catch (e) {
+        if (csMissing(e, "OneJS.Network")) throw new Error(`[oj] could not load ${name}: loading a font needs a OneJS newer than 3.9.18`, { cause: e })
+        throw e
+    }
+    const font = await loading
     if (font === null || font === undefined) throw new Error(`[oj] could not load ${name} as a font (the console says why)`)
     return font as Font
 }

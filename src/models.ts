@@ -23,6 +23,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { assetFile, assetInfo, assetUrl, loadAssetBytes, loadTexture, textureIdentity } from "./asset"
+import { csHas } from "./cs-host"
 import { LENT_TEXTURE, toRGBA, type ColorInput, type LentTexture, type Texture } from "onejs-react"
 import { getCurrentRuntime } from "./runtime"
 import { setActorPlacer, stillActors } from "./physics3d/actors"
@@ -1145,12 +1146,19 @@ setActorPlacer((list) => {
     }
 })
 
+/** The CS whose ModelBridge was found, so a host is asked once. */
+let bridgeIn: unknown
+
 function bridge(): any {
-    const found = globalThis.CS?.OneJS?.Models?.ModelBridge
-    if (found === undefined || found === null) {
-        throw new Error("[oj] 3D models need glTFast: this host has no OneJS.Models.ModelBridge. In a Unity project, add com.unity.cloud.gltfast with the Package Manager.")
+    const cs = globalThis.CS
+    // ActorCount came with ModelBridge (OneJS 3.9.5); a host without the type reads it as a path proxy (cs-host.ts).
+    if (cs === undefined || bridgeIn !== cs) {
+        if (!csHas("OneJS.Models.ModelBridge", () => cs.OneJS?.Models?.ModelBridge?.ActorCount)) {
+            throw new Error("[oj] 3D models need glTFast: this host has no OneJS.Models.ModelBridge. In a Unity project, add com.unity.cloud.gltfast with the Package Manager.")
+        }
+        bridgeIn = cs
     }
-    return found
+    return cs.OneJS.Models.ModelBridge
 }
 
 /** A list of numbers as the Float32Array the bridge takes, `width` to an element. */

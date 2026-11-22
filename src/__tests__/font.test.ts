@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { fakeCS } from "./fake-cs"
 
 /**
  * A game's fonts: `loadFont(name)` hands back what `fontFamily` takes, built
@@ -24,10 +25,10 @@ beforeEach(() => {
     asked = []
     destroyed = []
     refuse = false
-    ;(globalThis as any).CS = {
-        OneJS: { Network: { LoadFontFromUrl: async (url: string) => { asked.push(url); return refuse ? null : { font: url } } } },
-        UnityEngine: { Object: { Destroy: (o: unknown) => destroyed.push(o) } },
-    }
+    ;(globalThis as any).CS = fakeCS({
+        "OneJS.Network": { LoadFontFromUrl: async (url: string) => { asked.push(url); return refuse ? null : { font: url } } },
+        "UnityEngine.Object": { Destroy: (o: unknown) => destroyed.push(o) },
+    })
     setAssetBase("https://abc.onejsusercontent.com/assets")
     setAssetMap({ "fonts/Display.ttf": [h("a"), 300], "fonts/Body.otf": [h("b"), 200] })
 })
@@ -48,9 +49,12 @@ describe("loadFont", () => {
         expect(asked).toHaveLength(2)
     })
 
+    // OneJS 3.9.18 has Network without LoadFontFromUrl, which reads as a path proxy and throws "Method not found" when called.
     it("says what it needs on a OneJS without the loader", async () => {
-        ;(globalThis as any).CS = {}
+        ;(globalThis as any).CS = fakeCS({ "OneJS.Network": {} })
         await expect(loadFont("fonts/Display.ttf")).rejects.toThrow("needs a OneJS newer than 3.9.18")
+        ;(globalThis as any).CS = fakeCS({})
+        await expect(loadFont("fonts/Body.otf")).rejects.toThrow("needs a OneJS newer than 3.9.18")
     })
 
     it("starts over when the host changes, which is every Run", async () => {

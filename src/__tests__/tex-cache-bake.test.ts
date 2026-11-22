@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { fakeCS } from "./fake-cs"
 
 /**
  * `.texture()` through the cache, on a fake host: a miss draws and keeps the
@@ -18,28 +19,29 @@ vi.mock("../tex/engine", () => ({
 
 const files = new Map<string, string>()
 
-function host({ upload = true } = {}) {
+function host({ upload = true, kept = true } = {}) {
     const KeptTexture: Record<string, unknown> = {
         Create: (w: number, h: number) => ({ w, h, bytes: "" }),
         Fill: (output: string, into: { bytes: string }) => { into.bytes = output },
         StoredBytes: (read: { rt: { bytes: string } }) => read.rt.bytes,
     }
-    if (upload) KeptTexture.Upload = (bytes: string, into: { bytes: string }) => { into.bytes = bytes; return true }
+    // As C#: false for no picture or no texture, without touching either.
+    if (upload) KeptTexture.Upload = (bytes: string, into: { bytes: string } | null) => { if (into === null || bytes === "") return false; into.bytes = bytes; return true }
     const dir = (p: string) => [...files.keys()].some((k) => k.startsWith(`${p}/`))
-    return {
-        OneJS: { ShaderFX: { KeptTexture }, Lighting: { TextureRead: { Start: (rt: unknown) => ({ Done: true, Error: null, rt }) } } },
-        UnityEngine: { Application: { persistentDataPath: "/data" } },
-        System: { IO: {
-            File: {
-                Exists: (p: string) => files.has(p), ReadAllText: (p: string) => files.get(p),
-                WriteAllText: (p: string, v: string) => { files.set(p, v) }, Delete: (p: string) => { files.delete(p) },
-            },
-            Directory: {
-                Exists: dir, CreateDirectory: () => {},
-                Delete: (p: string) => { for (const k of [...files.keys()]) if (k.startsWith(`${p}/`)) files.delete(k) },
-            },
-        } },
-    }
+    // As a real host answers: a member KeptTexture lacks (Upload before OneJS 3.9.19) is a path proxy that throws when called.
+    return fakeCS({
+        ...kept ? { "OneJS.ShaderFX.KeptTexture": KeptTexture } : {},
+        "OneJS.Lighting.TextureRead": { Start: (rt: unknown) => ({ Done: true, Error: null, rt }) },
+        "UnityEngine.Application": { persistentDataPath: "/data" },
+        "System.IO.File": {
+            Exists: (p: string) => files.has(p), ReadAllText: (p: string) => files.get(p),
+            WriteAllText: (p: string, v: string) => { files.set(p, v) }, Delete: (p: string) => { files.delete(p) },
+        },
+        "System.IO.Directory": {
+            Exists: dir, CreateDirectory: () => {},
+            Delete: (p: string) => { for (const k of [...files.keys()]) if (k.startsWith(`${p}/`)) files.delete(k) },
+        },
+    })
 }
 
 /** A fresh tex, as a cart loading again gets. */
@@ -85,6 +87,11 @@ describe("tex .texture() across loads", () => {
         await tex.cache.clear()
         await grass(tex).ready()
         expect(draws.count).toBe(4)
+    })
+
+    it("says what it needs on a host without KeptTexture", async () => {
+        const tex = await load({ kept: false })
+        await expect((async () => grass(tex).ready())()).rejects.toThrow("this host has no OneJS.ShaderFX.KeptTexture")
     })
 
     it("keeps nothing on a OneJS without KeptTexture.Upload", async () => {

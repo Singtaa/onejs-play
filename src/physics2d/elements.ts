@@ -16,6 +16,7 @@
 
 import type { RefObject } from "react"
 import type { Vec2 } from "./world"
+import { csHas } from "../cs-host"
 
 declare const CS: any
 
@@ -71,9 +72,9 @@ let placer: ((list: readonly ElementPlacement[]) => void) | null = null
 export function placeElements(list: readonly ElementPlacement[]): void {
     if (list.length === 0) return
     if (placer === null) {
-        let hasBatch = false
-        try { hasBatch = typeof CS !== "undefined" && typeof CS.OneJS.ElementPlacer.PlaceMany === "function" } catch { hasBatch = false }
-        placer = hasBatch ? batched : oneByOne
+        // ElementPlacer came with OneJS 3.9.19, PlaceMany and Count with it. Its Count is asked, since on
+        // an older host the name reads as a path proxy and only a value tells (cs-host.ts).
+        placer = csHas("OneJS.ElementPlacer", () => CS.OneJS.ElementPlacer.Count) ? batched : oneByOne
     }
     placer(list)
 }
