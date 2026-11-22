@@ -1,5 +1,5 @@
 {
-    "//": "oj's source as the Play editor and PlaySite's declaration emit (scripts/oj-types.mjs) compile it: strict off, as build/cart-types.mjs CART_COMPILER_OPTIONS says. A union narrowed by a boolean tag compiles under strict and not here (share.ts, 6 Nov), so npm run typecheck runs both.",
+    "//": "oj's source as the Play editor and PlaySite's declaration emit (scripts/oj-types.mjs) compile it: strict off, as build/cart-types.mjs CART_COMPILER_OPTIONS says. A union narrowed by a boolean tag compiles under strict and not here (share.ts, 6 Nov), so npm run typecheck runs both, and then scripts/typecheck-cart.mjs as a new cart compiles it.",
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "strict": false

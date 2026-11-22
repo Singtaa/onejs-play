@@ -30,7 +30,7 @@
   "author": "Singtaa",
   "license": "MIT",
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.loose.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.loose.json && node scripts/typecheck-cart.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run --exclude \"**/*.e2e.test.ts\"",

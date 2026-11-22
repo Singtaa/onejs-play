@@ -59,6 +59,12 @@ export default tseslint.config(
             // removing it trips TypeScript's definite-assignment instead.
             "no-useless-assignment": "off",
 
+            // A rethrown error keeps what it caught as its cause, but not by Error's second argument:
+            // src/ compiles under a new cart's ES2020 lib too (scripts/typecheck-cart.mjs in npm run
+            // typecheck), which has no such overload. Write Object.assign(new Error(message), { cause: e }),
+            // which this rule accepts; new Error(message, { cause: e }) broke every new cart twice.
+            "preserve-caught-error": "error",
+
             // `_` prefix is the codebase's own convention for deliberately
             // unused values (mirrors the C# `_camelCase` fields).
             "@typescript-eslint/no-unused-vars": ["error", {

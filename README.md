@@ -1203,7 +1203,7 @@ points every command at another origin; `OJ_HOME` moves the cache. `push` and `s
 npm test          # vitest, including ojplay test over every example (needs Chrome and the network)
 npm run test:unit # everything but the *.e2e.test.ts files, which drive Chrome
 npm run test:e2e  # just those
-npm run typecheck # tsc twice: strict, then strict off as the Play editor compiles oj (tsconfig.loose.json)
+npm run typecheck # strict, then strict off as the Play editor compiles oj (tsconfig.loose.json), then src/index.ts under a new cart's ES2020 lib (scripts/typecheck-cart.mjs)
 ```
 
 `npm test` runs `ojplay test` on every example and CLI fixture, in the CLI's own
