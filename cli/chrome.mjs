@@ -486,39 +486,57 @@ export class Browser {
      * answering: the CPU each kind used over `ms`, asked of the browser
      * rather than the page, since the page is the one that is stuck. A GPU
      * process at a full core is drawing too slowly to answer; one at nothing
-     * is waiting on something that never comes. Null when the browser does
-     * not answer either.
+     * is waiting on something that never comes. Always one line: when the
+     * browser cannot be asked either, which step failed and how, each given
+     * `waitMs`, since a browser that stopped answering too is itself the
+     * answer. Twice on windows-latest (13 and 22 Nov) it said nothing instead.
      */
-    async busy(ms = 2000) {
+    async busy(ms = 2000, waitMs = 5000) {
+        const wait = `${waitMs / 1000} s`
+        const failed = (step) => `chrome's processes could not be asked: ${step}`
+        const { port } = new URL(this.page.webSocketDebuggerUrl)
+        const version = `http://127.0.0.1:${port}/json/version`
+        let socketUrl
         try {
-            const { port } = new URL(this.page.webSocketDebuggerUrl)
-            const { webSocketDebuggerUrl } = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json())
-            const ws = new WebSocket(webSocketDebuggerUrl)
-            try {
-                await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error("no socket")) })
-                let id = 0
-                const sample = () => new Promise((ok, no) => {
-                    const mine = ++id
-                    const timer = setTimeout(() => no(new Error("no answer")), 5000)
-                    ws.onmessage = (e) => {
-                        const m = JSON.parse(e.data)
-                        if (m.id !== mine) return
-                        clearTimeout(timer)
-                        if (m.error) no(new Error(m.error.message))
-                        else ok(m.result.processInfo)
-                    }
-                    ws.send(JSON.stringify({ id: mine, method: "SystemInfo.getProcessInfo" }))
-                })
-                const before = await sample()
-                const began = Date.now()
-                await sleep(ms)
-                const used = cpuUsed(before, await sample(), (Date.now() - began) / 1000)
-                return `${used}; the machine has ${os.cpus().length} cores and ${chromesOnMachine() ?? "an unknown number of"} Chrome processes in all`
-            } finally {
-                ws.close()
-            }
-        } catch {
-            return null
+            const r = await fetch(version, { signal: AbortSignal.timeout(waitMs) })
+            const text = await r.text()
+            try { socketUrl = JSON.parse(text).webSocketDebuggerUrl } catch { /* said below */ }
+            if (typeof socketUrl !== "string") return failed(`the browser's ${version} answered with no socket (HTTP ${r.status}: ${text.slice(0, 80)})`)
+        } catch (e) {
+            return failed(e.name === "TimeoutError" ? `the browser's ${version} did not answer in ${wait}` : `the browser's ${version} failed (${e.cause?.code ?? e.message})`)
+        }
+        const ws = new WebSocket(socketUrl)
+        try {
+            const opened = await new Promise((ok) => {
+                const timer = setTimeout(() => ok(`did not open in ${wait}`), waitMs)
+                ws.onopen = () => { clearTimeout(timer); ok(null) }
+                ws.onerror = (e) => { clearTimeout(timer); ok(`did not open (${e.message ?? e.error?.message ?? "a socket error"})`) }
+            })
+            if (opened !== null) return failed(`the browser's socket ${socketUrl} ${opened}`)
+            let id = 0
+            const sample = () => new Promise((ok, no) => {
+                const mine = ++id
+                const timer = setTimeout(() => no(new Error(`did not answer in ${wait}`)), waitMs)
+                ws.onmessage = (e) => {
+                    const m = JSON.parse(e.data)
+                    if (m.id !== mine) return
+                    clearTimeout(timer)
+                    if (m.error) no(new Error(`failed (${m.error.message})`))
+                    else ok(m.result.processInfo)
+                }
+                ws.send(JSON.stringify({ id: mine, method: "SystemInfo.getProcessInfo" }))
+            })
+            let before, after
+            try { before = await sample() } catch (e) { return failed(`the browser's first SystemInfo.getProcessInfo ${e.message}`) }
+            const began = Date.now()
+            await sleep(ms)
+            try { after = await sample() } catch (e) { return failed(`the browser answered once, then its second SystemInfo.getProcessInfo ${e.message}`) }
+            const used = cpuUsed(before, after, (Date.now() - began) / 1000)
+            return `chrome's processes ${used}; the machine has ${os.cpus().length} cores and ${chromesOnMachine() ?? "an unknown number of"} Chrome processes in all`
+        } catch (e) {
+            return failed(`asking the browser threw (${e.message})`)
+        } finally {
+            ws.close()
         }
     }
 

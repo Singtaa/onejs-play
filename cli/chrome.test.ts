@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
+import http from "node:http"
+import net from "node:net"
 import path from "node:path"
 import { Browser, CALL_MS, CAPTURE_MS, activePort, chromeArgs, chromeLog, cpuUsed } from "./chrome.mjs"
 
@@ -218,5 +220,50 @@ describe("the port Chrome writes", () => {
         for (const text of ["0\n/devtools/browser/x", "65536\n/devtools/browser/x", "54 321\n/devtools/browser/x", "port\n/devtools/browser/x"]) {
             expect(activePort(text), JSON.stringify(text)).toBeNull()
         }
+    })
+})
+
+/** A local server that takes each request and does what `answer` says, or nothing. */
+async function endpoint(answer: (res: http.ServerResponse) => void) {
+    const server = http.createServer((_req, res) => answer(res))
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
+    const port = (server.address() as net.AddressInfo).port
+    return { port, close: () => { server.closeAllConnections(); server.close() } }
+}
+
+const freePort = () => new Promise<number>((ok) => {
+    const s = net.createServer().listen(0, "127.0.0.1", () => { const { port } = s.address() as net.AddressInfo; s.close(() => ok(port)) })
+})
+
+// Twice on windows-latest (13 and 22 Nov) a stalled page's busy() came back
+// empty and the CLI printed nothing, so neither stall said where its time went.
+describe("the report on Chrome's processes for a call that did not answer", () => {
+    it("says the browser's endpoint did not answer, and in how long, when it never does", async () => {
+        const e = await endpoint(() => { /* never answers */ })
+        try {
+            const b = new Browser(null, null, null)
+            b.page = { webSocketDebuggerUrl: `ws://127.0.0.1:${e.port}/devtools/page/X` }
+            await expect(b.busy(100, 300)).resolves.toBe(`chrome's processes could not be asked: the browser's http://127.0.0.1:${e.port}/json/version did not answer in 0.3 s`)
+        } finally { e.close() }
+    })
+
+    it("says which step failed and the error's text when the browser's socket cannot be opened", async () => {
+        const gone = await freePort()
+        const e = await endpoint((res) => res.end(JSON.stringify({ webSocketDebuggerUrl: `ws://127.0.0.1:${gone}/devtools/browser/Y` })))
+        try {
+            const b = new Browser(null, null, null)
+            b.page = { webSocketDebuggerUrl: `ws://127.0.0.1:${e.port}/devtools/page/X` }
+            const said = await b.busy(100, 2000)
+            expect(said).toMatch(new RegExp(`^chrome's processes could not be asked: the browser's socket ws://127\\.0\\.0\\.1:${gone}/devtools/browser/Y did not open \\(.+\\)$`))
+        } finally { e.close() }
+    })
+
+    it("says the version answer was not one when the endpoint sends something else", async () => {
+        const e = await endpoint((res) => res.end("<html>"))
+        try {
+            const b = new Browser(null, null, null)
+            b.page = { webSocketDebuggerUrl: `ws://127.0.0.1:${e.port}/devtools/page/X` }
+            await expect(b.busy(100, 2000)).resolves.toMatch(/^chrome's processes could not be asked: the browser's http:\/\/127\.0\.0\.1:\d+\/json\/version answered with no socket \(.+\)$/)
+        } finally { e.close() }
     })
 })

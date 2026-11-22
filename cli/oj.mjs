@@ -336,7 +336,7 @@ async function main() {
                 // A call that never answered: who was working while the page was not.
                 if (/did not answer/.test(error.message)) {
                     const busy = await game.browser.busy?.()
-                    if (busy) say(`chrome's processes ${busy}`)
+                    if (busy !== undefined) say(busy)
                 }
                 try { say(`screenshot ${path.relative(root, await game.shot(path.resolve(root, ".oj/failed.png")))}`) } catch { /* the page may be gone */ }
                 return 1
