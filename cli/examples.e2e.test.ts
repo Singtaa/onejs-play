@@ -10,7 +10,7 @@ import { siteOrigin, version } from "./site.mjs"
 import { makeTemp } from "./temp.mjs"
 import { closingHung } from "./closing.mjs"
 import { stamper } from "./__tests__/stamp"
-import { gpuCores } from "./__tests__/cost"
+import { gpuCores, starved } from "./__tests__/cost"
 
 /**
  * `oj test` over every example, and over the CLI's own fixtures, in the real
@@ -287,6 +287,8 @@ describe("oj test over every example", () => {
             // A slow close passes, and a passing run's output is never printed: its closing line is, so CI shows where a close's time goes before one hangs.
             const slow = output.split("\n").find((line) => line.includes("[ojplay] closing:"))
             if (slow) console.log(`[sweep] ${name}: ${slow.trim()}`)
+            // Before the exit code: a starved machine fails runs as calls that did not answer, and that is not what to read (starved).
+            expect(starved(lateS, output), `oj test in ${name} was starved:\n${output}`).toBe(null)
             expect(code, `oj test in ${name} exited ${code}:\n${output}`).toBe(0)
             // Its own failure, though the exit code is the playtest's verdict: a run that passed and then could not close (closing.mjs).
             expect(closingHung(output), `oj test in ${name} did not close:\n${output}`).toBe(null)

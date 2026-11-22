@@ -1236,7 +1236,11 @@ start is not charged to a cart. Runs go one per four cores (one on a
 four-core CI runner, always one on Windows; `OJ_SWEEP_LIMIT` overrides it), and
 a run with no result after three minutes is interrupted and fails with what it
 printed. The sweep ends by printing Chrome's start times (median, p90, worst,
-against the limit) and the run lengths. About two and a half minutes on a
+against the limit) and the run lengths. Every run draws in software below
+normal priority, since at Chrome's own priority SwiftShader took the Windows
+runner from everything else and fired the sweep's timers up to 12.4 s late; a
+run whose timers fire over 2 s late fails as `starved`, before its exit code
+is read, so a lowering that stops working reads as itself. About two and a half minutes on a
 four-core runner, five on Windows; `npm run test:unit` skips it while iterating on something else.
 
 CI runs `test:unit` and then `test:e2e` as two steps rather than `npm test`.
