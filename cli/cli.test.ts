@@ -10,6 +10,7 @@ import { RUNTIME_FILES, runtimeDir } from "./local.mjs"
 import { init } from "./init.mjs"
 import { initUnity, oneJSOf, stableGuid, TEMPLATE_MAPPING, undoUnity } from "./unity.mjs"
 import { assetsPlugin, buildConfig, syncAssets } from "./unity-assets.mjs"
+import { PAGE_FOLDER } from "../build/page.mjs"
 import { spawnSync } from "node:child_process"
 import { Game } from "./run.mjs"
 import { containerBoot } from "../host/boot.mjs"
@@ -835,6 +836,15 @@ describe("a clone's files in a Unity project", () => {
         for (const name of ["old.webp", "notes.txt", "index.tsx", "cover.png", ".oj/cover.png", "x/y.png", "z.png"]) {
             expect(has(root, name), name).toBe(false)
         }
+    })
+
+    it("leaves the cart's page folder behind: the store page's pictures are not the game's", () => {
+        const root = scratch({
+            "glow.png": "a", [`${PAGE_FOLDER}/01.png`]: "a shot", [`${PAGE_FOLDER}/art/02.jpg`]: "another",
+            [`art/${PAGE_FOLDER}/bg.png`]: "the game's, in a folder of the same name further down",
+        })
+        expect(syncAssets(root)).toEqual({ copied: [`art/${PAGE_FOLDER}/bg.png`, "glow.png"], removed: [] })
+        expect(has(root, PAGE_FOLDER)).toBe(false)
     })
 
     it("copies only what changed, and again when a file does", () => {

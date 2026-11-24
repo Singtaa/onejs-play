@@ -16,13 +16,16 @@
  *
  * The files are chosen by the site's own rule (resolveAsset): what the site
  * would serve here is what reaches Unity. `.oj/`, the catalog's cover art, and
- * every other dot folder are left behind. A copy whose file has left the cart is removed, but only one
+ * every other dot folder are left behind, and so is the page folder
+ * (build/page.mjs), the store page's pictures, which the game never asks for.
+ * A copy whose file has left the cart is removed, but only one
  * this wrote: the names it wrote are kept in node_modules, so a file somebody
  * put in `assets/` by hand is never touched.
  */
 import fs from "node:fs"
 import path from "node:path"
 import { RESERVED_ASSET_FOLDER, isAssetName, resolveAsset } from "./assets.mjs"
+import { PAGE_FOLDER } from "../build/page.mjs"
 
 export { cartsPlugin, syncCartAssets } from "./unity-carts.mjs"
 export { buildConfig, withCartsPlugin } from "./unity-config.mjs"
@@ -37,7 +40,7 @@ export function cartAssets(root) {
     const walk = (dir, prefix) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
-            if (prefix === "" && entry.name === RESERVED_ASSET_FOLDER) continue
+            if (prefix === "" && (entry.name === RESERVED_ASSET_FOLDER || entry.name === PAGE_FOLDER)) continue
             const rel = prefix + entry.name
             if (entry.isDirectory()) walk(path.join(dir, entry.name), rel + "/")
             else if (entry.isFile() && isAssetName(rel) && resolveAsset(root, rel).file !== undefined) names.push(rel)
