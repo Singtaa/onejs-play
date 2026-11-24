@@ -954,6 +954,11 @@ site would serve into `assets/` before each build, keeping its folders. The
 copies are excluded from git, the site refuses a top-level `assets` folder so
 none of the cart's files can be in the way, and a copy is removed once its file
 leaves the cart (only a copy the plugin wrote, never a file put there by hand).
+The cart's page folder, `page/` at its root (the store page's text and
+pictures, named once in `ojplay/build/page`), is left behind with `.oj/`: it is
+never copied into `assets/`, never listed in a root cart's `files.json`, and a
+used cart's is not copied into `assets/<key>/` either, so a player never carries
+it.
 
 **A cart at a Unity project's root needs nothing of Unity's inside it.** With a
 OneJS whose JSRunner links carts by name, `ojplay add @handle/name` at a Unity

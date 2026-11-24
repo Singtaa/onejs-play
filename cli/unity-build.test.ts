@@ -6,6 +6,7 @@ import * as esbuild from "esbuild"
 import { buildUnity, filesManifest, OUTPUT, prologue, UsageError } from "./unity-build.mjs"
 import { buildGame, notAvailable } from "../build/game.mjs"
 import { makeTemp } from "./temp.mjs"
+import { PAGE_FOLDER } from "../build/page.mjs"
 
 /**
  * `ojplay build --unity`, held to the contract OneJS cart runners build
@@ -110,6 +111,20 @@ describe("build --unity writes the contract's four files", () => {
                 { from: `.oj/carts/${KEY}/spark.png`, to: `${KEY}/spark.png` },
             ],
         })
+    })
+
+    it("leaves the page folder out of files.json, the cart's own and a used cart's, so a player never carries it", async () => {
+        const { root, project } = rootCart({
+            ...CART, [`${PAGE_FOLDER}/01.png`]: "a shot", [`${PAGE_FOLDER}/README.md`]: "# Lightning",
+            [`.oj/carts/${KEY}/${PAGE_FOLDER}/01.png`]: "its shot",
+        })
+        const out = path.join(project, "out")
+        await build(root, out)
+        expect(JSON.parse(fs.readFileSync(path.join(out, OUTPUT.files), "utf8")).files).toEqual([
+            { from: "art/bg.png", to: "art/bg.png" },
+            { from: "glow.png", to: "glow.png" },
+            { from: `.oj/carts/${KEY}/spark.png`, to: `${KEY}/spark.png` },
+        ])
     })
 
     it("writes the bundle last, whole, and nothing beside it but the four files", async () => {

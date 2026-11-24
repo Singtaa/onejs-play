@@ -8,6 +8,7 @@ import { cartsPlugin, syncCartAssets, withCartsPlugin } from "./unity-assets.mjs
 import { add, remove, update } from "./carts.mjs"
 import { PACKAGE } from "../build/command.mjs"
 import { makeTemp } from "./temp.mjs"
+import { PAGE_FOLDER } from "../build/page.mjs"
 
 /**
  * Used carts in a OneJS app's own build (PlaySite docs/carts.md §4, step 6,
@@ -157,6 +158,13 @@ describe("cartsPlugin, in a OneJS app's build", () => {
             "node_modules/@scope/thing/index.js": "export const x = \"from npm\"\n",
         })
         expect(await buildApp(root)).toContain("from npm")
+    })
+
+    it("leaves a used cart's page folder out of assets/<key>/", () => {
+        const root = app({ ...fetched(), [`.oj/carts/${KEY}/glow.png`]: GLOW, [`.oj/carts/${KEY}/${PAGE_FOLDER}/01.png`]: GLOW })
+        syncCartAssets(root, [KEY])
+        expect(fs.existsSync(path.join(root, "assets", ...KEY.split("/"), "glow.png"))).toBe(true)
+        expect(fs.existsSync(path.join(root, "assets", ...KEY.split("/"), PAGE_FOLDER))).toBe(false)
     })
 
     it("removes the folder of a cart nothing uses now, and only one it copied", () => {

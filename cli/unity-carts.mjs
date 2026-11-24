@@ -27,6 +27,7 @@ import { readUsedCarts } from "./game.mjs"
 import { KEPT, cartsDir, fetchUsed, hashOf, shown } from "./carts.mjs"
 import { siteOrigin } from "./site.mjs"
 import { RESERVED_ASSET_FOLDER, isAssetName } from "./assets.mjs"
+import { PAGE_FOLDER } from "../build/page.mjs"
 
 const CART_IMPORT = /^(@[A-Za-z0-9-]+\/[A-Za-z0-9-]+)(?:\/(.+))?$/
 /** The keys the last sync copied into assets/, so only those are ever removed. */
@@ -56,6 +57,8 @@ export function servable(dir, prefix = "") {
     const out = []
     for (const entry of fs.readdirSync(path.join(dir, prefix), { withFileTypes: true })) {
         if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+        // The cart's store page (build/page.mjs), never its game's.
+        if (prefix === "" && entry.name === PAGE_FOLDER) continue
         const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`
         if (entry.isDirectory()) out.push(...servable(dir, rel))
         else if (isAssetName(rel)) out.push(rel)
