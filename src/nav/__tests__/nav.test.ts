@@ -5,6 +5,7 @@ import { setWasmModule } from "../../wasm"
 import { RAPIER_VERSION } from "../../physics3d/rapier.version"
 import { RECAST_VERSION, RECAST_WASM_SHA256, RECAST_WASM_IMPORTS } from "../recast.version"
 import { createWorld } from "../../physics3d/world"
+import { loadRecast } from "../nav"
 import type { Vec3 } from "../../models"
 
 const WA = (globalThis as any).WebAssembly
@@ -133,4 +134,39 @@ describe("world.nav", () => {
             w.dispose()
         })
     }
+})
+
+describe("a path not found", () => {
+    // Detour's arrays live in the wasm heap, and each is held in the bindings' cache by its pointer until it is freed.
+    // A computePath that returned early kept one on every call: millions over a long-running world (primoeden-three Mac 004).
+    it("leaves no array behind, on a solo nav or a tiled one, and the count sees one that is", async () => {
+        const R = await loadRecast()
+        const M = R.Raw.Module as any
+        const held = () => ["UnsignedIntArray", "FloatArray", "UnsignedCharArray"].reduce((n, k) => n + Object.keys(M[k].__cache__).length, 0)
+        const w = await createWorld()
+        w.box({ at: [-10, -0.5, 0], size: [10, 1, 10] })
+        w.box({ at: [10, -0.5, 0], size: [10, 1, 10] })
+        const N = 2000
+        for (const nav of [await w.nav(), await w.nav({ tile: 8 })]) {
+            const before = held()
+            let found = 0
+            for (let i = 0; i < N; i++) {
+                // One floor; two floors with no way between, a partial path; an end far off the floor; both ends off it.
+                if (nav.path([-12, 0, 0], [-8, 0, 2]).length) found++
+                if (nav.path([-10, 0, 0], [10, 0, 0]).length) found++
+                expect(nav.path([-10, 0, 0], [90, 0, 90])).toEqual([])
+                expect(nav.path([90, 0, -90], [90, 0, 90])).toEqual([])
+            }
+            expect(found).toBe(2 * N)
+            expect(held() - before).toBe(0)
+            nav.dispose()
+        }
+        // The count is not blind: an array nobody frees is one more, and gone again once freed.
+        const before = held()
+        const kept = new R.UnsignedIntArray()
+        expect(held() - before).toBe(1)
+        kept.destroy()
+        expect(held() - before).toBe(0)
+        w.dispose()
+    })
 })

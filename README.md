@@ -562,6 +562,14 @@ module: the import list is its contract. `rapier.test.ts` fails when the
 vendored files and the installed package disagree, and when a new Rapier's
 `World.step` does more than the pipeline call `world.ts` makes in its place.
 
+`vendor-recast.mjs` also patches the glue it writes: Recast's
+`NavMeshQuery.computePath` frees its Detour arrays only when it finds a path,
+so every path not found (an end off the floor) kept one for good, and a
+long-running world ran out of memory. The patch frees them on every return.
+Each of its edits must match the method exactly once, so a release that
+changes `computePath` stops the script; drop the patch once upstream frees
+them itself. `nav.test.ts` counts the bindings' arrays across failed paths.
+
 Things that are not obvious from the code:
 
 - **Queries see a body the frame it is made.** Rapier's query tree updates only
