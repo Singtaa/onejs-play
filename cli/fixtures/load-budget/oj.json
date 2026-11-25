@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "runtime": "1.11",
+    "name": "Load budget",
+    "entry": "index.tsx",
+    "controls": []
+}

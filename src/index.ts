@@ -102,7 +102,7 @@ export type { Nav, NavOptions } from "./nav/nav"
 export type { TiledNav, TiledNavOptions, KeptTiles, NavBox, NavMark, NavMarkOptions, PathOptions } from "./nav/tiled"
 
 // 3D models behind the cart's UI.
-export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
+export { loadModel, setLoadBudget, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
 export type {
     Model, Actor, ActorLight, Scene, SceneOptions, SpawnOptions, PointLight, PointLightOptions, Vec3,
     Rotation, DissolveOptions, CameraOptions, SunOptions, AmbientOptions, AmbientOcclusion, FogOptions, SkyOptions, Reflections,

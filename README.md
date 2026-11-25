@@ -497,6 +497,16 @@ Three things that are not obvious from the code:
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older
   host never sees the roll, and `SetCameraRolled` with it otherwise.
+- **Shine is two scene globals and a strength.** `scene.shine` is
+  `SetShinePictures(add, multiply)`, null for a picture not given, sent at
+  the scene's start only when given and again on each set; the bridge keeps
+  linear copies of their bytes. `loadModel`'s `shine` is `SetModelShine(id,
+  mode, strength)` after the load and part of the load's key, so the same
+  file at another strength is another model; `scene.mesh`'s is
+  `SetMeshShine(id, mode, strength)` among the looks, refused on a splat.
+  `actor.shine` is `SetActorShine(id, strength)`, which the bridge keeps in
+  the alpha of the actor's tint, so a shining actor still batches. Each is
+  refused before anything is made on a host without the call.
 - **A texture's `frames` are a flipbook.** `SetMeshFlipbook(id, count,
   seconds, tileU, tileV)` then `SetMeshFlipbookFrame(id, i, picture)` for
   each, before the vertices; the bridge swaps the frames on the scene's clock
@@ -1132,6 +1142,29 @@ soften too small to fade fails all four blends. It prints `BACKEND`. It names
 runtime 1.10, so the sweep waits for that line; `soft-glow.test.ts` feeds the
 check a pass, a softened glow still cut off at the floor, a soften that fades
 the whole glow, no glow, no cut to see, and an unlit floor.
+
+**A shine follows which way a surface faces.** `cli/fixtures/shine` lights two
+grey squares with a white ambient alone, both given an `"add"` shine: the left
+faces the camera, the right faces up and toward it, and the scene's picture
+(`top.png`) is bright only in its top 40%, where a surface facing up as the
+camera sees it reads. With the picture the right square must gain 40 levels
+and the left move at most 6; at `actor.shine` 0 the right must be back within
+6 of its plain reading. On a local 9.9.234 (the shine branch) the right square
+reads 131, 255 and 131 and the left 131 throughout, on WebGPU and WebGL 2
+alike; 9.9.233, without shine, fails. It prints `BACKEND`. It names runtime
+1.11, so the sweep waits for that line; `shine.test.ts` feeds the check a
+pass, no shine, a shine that ignores the facing, a share of 0 that still
+shines, and squares that are not lit.
+
+**A load budget reaches the engine.** `cli/fixtures/load-budget` calls
+`setLoadBudget(4)`, loads two models under it and sets it back to 0, reading
+OneJS's `ModelBridge.LoadBudget` by its C# name at each step: 4 while they
+load, `setLoadBudget(-1)` refused, both models loaded, 0 after. On a local
+9.9.240 (the 1.11.0 candidate) it passes; 1.10.1, whose `oj` has no
+`setLoadBudget`, fails at the first call. It names runtime 1.11, so the sweep
+waits for that line; `load-budget.test.ts` feeds the check a pass, a runtime
+without the call, a budget the engine never saw, a negative budget taken,
+models that did not load, and a budget left on.
 
 **A mirror shows the sky, and only when asked.** `cli/fixtures/sky-reflect`
 draws a chrome ball side on under a blue sky with an orange horizon. Not

@@ -295,6 +295,8 @@ export interface MeshModelOptions extends MeshData {
     deepColor?: { color: ColorInput, metres: number }
     /** A picture that bends the light across the mesh: ripples, a road's grain, lava's crust. Needs `uvs`. URP only. */
     normalMap?: MeshNormalMap
+    /** A shine from the scene's pictures, where its texture's alpha says: see `Shine`. Not with a splat. URP only. */
+    shine?: Shine
 }
 
 /**
@@ -303,6 +305,39 @@ export interface MeshModelOptions extends MeshData {
  * waves, tiling: 0.25, scale: 0.6, flow: [0.03, 0.01] } })` is water. The
  * picture should tile seamlessly, since it repeats.
  */
+/**
+ * A model's shine: a picture of the scene's (`scene.shine`) looked up by the
+ * way each pixel's surface faces the camera, so a glint runs over a blade as
+ * the view turns, whatever the sun does. What games call a matcap. `"add"`
+ * puts the add picture onto its lit colour, for weapons; `"multiply"`
+ * multiplies it by twice the multiply picture, so mid grey changes nothing,
+ * for armour. The model's picture's alpha says where it shines, white all of
+ * it and black none, on an opaque model, whose alpha is otherwise unused; a
+ * cut-out or see-through one shines all over. Actors of one model with
+ * different `actor.shine` still draw together. URP only. From runtime 1.11.
+ *
+ *     scene.shine = { add: await loadTexture("streaks.png") }
+ *     const sword = await loadModel("sword.glb", { shine: { mode: "add" } })
+ */
+export interface Shine {
+    mode: "add" | "multiply"
+    /** How much, from 0 to 1: 1 by default. */
+    strength?: number
+}
+
+/**
+ * The scene's two shine pictures, one each mode, read by every model given a
+ * `shine`: small (64 by 64 is plenty), the top of the picture what faces up
+ * on screen and its middle what faces the camera. Their bytes are read as
+ * amounts, not colours: an add picture is mostly black with a few bright
+ * streaks, a multiply picture mostly mid grey with bands. A mode with no
+ * picture shines nothing.
+ */
+export interface ShinePictures {
+    add?: Texture | null
+    multiply?: Texture | null
+}
+
 export interface MeshNormalMap {
     picture: Texture
     /** How often it repeats across a uv of 0 to 1, its own, not the texture's. 1 by default. */
@@ -533,6 +568,8 @@ export interface SpawnOptions {
     tint?: ColorInput
     /** A colour added to it after its light: see `actor.flash`. Black by default, which changes nothing. */
     flash?: ColorInput
+    /** How much of its model's shine it has: see `actor.shine`. 1 by default. */
+    shine?: number
     /** Its own light, in place of the scene's ambient and baked light: see `actor.light`. */
     light?: ActorLight | null
     /** Up to four colours painted through its model's `colorMask`. */
@@ -622,6 +659,13 @@ export interface Actor {
      *     setTimeout(() => { enemy.flash = "#000000" }, 80)
      */
     flash: ColorInput
+    /**
+     * How much of its model's shine it has, from 0 to 1: 1, the default, is
+     * all of it, and 0 none, so a rusted blade among bright ones shines less.
+     * Actors of one model with different shine still draw together. Changes
+     * nothing on a model loaded without a `shine`. From runtime 1.11.
+     */
+    shine: number
     /**
      * Its own light, which lights it alone: an ambient colour from every side
      * and one directional light, in place of the scene's ambient, its baked
@@ -870,6 +914,8 @@ export interface SceneOptions {
     sky?: SkyOptions | false
     /** What shiny surfaces reflect: `false`, the ambient's flat colour, unless given `"sky"`. */
     reflections?: Reflections
+    /** The pictures models given a `shine` read: none unless given. */
+    shine?: ShinePictures | null
     /** Off unless asked for. */
     fog?: FogOptions | false
     /** What moves a mesh made with `sway`: a breeze along +x unless given. */
@@ -1016,6 +1062,14 @@ export interface Scene {
      *     scene.reflections = "sky"
      */
     reflections: Reflections
+    /**
+     * The pictures every model given a `shine` reads, one each mode: see
+     * `Shine` and `ShinePictures`. `null`, the default, shines nothing. From
+     * runtime 1.11.
+     *
+     *     scene.shine = { add: streaks, multiply: bands }
+     */
+    shine: ShinePictures | null
     /**
      * Holds every actor's clips and dissolves where they are, for a pause menu.
      * Each actor keeps its own `speed` for when the scene goes again. The camera
@@ -1430,11 +1484,42 @@ function scatterRange(o: ScatterOptions): [from: number, to: number, fade: numbe
 
 // models
 
+/** A shine as the bridge takes it, mode and strength, checked before anything is made. */
+function shineArgs(shine: Shine, what: string): [mode: string, strength: number] {
+    if (shine === null || typeof shine !== "object") throw new Error(`[oj] ${what} is ${JSON.stringify(shine)}, and is { mode: "add" | "multiply", strength }`)
+    if (shine.mode !== "add" && shine.mode !== "multiply") throw new Error(`[oj] ${what}: mode is ${JSON.stringify(shine.mode)}, and is "add" or "multiply"`)
+    const strength = shine.strength ?? 1
+    if (typeof strength !== "number" || !(strength >= 0 && strength <= 1)) throw new Error(`[oj] ${what}: strength is ${strength}, and runs from 0 to 1`)
+    return [shine.mode, strength]
+}
+
 /** A model's load, as `loads` keys it: its file, its mask when it has one, and the model whose clips it plays. */
-function loadKey(name: string, o: { colorMask?: string, clips?: Model }): string {
+function loadKey(name: string, o: { colorMask?: string, clips?: Model, shine?: Shine }): string {
     const mask = o.colorMask === undefined ? "" : `\nmask ${assetUrl(o.colorMask)}`
     const clips = o.clips === undefined ? "" : `\nclips ${o.clips.id}`
-    return `${assetUrl(name)}${mask}${clips}`
+    const shine = o.shine === undefined ? "" : `\nshine ${o.shine.mode} ${o.shine.strength ?? 1}`
+    return `${assetUrl(name)}${mask}${clips}${shine}`
+}
+
+/**
+ * How many milliseconds of each frame loading models may take, shared by every
+ * load in flight, for a loading screen that keeps its frame rate while the
+ * models arrive. `0`, the default, keeps the engine's own pace, up to about 17
+ * ms a frame on top of the frame's own work. It changes loads already under
+ * way, so a game can load behind its loading screen at 4 ms and set it back to
+ * 0 after; a lower budget makes the loads take more frames. Each frame takes at
+ * least one step of a load, so a step longer than the budget still runs. A new
+ * scene starts at 0.
+ *
+ *     setLoadBudget(4)
+ *     await Promise.all([loadModel("villager.glb"), loadModel("cart.glb")])
+ *     setLoadBudget(0)
+ */
+export function setLoadBudget(ms: number): void {
+    if (!(ms >= 0) || ms === Infinity) throw new Error(`[oj] setLoadBudget(${ms}): a budget is 0 or more milliseconds`)
+    const b = bridge()
+    if (typeof b.LoadBudget !== "number") throw new Error("[oj] setLoadBudget needs a newer OneJS: this host's ModelBridge has no load budget.")
+    b.LoadBudget = ms
 }
 
 /** Models loaded with a colour mask, which `colors` needs. */
@@ -1461,14 +1546,22 @@ const masked = new WeakSet<Model>()
  *     const tom = await loadModel("villager.glb", { clips: moves })
  *     tom.clips                    // the moves' clips
  */
-export function loadModel(name: string, options: { colorMask?: string, clips?: Model } = {}): Promise<Model> {
+export function loadModel(name: string, options: { colorMask?: string, clips?: Model, shine?: Shine } = {}): Promise<Model> {
     const url = assetUrl(name)
     const key = loadKey(name, options)
     let loading = loads.get(key)
     if (loading === undefined) {
         const b = bridge()
         const born = generation
-        const { colorMask, clips: giver } = options
+        const { colorMask, clips: giver, shine } = options
+        if (shine !== undefined) {
+            try {
+                shineArgs(shine, `loadModel("${name}") shine`)
+            } catch (e) {
+                return Promise.reject(e)
+            }
+            if (typeof b.SetModelShine !== "function") return Promise.reject(new Error("[oj] loadModel shine needs a newer OneJS: this host's ModelBridge has no shine (it comes with runtime 1.11)."))
+        }
         if (colorMask !== undefined && typeof b.SetColorMask !== "function") {
             return Promise.reject(new Error("[oj] loadModel colorMask needs a newer OneJS: this host's ModelBridge cannot colour an actor (it came with runtime 1.9)."))
         }
@@ -1486,6 +1579,13 @@ export function loadModel(name: string, options: { colorMask?: string, clips?: M
                 if (problem !== "") {
                     b.Unload?.(id)
                     throw new Error(`[oj] loadModel("${name}") colorMask: ${problem}`)
+                }
+            }
+            if (shine !== undefined && generation === born) {
+                const problem = String(b.SetModelShine(id, ...shineArgs(shine, "")) ?? "")
+                if (problem !== "") {
+                    b.Unload?.(id)
+                    throw new Error(`[oj] loadModel("${name}") shine: ${problem}`)
                 }
             }
             if (giver !== undefined && generation === born) {
@@ -1529,7 +1629,7 @@ export function loadModel(name: string, options: { colorMask?: string, clips?: M
  * host whose bridge cannot free one model keeps it until the scene goes, as
  * every model did before.
  */
-export async function forgetModel(name: string, options: { colorMask?: string, clips?: Model } = {}): Promise<void> {
+export async function forgetModel(name: string, options: { colorMask?: string, clips?: Model, shine?: Shine } = {}): Promise<void> {
     const key = loadKey(name, options)
     const loading = loads.get(key)
     if (loading === undefined) return
@@ -1555,13 +1655,16 @@ export async function forgetModel(name: string, options: { colorMask?: string, c
  *     const moves = useModel("villager-moves.glb")
  *     const tom = useModel("villager.glb", { clips: moves })
  */
-export function useModel(name: string, options: { colorMask?: string, clips?: Model | null } = {}): Model | null {
+export function useModel(name: string, options: { colorMask?: string, clips?: Model | null, shine?: Shine } = {}): Model | null {
     const [model, setModel] = useState<Model | null>(null)
     const { colorMask, clips } = options
+    // By value, since a shine written inline is a new object every render.
+    const shineMode = options.shine?.mode, shineStrength = options.shine?.strength
     useEffect(() => {
         if (clips === null) return
-        return watchModel(name, setModel, { colorMask, clips })
-    }, [name, colorMask, clips])
+        const shine = shineMode === undefined ? undefined : { mode: shineMode, strength: shineStrength }
+        return watchModel(name, setModel, { colorMask, clips, shine })
+    }, [name, colorMask, clips, shineMode, shineStrength])
     return model
 }
 
@@ -1570,7 +1673,7 @@ export function useModel(name: string, options: { colorMask?: string, clips?: Mo
  * stopped load stays quiet when it fails, since pressing Play or a hot reload
  * disposes the scene mid-load and the bridge then cancels it.
  */
-export function watchModel(name: string, loaded: (model: Model) => void, options: { colorMask?: string, clips?: Model } = {}): () => void {
+export function watchModel(name: string, loaded: (model: Model) => void, options: { colorMask?: string, clips?: Model, shine?: Shine } = {}): () => void {
     let watching = true
     loadModel(name, options).then(
         (model) => { if (watching) loaded(model) },
@@ -1755,6 +1858,20 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         })
     }
 
+    let shineNow: ShinePictures | null = null
+    const applyShine = (next: ShinePictures | null) => {
+        if (next !== null && (typeof next !== "object" || Array.isArray(next))) throw new Error(`[oj] scene.shine is ${JSON.stringify(next)}, and is { add, multiply } or null`)
+        const add = next?.add ?? null, multiply = next?.multiply ?? null
+        if (add !== null) picture(add, "scene.shine add")
+        if (multiply !== null) picture(multiply, "scene.shine multiply")
+        if (typeof b.SetShinePictures !== "function") {
+            if (add !== null || multiply !== null) throw new Error("[oj] scene.shine needs a newer OneJS: this host's ModelBridge has no shine (it comes with runtime 1.11).")
+        } else {
+            b.SetShinePictures(add, multiply)
+        }
+        shineNow = next === null ? null : Object.freeze({ add, multiply })
+    }
+
     b.BeginScene()
     camera(options.camera ?? {})
     applySun()
@@ -1764,6 +1881,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
     applyFog()
     applySky()
     applyWind(options.wind !== undefined)
+    if (options.shine !== undefined && options.shine !== null) applyShine(options.shine)
 
     // Where an actor is, is kept here: a move made during a frame waits and every one of
     // them crosses to Unity together when the frame ends, or sooner when something is about
@@ -1877,6 +1995,14 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             if (problem !== "") throw new Error(`[oj] actor.flash: ${problem}`)
             flash = next
         }
+        let shine = 1
+        const setShine = (next: number) => {
+            if (typeof next !== "number" || !(next >= 0 && next <= 1)) throw new Error(`[oj] actor.shine is ${next}, and runs from 0 to 1`)
+            if (typeof b.SetActorShine !== "function") throw new Error("[oj] actor.shine needs a newer OneJS: this host's ModelBridge has no shine (it comes with runtime 1.11).")
+            const problem = String(b.SetActorShine(id, next) ?? "")
+            if (problem !== "") throw new Error(`[oj] actor.shine: ${problem}`)
+            shine = next
+        }
         const setTint = (next: ColorInput) => {
             const sent = rgb(next, "actor tint")
             needColors("tint")
@@ -1968,6 +2094,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             set tint(c: ColorInput) { setTint(c) },
             get flash() { return flash },
             set flash(c: ColorInput) { setFlash(c) },
+            get shine() { return shine },
+            set shine(v: number) { setShine(v) },
             get light() { return light },
             set light(l: ActorLight | null) { setLight(l) },
             get texture() { return texture },
@@ -2015,6 +2143,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         try {
             if (o.tint !== undefined) setTint(o.tint)
             if (o.flash !== undefined) setFlash(o.flash)
+            if (o.shine !== undefined) setShine(o.shine)
             if (o.light !== undefined && o.light !== null) setLight(o.light)
             if (o.colors !== undefined) setColors(o.colors)
             if (o.texture !== undefined && o.texture !== null) setTexture(o.texture)
@@ -2103,6 +2232,12 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
         let roughness = o.roughness ?? 1, metallic = o.metallic ?? 0
         let colorGiven: ColorInput = o.color ?? "#ffffff"
         const surfaceGiven = o.roughness !== undefined || o.metallic !== undefined
+        let meshShine: [string, number] | null = null
+        if (o.shine !== undefined) {
+            meshShine = shineArgs(o.shine, "scene.mesh shine")
+            if (o.splat !== undefined) throw new Error("[oj] scene.mesh shine: a splat ground has no shine")
+            if (typeof b.SetMeshShine !== "function") throw new Error("[oj] scene.mesh shine needs a newer OneJS: this host's ModelBridge has no shine (it comes with runtime 1.11).")
+        }
         // The leaf light as the bridge takes it: wrap, backLight, its focus, and its colour's sRGB.
         let leaf = { wrap: o.wrap ?? 0, backLight: o.backLight ?? 0, focus: o.backLightFocus ?? 4, color: o.backLightColor ?? ("#ffffff" as ColorInput) }
         const leafArgs = (l: typeof leaf, what: string) => [l.wrap, l.backLight, l.focus, ...toRGBA(l.color, `[oj] ${what}`).slice(0, 3)] as [number, number, number, number, number, number]
@@ -2186,6 +2321,7 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
                 [leafGiven, () => b.SetMeshLeafLight(id, ...leafArgs(leaf, "scene.mesh backLightColor")), o.wrap !== undefined ? "wrap" : "backLight"],
                 [edgeGiven, () => b.SetMeshEdgeFade(id, ...edgeFade), "edgeFade"],
                 [normalMap !== null, () => b.SetMeshNormalMap(id, ...normalMap!), "normalMap"],
+                [meshShine !== null, () => b.SetMeshShine(id, ...meshShine!), "shine"],
             ]
             for (const [given, apply, what] of looks) {
                 if (!given) continue
@@ -2600,6 +2736,8 @@ export function createScene(options: SceneOptions = {}): { scene: Scene, dispose
             reflectionsNow = checkReflections(v)
             applyReflections()
         },
+        get shine() { return shineNow },
+        set shine(v: ShinePictures | null) { applyShine(v) },
         get paused() { return paused },
         set paused(on: boolean) {
             if (on === paused) return
