@@ -12,10 +12,17 @@ import type { Vec3 } from "../../models"
 import { hill, hills } from "./hills"
 
 /** Every tile Recast builds, counted: a kept tile that matches is never one of them. */
-const built = vi.hoisted(() => ({ n: 0 }))
+const built = vi.hoisted(() => ({ n: 0, fail: 0 }))
 vi.mock("../nav", async (importOriginal) => {
     const real = await importOriginal<typeof import("../nav")>()
-    return { ...real, buildNavTile: (...args: Parameters<typeof real.buildNavTile>) => { built.n++; return real.buildNavTile(...args) } }
+    return {
+        ...real,
+        buildNavTile: (...args: Parameters<typeof real.buildNavTile>) => {
+            built.n++
+            if (built.fail > 0) { built.fail--; throw new Error("a build that fails") }
+            return real.buildNavTile(...args)
+        },
+    }
 })
 
 const WA = (globalThis as any).WebAssembly
@@ -115,7 +122,11 @@ describe("a tiled nav's kept tiles", () => {
         expect(nav.kept).toEqual({ tiles: first.tiles, why: null })
         expect(nav.pending).toBeGreaterThan(0)
         marksOn(nav)
+        // Not one tile's triangles read: each is asked only for its bodies' hashes, the empty ones too.
+        const gather = vi.spyOn(Object.getPrototypeOf(nav), "gather")
         nav.update(Infinity)
+        expect(gather).not.toHaveBeenCalled()
+        gather.mockRestore()
         expect(built.n - made).toBe(0)
         expect(nav.pending).toBe(0)
         expect(nav.tiles).toBe(first.tiles)
@@ -245,7 +256,7 @@ describe("a tiled nav's kept tiles", () => {
         // The description less its first tile, the navmesh as it was.
         const n = new DataView(kept.buffer, kept.byteOffset).getUint32(6, true)
         const json = JSON.parse(Buffer.from(kept.subarray(10, 10 + n)).toString())
-        const [tx, tz] = json.tiles.shift()
+        const [tx, tz] = json.tiles.splice(json.tiles.findIndex((t: number[]) => t[4] === 1), 1)[0]
         const text = Buffer.from(JSON.stringify(json))
         const cut = new Uint8Array(10 + text.length + kept.length - 10 - n)
         cut.set(kept.subarray(0, 10)); new DataView(cut.buffer).setUint32(6, text.length, true)
@@ -257,17 +268,44 @@ describe("a tiled nav's kept tiles", () => {
         expect(nav.kept).toEqual({ tiles: first.tiles - 1, why: null })
         expect(builds).toBe(1)
         expect(nav.tiles).toBe(first.tiles)
-        expect(held(nav.exportTiles()).tiles).toContainEqual([tx, tz, expect.any(Number), expect.any(Number)])
+        expect(held(nav.exportTiles()).tiles).toContainEqual([tx, tz, expect.any(Number), expect.any(Number), 1])
         expect(ways(nav, 1)).toEqual(ways(first, 1))
+    })
+
+    it("build nothing when a body is made again the same", async () => {
+        const w = await land({ chunks: 1 })
+        const at: Vec3 = [20, hill(20, 50) + 1, 50]
+        const shed = w.box({ at, size: [4, 3, 4] })
+        const nav = await builtNav(w)
+        shed.destroy()
+        w.box({ at, size: [4, 3, 4] })
+        expect(nav.pending).toBeGreaterThan(0)
+        const before = built.n
+        nav.update(Infinity)
+        expect(built.n - before).toBe(0)
+    })
+
+    it("are built again when only a body's winding differs", async () => {
+        // The same corners turned over: a floor facing down is no floor, so the tiles must not be kept.
+        const floor = {}
+        const v = new Float32Array([0, 0, 0, 0, 0, 32, 32, 0, 32, 32, 0, 0])
+        const up = new Uint32Array([0, 1, 2, 0, 2, 3]), down = new Uint32Array([0, 2, 1, 0, 3, 2])
+        const source = (ix: Uint32Array): NavSource<object> => ({ bodies: () => [floor], triangles: () => ({ vertices: v, indices: ix }), watch: () => () => {} })
+        const o = { radius: 0.4, height: 1.8, stepHeight: 0.5, cell: 0.33, tile: 16 }
+        const kept = (await buildTiledNav(source(up), o)).exportTiles()
+        const nav = await buildTiledNav(source(down), { ...o, kept })
+        nav.update(Infinity)
+        expect(nav.tiles).toBe(0)
+        expect(nav.nearest([8, 0, 8], 1)).toBeNull()
     })
 
     it("are built again when a body's solid differs under the same triangles", async () => {
         // A source of one floor and a solid that is not its triangles' to say: what a NavSource may give.
         const floor = {}
         const v = new Float32Array([0, 0, 0, 0, 0, 32, 32, 0, 32, 32, 0, 0]), ix = new Uint32Array([0, 1, 2, 0, 2, 3])
-        const source = (poly: number[]): NavSource<object> => ({
+        const source = (poly: number[], ymax = 2): NavSource<object> => ({
             bodies: () => [floor],
-            triangles: () => ({ vertices: v, indices: ix, solid: { poly, ymin: -1, ymax: 2 } }),
+            triangles: () => ({ vertices: v, indices: ix, solid: { poly, ymin: -1, ymax } }),
             watch: () => () => {},
         })
         const o = { radius: 0.4, height: 1.8, stepHeight: 0.5, cell: 0.33, tile: 16 }
@@ -282,6 +320,28 @@ describe("a tiled nav's kept tiles", () => {
         // Every tile the body reaches, as when a body moves.
         expect(built.n - before).toBe(same.tiles)
         expect(same.tiles).toBe(4)
+        // The same footprint, its top under the floor: the floor in it is floor again.
+        expect(same.nearest([6, 0, 6], 0.5)).toBeNull()
+        const sunk = await buildTiledNav(source([4, 4, 8, 4, 8, 8, 4, 8], -0.5), { ...o, kept })
+        sunk.update(Infinity)
+        expect(sunk.nearest([6, 0, 6], 0.5)).not.toBeNull()
+    })
+
+    it("try a tile that failed to build again the next time it is stale", async () => {
+        const w = await land({ chunks: 1 })
+        const nav = await builtNav(w)
+        const tiles = nav.tiles
+        const error = vi.spyOn(console, "error").mockImplementation(() => {})
+        built.fail = 1
+        nav.mark({ at: [24, hill(24, 24), 24], size: [2, 6, 2], area: "road" })
+        nav.update(Infinity)
+        expect(error).toHaveBeenCalledTimes(1)
+        error.mockRestore()
+        expect(nav.tiles).toBe(tiles - 1)
+        // Made stale again with nothing changed: built this time.
+        nav.mark({ at: [24, hill(24, 24), 24], size: [1, 6, 1], area: "road" }).remove()
+        nav.update(Infinity)
+        expect(nav.tiles).toBe(tiles)
     })
 
     it("are freed with the nav, as built ones are", async () => {
