@@ -9,7 +9,9 @@ afterEach(() => {
     delete (globalThis as any).CS
 })
 
+// ActorCount is what models.ts reads to know the host has a ModelBridge at all.
 function host(bridge: any) {
+    bridge.ActorCount = 0
     ;(globalThis as any).CS = { OneJS: { Models: { ModelBridge: bridge } } }
     return bridge
 }
