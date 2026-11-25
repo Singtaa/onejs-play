@@ -99,7 +99,7 @@ export type {
     BoxShapeOptions, SphereShapeOptions, CapsuleShapeOptions, ClearSpotOptions, SlideOptions, Slid, SightOptions, Sight,
 } from "./physics3d/world"
 export type { Nav, NavOptions } from "./nav/nav"
-export type { TiledNav, NavBox, NavMark, NavMarkOptions, PathOptions } from "./nav/tiled"
+export type { TiledNav, TiledNavOptions, KeptTiles, NavBox, NavMark, NavMarkOptions, PathOptions } from "./nav/tiled"
 
 // 3D models behind the cart's UI.
 export { loadModel, useModel, useScene, createScene, SCENE_DEFAULTS } from "./models"
