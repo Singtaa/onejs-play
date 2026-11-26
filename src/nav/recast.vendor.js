@@ -9789,6 +9789,8 @@ var NavMeshQuery = class {
    * @returns an array of Vector3 positions that make up the path, or an empty array if no path was found.
    */
   computePath(start, end, options) {
+    const made = [];
+    try {
     const filter = options?.filter ?? this.defaultFilter;
     const halfExtents = options?.halfExtents ?? this.defaultQueryHalfExtents;
     const startNearestPolyResult = this.findNearestPoly(start, {
@@ -9826,6 +9828,7 @@ var NavMeshQuery = class {
       filter,
       maxPathPolys
     });
+    made.push(findPathResult.polys);
     if (!findPathResult.success) {
       return {
         success: false,
@@ -9869,6 +9872,7 @@ var NavMeshQuery = class {
     const findStraightPathResult = this.findStraightPath(start, closestEnd, findPathResult.polys, {
       maxStraightPathPoints
     });
+    made.push(findStraightPathResult.straightPath, findStraightPathResult.straightPathFlags, findStraightPathResult.straightPathRefs);
     if (!findStraightPathResult.success) {
       return {
         success: false,
@@ -9891,14 +9895,13 @@ var NavMeshQuery = class {
         z: straightPath.get(i * 3 + 2)
       });
     }
-    findPathResult.polys.destroy();
-    findStraightPathResult.straightPath.destroy();
-    findStraightPathResult.straightPathFlags.destroy();
-    findStraightPathResult.straightPathRefs.destroy();
     return {
       success: true,
       path: points
     };
+    } finally {
+      for (const a of made) a.destroy();
+    }
   }
   /**
    * Finds a path from the start polygon to the end polygon.

@@ -29,7 +29,7 @@ import { BodyCore, ShapeCore, WorldCore, capsuleHalf, type Dim } from "../physic
 import { glbTriangles, type Triangles } from "./gltf"
 import { arrayModels, loadFileBytes, modelUrls } from "./sources"
 import { buildNav, type Nav, type NavOptions, type NavSolid } from "../nav/nav"
-import { buildTiledNav, type NavSource, type TiledNav, type TiledNavInternal } from "../nav/tiled"
+import { buildTiledNav, type NavSource, type TiledNav, type TiledNavInternal, type TiledNavOptions } from "../nav/tiled"
 import { heightGrid, heightfieldTriangles } from "./heightfield"
 import { CAR_SIZE, CarCore, type CarOptionsOf, type CarWheelState } from "./car"
 
@@ -394,7 +394,7 @@ export interface World {
      * the tiles it touches within the frame's `budget`, so a building and
      * the way round it are one call.
      */
-    nav(options: NavOptions & { tile: number }): Promise<TiledNav>
+    nav(options: TiledNavOptions): Promise<TiledNav>
     /**
      * Paths over this world's floor, built from every static, solid body:
      * walls, crates and mesh levels, as they are now. A level that changes
@@ -611,12 +611,12 @@ class World3 extends WorldCore<Vec3, Partial<Rotation> | undefined, Actor> {
         return this.makeBody("heightfield", desc, { at: o.at, friction: o.friction, bounce: o.bounce, layer: o.layer, ignores: o.ignores, actor: o.actor, tag: o.tag })
     }
 
-    nav(o: NavOptions & { tile: number }): Promise<TiledNav>
+    nav(o: TiledNavOptions): Promise<TiledNav>
     nav(o?: NavOptions): Promise<Nav>
     async nav(o: NavOptions = {}): Promise<Nav | TiledNav> {
         this.live()
         if (o.tile !== undefined) {
-            const nav = await buildTiledNav(this.navSource(o.only), o as NavOptions & { tile: number })
+            const nav = await buildTiledNav(this.navSource(o.only), o as TiledNavOptions)
             try { this.live() } catch (e) { nav.dispose(); throw e }
             this.navs.add(nav)
             return nav

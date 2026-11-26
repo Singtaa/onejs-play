@@ -38,7 +38,7 @@ project? If not, it is cut, or it degrades to a documented no-op after eject.
 | `light/` | Baked light's plain parts, no engine (PlaySite docs/lightmapping.md): `record.ts` is what a saved light was baked for (its static actors, sun, ambient and `scene.bake`'s four options), its fingerprint, the layout it was baked at and the first difference in the console line's words; `png.ts` reads and writes that record in the file's `tEXt` chunk; `sha256.ts` hashes a model where the build's file map does not, by the browser's digest, else OneJS's C# (`ModelBridge.Sha256`, and `FileSha256` for a file on disk), and only last in JS, which takes half a millisecond a kilobyte under QuickJS; `probes.ts` places the probe grid (OneJS's ModelBridge blends it for a moving actor); `host.ts` hands a host a light file baked here, with its console line, and each named bake's start and end (`setLightHost`, on `ojplay/container`), and bakes a named file again in the scene running now when the host asks (`bakeAgain`, the Play editor's Bake again); `atlas.ts` packs each static actor's rectangle, lowering the detail to fit, and lays each model out once at its smallest actor's density; `unwrap.ts` cuts a model into xatlas charts and packs them at that density, giving the second UV set and each output vertex's source vertex; `bake.ts` is `scene.bake`'s half of a bake: it checks and defaults its options (`bakeOptions`), reads each static model's triangles from ModelBridge, unwraps and lays them out (a named bake in its record's order), hands back each model's unwrap, and then starts the bake or shows a saved light file whose record and layout match; `scene-bake.ts` is the folder's one entry, `scene.bake` and `scene.clearLight` for a scene given its static items, sun, ambient and bridge: it refuses a name that is not a cart path ending in `.light.png`, reads a preloaded file's bytes, steps the bake each frame and resolves `done` to how it ended (`loaded`, `baked`, `failed`, `stopped`); `budget.ts` is how many tiles a frame the bake loop sends, grown while frames keep the game's interval, and held to a few while the bake traces probes, whose cost the interval does not show |
 | `physics2d/` | `useWorld2D`, `createWorld2D`, `shape2D`: 2D physics over Rapier 2D, in stage pixels, y down. `world.ts` is the API, `elements.ts` moves the elements bodies carry (one `ElementPlacer` crossing per step) |
 | `physics3d/` | `useWorld`, `createWorld`, `shape`: 3D physics over Rapier. `world.ts` is the API, `car.ts` is `world.car` over Rapier's ray-cast vehicle, `rapier.vendor.js` the generated glue, `gltf.ts` a .glb's triangles for mesh colliders, `heightfield.ts` `world.heightfield`'s grid in Rapier's order and its triangles read back for nav and `visibility` |
-| `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies. `nav.ts` is the solo navmesh, built once, and `buildNavTile`, Recast's steps for one tile with an upright box's inside (a sphere's or capsule's bounding box) kept off the floor, which both navs build with; `tiled.ts` is `world.nav({ tile })`, tiles pinned to the origin that the world rebuilds within a frame budget whenever a static body is made, destroyed or moved, with `block`, `mark` and area costs. Both answer `path`, `nearest` and `polygons`, and agree on what is floor. `__tests__/world-scale.test.ts` prints PrimoEden's 3 by 3 chunk numbers |
+| `nav/` | `world.nav()`: Recast navmeshes and Detour paths, built from a world's static bodies. `nav.ts` is the solo navmesh, built once, and `buildNavTile`, Recast's steps for one tile with an upright box's inside (a sphere's or capsule's bounding box) kept off the floor, which both navs build with; `tiled.ts` is `world.nav({ tile })`, tiles pinned to the origin that the world rebuilds within a frame budget whenever a static body is made, destroyed or moved, with `block`, `mark` and area costs. A tile is built again only when what it is built from (its bodies, each hashed once when read, and its marks) hashes differently from what it held, built or found empty, so `exportTiles` and `world.nav({ tile, kept })` carry a server's navmesh across a restart: each kept tile is taken in as built and kept while the world still matches it (`__tests__/tiled-kept.test.ts`). Both answer `path`, `nearest` and `polygons`, and agree on what is floor. `__tests__/world-scale.test.ts` prints PrimoEden's 3 by 3 chunk numbers |
 | `wasm.ts` | Where a WebAssembly engine comes from on each host: OneJS's native link, a module handed over, or StreamingAssets |
 | `node.ts` | `ojplay/node`: hands every engine to Node, for a cart's own tests (`setupFiles: ["ojplay/node"]`) |
 | `mathf.ts` | `Mathf`, Unity-shaped, implemented in JS |
@@ -497,6 +497,16 @@ Three things that are not obvious from the code:
   sRGB, sent only when given; the bridge keeps it in the actor's colour row
   with its tint. The camera sends `SetCamera` while its roll is 0, so an older
   host never sees the roll, and `SetCameraRolled` with it otherwise.
+- **Shine is two scene globals and a strength.** `scene.shine` is
+  `SetShinePictures(add, multiply)`, null for a picture not given, sent at
+  the scene's start only when given and again on each set; the bridge keeps
+  linear copies of their bytes. `loadModel`'s `shine` is `SetModelShine(id,
+  mode, strength)` after the load and part of the load's key, so the same
+  file at another strength is another model; `scene.mesh`'s is
+  `SetMeshShine(id, mode, strength)` among the looks, refused on a splat.
+  `actor.shine` is `SetActorShine(id, strength)`, which the bridge keeps in
+  the alpha of the actor's tint, so a shining actor still batches. Each is
+  refused before anything is made on a host without the call.
 - **A texture's `frames` are a flipbook.** `SetMeshFlipbook(id, count,
   seconds, tileU, tileV)` then `SetMeshFlipbookFrame(id, i, picture)` for
   each, before the vertices; the bridge swaps the frames on the scene's clock
@@ -551,6 +561,14 @@ Re-vendor after changing a pinned version, and tell whoever links the native
 module: the import list is its contract. `rapier.test.ts` fails when the
 vendored files and the installed package disagree, and when a new Rapier's
 `World.step` does more than the pipeline call `world.ts` makes in its place.
+
+`vendor-recast.mjs` also patches the glue it writes: Recast's
+`NavMeshQuery.computePath` frees its Detour arrays only when it finds a path,
+so every path not found (an end off the floor) kept one for good, and a
+long-running world ran out of memory. The patch frees them on every return.
+Each of its edits must match the method exactly once, so a release that
+changes `computePath` stops the script; drop the patch once upstream frees
+them itself. `nav.test.ts` counts the bindings' arrays across failed paths.
 
 Things that are not obvious from the code:
 
@@ -1132,6 +1150,29 @@ soften too small to fade fails all four blends. It prints `BACKEND`. It names
 runtime 1.10, so the sweep waits for that line; `soft-glow.test.ts` feeds the
 check a pass, a softened glow still cut off at the floor, a soften that fades
 the whole glow, no glow, no cut to see, and an unlit floor.
+
+**A shine follows which way a surface faces.** `cli/fixtures/shine` lights two
+grey squares with a white ambient alone, both given an `"add"` shine: the left
+faces the camera, the right faces up and toward it, and the scene's picture
+(`top.png`) is bright only in its top 40%, where a surface facing up as the
+camera sees it reads. With the picture the right square must gain 40 levels
+and the left move at most 6; at `actor.shine` 0 the right must be back within
+6 of its plain reading. On a local 9.9.234 (the shine branch) the right square
+reads 131, 255 and 131 and the left 131 throughout, on WebGPU and WebGL 2
+alike; 9.9.233, without shine, fails. It prints `BACKEND`. It names runtime
+1.11, so the sweep waits for that line; `shine.test.ts` feeds the check a
+pass, no shine, a shine that ignores the facing, a share of 0 that still
+shines, and squares that are not lit.
+
+**A load budget reaches the engine.** `cli/fixtures/load-budget` calls
+`setLoadBudget(4)`, loads two models under it and sets it back to 0, reading
+OneJS's `ModelBridge.LoadBudget` by its C# name at each step: 4 while they
+load, `setLoadBudget(-1)` refused, both models loaded, 0 after. On a local
+9.9.240 (the 1.11.0 candidate) it passes; 1.10.1, whose `oj` has no
+`setLoadBudget`, fails at the first call. It names runtime 1.11, so the sweep
+waits for that line; `load-budget.test.ts` feeds the check a pass, a runtime
+without the call, a budget the engine never saw, a negative budget taken,
+models that did not load, and a budget left on.
 
 **A mirror shows the sky, and only when asked.** `cli/fixtures/sky-reflect`
 draws a chrome ball side on under a blue sky with an orange horizon. Not

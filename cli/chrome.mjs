@@ -604,7 +604,7 @@ export class Browser {
         const opened = await new Promise((ok) => {
             const timer = setTimeout(() => ok(`did not open in ${wait}`), waitMs)
             ws.onopen = () => { clearTimeout(timer); ok(null) }
-            ws.onerror = (e) => { clearTimeout(timer); ok(`did not open (${e.message ?? e.error?.message ?? "a socket error"})`) }
+            ws.onerror = (e) => { clearTimeout(timer); ok(`did not open (${e.message || e.error?.message || "a socket error"})`) }
         })
         if (opened !== null) {
             ws.close()

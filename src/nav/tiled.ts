@@ -79,6 +79,38 @@ export interface TiledNav extends Nav {
     readonly tiles: number
     /** Tile edge, metres. */
     readonly tileSize: number
+    /**
+     * The tiles as built now, to be given back as `kept` to a nav made
+     * later over the same world: a server's restart reads its navmesh back
+     * instead of building it. Each tile carries a hash of what it was built
+     * from, so a later nav keeps only the tiles its world still matches.
+     */
+    exportTiles(): Uint8Array
+    /** What became of `kept`: how many tiles were taken in, or why none were. Null when none was given. */
+    readonly kept: KeptTiles | null
+}
+
+/** A tiled nav's options. */
+export interface TiledNavOptions extends NavOptions {
+    /** Tile edge, metres. */
+    tile: number
+    /**
+     * Tiles from `exportTiles`. The nav takes them in as built and builds
+     * nothing when made: add the marks and blocks the world had, then
+     * `update(Infinity)`. Each tile whose bodies, marks and blocks hash as
+     * they did when it was built stays as it is; any other is built again.
+     * Kept tiles made with other settings are refused whole, and the nav
+     * builds every tile, as it would with none.
+     */
+    kept?: Uint8Array
+}
+
+/** The answer to `kept`. */
+export interface KeptTiles {
+    /** Tiles taken in. Those the world no longer matches are built again at the next update. */
+    tiles: number
+    /** Why none were taken, or null. */
+    why: string | null
 }
 
 /** The geometry a tiled nav follows: a world's static bodies, as triangles, and word when they change. */
@@ -115,6 +147,8 @@ interface Entry {
     indices: Uint32Array
     solid: NavGeometry["solid"]
     tiles: number[]
+    /** Its triangles and solid, hashed once when read: a tile's hash is the sum of its bodies'. */
+    hash: TileHash
 }
 
 interface Mark {
@@ -136,12 +170,93 @@ export interface TiledNavInternal extends TiledNav {
     readonly budget: number
 }
 
-export async function buildTiledNav<B extends object>(source: NavSource<B>, o: NavOptions & { tile: number }): Promise<TiledNavInternal> {
+export async function buildTiledNav<B extends object>(source: NavSource<B>, o: TiledNavOptions): Promise<TiledNavInternal> {
     const R = await loadRecast()
     const nav = new TiledNavImpl(R, source, o)
-    nav.update(Infinity)
+    if (o.kept === undefined) nav.update(Infinity)
+    else nav.take(o.kept)
     return nav
 }
+
+/** What a kept tile was built from, as two 32 bit lanes. Equal inputs, in any order of bodies, marks and solids, hash equal. */
+type TileHash = [number, number]
+
+/** Kept tiles: "OJNAV", a version byte, the length of the JSON that follows, the JSON, then Recast's own export of the navmesh. */
+const KEPT_MAGIC = [0x4f, 0x4a, 0x4e, 0x41, 0x56]
+const KEPT_VERSION = 1
+const KEPT_HEAD = KEPT_MAGIC.length + 1 + 4
+
+interface KeptJson {
+    /** What the tiles were built with; a nav takes them only with the same. */
+    settings: Record<string, number>
+    /** Area names in id order: id 1 is the first. */
+    areas: string[]
+    /** Each tile built or found empty: x, z, its hash, and 1 when it is in the navmesh. */
+    tiles: [number, number, number, number, 0 | 1][]
+}
+
+/** One item's words, mixed into two lanes (murmur3's finaliser on each word). */
+class Mixer {
+    a = 0x9e3779b9
+    b = 0x85ebca6b
+    private readonly f32 = new Float32Array(1)
+    private readonly u32 = new Uint32Array(this.f32.buffer)
+    constructor(kind: number) { this.word(kind) }
+    word(w: number): void {
+        let k = Math.imul(w | 0, 0xcc9e2d51)
+        k = (k << 15) | (k >>> 17)
+        k = Math.imul(k, 0x1b873593)
+        this.a ^= k
+        this.a = Math.imul((this.a << 13) | (this.a >>> 19), 5) + 0xe6546b64 | 0
+        this.b = Math.imul(this.b ^ (k >>> 7) ^ w, 0x27d4eb2f) + 0x165667b1 | 0
+    }
+    /** A number as the float Recast reads it. */
+    float(x: number): void {
+        this.f32[0] = x
+        this.word(this.u32[0]!)
+    }
+    end(): TileHash {
+        const fin = (h: number) => {
+            h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b)
+            h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35)
+            return (h ^ (h >>> 16)) >>> 0
+        }
+        return [fin(this.a), fin(this.b ^ this.a)]
+    }
+}
+
+/** JSON as ASCII bytes, an area name's other letters escaped: no TextEncoder, which a OneJS app on QuickJS does not have. */
+function asciiJson(value: unknown): Uint8Array {
+    const text = JSON.stringify(value).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)
+    const out = new Uint8Array(text.length)
+    for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i)
+    return out
+}
+
+function asciiText(bytes: Uint8Array): string {
+    let text = ""
+    for (let i = 0; i < bytes.length; i += 4096) text += String.fromCharCode(...bytes.subarray(i, i + 4096))
+    return text
+}
+
+/** A body's triangles, as Recast reads them, and its solid. */
+function bodyHash(vertices: Float32Array, indices: Uint32Array, solid: NavSolid | undefined): TileHash {
+    const m = new Mixer(1)
+    const words = new Uint32Array(vertices.buffer, vertices.byteOffset, vertices.length)
+    m.word(words.length)
+    for (let i = 0; i < words.length; i++) m.word(words[i]!)
+    m.word(indices.length)
+    for (let i = 0; i < indices.length; i++) m.word(indices[i]!)
+    if (solid !== undefined) {
+        m.word(2)
+        for (const x of solid.poly) m.float(x)
+        m.float(solid.ymin); m.float(solid.ymax)
+    }
+    return m.end()
+}
+
+/** Items summed lane by lane, so their order does not count. */
+const addHash = (to: TileHash, h: TileHash) => { to[0] = (to[0] + h[0]) >>> 0; to[1] = (to[1] + h[1]) >>> 0 }
 
 class TiledNavImpl<B extends object> implements TiledNavInternal {
     readonly tileSize: number
@@ -151,8 +266,8 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
     private readonly cells: number
     private readonly border: number
     private readonly config: any
-    private readonly navMesh: any
-    private readonly query: any
+    private navMesh: any
+    private query: any
     private readonly filter: any
     private readonly ctx: any
     private readonly reach: { x: number, y: number, z: number }
@@ -160,6 +275,9 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
     private readonly byTile = new Map<number, Set<B>>()
     private readonly marksByTile = new Map<number, Set<Mark>>()
     private readonly built = new Map<number, number>()
+    /** What each tile was last built from, built or found empty, so a tile asked to build from the same is left as it is. */
+    private readonly held = new Map<number, TileHash>()
+    private keptAnswer: KeptTiles | null = null
     private readonly stale = new Set<number>()
     /** Bodies changed since the last update, read then, since a mesh body's triangles come after it is made. */
     private readonly changed = new Set<B>()
@@ -168,7 +286,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
     private readonly unwatch: () => void
     private gone = false
 
-    constructor(private readonly R: Recast, private readonly source: NavSource<B>, o: NavOptions & { tile: number }) {
+    constructor(private readonly R: Recast, private readonly source: NavSource<B>, o: TiledNavOptions) {
         const radius = o.radius ?? NAV_DEFAULTS.radius
         const height = o.height ?? NAV_DEFAULTS.height
         // A whole number of cells to a tile, the tile exactly as asked: tiles of 16 m line up with 64 m chunks. The cell gives, by under half a cell a tile.
@@ -204,6 +322,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         return this.stale.size
     }
     get tiles(): number { return this.built.size }
+    get kept(): KeptTiles | null { return this.keptAnswer }
 
     private live(): void {
         if (this.gone) throw new Error("[oj] this nav was disposed")
@@ -248,7 +367,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
             console.error(`[oj] world.nav: a body ${(maxX - minX).toFixed(0)} by ${(maxZ - minZ).toFixed(0)} m touches ${tiles.length} tiles, more than a nav holds (${1 << TILE_BITS}); it is left out. Make the tiles larger, or the ground in chunks.`)
             return
         }
-        this.entries.set(b, { vertices, indices, solid, tiles })
+        this.entries.set(b, { vertices, indices, solid, tiles, hash: bodyHash(vertices, indices, solid) })
         for (const k of tiles) {
             let set = this.byTile.get(k)
             if (set === undefined) this.byTile.set(k, set = new Set())
@@ -292,23 +411,55 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
 
     private buildTile(k: number): void {
         const R = this.R, [tx, tz] = unkey(k)
-        const old = this.built.get(k)
-        if (old !== undefined) {
-            this.navMesh.removeTile(old)
-            this.built.delete(k)
-        }
         const bodies = this.byTile.get(k)
         if (bodies === undefined || bodies.size === 0) {
             this.byTile.delete(k)
+            this.dropTile(k)
             return
         }
-        // The tile and its apron, in x and z; the triangles that reach into it.
+        // What the tile is built from: its bodies, each hashed once when read, and its marks.
+        const marks = [...this.marksByTile.get(k) ?? []]
+        const hash: TileHash = [0, 0]
+        for (const b of bodies) addHash(hash, this.entries.get(b)!.hash)
+        for (const m of marks) {
+            const s = new Mixer(3)
+            for (const x of m.poly) s.float(x)
+            s.float(m.hmin); s.float(m.hmax); s.word(m.area)
+            addHash(hash, s.end())
+        }
+        // Asked to build from what it was built from, built or found empty: nothing to do, not even reading its triangles.
+        // A mark added and taken away, a body made again the same, or a kept tile the world still matches.
+        const held = this.held.get(k)
+        if (held !== undefined && held[0] === hash[0] && held[1] === hash[1]) return
+        this.dropTile(k)
+        const g = this.gather(k, bodies)
+        // Geometry in the apron alone makes no polygons: empty, and known to be.
+        this.held.set(k, hash)
+        if (g === null) return
+        try {
+            const data = buildNavTile(R, this.ctx, this.config, g.verts, g.tris, g.bmin, g.bmax, g.solids, marks, { x: tx, z: tz, maxPolys: 1 << POLY_BITS })
+            if (data === null) return
+            const added = this.navMesh.addTile(data, R.Detour.DT_TILE_FREE_DATA, 0)
+            // The navmesh owns the bytes now and frees them with the tile; let go of the wrapper alone.
+            data.raw.isView = true
+            data.destroy()
+            if (R.statusFailed(added.status)) throw new Error(`adding it (${R.statusToReadableString(added.status)})`)
+            this.built.set(k, added.tileRef)
+        } catch (e) {
+            // Not known: tried again when next stale.
+            this.held.delete(k)
+            console.error(`[oj] world.nav: tile ${tx}, ${tz} did not build: ${e instanceof Error ? e.message : String(e)}`)
+        }
+    }
+
+    /** The triangles that reach into a tile and its apron, or null when none reaches inside the tile proper. */
+    private gather(k: number, bodies: Set<B>): { verts: number[], tris: number[], bmin: [number, number, number], bmax: [number, number, number], solids: NavSolid[] } | null {
+        const [tx, tz] = unkey(k)
         const w = this.tileSize, apron = this.border * this.cs
         const ix0 = tx * w, ix1 = (tx + 1) * w, iz0 = tz * w, iz1 = (tz + 1) * w
         const x0 = ix0 - apron, x1 = ix1 + apron, z0 = iz0 - apron, z1 = iz1 + apron
         const verts: number[] = [], tris: number[] = []
         let minY = Infinity, maxY = -Infinity
-        // Whether any of it reaches inside the tile proper: geometry in the apron alone makes no polygons.
         let inside = false
         for (const b of bodies) {
             const e = this.entries.get(b)!
@@ -321,13 +472,13 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
                 if (bx < x0 || ax > x1 || bz < z0 || az > z1) continue
                 if (!inside && bx > ix0 && ax < ix1 && bz > iz0 && az < iz1) inside = true
                 for (let j = 0; j < 3; j++) {
-                    const v = e.indices[i * 3 + j]!
+                    const v = ei[i * 3 + j]!
                     let m = remap.get(v)
                     if (m === undefined) {
                         m = verts.length / 3
                         remap.set(v, m)
-                        const y = e.vertices[v * 3 + 1]!
-                        verts.push(e.vertices[v * 3]!, y, e.vertices[v * 3 + 2]!)
+                        const y = ev[v * 3 + 1]!
+                        verts.push(ev[v * 3]!, y, ev[v * 3 + 2]!)
                         if (y < minY) minY = y
                         if (y > maxY) maxY = y
                     }
@@ -335,25 +486,107 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
                 }
             }
         }
-        if (!inside) return
-        const bmin: [number, number, number] = [x0, minY - 1, z0], bmax: [number, number, number] = [x1, maxY + 1, z1]
+        if (!inside) return null
         const solids: NavSolid[] = []
         for (const b of bodies) {
             const sd = this.entries.get(b)!.solid
             if (sd !== undefined) solids.push(sd)
         }
-        try {
-            const data = buildNavTile(R, this.ctx, this.config, verts, tris, bmin, bmax, solids, [...this.marksByTile.get(k) ?? []], { x: tx, z: tz, maxPolys: 1 << POLY_BITS })
-            if (data === null) return
-            const added = this.navMesh.addTile(data, R.Detour.DT_TILE_FREE_DATA, 0)
-            // The navmesh owns the bytes now and frees them with the tile; let go of the wrapper alone.
-            data.raw.isView = true
-            data.destroy()
-            if (R.statusFailed(added.status)) throw new Error(`adding it (${R.statusToReadableString(added.status)})`)
-            this.built.set(k, added.tileRef)
-        } catch (e) {
-            console.error(`[oj] world.nav: tile ${tx}, ${tz} did not build: ${e instanceof Error ? e.message : String(e)}`)
+        return { verts, tris, bmin: [x0, minY - 1, z0], bmax: [x1, maxY + 1, z1], solids }
+    }
+
+    /** Takes a tile out of the navmesh, if it is in, and forgets what it was built from. */
+    private dropTile(k: number): void {
+        this.held.delete(k)
+        const old = this.built.get(k)
+        if (old === undefined) return
+        this.navMesh.removeTile(old)
+        this.built.delete(k)
+    }
+
+    // ---------- kept tiles ----------
+
+    /** What a tile's bytes depend on beyond its geometry and marks: a nav takes kept tiles only when every one is the same. */
+    private settings(): Record<string, number> {
+        const c = this.config
+        const out: Record<string, number> = { tile: this.tileSize, cells: this.cells, tileBits: TILE_BITS, polyBits: POLY_BITS }
+        for (const name of ["cs", "ch", "borderSize", "walkableRadius", "walkableHeight", "walkableClimb", "walkableSlopeAngle", "maxEdgeLen",
+            "maxSimplificationError", "minRegionArea", "mergeRegionArea", "maxVertsPerPoly", "detailSampleDist", "detailSampleMaxError"]) out[name] = c[name]
+        return out
+    }
+
+    exportTiles(): Uint8Array {
+        this.live()
+        const tiles: KeptJson["tiles"] = []
+        for (const [k, h] of this.held) {
+            const [tx, tz] = unkey(k)
+            tiles.push([tx, tz, h[0], h[1], this.built.has(k) ? 1 : 0])
         }
+        const json = asciiJson({ settings: this.settings(), areas: [...this.areas.keys()], tiles } satisfies KeptJson)
+        const mesh: Uint8Array = this.R.exportNavMesh(this.navMesh)
+        const out = new Uint8Array(KEPT_HEAD + json.length + mesh.length)
+        out.set(KEPT_MAGIC, 0)
+        out[KEPT_MAGIC.length] = KEPT_VERSION
+        new DataView(out.buffer).setUint32(KEPT_MAGIC.length + 1, json.length, true)
+        out.set(json, KEPT_HEAD)
+        out.set(mesh, KEPT_HEAD + json.length)
+        return out
+    }
+
+    /** Kept tiles in, before anything is built; the answer is in `kept`. */
+    take(data: Uint8Array): void {
+        const refuse = (why: string) => {
+            this.keptAnswer = { tiles: 0, why }
+            console.warn(`[oj] world.nav: the kept tiles were not taken: ${why}. Every tile is built instead.`)
+        }
+        if (!(data instanceof Uint8Array) || data.length < KEPT_HEAD || KEPT_MAGIC.some((b, i) => data[i] !== b)) return refuse("they are not tiles from exportTiles")
+        if (data[KEPT_MAGIC.length] !== KEPT_VERSION) return refuse(`they are version ${data[KEPT_MAGIC.length]} and this ojplay reads ${KEPT_VERSION}`)
+        const jsonLength = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(KEPT_MAGIC.length + 1, true)
+        if (KEPT_HEAD + jsonLength > data.length) return refuse("they are cut short")
+        let kept: KeptJson
+        try { kept = JSON.parse(asciiText(data.subarray(KEPT_HEAD, KEPT_HEAD + jsonLength))) } catch { return refuse("their description does not read") }
+        if (kept === null || typeof kept !== "object" || !Array.isArray(kept.tiles) || !Array.isArray(kept.areas) || typeof kept.settings !== "object" || kept.settings === null) return refuse("their description does not read")
+        const mine = this.settings()
+        const differ = Object.keys({ ...mine, ...kept.settings }).filter((n) => mine[n] !== kept.settings[n])
+        if (differ.length > 0) return refuse(`they were built with other settings (${differ.map((n) => `${n} ${kept.settings[n]} here ${mine[n]}`).join(", ")})`)
+        if (kept.areas.length > MAX_AREAS || !kept.areas.every((a) => typeof a === "string" && a !== "") || new Set(kept.areas).size !== kept.areas.length) return refuse("their area names do not read")
+        const hashes = new Map<number, TileHash>(), inMesh = new Set<number>()
+        for (const t of kept.tiles) {
+            if (!Array.isArray(t) || t.length !== 5 || !t.every(Number.isInteger) || (t[4] !== 0 && t[4] !== 1)) return refuse("their description does not read")
+            const k = key(t[0], t[1])
+            hashes.set(k, [t[2] >>> 0, t[3] >>> 0])
+            if (t[4] === 1) inMesh.add(k)
+        }
+        let mesh: any
+        try { mesh = this.R.importNavMesh(data.subarray(KEPT_HEAD + jsonLength)).navMesh } catch (e) { return refuse(`Recast did not read them (${e instanceof Error ? e.message : String(e)})`) }
+        // Each tile Recast read, by its place; a tile the description does not name is not kept.
+        const taken = new Map<number, number>()
+        const max = mesh.getMaxTiles()
+        for (let i = 0; i < max; i++) {
+            const tile = mesh.getTile(i), header = tile.header()
+            if (header === null) continue
+            const k = key(header.x(), header.y())
+            if (inMesh.has(k)) taken.set(k, mesh.getTileRef(tile))
+            else mesh.removeTile(mesh.getTileRef(tile))
+        }
+        if (taken.size !== inMesh.size) {
+            mesh.destroy()
+            return refuse(`they name ${inMesh.size} tiles and hold ${taken.size}`)
+        }
+        // The kept navmesh is this nav's now. Nothing was built into the one it replaces.
+        this.query.destroy()
+        this.navMesh.destroy()
+        this.navMesh = mesh
+        this.query = new this.R.NavMeshQuery(mesh, { maxNodes: 8192 })
+        for (const [k, ref] of taken) this.built.set(k, ref)
+        for (const [k, h] of hashes) {
+            this.held.set(k, h)
+            // Asked of the world at the next update: kept (or kept empty) if it still matches, built again if not, dropped if nothing is there now.
+            this.stale.add(k)
+        }
+        // The names in the same order, so a mark gets the id its kept tiles hold.
+        for (const name of kept.areas) this.areaId(name)
+        this.keptAnswer = { tiles: taken.size, why: null }
     }
 
     // ---------- marks ----------
