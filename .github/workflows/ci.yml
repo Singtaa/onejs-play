@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   test:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.os }}, Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
     strategy:
       # Report both platforms rather than stopping at the first red one: a
@@ -23,6 +23,11 @@ jobs:
       matrix:
         # Windows is deliberate, not symmetry. Developers here work on Windows, so it has to be a gate and not an afterthought.
         os: [ubuntu-latest, windows-latest]
+        # 22 is the oldest Node oj supports (see setup-node below); 24 is the
+        # Node publish.yml runs the same gates on. 0.17.5's Publish failed on a
+        # test that had been green here on 22 for four days, because Node 24's
+        # WebSocket error event carries an empty message.
+        node: [22, 24]
 
     defaults:
       run:
@@ -65,11 +70,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # The oldest Node oj run and oj test support (cli/chrome.mjs refuses
-          # older): oj drives Chrome over the global WebSocket, which Node 20
-          # does not have. The package declares no engines, so a OneJS project
-          # installing it on older Node gets no warning for commands it never runs.
-          node-version: 22
+          # 22 is the oldest Node oj run and oj test support (cli/chrome.mjs
+          # refuses older): oj drives Chrome over the global WebSocket, which
+          # Node 20 does not have. The package declares no engines, so a OneJS
+          # project installing it on older Node gets no warning for commands it
+          # never runs.
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: onejs-play/package-lock.json
 
@@ -119,7 +125,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: chrome-logs-${{ matrix.os }}
+          name: chrome-logs-${{ matrix.os }}-node${{ matrix.node }}
           path: ${{ runner.temp }}/chrome-logs
           if-no-files-found: ignore
           retention-days: 7

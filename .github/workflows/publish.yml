@@ -77,8 +77,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Node 24 rather than ci.yml's 20: trusted publishing needs Node
-          # >= 22.14.0 and an npm that speaks OIDC.
+          # Node 24: trusted publishing needs Node >= 22.14.0 and an npm that
+          # speaks OIDC. ci.yml runs the same gates on 24 as well as 22, so a
+          # test that only fails here is caught on main first.
           node-version: 24
           registry-url: "https://registry.npmjs.org"
           # No dependency cache in a release build. A publish should read what
