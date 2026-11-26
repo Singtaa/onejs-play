@@ -66,6 +66,7 @@ if (/base64,AGFzbQ/.test(glue)) throw new Error("the vendored glue carries an in
  * whatever it made.
  * Every edit must match exactly once, so a release that changes the method stops this script instead of shipping a
  * half patch: drop the patch when upstream frees them itself.
+ * Upstream has not been told, by the maintainer's decision (25 Nov 2026): do not file it there unless he asks.
  */
 function freeComputePath(text) {
     const once = (s, find, put, what) => {
