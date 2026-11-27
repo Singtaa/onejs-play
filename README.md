@@ -568,7 +568,9 @@ so every path not found (an end off the floor) kept one for good, and a
 long-running world ran out of memory. The patch frees them on every return.
 Each of its edits must match the method exactly once, so a release that
 changes `computePath` stops the script; drop the patch once upstream frees
-them itself. `nav.test.ts` counts the bindings' arrays across failed paths.
+them itself. oj's own `path` no longer calls `computePath` (`wayOn` in
+`nav.ts` takes its steps), so the patch now guards only code that calls the
+glue directly. `nav.test.ts` counts the bindings' arrays across failed paths.
 
 Things that are not obvious from the code:
 
@@ -653,6 +655,17 @@ Things that are not obvious from the code:
   a mesh collider lines up with the model drawn from the same file.
 - **Deterministic everywhere.** `parity.mjs` holds the hash of a fixed scene;
   Node, Chrome, workerd and OneJS's native QuickJS link all produce it.
+- **A search too small for its nav still says success.** Detour's A* holds a
+  node for each polygon it reaches, from a pool of a fixed size, and its
+  corridor and corners go in fixed buffers; when either runs out, `findPath`
+  or `findStraightPath` returns success with the way cut short. `computePath`
+  passes that on, and to a cart it reads as "the floor goes no further". So
+  `navNodes` sizes each query's pool from the nav's polygons (one node a solo
+  polygon, four a tiled one, from 2,048 to Detour's most, 65,535, about 35
+  bytes a node), the tiled nav growing its query as tiles are built, and
+  `wayOn` asks again with room for every node when a corridor is longer than
+  1,024 polygons (`__tests__/node-pool.test.ts`). A goal that cannot be
+  reached now costs a search of all the floor its start reaches.
 - **Recast's `detailSampleDist` is in cells.** Below about 0.9 the build reads
   out of bounds, so `nav.ts` leaves Recast's default.
 - **2D nav is Recast on its side.** A floor quad over the static bodies'

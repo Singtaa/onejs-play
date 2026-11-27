@@ -92,12 +92,71 @@ export function navReach(radius: number, height: number): { x: number, y: number
     return { x: Math.max(1, radius * 4), y: Math.max(2, height * 2), z: Math.max(1, radius * 4) }
 }
 
-/** computePath's answer as oj's corners: without `from`, and `[to]` for a path that never leaves its polygon. */
-export function cornersOf(r: { success: boolean, path: { x: number, y: number, z: number }[] }): Vec3[] {
-    if (!r.success || r.path.length === 0) return []
-    const points = r.path.map((p) => Object.freeze([p.x, p.y, p.z]) as unknown as Vec3)
-    // Detour gives one point, not two, when both ends are one place.
-    return points.length === 1 ? points : points.slice(1)
+/**
+ * The nodes a nav's query holds for `polygons`, when Detour may keep `states` nodes a polygon. A* takes a node for each
+ * polygon it reaches, and a search that runs out stops there and still says success: its way ends at the polygon nearest
+ * the goal so far, read as "the floor goes no further". So the pool holds every node a search over the whole nav can
+ * take. A solo nav's polygon takes one; a tiled nav's takes one more for each tile edge it is entered across, up to
+ * Detour's four. From Detour's default of 2,048 to its most, 65,535: a node is about 35 bytes with its share of the open
+ * list and the hash, so 140 bytes a tiled polygon and 2.2 MB at the most, which a tiled nav reaches at 16,384 polygons.
+ * A search takes nearer one node a polygon (1.1 on 16 m tiles), so that pool still covers about 55,000 of them.
+ */
+export function navNodes(polygons: number, states: 1 | 4): number {
+    return Math.min(NAV_NODES_MAX, Math.max(NAV_NODES_MIN, polygons * states))
+}
+
+const NAV_NODES_MIN = 2048
+const NAV_NODES_MAX = 65535
+
+/** The polygons a way first asks room for. A way that needs more is asked again with room for every node. */
+const WAY_POLYS = 1024
+
+/**
+ * The way from `from` to `to` as oj's corners: without `from`, and `[to]` for a path that never leaves its polygon.
+ * computePath's steps (the polygons under each end, A* between them, the corners along that corridor), with room for
+ * every polygon and corner the way has: computePath's buffers are fixed, and one too small cuts the way short and
+ * still says success, as a search out of nodes does. A goal the floor does not reach gives the way to the polygon
+ * nearest it, as computePath's does. [] when an end is off the floor.
+ */
+export function wayOn(R: Recast, query: any, from: Vec3, to: Vec3, reach: { x: number, y: number, z: number }, filter: any, nodes: number): Vec3[] {
+    const a = { x: from[0], y: from[1], z: from[2] }, b = { x: to[0], y: to[1], z: to[2] }
+    const start = query.findNearestPoly(a, { halfExtents: reach, filter }).nearestRef
+    const end = query.findNearestPoly(b, { halfExtents: reach, filter }).nearestRef
+    if (start === 0 || end === 0) return []
+    const tooSmall = (status: number) => (status & R.Detour.DT_BUFFER_TOO_SMALL) !== 0
+    let found = query.findPath(start, end, a, b, { filter, maxPathPolys: Math.min(WAY_POLYS, nodes) })
+    // A corridor is never longer than the nodes its search had.
+    if (tooSmall(found.status) && nodes > WAY_POLYS) {
+        found.polys.destroy()
+        found = query.findPath(start, end, a, b, { filter, maxPathPolys: nodes })
+    }
+    const polys = found.polys
+    try {
+        if (!R.statusSucceed(found.status) || polys.size === 0) return []
+        let goal = b
+        const last = polys.get(polys.size - 1)
+        if (last !== end) {
+            const near = query.closestPointOnPoly(last, b)
+            if (!R.statusSucceed(near.status)) return []
+            goal = near.closestPoint
+        }
+        // A corner a polygon and the two ends is room enough; asked again with more should Detour ever want it.
+        for (let room = polys.size + 2; ; room *= 2) {
+            const s = query.findStraightPath(a, goal, polys, { maxStraightPathPoints: room })
+            try {
+                if (!R.statusSucceed(s.status)) return []
+                if (tooSmall(s.status)) continue
+                const points: Vec3[] = []
+                for (let i = 0; i < s.straightPathCount; i++) points.push(Object.freeze([s.straightPath.get(i * 3), s.straightPath.get(i * 3 + 1), s.straightPath.get(i * 3 + 2)]) as unknown as Vec3)
+                // Detour gives one point, not two, when both ends are one place.
+                return points.length <= 1 ? points : points.slice(1)
+            } finally {
+                s.straightPath.destroy(); s.straightPathFlags.destroy(); s.straightPathRefs.destroy()
+            }
+        }
+    } finally {
+        polys.destroy()
+    }
 }
 
 export function nearestOn(query: any, p: Vec3, reach: { x: number, y: number, z: number }, within: number | undefined, filter?: any): Vec3 | null {
@@ -268,14 +327,15 @@ export async function buildNav(vertices: Float32Array, indices: Uint32Array, o: 
         navMesh.destroy()
         throw new Error("[oj] the navigation mesh did not build: Detour refused it")
     }
-    const query = new R.NavMeshQuery(navMesh)
+    const nodes = navNodes(navMesh.getTile(0).header()!.polyCount(), 1)
+    const query = new R.NavMeshQuery(navMesh, { maxNodes: nodes })
     const reach = navReach(radius, o.height ?? NAV_DEFAULTS.height)
     let gone = false
     const live = () => { if (gone) throw new Error("[oj] this nav was disposed") }
     return {
         path(from: Vec3, to: Vec3): Vec3[] {
             live()
-            return cornersOf(query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: reach }))
+            return wayOn(R, query, from, to, reach, query.defaultFilter, nodes)
         },
         nearest(point: Vec3, within?: number): Vec3 | null {
             live()

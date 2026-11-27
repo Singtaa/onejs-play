@@ -29,7 +29,7 @@
  */
 
 import type { Vec3 } from "../models"
-import { NAV_DEFAULTS, buildNavTile, cornersOf, floorOf, loadRecast, navConfig, navReach, nearestOn, type Nav, type NavOptions, type NavSolid, type Recast } from "./nav"
+import { NAV_DEFAULTS, buildNavTile, floorOf, loadRecast, navConfig, navNodes, navReach, nearestOn, wayOn, type Nav, type NavOptions, type NavSolid, type Recast } from "./nav"
 
 /** Where `block` and `mark` change the floor: a box, turned about y by `yaw` degrees. */
 export interface NavBox {
@@ -268,6 +268,9 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
     private readonly config: any
     private navMesh: any
     private query: any
+    /** The query's nodes, grown to the polygons built (navNodes), and its polygons now. */
+    private nodes = 0
+    private polyCount = 0
     private readonly filter: any
     private readonly ctx: any
     private readonly reach: { x: number, y: number, z: number }
@@ -306,7 +309,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         this.navMesh = new R.NavMesh()
         const params = R.NavMeshParams.create({ orig: { x: 0, y: 0, z: 0 }, tileWidth: this.tileSize, tileHeight: this.tileSize, maxTiles: 1 << TILE_BITS, maxPolys: 1 << POLY_BITS })
         if (!this.navMesh.initTiled(params)) throw new Error("[oj] world.nav: the tiled navigation mesh did not start")
-        this.query = new R.NavMeshQuery(this.navMesh, { maxNodes: 8192 })
+        this.fitQuery()
         this.filter = new R.QueryFilter()
         this.ctx = new R.RecastBuildContext()
         this.reach = navReach(radius, height)
@@ -404,6 +407,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
             this.stale.delete(k)
             this.buildTile(k)
         }
+        this.fitQuery()
         return this.stale.size
     }
 
@@ -445,6 +449,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
             data.destroy()
             if (R.statusFailed(added.status)) throw new Error(`adding it (${R.statusToReadableString(added.status)})`)
             this.built.set(k, added.tileRef)
+            this.polyCount += this.polygonsOf(added.tileRef)
         } catch (e) {
             // Not known: tried again when next stale.
             this.held.delete(k)
@@ -500,8 +505,26 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         this.held.delete(k)
         const old = this.built.get(k)
         if (old === undefined) return
+        this.polyCount -= this.polygonsOf(old)
         this.navMesh.removeTile(old)
         this.built.delete(k)
+    }
+
+    private polygonsOf(tileRef: number): number {
+        return this.navMesh.getTileByRef(tileRef)?.header()?.polyCount() ?? 0
+    }
+
+    /**
+     * Makes the query again when the nav has more polygons than its nodes cover, so a search runs out of nodes
+     * only past Detour's most. After the tiles change, never during a search; it only grows, so a world that
+     * builds and drops the same tiles does not make it again each time.
+     */
+    private fitQuery(): void {
+        const need = navNodes(this.polyCount, 4)
+        if (need <= this.nodes) return
+        this.query?.destroy()
+        this.query = new this.R.NavMeshQuery(this.navMesh, { maxNodes: need })
+        this.nodes = need
     }
 
     // ---------- kept tiles ----------
@@ -575,10 +598,15 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         }
         // The kept navmesh is this nav's now. Nothing was built into the one it replaces.
         this.query.destroy()
+        this.query = null
+        this.nodes = 0
         this.navMesh.destroy()
         this.navMesh = mesh
-        this.query = new this.R.NavMeshQuery(mesh, { maxNodes: 8192 })
-        for (const [k, ref] of taken) this.built.set(k, ref)
+        for (const [k, ref] of taken) {
+            this.built.set(k, ref)
+            this.polyCount += this.polygonsOf(ref)
+        }
+        this.fitQuery()
         for (const [k, h] of hashes) {
             this.held.set(k, h)
             // Asked of the world at the next update: kept (or kept empty) if it still matches, built again if not, dropped if nothing is there now.
@@ -677,7 +705,7 @@ class TiledNavImpl<B extends object> implements TiledNavInternal {
         for (const name of Object.keys(o.cost ?? {})) if (!this.areas.has(name)) this.unknownArea(name)
         f.includeFlags = 0xffff
         f.excludeFlags = exclude
-        return cornersOf(this.query.computePath({ x: from[0], y: from[1], z: from[2] }, { x: to[0], y: to[1], z: to[2] }, { halfExtents: this.reach, filter: f, maxPathPolys: 1024 }))
+        return wayOn(this.R, this.query, from, to, this.reach, f, this.nodes)
     }
 
     nearest(point: Vec3, within?: number): Vec3 | null {
